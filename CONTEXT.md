@@ -6,6 +6,18 @@
 
 ---
 
+## Dev Journal
+
+`docs/journal/` — historique des sessions de développement.
+Format fichiers : `YYYY-MM-DD-<sujet>.md` (ex: `2026-05-24-f0-setup.md`).
+Template : `docs/journal/TEMPLATE.md`.
+
+**Règles pour Claude Code :**
+- Lire le journal le plus récent au début de chaque session
+- Créer une nouvelle entrée à la fin de chaque session
+- Documenter : ce qui a été fait, fichiers créés/modifiés, décisions prises, tâches ROADMAP cochées, prochaine session
+- Ne jamais modifier une entrée passée — créer une nouvelle entrée si correction nécessaire
+
 ## Stack (versions verrouillées)
 
 | Couche | Technologie | Note critique |

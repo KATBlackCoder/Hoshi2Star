@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:linux": "WEBKIT_DISABLE_COMPOSITING_MODE=1 GDK_BACKEND=x11 pnpm tauri dev"
+    "tauri:linux": "__NV_DISABLE_EXPLICIT_SYNC=1 pnpm tauri dev"
   },
   "dependencies": {
     "react": "^19.1.0",
