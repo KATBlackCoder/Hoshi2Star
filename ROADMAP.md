@@ -68,16 +68,16 @@
 ---
 
 ## F1 — Parsers MV/MZ + UI skeleton
-**Statut : [ ] À démarrer**
+**Statut : [~] En cours**
 **Critère de sortie : Ouvrir un jeu MV/MZ et afficher ses segments dans la grille.**
 
 ### Engine Layer — RPG Maker MV/MZ
-- [ ] Intégration lib Rust `rvpacker-txt-rs` (ou implémentation custom) via `Cargo.toml`
-- [ ] `src-tauri/src/engines/mv_mz/extractor.rs` — lecture `data/*.json` du jeu
-- [ ] `src-tauri/src/engines/mv_mz/injector.rs` — réécriture `data/*.json` traduit
-- [ ] `src-tauri/src/engines/mv_mz/decryptor.rs` — décryptage `.rpgmvp/.rpgmvo` (XOR + clé `System.json`)
-- [ ] `src-tauri/src/engines/detector.rs` — détection automatique du moteur (présence de fichiers caractéristiques)
-- [ ] Tests unitaires Rust : extraction round-trip (extract → inject → même contenu)
+- [-] Intégration lib Rust `rvpacker-txt-rs` — implémentation custom retenue (plus de contrôle)
+- [x] `src-tauri/src/engines/mv_mz/extractor.rs` — lecture `data/*.json` du jeu
+- [x] `src-tauri/src/engines/mv_mz/injector.rs` — réécriture `data/*.json` traduit
+- [x] `src-tauri/src/engines/mv_mz/decryptor.rs` — décryptage `.rpgmvp/.rpgmvo` (XOR + clé `System.json`)
+- [x] `src-tauri/src/engines/detector.rs` — détection automatique du moteur (présence de fichiers caractéristiques)
+- [x] Tests unitaires Rust : extraction round-trip (extract → inject → même contenu)
 
 ### Core Layer — DB + State
 - [ ] `src-tauri/migrations/0001_initial.sql` — tables `projects`, `source_files`, `segments`
@@ -110,7 +110,7 @@
 **Critère de sortie : Pré-traduire un jeu MV/MZ avec Ollama local, TM exact match fonctionnelle, QA placeholders live. Ce milestone = MVP vendable.**
 
 ### LLM Layer
-- [ ] `src-tauri/src/llm/tokenizer.rs` — détection et remplacement placeholders par UUID opaques (`⟦ph_001⟧`)
+- [x] `src-tauri/src/llm/tokenizer.rs` — détection et remplacement placeholders par UUID opaques (`⟦ph_001⟧`) — implémenté en F1
 - [ ] `src-tauri/src/llm/provider.rs` — trait `LlmProvider` + implémentations :
   - [ ] `OllamaProvider` (local, priorité MVP)
   - [ ] `OpenAIProvider` (clé user fournie)

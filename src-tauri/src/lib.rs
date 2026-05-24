@@ -2,6 +2,8 @@
 // main.rs délègue à run() pour compatibilité mobile future.
 
 pub mod commands;
+pub mod engines;
+pub mod llm;
 pub mod state;
 
 // Commande de démonstration — à supprimer en F1
