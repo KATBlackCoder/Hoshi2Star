@@ -80,28 +80,28 @@
 - [x] Tests unitaires Rust : extraction round-trip (extract → inject → même contenu)
 
 ### Core Layer — DB + State
-- [ ] `src-tauri/migrations/0001_initial.sql` — tables `projects`, `source_files`, `segments`
-- [ ] `src-tauri/src/db/pool.rs` — init SqlitePool, run migrations au démarrage
-- [ ] `src-tauri/src/state.rs` — `AppState { db: SqlitePool }`
-- [ ] Setup dans `lib.rs` avec `.manage(AppState { db })`
+- [x] `src-tauri/migrations/0001_initial.sql` — tables `projects`, `source_files`, `segments`
+- [x] `src-tauri/src/db/pool.rs` — init SqlitePool, run migrations au démarrage
+- [x] `src-tauri/src/state.rs` — `AppState { db: SqlitePool }`
+- [x] Setup dans `lib.rs` avec `.manage(AppState { db })`
 
 ### Commands Tauri — F1
-- [ ] `open_project(path: String)` — détecte moteur, extrait segments, insère en DB
-- [ ] `get_source_files(project_id)` — liste les fichiers d'un projet
-- [ ] `get_segments(project_id, file_id)` — segments paginés avec statut
-- [ ] `update_segment(id, target_text)` — save traduction manuelle
-- [ ] `export_project(project_id)` — réinjection dans les fichiers du jeu
+- [x] `open_project(path: String)` — détecte moteur, extrait segments, insère en DB
+- [x] `get_source_files(project_id)` — liste les fichiers d'un projet
+- [x] `get_segments(project_id, file_id)` — segments paginés avec statut
+- [x] `update_segment(id, target_text)` — save traduction manuelle
+- [x] `export_project(project_id)` — réinjection dans les fichiers du jeu
 
 ### CAT UI — skeleton
-- [ ] Layout 3 colonnes : FileTree | SegmentGrid | SidePanel (shadcn `ResizablePanelGroup`)
-- [ ] `src/components/editor/SegmentGrid.tsx` — TanStack Table + Virtual scroll
+- [x] Layout 3 colonnes : FileTree | SegmentGrid | SidePanel (shadcn `ResizablePanelGroup`)
+- [x] `src/components/editor/SegmentGrid.tsx` — TanStack Table + Virtual scroll
   - Colonnes : #, Source, Target (éditable inline), Status, QA Score
   - Row selection, keyboard navigation (Tab pour passer au segment suivant)
-- [ ] `src/components/editor/FileTree.tsx` — arbre fichiers du projet
-- [ ] `src/stores/editor.ts` — Zustand : `activeProjectId`, `activeFileId`, `activeSegmentId`
-- [ ] `src/stores/project.ts` — Zustand : projets ouverts, metadata
-- [ ] TanStack Query — `useSegments(projectId, fileId)`, `useUpdateSegment()`
-- [ ] Import projet (dialog file picker via `tauri-plugin-dialog`)
+- [x] `src/components/editor/FileTree.tsx` — arbre fichiers du projet
+- [x] `src/stores/editor.ts` — Zustand : `activeProjectId`, `activeFileId`, `activeSegmentId`
+- [x] `src/stores/project.ts` — Zustand : projets ouverts, metadata
+- [-] TanStack Query — reporté F2 (useEffect direct utilisé pour F1)
+- [x] Import projet (dialog file picker via `tauri-plugin-dialog`)
 
 ---
 

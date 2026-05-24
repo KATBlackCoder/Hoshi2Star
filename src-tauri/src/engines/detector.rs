@@ -53,7 +53,7 @@ pub fn is_mv_mz_system(content: &str) -> bool {
 }
 
 /// Find the `data/` directory in a game folder (MV/MZ can use `data/` or `www/data/`).
-fn find_data_dir(game_dir: &Path) -> Option<std::path::PathBuf> {
+pub fn find_data_dir(game_dir: &Path) -> Option<std::path::PathBuf> {
     let candidates = [game_dir.join("data"), game_dir.join("www").join("data")];
     candidates.into_iter().find(|p| p.is_dir())
 }

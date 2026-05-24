@@ -2,21 +2,45 @@
 // main.rs délègue à run() pour compatibilité mobile future.
 
 pub mod commands;
+pub mod db;
 pub mod engines;
 pub mod llm;
 pub mod state;
 
-// Commande de démonstration — à supprimer en F1
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
+use commands::project::{
+    export_project, get_segments, get_source_files, open_project, update_segment,
+};
+use state::AppState;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet]);
+        .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            let db_path = app.path().app_data_dir()?.join("hoshi2star.db");
+
+            // Ensure the data directory exists before connecting
+            if let Some(parent) = db_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+
+            let path_str = db_path.to_str().ok_or("non-UTF-8 db path")?.to_string();
+
+            let pool = tauri::async_runtime::block_on(db::pool::init(&path_str))
+                .map_err(|e| e.to_string())?;
+
+            app.manage(AppState { db: pool });
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            open_project,
+            get_source_files,
+            get_segments,
+            update_segment,
+            export_project,
+        ]);
 
     #[cfg(debug_assertions)]
     {
