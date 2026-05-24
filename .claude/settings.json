@@ -1,0 +1,32 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in *.rs) cargo fmt --manifest-path /home/blackat/project/Hoshi2Star/src-tauri/Cargo.toml 2>/dev/null || true;; esac",
+            "statusMessage": "cargo fmt..."
+          },
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in *.ts|*.tsx) cd /home/blackat/project/Hoshi2Star && pnpm exec prettier --write \"$f\" 2>/dev/null || true;; esac",
+            "statusMessage": "prettier..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd=$(jq -r '.tool_input.command // empty'); if echo \"$cmd\" | grep -qE '(npm install|yarn add|git push --force)'; then printf '{\"continue\": false, \"stopReason\": \"INTERDIT: utiliser pnpm. Commande bloquée.\"}'; exit 2; fi"
+          }
+        ]
+      }
+    ]
+  }
+}

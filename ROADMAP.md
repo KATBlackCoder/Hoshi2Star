@@ -20,41 +20,45 @@
 ---
 
 ## F0 — Setup & fondations
-**Statut : [ ] À démarrer**
+**Statut : [~] En cours**
 
 ### Environnement système (CachyOS)
-- [ ] `webkit2gtk-4.1`, `base-devel`, `libappindicator-gtk3`, `librsvg`, `xdotool` installés via pacman
-- [ ] `pnpm` installé via pacman (repo `extra`)
-- [ ] `rustup` installé, toolchain stable active
-- [ ] Workaround NVIDIA documenté dans `~/.zshrc` si GPU NVIDIA
+- [x] `webkit2gtk-4.1`, `base-devel`, `libappindicator-gtk3`, `librsvg`, `xdotool` installés via pacman
+- [x] `pnpm` installé via pacman (repo `extra`)
+- [x] `rustup` installé, toolchain stable active
+- [x] Workaround NVIDIA documenté dans `~/.zshrc` si GPU NVIDIA
   - X11 : `WEBKIT_DISABLE_DMABUF_RENDERER=1`
   - Wayland : `__NV_DISABLE_EXPLICIT_SYNC=1`
 
 ### Projet Tauri v2 initialisé
-- [ ] `pnpm create tauri-app` — React + TypeScript + pnpm
-- [ ] Vérification `lib.rs` comme entrée (pas `main.rs`)
-- [ ] `pnpm dlx shadcn@latest init` (CSS variables: yes, base color: zinc)
-- [ ] Tailwind v4 configuré
-- [ ] `pnpm add zustand @tanstack/react-table @tanstack/react-virtual @tanstack/react-query`
-- [ ] Rust deps ajoutés : `tokio`, `sqlx` (sqlite + runtime-tokio), `serde`, `thiserror`, `tauri-plugin-fs`, `tauri-plugin-dialog`
-- [ ] `src-tauri/capabilities/default.json` créé avec `core:default`
+- [x] `pnpm create tauri-app` — React + TypeScript + pnpm
+- [x] Vérification `lib.rs` comme entrée (pas `main.rs`)
+- [x] `pnpm dlx shadcn@latest init` (CSS variables: yes, base color: zinc, preset Nova)
+- [x] Tailwind v4 configuré (`@tailwindcss/vite` plugin + `@import "tailwindcss"`)
+- [x] `pnpm add zustand @tanstack/react-table @tanstack/react-virtual @tanstack/react-query`
+- [x] Rust deps ajoutés : `tokio` (full), `sqlx` (sqlite + runtime-tokio + macros), `serde` (derive), `serde_json`, `thiserror`
+- [x] `src-tauri/capabilities/default.json` créé avec `core:default`
+- [x] `src-tauri/migrations/` créé (vide avec `.gitkeep`)
+- [x] `src-tauri/src/state.rs` créé (AppState vide — complété en F1)
+- [x] `src-tauri/src/commands/mod.rs` créé (vide — commands ajoutées en F1)
+- [x] Structure `src/` créée : `components/editor/`, `features/`, `stores/`, `lib/`, `hooks/`
 
 ### Outillage Claude Code
-- [ ] `CONTEXT.md` à la racine
-- [ ] `ROADMAP.md` à la racine (ce fichier)
-- [ ] `.mcp.json` créé (`context7`, `filesystem`, `github`, `rust-docs`, `tauri`)
-- [ ] `.claude/settings.json` avec hooks :
+- [x] `CONTEXT.md` à la racine
+- [x] `ROADMAP.md` à la racine (ce fichier)
+- [x] `.mcp.json` créé (`context7`, `filesystem`, `github`, `rust-docs`, `tauri`)
+- [x] `.claude/settings.json` avec hooks :
   - PostToolUse Edit/Write `.rs` → `cargo fmt`
-  - PostToolUse Edit/Write `.ts/.tsx` → `prettier --write` + `eslint --fix`
+  - PostToolUse Edit/Write `.ts/.tsx` → `prettier --write`
   - PreToolUse Bash → bloquer `npm install`, `yarn add`, `git push --force`
 - [ ] Skills installés : `shadcn`, `tdd`, `vercel-react-best-practices`, `webapp-testing`
 
 ### ADRs initiaux rédigés
-- [ ] `docs/adr/ADR-001.md` — SQLite via sqlx async
-- [ ] `docs/adr/ADR-002.md` — Placeholder tokenisation Rust-side
-- [ ] `docs/adr/ADR-003.md` — TM globale cross-projet
-- [ ] `docs/adr/ADR-004.md` — MVP MV/MZ uniquement
-- [ ] `docs/adr/ADR-005.md` — lib.rs comme entrée app
+- [x] `docs/adr/ADR-001.md` — SQLite via sqlx async
+- [x] `docs/adr/ADR-002.md` — Placeholder tokenisation Rust-side
+- [x] `docs/adr/ADR-003.md` — TM globale cross-projet
+- [x] `docs/adr/ADR-004.md` — MVP MV/MZ uniquement
+- [x] `docs/adr/ADR-005.md` — lib.rs comme entrée app
 
 ### VSCode configuré
 - [ ] Extensions : rust-analyzer, tauri-vscode, CodeLLDB, Even Better TOML, Tailwind CSS IntelliSense
