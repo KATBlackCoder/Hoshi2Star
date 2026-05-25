@@ -106,7 +106,7 @@
 ---
 
 ## F2 — LLM pipeline + TM + MVP vendable
-**Statut : [~] En cours**
+**Statut : [x] Complet**
 **Critère de sortie : Pré-traduire un jeu MV/MZ avec Ollama local, TM exact match fonctionnelle, QA placeholders live. Ce milestone = MVP vendable.**
 
 ### LLM Layer
@@ -148,9 +148,9 @@
 - [x] Highlight placeholders dans le source (couleur distincte — composant HighlightedSource, F2 partiel)
 
 ### Distribution MVP
-- [ ] Build installeur Windows (`.msi` via `pnpm tauri build`)
-- [ ] Build Linux (`.AppImage` ou `.deb`)
-- [ ] Page de téléchargement minimaliste (itch.io ou GitHub Releases)
+- [x] Build Windows `.msi` (GitHub Actions — `tauri-apps/tauri-action@v0`)
+- [x] Build Linux `.AppImage` et `.deb` (GitHub Actions — ubuntu-22.04)
+- [x] Page de téléchargement GitHub Releases (release draft auto sur push `v*`)
 
 ---
 
