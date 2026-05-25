@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
@@ -70,13 +71,13 @@ interface LlmConfigModalProps {
 }
 
 function LlmConfigModal({ onClose, onStart }: LlmConfigModalProps) {
+  const { t } = useTranslation();
   const { providerConfig, setProviderConfig } = useLlmStore();
   const activeFileId = useEditorStore((s) => s.activeFileId);
 
   const [models, setModels] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
-  // Local URL draft so we can reuse it on blur without triggering on every keystroke
   const [urlDraft, setUrlDraft] = useState(providerConfig.url);
 
   async function fetchModels(url: string) {
@@ -85,22 +86,20 @@ function LlmConfigModal({ onClose, onStart }: LlmConfigModalProps) {
     try {
       const list = await invoke<string[]>("get_ollama_models", { url });
       setModels(list);
-      // Pre-select current model if present, otherwise first in list
       if (list.length > 0) {
         const keep = list.includes(providerConfig.model)
           ? providerConfig.model
           : list[0];
         setProviderConfig({ model: keep });
       }
-    } catch (err) {
-      setModelsError("Impossible de contacter Ollama — vérifiez l'URL");
+    } catch {
+      setModelsError(t("llmModal.modelError"));
       setModels([]);
     } finally {
       setModelsLoading(false);
     }
   }
 
-  // Load models on mount
   useEffect(() => {
     void fetchModels(providerConfig.url);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -124,7 +123,7 @@ function LlmConfigModal({ onClose, onStart }: LlmConfigModalProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="w-96 rounded-lg border bg-background p-4 shadow-xl">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Configuration LLM</h2>
+          <h2 className="text-sm font-semibold">{t("llmModal.title")}</h2>
           <button type="button" onClick={onClose}>
             <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
           </button>
@@ -133,7 +132,7 @@ function LlmConfigModal({ onClose, onStart }: LlmConfigModalProps) {
         <div className="space-y-3">
           <div>
             <label className="mb-1 block text-xs text-muted-foreground">
-              URL Ollama
+              {t("llmModal.urlLabel")}
             </label>
             <input
               type="text"
@@ -145,7 +144,7 @@ function LlmConfigModal({ onClose, onStart }: LlmConfigModalProps) {
           </div>
           <div>
             <label className="mb-1 block text-xs text-muted-foreground">
-              Modèle
+              {t("llmModal.modelLabel")}
             </label>
             {models.length > 0 ? (
               <Select
@@ -170,19 +169,18 @@ function LlmConfigModal({ onClose, onStart }: LlmConfigModalProps) {
                     <SelectValue
                       placeholder={
                         modelsLoading
-                          ? "Chargement des modèles…"
-                          : "Aucun modèle disponible"
+                          ? t("llmModal.modelLoading")
+                          : t("llmModal.modelNone")
                       }
                     />
                   </SelectTrigger>
                   <SelectContent />
                 </Select>
-                {/* Fallback text input when Ollama is unreachable */}
                 {modelsError && (
                   <input
                     type="text"
                     className="mt-1.5 w-full rounded border bg-muted/30 px-2 py-1.5 text-xs outline-none focus:border-primary"
-                    placeholder="Saisir le modèle manuellement"
+                    placeholder={t("llmModal.modelManual")}
                     value={providerConfig.model}
                     onChange={(e) =>
                       setProviderConfig({ model: e.target.value })
@@ -204,7 +202,7 @@ function LlmConfigModal({ onClose, onStart }: LlmConfigModalProps) {
             className="h-7 text-xs"
             onClick={onClose}
           >
-            Annuler
+            {t("llmModal.cancel")}
           </Button>
           <Button
             size="sm"
@@ -217,7 +215,7 @@ function LlmConfigModal({ onClose, onStart }: LlmConfigModalProps) {
             ) : (
               <Play className="mr-1 h-3 w-3" />
             )}
-            Traduire
+            {t("llmModal.start")}
           </Button>
         </div>
       </div>
@@ -230,6 +228,7 @@ function LlmConfigModal({ onClose, onStart }: LlmConfigModalProps) {
 // ---------------------------------------------------------------------------
 
 function Toolbar({ onOpenLlmConfig }: { onOpenLlmConfig: () => void }) {
+  const { t, i18n } = useTranslation();
   const [isOpening, setIsOpening] = useState(false);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const activeProject = useProjectStore((s) =>
@@ -242,9 +241,9 @@ function Toolbar({ onOpenLlmConfig }: { onOpenLlmConfig: () => void }) {
     if (!activeProjectId) return;
     try {
       await invoke("export_project", { projectId: activeProjectId });
-      toast.success("Jeu exporté avec les traductions");
+      toast.success(t("toasts.exportSuccess"));
     } catch (err) {
-      toast.error(String(err));
+      toast.error(t("toasts.exportError", { error: String(err) }));
     }
   }
 
@@ -252,7 +251,7 @@ function Toolbar({ onOpenLlmConfig }: { onOpenLlmConfig: () => void }) {
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "Ouvrir un jeu",
+      title: t("toolbar.openGame"),
     });
     if (!selected) return;
 
@@ -264,6 +263,10 @@ function Toolbar({ onOpenLlmConfig }: { onOpenLlmConfig: () => void }) {
     } finally {
       setIsOpening(false);
     }
+  }
+
+  function handleToggleLang() {
+    void i18n.changeLanguage(i18n.language === "fr" ? "en" : "fr");
   }
 
   return (
@@ -284,7 +287,7 @@ function Toolbar({ onOpenLlmConfig }: { onOpenLlmConfig: () => void }) {
         ) : (
           <FolderOpen className="h-3.5 w-3.5" />
         )}
-        Ouvrir un jeu
+        {t("toolbar.openGame")}
       </Button>
 
       {activeProjectId && (
@@ -301,8 +304,8 @@ function Toolbar({ onOpenLlmConfig }: { onOpenLlmConfig: () => void }) {
             <Play className="h-3.5 w-3.5" />
           )}
           {isTranslating
-            ? `Traduction… ${progress > 0 ? `${progress}%` : ""}`
-            : "Traduire"}
+            ? `${t("toolbar.translating")} ${progress > 0 ? `${progress}%` : ""}`
+            : t("toolbar.translate")}
         </Button>
       )}
 
@@ -315,9 +318,18 @@ function Toolbar({ onOpenLlmConfig }: { onOpenLlmConfig: () => void }) {
           disabled={isTranslating}
         >
           <Download className="h-3.5 w-3.5" />
-          Exporter
+          {t("toolbar.export")}
         </Button>
       )}
+
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 text-xs"
+        onClick={handleToggleLang}
+      >
+        {i18n.language === "fr" ? "🇬🇧 EN" : "🇫🇷 FR"}
+      </Button>
 
       {activeProjectId && activeProject && (
         <span className="ml-1 truncate text-xs text-muted-foreground">
@@ -355,13 +367,6 @@ export default function App() {
     (s) => s.activeSegmentTargetText,
   );
 
-  // The target text for live QA is tracked in SegmentGrid via onSave callbacks.
-  // For the QAPanel draft preview, we read the active segment's text from DOM
-  // (simplest approach for MVP: derive from rendered input value is tricky,
-  //  so we show QA based on the last-saved state instead).
-  //
-  // TODO F3: pipe live target draft through editor store for real-time QA.
-
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
       <Toolbar onOpenLlmConfig={() => setShowLlmConfig(true)} />
@@ -378,9 +383,7 @@ export default function App() {
           collapsible={false}
         >
           <div className="flex h-full flex-col overflow-hidden border-r">
-            <div className="shrink-0 border-b px-3 py-2 text-xs font-medium text-muted-foreground select-none">
-              Fichiers
-            </div>
+            <FileTreeHeader />
             <div className="flex-1 overflow-hidden">
               <FileTree />
             </div>
@@ -430,6 +433,19 @@ export default function App() {
       )}
 
       <Toaster />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FileTree panel header (extracted so it can use useTranslation)
+// ---------------------------------------------------------------------------
+
+function FileTreeHeader() {
+  const { t } = useTranslation();
+  return (
+    <div className="shrink-0 border-b px-3 py-2 text-xs font-medium text-muted-foreground select-none">
+      {t("fileTree.title")}
     </div>
   );
 }

@@ -1,0 +1,67 @@
+{
+  "toolbar": {
+    "openGame": "Open Game",
+    "translate": "Translate",
+    "export": "Export",
+    "translating": "Translating..."
+  },
+  "fileTree": {
+    "title": "Files",
+    "empty": "Open a game to view files"
+  },
+  "segmentGrid": {
+    "columns": {
+      "number": "#",
+      "source": "Source",
+      "target": "Target",
+      "status": "Status",
+      "qa": "QA"
+    },
+    "status": {
+      "untranslated": "Untranslated",
+      "translated": "Translated",
+      "reviewed": "Reviewed",
+      "needs_review": "Needs Review"
+    },
+    "empty": "Select a file in the left panel",
+    "loading": "Loading...",
+    "noSegments": "No segments in this file",
+    "footer": "{{count}} segments"
+  },
+  "tmPanel": {
+    "title": "Translation Memory",
+    "empty": "Select a segment to view TM suggestions",
+    "searching": "Searching...",
+    "noMatch": "No TM match",
+    "confidence": "{{percent}}%"
+  },
+  "qaPanel": {
+    "title": "QA",
+    "empty": "Select a segment to view QA errors",
+    "score": "Score",
+    "ok": "Segment OK",
+    "errors": {
+      "missing_placeholder": "Missing placeholder: {{name}}",
+      "line_too_long": "Line {{line}} too long ({{length}} / {{max}} chars)",
+      "bom_detected": "UTF-8 BOM detected at start of target"
+    }
+  },
+  "llmModal": {
+    "title": "LLM Configuration",
+    "urlLabel": "Ollama URL",
+    "modelLabel": "Model",
+    "modelLoading": "Loading models...",
+    "modelNone": "No model available",
+    "modelManual": "Enter model name manually",
+    "modelError": "Cannot reach Ollama — check the URL",
+    "cancel": "Cancel",
+    "start": "Translate"
+  },
+  "toasts": {
+    "exportSuccess": "Game exported with translations",
+    "exportError": "Export error: {{error}}"
+  },
+  "lang": {
+    "toggle": "EN"
+  }
+}

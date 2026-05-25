@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useSourceFiles } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
@@ -49,6 +50,7 @@ function fileIcon(fileType: string) {
 }
 
 export function FileTree() {
+  const { t } = useTranslation();
   const files = useSourceFiles();
   const activeFileId = useEditorStore((s) => s.activeFileId);
   const setActiveFile = useEditorStore((s) => s.setActiveFile);
@@ -57,9 +59,7 @@ export function FileTree() {
     return (
       <div className="flex h-full items-center justify-center p-4">
         <p className="text-center text-xs text-muted-foreground leading-relaxed">
-          Ouvrir un jeu
-          <br />
-          pour afficher les fichiers
+          {t("fileTree.empty")}
         </p>
       </div>
     );

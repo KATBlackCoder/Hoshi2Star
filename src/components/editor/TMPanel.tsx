@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { BookOpen } from "lucide-react";
 import {
@@ -40,6 +41,7 @@ interface TMPanelProps {
 }
 
 export function TMPanel({ onApply }: TMPanelProps) {
+  const { t } = useTranslation();
   const activeSegmentId = useActiveSegmentId();
   const sourceText = useActiveSegmentSourceText();
 
@@ -59,27 +61,25 @@ export function TMPanel({ onApply }: TMPanelProps) {
       {/* Header */}
       <div className="shrink-0 border-b px-3 py-2 text-xs font-medium text-muted-foreground select-none flex items-center gap-1.5">
         <BookOpen className="h-3 w-3" />
-        Mémoire de traduction
+        {t("tmPanel.title")}
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
         {!activeSegmentId && (
           <p className="py-4 text-center text-xs text-muted-foreground leading-relaxed">
-            Sélectionnez un segment
-            <br />
-            pour voir les suggestions TM
+            {t("tmPanel.empty")}
           </p>
         )}
 
         {activeSegmentId && isLoading && (
           <p className="py-4 text-center text-xs text-muted-foreground">
-            Recherche…
+            {t("tmPanel.searching")}
           </p>
         )}
 
         {activeSegmentId && !isLoading && suggestions.length === 0 && (
           <p className="py-4 text-center text-xs text-muted-foreground leading-relaxed">
-            Aucune correspondance TM
+            {t("tmPanel.noMatch")}
           </p>
         )}
 

@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { AlertTriangle, CheckCircle } from "lucide-react";
 import { useActiveSegmentId } from "@/stores/editor";
@@ -21,14 +22,23 @@ function errorIcon(type: QaErrorType["type"]) {
   }
 }
 
-function errorLabel(error: QaErrorType): string {
+function errorLabel(
+  error: QaErrorType,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string {
   switch (error.type) {
     case "missing_placeholder":
-      return `Placeholder manquant : ${error.placeholder}`;
+      return t("qaPanel.errors.missing_placeholder", {
+        name: error.placeholder,
+      });
     case "line_too_long":
-      return `Ligne ${error.line} trop longue (${error.length} / ${error.max} chars max)`;
+      return t("qaPanel.errors.line_too_long", {
+        line: error.line,
+        length: error.length,
+        max: error.max,
+      });
     case "bom_detected":
-      return "BOM UTF-8 détecté en début de target";
+      return t("qaPanel.errors.bom_detected");
   }
 }
 
@@ -65,6 +75,7 @@ interface QAPanelProps {
 }
 
 export function QAPanel({ sourceText, targetText }: QAPanelProps) {
+  const { t } = useTranslation();
   const activeSegmentId = useActiveSegmentId();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
 
@@ -95,7 +106,7 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
       {/* Header with project QA badge */}
       <div className="shrink-0 border-b px-3 py-2 flex items-center justify-between">
         <span className="text-xs font-medium text-muted-foreground select-none">
-          QA
+          {t("qaPanel.title")}
         </span>
         {qaReport && qaReport.totalSegments > 0 && (
           <span className="text-[10px] text-muted-foreground tabular-nums">
@@ -107,9 +118,7 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
       <div className="flex-1 overflow-y-auto p-2">
         {!activeSegmentId && (
           <p className="py-4 text-center text-xs text-muted-foreground leading-relaxed">
-            Sélectionnez un segment
-            <br />
-            pour voir les erreurs QA
+            {t("qaPanel.empty")}
           </p>
         )}
 
@@ -117,7 +126,9 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
           <>
             {/* Score */}
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">Score</span>
+              <span className="text-xs text-muted-foreground">
+                {t("qaPanel.score")}
+              </span>
               <ScoreBadge score={qaResult.score} />
             </div>
 
@@ -125,7 +136,7 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
             {qaResult.errors.length === 0 ? (
               <div className="flex items-center gap-1.5 py-1 text-xs text-green-400">
                 <CheckCircle className="h-3 w-3 shrink-0" />
-                <span>Segment OK</span>
+                <span>{t("qaPanel.ok")}</span>
               </div>
             ) : (
               <ul className="space-y-1">
@@ -135,7 +146,7 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
                     className="flex items-start gap-1.5 rounded bg-muted/30 px-2 py-1.5 text-xs"
                   >
                     {errorIcon(err.type)}
-                    <span className="leading-snug">{errorLabel(err)}</span>
+                    <span className="leading-snug">{errorLabel(err, t)}</span>
                   </li>
                 ))}
               </ul>

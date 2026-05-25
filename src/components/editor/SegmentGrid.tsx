@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   useReactTable,
   getCoreRowModel,
@@ -21,6 +22,7 @@ export function SegmentGrid({
   highlightPlaceholders = false,
 }: SegmentGridProps) {
   void highlightPlaceholders; // consumed by columns in future — prop reserved for F2
+  const { t, i18n } = useTranslation();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const activeFileId = useEditorStore((s) => s.activeFileId);
   const setActiveSegment = useEditorStore((s) => s.setActiveSegment);
@@ -121,8 +123,10 @@ export function SegmentGrid({
         totalRows: segments.length,
         onSave: handleSave,
         onTabNext: handleTabNext,
+        t,
       }),
-    [segments.length, handleSave, handleTabNext],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [segments.length, handleSave, handleTabNext, i18n.language],
   );
 
   const table = useReactTable({
@@ -138,7 +142,7 @@ export function SegmentGrid({
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-sm text-muted-foreground">
-          Sélectionner un fichier dans le panneau gauche
+          {t("segmentGrid.empty")}
         </p>
       </div>
     );
@@ -147,7 +151,9 @@ export function SegmentGrid({
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-sm text-muted-foreground">Chargement…</p>
+        <p className="text-sm text-muted-foreground">
+          {t("segmentGrid.loading")}
+        </p>
       </div>
     );
   }
@@ -156,7 +162,7 @@ export function SegmentGrid({
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-sm text-muted-foreground">
-          Aucun segment dans ce fichier
+          {t("segmentGrid.noSegments")}
         </p>
       </div>
     );
@@ -243,7 +249,7 @@ export function SegmentGrid({
 
       {/* Footer: segment count */}
       <div className="shrink-0 border-t px-3 py-1.5 text-xs text-muted-foreground">
-        {segments.length.toLocaleString()} segments
+        {t("segmentGrid.footer", { count: segments.length.toLocaleString() })}
       </div>
     </div>
   );

@@ -1,0 +1,67 @@
+{
+  "toolbar": {
+    "openGame": "Ouvrir un jeu",
+    "translate": "Traduire",
+    "export": "Exporter",
+    "translating": "Traduction..."
+  },
+  "fileTree": {
+    "title": "Fichiers",
+    "empty": "Ouvrir un jeu pour afficher les fichiers"
+  },
+  "segmentGrid": {
+    "columns": {
+      "number": "#",
+      "source": "Source",
+      "target": "Cible",
+      "status": "Statut",
+      "qa": "QA"
+    },
+    "status": {
+      "untranslated": "Non traduit",
+      "translated": "Traduit",
+      "reviewed": "Révisé",
+      "needs_review": "À réviser"
+    },
+    "empty": "Sélectionner un fichier dans le panneau gauche",
+    "loading": "Chargement…",
+    "noSegments": "Aucun segment dans ce fichier",
+    "footer": "{{count}} segments"
+  },
+  "tmPanel": {
+    "title": "Mémoire de traduction",
+    "empty": "Sélectionnez un segment pour voir les suggestions TM",
+    "searching": "Recherche…",
+    "noMatch": "Aucune correspondance TM",
+    "confidence": "{{percent}}%"
+  },
+  "qaPanel": {
+    "title": "QA",
+    "empty": "Sélectionnez un segment pour voir les erreurs QA",
+    "score": "Score",
+    "ok": "Segment OK",
+    "errors": {
+      "missing_placeholder": "Placeholder manquant : {{name}}",
+      "line_too_long": "Ligne {{line}} trop longue ({{length}} / {{max}} chars max)",
+      "bom_detected": "BOM UTF-8 détecté en début de target"
+    }
+  },
+  "llmModal": {
+    "title": "Configuration LLM",
+    "urlLabel": "URL Ollama",
+    "modelLabel": "Modèle",
+    "modelLoading": "Chargement des modèles…",
+    "modelNone": "Aucun modèle disponible",
+    "modelManual": "Saisir le modèle manuellement",
+    "modelError": "Impossible de contacter Ollama — vérifiez l'URL",
+    "cancel": "Annuler",
+    "start": "Traduire"
+  },
+  "toasts": {
+    "exportSuccess": "Jeu exporté avec les traductions",
+    "exportError": "Erreur export : {{error}}"
+  },
+  "lang": {
+    "toggle": "FR"
+  }
+}

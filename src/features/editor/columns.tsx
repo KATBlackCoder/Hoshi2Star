@@ -1,18 +1,12 @@
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { Segment, SegmentStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Status badge
 // ---------------------------------------------------------------------------
-
-const STATUS_LABELS: Record<SegmentStatus, string> = {
-  untranslated: "Non traduit",
-  translated: "Traduit",
-  reviewed: "Relu",
-  needs_review: "À relire",
-};
 
 const STATUS_COLORS: Record<SegmentStatus, string> = {
   untranslated: "text-muted-foreground",
@@ -22,9 +16,10 @@ const STATUS_COLORS: Record<SegmentStatus, string> = {
 };
 
 function StatusBadge({ status }: { status: SegmentStatus }) {
+  const { t } = useTranslation();
   return (
     <span className={cn("text-xs font-medium", STATUS_COLORS[status])}>
-      {STATUS_LABELS[status]}
+      {t(`segmentGrid.status.${status}`)}
     </span>
   );
 }
@@ -94,7 +89,7 @@ function EditableCell({
   return (
     <textarea
       id={`target-input-${rowIndex}`}
-      className="w-full resize-none bg-transparent text-xs outline-none focus:bg-muted/30 rounded px-1 py-0.5 min-h-[2rem]"
+      className="w-full resize-none bg-transparent text-xs outline-none focus:bg-muted/30 rounded px-1 py-0.5 min-h-8"
       value={value}
       rows={1}
       onChange={(e) => setValue(e.target.value)}
@@ -115,6 +110,7 @@ export interface SegmentColumnMeta {
   totalRows: number;
   onSave: (id: string, text: string) => Promise<void>;
   onTabNext: (currentIndex: number) => void;
+  t: (key: string) => string;
 }
 
 export function createSegmentColumns(
@@ -123,7 +119,7 @@ export function createSegmentColumns(
   return [
     helper.display({
       id: "index",
-      header: "#",
+      header: meta.t("segmentGrid.columns.number"),
       size: 56,
       cell: (ctx) => (
         <span className="text-xs text-muted-foreground tabular-nums select-none">
@@ -133,7 +129,7 @@ export function createSegmentColumns(
     }) as ColumnDef<Segment>,
 
     helper.accessor("sourceText", {
-      header: "Source",
+      header: meta.t("segmentGrid.columns.source"),
       size: 0, // flex
       cell: (ctx) => (
         <p className="text-xs leading-relaxed whitespace-pre-wrap">
@@ -143,7 +139,7 @@ export function createSegmentColumns(
     }) as ColumnDef<Segment>,
 
     helper.accessor("targetText", {
-      header: "Cible",
+      header: meta.t("segmentGrid.columns.target"),
       size: 0, // flex
       cell: (ctx) => (
         <EditableCell
@@ -158,13 +154,13 @@ export function createSegmentColumns(
     }) as ColumnDef<Segment>,
 
     helper.accessor("status", {
-      header: "Statut",
+      header: meta.t("segmentGrid.columns.status"),
       size: 100,
       cell: (ctx) => <StatusBadge status={ctx.getValue()} />,
     }) as ColumnDef<Segment>,
 
     helper.accessor("qaScore", {
-      header: "QA",
+      header: meta.t("segmentGrid.columns.qa"),
       size: 52,
       cell: (ctx) => {
         const score = ctx.getValue();
