@@ -2,7 +2,7 @@
 
 # Hoshi2Star ★
 
-![Version](https://img.shields.io/badge/version-0.1.0-blue)
+![Version](https://img.shields.io/badge/version-0.2.1-blue)
 ![Licence](https://img.shields.io/badge/licence-MIT-green)
 ![Plateformes](https://img.shields.io/badge/plateformes-Linux%20%7C%20Windows-lightgrey)
 
@@ -83,12 +83,12 @@ chmod +x hoshi2star_*.AppImage
 
 1. Démarrer Ollama : `ollama serve`
 2. Ouvrir Hoshi2Star
-3. Cliquer sur **"Open Game"** → sélectionner le dossier du jeu
+3. Cliquer sur **"Ouvrir un jeu"** → sélectionner le dossier du jeu
 4. Sélectionner un fichier dans le panneau gauche
-5. Cliquer sur **"Translate"** → configurer Ollama (URL + modèle)
+5. Cliquer sur **"Traduire"** → configurer Ollama (URL + modèle)
 6. Lancer la traduction
 7. Réviser et modifier les segments dans la grille
-8. Cliquer sur **"Export"** pour appliquer les traductions au jeu
+8. Cliquer sur **"Exporter"** pour appliquer les traductions au jeu
 
 ---
 
