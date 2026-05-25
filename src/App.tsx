@@ -24,10 +24,11 @@ import {
   useLlmStore,
   useIsTranslating,
   useTranslationProgress,
+  useTranslationStartTime,
 } from "@/stores/llm";
 import { Toaster } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
-import { Download, FolderOpen, Loader2, Play, X } from "lucide-react";
+import { Clock, Download, FolderOpen, Loader2, Play, X } from "lucide-react";
 import { toast } from "sonner";
 
 // ---------------------------------------------------------------------------
@@ -59,6 +60,43 @@ export function HighlightedSource({ text }: { text: string }) {
     parts.push(text.slice(last));
   }
   return <>{parts}</>;
+}
+
+// ---------------------------------------------------------------------------
+// Translation timer
+// ---------------------------------------------------------------------------
+
+function TranslationTimer() {
+  const startTime = useTranslationStartTime();
+  const isTranslating = useIsTranslating();
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    if (!startTime) {
+      setElapsed(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [startTime]);
+
+  if (!startTime) return null;
+
+  const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
+  const ss = String(elapsed % 60).padStart(2, "0");
+
+  return (
+    <div
+      className={`flex items-center gap-1 font-mono text-xs tabular-nums ${
+        isTranslating ? "text-muted-foreground" : "text-green-400"
+      }`}
+    >
+      <Clock className="h-3 w-3 shrink-0" />
+      {mm}:{ss}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -340,13 +378,16 @@ function Toolbar({ onOpenLlmConfig }: { onOpenLlmConfig: () => void }) {
         </span>
       )}
 
-      {/* Progress bar */}
+      {/* Progress bar + timer */}
       {isTranslating && progress >= 0 && (
-        <div className="ml-auto mr-2 h-1.5 w-32 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-primary transition-all duration-300"
-            style={{ width: `${progress}%` }}
-          />
+        <div className="ml-auto flex items-center gap-2 mr-2">
+          <TranslationTimer />
+          <div className="h-1.5 w-32 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-300"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
         </div>
       )}
     </div>

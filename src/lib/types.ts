@@ -65,7 +65,13 @@ export interface TmEntry {
 
 export type QaErrorType =
   | { type: "missing_placeholder"; placeholder: string }
-  | { type: "line_too_long"; line: number; length: number; max: number }
+  | {
+      type: "line_too_long";
+      line: number;
+      units: number;
+      max_units: number;
+      char_count: number;
+    }
   | { type: "bom_detected" };
 
 export interface QaResult {

@@ -194,13 +194,24 @@ where
 
         let texts_for_llm: Vec<String> = tokenized.iter().map(|t| t.text.clone()).collect();
 
-        // Retry loop
+        // Retry loop — couvre deux cas d'échec récupérables :
+        //   1. ResponseFormat : le LLM a retourné un mauvais nombre de lignes
+        //   2. Placeholder manquant : Tokenizer::restore échoue
+        // Les erreurs réseau (Http, Unavailable) sont propagées immédiatement.
         let mut attempt = 0u32;
         let restored_texts = loop {
-            let llm_out = provider
+            let llm_result = provider
                 .translate(texts_for_llm.clone(), context.clone())
-                .await
-                .map_err(PipelineError::from)?;
+                .await;
+
+            let llm_out = match llm_result {
+                Ok(out) => out,
+                Err(LlmError::ResponseFormat(_)) if attempt + 1 < MAX_RETRIES => {
+                    attempt += 1;
+                    continue;
+                }
+                Err(e) => return Err(PipelineError::from(e)),
+            };
 
             // Validate + restore
             let mut all_ok = true;
@@ -271,12 +282,12 @@ mod tests {
 
     struct MockProvider {
         /// Responses returned in sequence.  Each call pops the front.
-        responses: std::sync::Mutex<std::collections::VecDeque<Result<Vec<String>, String>>>,
+        responses: std::sync::Mutex<std::collections::VecDeque<Result<Vec<String>, LlmError>>>,
         call_count: std::sync::atomic::AtomicU32,
     }
 
     impl MockProvider {
-        fn new(responses: Vec<Result<Vec<String>, String>>) -> Self {
+        fn new(responses: Vec<Result<Vec<String>, LlmError>>) -> Self {
             Self {
                 responses: std::sync::Mutex::new(responses.into()),
                 call_count: std::sync::atomic::AtomicU32::new(0),
@@ -298,8 +309,7 @@ mod tests {
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             let mut q = self.responses.lock().unwrap();
             match q.pop_front() {
-                Some(Ok(v)) => Ok(v),
-                Some(Err(msg)) => Err(LlmError::Unavailable { message: msg }),
+                Some(result) => result,
                 None => panic!("MockProvider: no more responses queued"),
             }
         }
@@ -401,6 +411,34 @@ mod tests {
 
         assert_eq!(provider.calls(), 2, "should retry once");
         assert_eq!(results[0].translated_text, r"\V[12] coins");
+    }
+
+    #[tokio::test]
+    async fn test_response_format_error_triggers_retry() {
+        let (db, _f) = test_db().await;
+
+        // Premier appel : ResponseFormat (ex: qwen3 retourne vide après strip)
+        // Deuxième appel : réponse correcte
+        let provider = MockProvider::new(vec![
+            Err(LlmError::ResponseFormat(
+                "expected 1 lines, got 0".to_string(),
+            )),
+            Ok(vec!["Hero".to_string()]),
+        ]);
+
+        let results = run_inner(
+            vec![("s1".to_string(), "主人公".to_string())],
+            &provider,
+            ctx(),
+            &db,
+            |_, _| {},
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(provider.calls(), 2, "should retry once on ResponseFormat");
+        assert_eq!(results[0].translated_text, "Hero");
+        assert!(!results[0].from_tm);
     }
 
     #[tokio::test]

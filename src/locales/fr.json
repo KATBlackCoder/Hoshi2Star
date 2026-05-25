@@ -42,7 +42,7 @@
     "ok": "Segment OK",
     "errors": {
       "missing_placeholder": "Placeholder manquant : {{name}}",
-      "line_too_long": "Ligne {{line}} trop longue ({{length}} / {{max}} chars max)",
+      "line_too_long": "Ligne {{line}} trop large ({{units}} / {{maxUnits}} unités — {{chars}} caractères)",
       "bom_detected": "BOM UTF-8 détecté en début de target"
     }
   },

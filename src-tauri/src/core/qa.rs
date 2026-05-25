@@ -3,9 +3,12 @@
 //! ## Checks (in priority order)
 //! 1. **Placeholders** — every escape code present in the source (`\V[n]`, `\C[n]`, …)
 //!    must also appear in the target.  Uses the tokenizer to enumerate them.
-//! 2. **Line length** — MV/MZ message boxes display at most `MAX_CHARS_PER_LINE` chars
-//!    on `MAX_LINES` lines.  Lines beyond `MAX_LINES` are ignored (they typically
-//!    overflow to the next message).
+//! 2. **Line width** — MV/MZ message boxes have ~720 px of usable width.
+//!    Full-width characters (CJK, hiragana, katakana) count as 2 half-width units;
+//!    ASCII and other half-width characters count as 1 unit.
+//!    The configurable limit is ~55.38 units (720 px / 13 px per half-width char).
+//!    Lines beyond `LineWidthConfig::max_lines` are ignored.
+//!    Empty lines are skipped.
 //! 3. **BOM** — a UTF-8 BOM (`\u{FEFF}`) at the start of the target causes
 //!    mojibake in the game engine.
 //!
@@ -22,29 +25,67 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 // ---------------------------------------------------------------------------
-// Constants
+// Config
 // ---------------------------------------------------------------------------
 
-/// Maximum characters per line for MV/MZ message boxes.
-pub const MAX_CHARS_PER_LINE: usize = 50;
+/// Layout parameters for RPG Maker MV/MZ message boxes.
+///
+/// Default values are calibrated for the standard MV/MZ 816 px window
+/// with ~48 px margins → ~720 px usable, using the default game font
+/// (DejaVu Sans Mono-like metrics: 26 px full-width, 13 px half-width).
+///
+/// In F3, `LineWidthConfig` will be exposed as a per-project setting.
+#[derive(Debug, Clone)]
+pub struct LineWidthConfig {
+    /// Usable box width in pixels (default: 720).
+    pub box_width_px: f32,
+    /// Width of one full-width character in pixels (default: 26.0).
+    pub fullwidth_char_px: f32,
+    /// Width of one half-width character in pixels (default: 13.0).
+    pub halfwidth_char_px: f32,
+    /// Maximum number of lines to check per segment (default: 4).
+    pub max_lines: usize,
+}
 
-/// Maximum lines checked in one segment (excess lines are not checked).
-pub const MAX_LINES: usize = 4;
+impl Default for LineWidthConfig {
+    fn default() -> Self {
+        Self {
+            box_width_px: 720.0,
+            fullwidth_char_px: 26.0,
+            halfwidth_char_px: 13.0,
+            max_lines: 4,
+        }
+    }
+}
+
+impl LineWidthConfig {
+    /// Maximum line width in half-width units (derived: `box_width_px / halfwidth_char_px`).
+    ///
+    /// With default values: 720 / 13 ≈ 55.38 units.
+    pub fn max_halfwidth_units(&self) -> f32 {
+        self.box_width_px / self.halfwidth_char_px
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum QaError {
     MissingPlaceholder {
         placeholder: String,
     },
     LineTooLong {
+        /// 1-based line number.
         line: usize,
-        length: usize,
-        max: usize,
+        /// Measured width in half-width units (full-width = 2, half-width = 1).
+        units: f32,
+        /// Configured maximum width in half-width units.
+        max_units: f32,
+        /// Raw character count of the line.
+        char_count: usize,
     },
     BomDetected,
 }
@@ -53,6 +94,68 @@ pub enum QaError {
 pub struct QaResult {
     pub score: u8,
     pub errors: Vec<QaError>,
+}
+
+// ---------------------------------------------------------------------------
+// Width measurement
+// ---------------------------------------------------------------------------
+
+/// Returns `true` if `c` is a full-width character (CJK, kana, full-width ASCII/symbols).
+fn is_fullwidth(c: char) -> bool {
+    matches!(
+        c,
+        // CJK Unified Ideographs
+        '\u{4E00}'..='\u{9FFF}'
+        // Hiragana
+        | '\u{3040}'..='\u{309F}'
+        // Katakana
+        | '\u{30A0}'..='\u{30FF}'
+        // Full-width ASCII and half-width/full-width forms
+        | '\u{FF00}'..='\u{FFEF}'
+        // CJK Compatibility Ideographs
+        | '\u{F900}'..='\u{FAFF}'
+        // CJK Extension A
+        | '\u{3400}'..='\u{4DBF}'
+        // CJK Symbols and Punctuation
+        | '\u{3000}'..='\u{303F}'
+    )
+}
+
+/// Measures the display width of `line` in half-width units.
+///
+/// Full-width characters count as 2 units; all other characters count as 1 unit.
+pub fn measure_line_units(line: &str) -> f32 {
+    line.chars()
+        .map(|c| if is_fullwidth(c) { 2.0_f32 } else { 1.0_f32 })
+        .sum()
+}
+
+// ---------------------------------------------------------------------------
+// Internal checks
+// ---------------------------------------------------------------------------
+
+fn check_line_length(text: &str, config: &LineWidthConfig) -> Vec<QaError> {
+    let max_units = config.max_halfwidth_units();
+    text.lines()
+        .take(config.max_lines)
+        .enumerate()
+        .filter_map(|(i, line)| {
+            if line.trim().is_empty() {
+                return None;
+            }
+            let units = measure_line_units(line);
+            if units > max_units {
+                Some(QaError::LineTooLong {
+                    line: i + 1,
+                    units,
+                    max_units,
+                    char_count: line.chars().count(),
+                })
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -84,17 +187,8 @@ pub fn check(source: &str, target: &str) -> QaResult {
         }
     }
 
-    // 3. Line length check (up to MAX_LINES lines)
-    for (i, line) in target.lines().take(MAX_LINES).enumerate() {
-        let len = line.chars().count();
-        if len > MAX_CHARS_PER_LINE {
-            errors.push(QaError::LineTooLong {
-                line: i + 1,
-                length: len,
-                max: MAX_CHARS_PER_LINE,
-            });
-        }
-    }
+    // 3. Line width check
+    errors.extend(check_line_length(target, &LineWidthConfig::default()));
 
     // Score calculation
     let penalty: i32 = errors
@@ -118,6 +212,97 @@ pub fn check(source: &str, target: &str) -> QaResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- is_fullwidth ---
+
+    #[test]
+    fn test_is_fullwidth_kanji() {
+        assert!(is_fullwidth('日'));
+        assert!(is_fullwidth('本'));
+        assert!(is_fullwidth('語'));
+    }
+
+    #[test]
+    fn test_is_fullwidth_hiragana() {
+        assert!(is_fullwidth('あ'));
+        assert!(is_fullwidth('い'));
+        assert!(is_fullwidth('う'));
+    }
+
+    #[test]
+    fn test_is_fullwidth_katakana() {
+        assert!(is_fullwidth('ア'));
+        assert!(is_fullwidth('カ'));
+    }
+
+    #[test]
+    fn test_is_fullwidth_ascii_halfwidth() {
+        assert!(!is_fullwidth('A'));
+        assert!(!is_fullwidth('1'));
+        assert!(!is_fullwidth(' '));
+        assert!(!is_fullwidth('!'));
+    }
+
+    // --- measure_line_units ---
+
+    #[test]
+    fn test_measure_line_units_ascii() {
+        assert_eq!(measure_line_units("ABC"), 3.0);
+    }
+
+    #[test]
+    fn test_measure_line_units_japanese() {
+        // 3 kanji × 2 = 6
+        assert_eq!(measure_line_units("日本語"), 6.0);
+    }
+
+    #[test]
+    fn test_measure_line_units_mixed() {
+        // 'A'=1 + 'B'=1 + '日'=2 = 4
+        assert_eq!(measure_line_units("AB日"), 4.0);
+    }
+
+    // --- check_line_length ---
+
+    #[test]
+    fn test_check_line_length_empty_lines_ignored() {
+        let errors = check_line_length("\n   \n", &LineWidthConfig::default());
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_check_line_length_jp_long_triggers_error() {
+        // 28 kanji × 2 = 56.0 units > 55.38 max
+        let line = "日".repeat(28);
+        let errors = check_line_length(&line, &LineWidthConfig::default());
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            QaError::LineTooLong {
+                line: n,
+                units,
+                max_units,
+                char_count,
+            } => {
+                assert_eq!(*n, 1);
+                assert_eq!(*char_count, 28);
+                assert!(
+                    *units > *max_units,
+                    "units={units} should exceed max_units={max_units}"
+                );
+            }
+            _ => panic!("expected LineTooLong"),
+        }
+    }
+
+    #[test]
+    fn test_check_line_length_en_within_limit() {
+        // 55 ASCII chars = 55.0 units < 55.38 max → no error
+        let line = "A".repeat(55);
+        let errors = check_line_length(&line, &LineWidthConfig::default());
+        assert!(errors.is_empty());
+    }
+
+    // --- check() integration ---
 
     #[test]
     fn test_clean_segment_score_100() {
@@ -146,17 +331,23 @@ mod tests {
 
     #[test]
     fn test_line_too_long() {
-        let long_line = "A".repeat(51);
+        // 56 ASCII chars = 56.0 units > 55.38 max
+        let long_line = "A".repeat(56);
         let result = check("hello", &long_line);
         assert_eq!(result.errors.len(), 1);
-        assert!(matches!(
-            &result.errors[0],
+        match &result.errors[0] {
             QaError::LineTooLong {
-                line: 1,
-                length: 51,
-                max: 50
+                line,
+                units,
+                max_units,
+                char_count,
+            } => {
+                assert_eq!(*line, 1);
+                assert_eq!(*char_count, 56);
+                assert!(*units > *max_units);
             }
-        ));
+            _ => panic!("expected LineTooLong"),
+        }
         assert_eq!(result.score, 90); // 100 - 10
     }
 
@@ -171,9 +362,9 @@ mod tests {
     #[test]
     fn test_cumulative_score() {
         // BOM + missing placeholder + long line = -15 -25 -10 = 50
-        let long_line = format!("\u{FEFF}{}", "A".repeat(51));
+        // '\u{FEFF}' (1 unit) + 56 × 'A' (56 units) = 57.0 > 55.38 → LineTooLong
+        let long_line = format!("\u{FEFF}{}", "A".repeat(56));
         let result = check(r"\V[12]", &long_line);
-        // BomDetected + MissingPlaceholder + LineTooLong = 15+25+10 = 50
         assert_eq!(result.score, 50);
         assert_eq!(result.errors.len(), 3);
     }
@@ -187,7 +378,6 @@ mod tests {
 
     #[test]
     fn test_no_source_placeholders_passes() {
-        // No placeholders in source → check does not fail
         let result = check("こんにちは", "Hello");
         assert_eq!(result.score, 100);
         assert!(result.errors.is_empty());
@@ -195,11 +385,10 @@ mod tests {
 
     #[test]
     fn test_lines_beyond_max_ignored() {
-        // 5 long lines — only first 4 are checked
-        let lines: Vec<String> = (0..5).map(|_| "A".repeat(51)).collect();
+        // 5 lines of 56 'A' — only first 4 are checked (max_lines = 4)
+        let lines: Vec<String> = (0..5).map(|_| "A".repeat(56)).collect();
         let text = lines.join("\n");
         let result = check("hello", &text);
-        // Only 4 errors (MAX_LINES = 4)
         let long_errors: Vec<_> = result
             .errors
             .iter()

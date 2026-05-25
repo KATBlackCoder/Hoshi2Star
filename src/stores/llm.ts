@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { toast } from "sonner";
 import type { ProviderConfig } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -18,11 +19,18 @@ interface LlmState {
   translationProgress: number;
   providerConfig: ProviderConfig;
   error: string | null;
+  /** timestamp Date.now() when translation started, null when idle */
+  translationStartTime: number | null;
+  /** fileId → elapsed seconds after completion */
+  fileTranslationTimes: Record<string, number>;
 
   // Actions
   setProviderConfig: (cfg: Partial<ProviderConfig>) => void;
   startTranslation: (segmentIds: string[], fileId?: string) => Promise<void>;
   reset: () => void;
+  startTimer: () => void;
+  stopTimer: (fileId: string) => void;
+  clearFileTime: (fileId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -47,14 +55,36 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
   translationProgress: -1,
   providerConfig: { ...DEFAULT_CONFIG },
   error: null,
+  translationStartTime: null,
+  fileTranslationTimes: {},
 
   setProviderConfig: (cfg) =>
     set((s) => ({ providerConfig: { ...s.providerConfig, ...cfg } })),
+
+  startTimer: () => set({ translationStartTime: Date.now() }),
+
+  stopTimer: (fileId) => {
+    const { translationStartTime, fileTranslationTimes } = get();
+    if (translationStartTime === null) return;
+    const elapsed = Math.floor((Date.now() - translationStartTime) / 1000);
+    set({
+      translationStartTime: null,
+      fileTranslationTimes: { ...fileTranslationTimes, [fileId]: elapsed },
+    });
+  },
+
+  clearFileTime: (fileId) =>
+    set((s) => {
+      const times = { ...s.fileTranslationTimes };
+      delete times[fileId];
+      return { fileTranslationTimes: times };
+    }),
 
   startTranslation: async (segmentIds, fileId) => {
     if (get().isTranslating) return;
 
     set({ isTranslating: true, translationProgress: 0, error: null });
+    get().startTimer();
 
     // Tear down any previous listeners
     progressUnlisten?.();
@@ -72,6 +102,7 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
     );
 
     completedUnlisten = await listen("h2s://llm/completed", () => {
+      if (fileId) get().stopTimer(fileId);
       set({ isTranslating: false, translationProgress: 100 });
       progressUnlisten?.();
       completedUnlisten?.();
@@ -85,6 +116,9 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
           isTranslating: false,
           translationProgress: -1,
           error: event.payload.message,
+        });
+        toast.error(`Erreur de traduction : ${event.payload.message}`, {
+          duration: 6000,
         });
         progressUnlisten?.();
         completedUnlisten?.();
@@ -111,7 +145,12 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
   },
 
   reset: () =>
-    set({ isTranslating: false, translationProgress: -1, error: null }),
+    set({
+      isTranslating: false,
+      translationProgress: -1,
+      error: null,
+      translationStartTime: null,
+    }),
 }));
 
 // Selectors
@@ -119,3 +158,7 @@ export const useIsTranslating = () => useLlmStore((s) => s.isTranslating);
 export const useTranslationProgress = () =>
   useLlmStore((s) => s.translationProgress);
 export const useProviderConfig = () => useLlmStore((s) => s.providerConfig);
+export const useTranslationStartTime = () =>
+  useLlmStore((s) => s.translationStartTime);
+export const useFileTranslationTimes = () =>
+  useLlmStore((s) => s.fileTranslationTimes);

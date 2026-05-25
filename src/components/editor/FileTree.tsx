@@ -1,7 +1,9 @@
 import { useTranslation } from "react-i18next";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
 import { useSourceFiles } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
+import { useFileTranslationTimes } from "@/stores/llm";
 import { cn } from "@/lib/utils";
 import {
   FileText,
@@ -49,11 +51,19 @@ function fileIcon(fileType: string) {
   }
 }
 
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
+}
+
 export function FileTree() {
   const { t } = useTranslation();
   const files = useSourceFiles();
   const activeFileId = useEditorStore((s) => s.activeFileId);
   const setActiveFile = useEditorStore((s) => s.setActiveFile);
+  const fileTranslationTimes = useFileTranslationTimes();
 
   if (files.length === 0) {
     return (
@@ -81,6 +91,14 @@ export function FileTree() {
           >
             {fileIcon(file.fileType)}
             <span className="truncate">{file.fileName}</span>
+            {fileTranslationTimes[file.id] !== undefined && (
+              <Badge
+                variant="secondary"
+                className="ml-auto shrink-0 text-[10px] opacity-70 px-1 py-0"
+              >
+                {formatDuration(fileTranslationTimes[file.id])}
+              </Badge>
+            )}
           </button>
         ))}
       </div>

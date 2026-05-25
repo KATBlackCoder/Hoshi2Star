@@ -34,8 +34,9 @@ function errorLabel(
     case "line_too_long":
       return t("qaPanel.errors.line_too_long", {
         line: error.line,
-        length: error.length,
-        max: error.max,
+        units: error.units.toFixed(1),
+        maxUnits: error.max_units.toFixed(1),
+        chars: error.char_count,
       });
     case "bom_detected":
       return t("qaPanel.errors.bom_detected");

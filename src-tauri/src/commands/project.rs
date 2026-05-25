@@ -423,6 +423,7 @@ pub async fn translate_segments(
     };
 
     if pairs.is_empty() {
+        let _ = app.emit("h2s://llm/completed", serde_json::json!({ "count": 0 }));
         return Ok(());
     }
 
