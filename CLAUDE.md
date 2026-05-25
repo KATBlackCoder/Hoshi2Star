@@ -117,9 +117,9 @@ const result = await invoke<MyType>('my_command', { param: 'value' })
 | `.unwrap()` outside tests | Custom `H2sError` enum via `thiserror` |
 
 **Linux GPU workarounds** (CachyOS, NVIDIA):
+- Wayland (session actuelle): `export __NV_DISABLE_EXPLICIT_SYNC=1`
 - X11: `export WEBKIT_DISABLE_DMABUF_RENDERER=1`
-- Wayland: `export __NV_DISABLE_EXPLICIT_SYNC=1`
-- Or use `pnpm tauri:linux` for X11 compositing workaround
+- Or use `pnpm tauri:linux` (configured for Wayland)
 
 ---
 

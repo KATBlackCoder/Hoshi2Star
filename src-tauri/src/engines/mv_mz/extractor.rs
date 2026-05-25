@@ -6,6 +6,7 @@
 //! JSON Pointer keys allow the injector to write translations back
 //! with `serde_json::Value::pointer_mut()`.
 
+use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
 use serde_json::Value;
 
 /// Semantic kind of a translatable text unit.
@@ -218,7 +219,7 @@ pub fn extract_skills(json: &Value) -> Vec<ExtractedSegment> {
             ("description", SegmentKind::SkillDescription),
         ] {
             if let Some(text) = entry.get(field).and_then(Value::as_str) {
-                if !text.is_empty() {
+                if !text.trim().is_empty() {
                     segments.push(ExtractedSegment::new(
                         format!("/{i}/{field}"),
                         text,
@@ -229,7 +230,7 @@ pub fn extract_skills(json: &Value) -> Vec<ExtractedSegment> {
         }
         for msg_field in &["message1", "message2"] {
             if let Some(text) = entry.get(msg_field).and_then(Value::as_str) {
-                if !text.is_empty() {
+                if !text.trim().is_empty() {
                     segments.push(ExtractedSegment::new(
                         format!("/{i}/{msg_field}"),
                         text,
@@ -269,7 +270,7 @@ pub fn extract_states(json: &Value) -> Vec<ExtractedSegment> {
         }
         for msg_field in &["message1", "message2", "message3", "message4"] {
             if let Some(text) = entry.get(msg_field).and_then(Value::as_str) {
-                if !text.is_empty() {
+                if !text.trim().is_empty() {
                     segments.push(ExtractedSegment::new(
                         format!("/{i}/{msg_field}"),
                         text,
@@ -292,7 +293,7 @@ pub fn extract_system(json: &Value) -> Vec<ExtractedSegment> {
     let mut segments = Vec::new();
 
     if let Some(title) = json.get("gameTitle").and_then(Value::as_str) {
-        if !title.is_empty() {
+        if !title.trim().is_empty() {
             segments.push(ExtractedSegment::new(
                 "/gameTitle",
                 title,
@@ -302,7 +303,7 @@ pub fn extract_system(json: &Value) -> Vec<ExtractedSegment> {
     }
 
     if let Some(currency) = json.get("currencyUnit").and_then(Value::as_str) {
-        if !currency.is_empty() {
+        if !currency.trim().is_empty() {
             segments.push(ExtractedSegment::new(
                 "/currencyUnit",
                 currency,
@@ -315,7 +316,7 @@ pub fn extract_system(json: &Value) -> Vec<ExtractedSegment> {
     if let Some(basic) = json.pointer("/terms/basic").and_then(Value::as_array) {
         for (i, term) in basic.iter().enumerate() {
             if let Some(text) = term.as_str() {
-                if !text.is_empty() {
+                if !text.trim().is_empty() {
                     segments.push(ExtractedSegment::new(
                         format!("/terms/basic/{i}"),
                         text,
@@ -330,7 +331,7 @@ pub fn extract_system(json: &Value) -> Vec<ExtractedSegment> {
     if let Some(commands) = json.pointer("/terms/commands").and_then(Value::as_array) {
         for (i, term) in commands.iter().enumerate() {
             if let Some(text) = term.as_str() {
-                if !text.is_empty() {
+                if !text.trim().is_empty() {
                     segments.push(ExtractedSegment::new(
                         format!("/terms/commands/{i}"),
                         text,
@@ -345,7 +346,7 @@ pub fn extract_system(json: &Value) -> Vec<ExtractedSegment> {
     if let Some(params) = json.pointer("/terms/params").and_then(Value::as_array) {
         for (i, term) in params.iter().enumerate() {
             if let Some(text) = term.as_str() {
-                if !text.is_empty() {
+                if !text.trim().is_empty() {
                     segments.push(ExtractedSegment::new(
                         format!("/terms/params/{i}"),
                         text,
@@ -362,7 +363,7 @@ pub fn extract_system(json: &Value) -> Vec<ExtractedSegment> {
         msg_keys.sort(); // deterministic ordering for tests
         for key in msg_keys {
             if let Some(text) = messages[key].as_str() {
-                if !text.is_empty() {
+                if !text.trim().is_empty() {
                     segments.push(ExtractedSegment::new(
                         format!("/terms/messages/{key}"),
                         text,
@@ -393,7 +394,7 @@ fn extract_simple_array(json: &Value, fields: &[(&str, SegmentKind)]) -> Vec<Ext
         }
         for (field, kind) in fields {
             if let Some(text) = entry.get(field).and_then(Value::as_str) {
-                if !text.is_empty() {
+                if !text.trim().is_empty() {
                     segments.push(ExtractedSegment::new(
                         format!("/{i}/{field}"),
                         text,
@@ -404,6 +405,21 @@ fn extract_simple_array(json: &Value, fields: &[(&str, SegmentKind)]) -> Vec<Ext
         }
     }
     segments
+}
+
+/// Returns `true` if `text` contains only RPG Maker escape codes and whitespace —
+/// nothing meaningful to translate once placeholders are stripped.
+fn is_placeholder_only(text: &str) -> bool {
+    let tok = Tokenizer::tokenize(text, TokEngine::MvMz);
+    if tok.map.is_empty() {
+        return false; // No placeholders at all — whatever text is there is real content
+    }
+    // Remove every ⟦ph_N⟧ token; check if anything translatable remains
+    let bare = tok
+        .map
+        .keys()
+        .fold(tok.text.clone(), |s, k| s.replace(k.as_str(), ""));
+    bare.trim().is_empty()
 }
 
 /// Extract dialogue and choices from an event command list.
@@ -425,7 +441,7 @@ fn extract_event_list(list: &[Value], list_path: &str, segments: &mut Vec<Extrac
             // Show Text header — in MZ, params[4] = speaker name
             101 => {
                 if let Some(name) = params.get(4).and_then(Value::as_str) {
-                    if !name.is_empty() {
+                    if !name.trim().is_empty() && !is_placeholder_only(name) {
                         segments.push(ExtractedSegment::new(
                             format!("{list_path}/{li}/parameters/4"),
                             name,
@@ -437,7 +453,7 @@ fn extract_event_list(list: &[Value], list_path: &str, segments: &mut Vec<Extrac
             // Show Text continuation — one line of dialogue
             401 => {
                 if let Some(text) = params.first().and_then(Value::as_str) {
-                    if !text.is_empty() {
+                    if !text.trim().is_empty() && !is_placeholder_only(text) {
                         segments.push(ExtractedSegment::new(
                             format!("{list_path}/{li}/parameters/0"),
                             text,
@@ -451,7 +467,7 @@ fn extract_event_list(list: &[Value], list_path: &str, segments: &mut Vec<Extrac
                 if let Some(choices) = params.first().and_then(Value::as_array) {
                     for (ci, choice) in choices.iter().enumerate() {
                         if let Some(text) = choice.as_str() {
-                            if !text.is_empty() {
+                            if !text.trim().is_empty() && !is_placeholder_only(text) {
                                 segments.push(ExtractedSegment::new(
                                     format!("{list_path}/{li}/parameters/0/{ci}"),
                                     text,
@@ -721,5 +737,117 @@ mod tests {
         assert_eq!(segs.len(), 1);
         assert_eq!(segs[0].source, "スライムの鳴き声！");
         assert_eq!(segs[0].key, "/1/pages/0/list/0/parameters/0");
+    }
+
+    #[test]
+    fn test_extract_skips_whitespace_only() {
+        // Empty strings AND whitespace-only strings must both be filtered
+        let json = json!({
+            "events": [null, {
+                "id": 1,
+                "pages": [{
+                    "list": [
+                        { "code": 401, "parameters": [""] },
+                        { "code": 401, "parameters": ["   "] },
+                        { "code": 401, "parameters": ["\t\n"] },
+                        { "code": 401, "parameters": ["有効なテキスト"] }
+                    ]
+                }]
+            }]
+        });
+        let segs = extract_map(&json);
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].source, "有効なテキスト");
+    }
+
+    #[test]
+    fn test_extract_simple_array_skips_whitespace() {
+        // whitespace-only name filtered, empty profile filtered, valid nickname kept
+        let json = json!([
+            null,
+            { "id": 1, "name": "  ", "nickname": "勇者", "profile": "" }
+        ]);
+        let segs = extract_actors(&json);
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].source, "勇者");
+        assert_eq!(segs[0].kind, SegmentKind::ActorNickname);
+    }
+
+    // --- Placeholder-only filter tests ---
+
+    #[test]
+    fn test_extract_skips_placeholder_only_segment() {
+        // "\n[1]" (lowercase — real community-plugin variant) → skipped
+        // "\N[4]" (uppercase — official spec) → also skipped
+        let json = json!({
+            "events": [null, {
+                "id": 1,
+                "pages": [{
+                    "list": [
+                        { "code": 401, "parameters": [r"\n[1]"] },
+                        { "code": 401, "parameters": [r"\N[4]"] },
+                        { "code": 401, "parameters": ["反応なし…"] }
+                    ]
+                }]
+            }]
+        });
+        let segs = extract_map(&json);
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].source, "反応なし…");
+    }
+
+    #[test]
+    fn test_extract_keeps_placeholder_with_text() {
+        // "\n[1] 反応なし…" (lowercase) — real content after token → kept
+        let json = json!({
+            "events": [null, {
+                "id": 1,
+                "pages": [{
+                    "list": [
+                        { "code": 401, "parameters": [r"\n[1] 反応なし…"] }
+                    ]
+                }]
+            }]
+        });
+        let segs = extract_map(&json);
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].source, r"\n[1] 反応なし…");
+    }
+
+    #[test]
+    fn test_extract_skips_multiple_placeholders_no_text() {
+        // "\c[2]\n[4]" (lowercase) — multiple codes, zero text → skipped
+        let json = json!({
+            "events": [null, {
+                "id": 1,
+                "pages": [{
+                    "list": [
+                        { "code": 401, "parameters": [r"\c[2]\n[4]"] },
+                        { "code": 401, "parameters": ["捕えた！"] }
+                    ]
+                }]
+            }]
+        });
+        let segs = extract_map(&json);
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].source, "捕えた！");
+    }
+
+    #[test]
+    fn test_extract_keeps_text_with_intercalated_placeholder() {
+        // "捕えた！\V[5]水深１５m" tokenizes to "捕えた！⟦ph_0⟧水深１５m" → real text → kept
+        let json = json!({
+            "events": [null, {
+                "id": 1,
+                "pages": [{
+                    "list": [
+                        { "code": 401, "parameters": [r"捕えた！\V[5]水深１５m"] }
+                    ]
+                }]
+            }]
+        });
+        let segs = extract_map(&json);
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].source, r"捕えた！\V[5]水深１５m");
     }
 }

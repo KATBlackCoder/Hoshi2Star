@@ -5,12 +5,18 @@
 
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use std::collections::HashMap;
 use std::path::Path;
 
 use crate::{
+    core::{qa, tm},
     engines::{
         detector::{detect_engine, find_data_dir, Engine},
         mv_mz::{extractor, injector},
+    },
+    llm::{
+        pipeline,
+        provider::{OllamaProvider, TranslationContext, DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_URL},
     },
     state::AppState,
 };
@@ -20,6 +26,7 @@ use crate::{
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct Project {
     pub id: String,
     pub name: String,
@@ -30,6 +37,7 @@ pub struct Project {
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct SourceFile {
     pub id: String,
     pub project_id: String,
@@ -39,6 +47,7 @@ pub struct SourceFile {
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct Segment {
     pub id: String,
     pub source_file_id: String,
@@ -52,11 +61,44 @@ pub struct Segment {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PaginatedSegments {
     pub items: Vec<Segment>,
     pub total: i64,
     pub page: i64,
     pub page_size: i64,
+}
+
+/// LLM provider configuration passed from the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConfig {
+    /// Base URL of the Ollama instance (e.g. "http://localhost:11434").
+    pub url: String,
+    /// Model to use (e.g. "qwen3:4b").
+    pub model: String,
+    /// Optional API key (for cloud providers like OpenAI / DeepSeek).
+    pub api_key: Option<String>,
+}
+
+impl Default for ProviderConfig {
+    fn default() -> Self {
+        Self {
+            url: DEFAULT_OLLAMA_URL.to_string(),
+            model: DEFAULT_OLLAMA_MODEL.to_string(),
+            api_key: None,
+        }
+    }
+}
+
+/// Summary of QA errors for a whole project.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QaReport {
+    pub total_segments: i64,
+    pub ok_count: i64,
+    pub error_count: i64,
+    pub errors_by_type: HashMap<String, usize>,
 }
 
 // ---------------------------------------------------------------------------
@@ -228,24 +270,50 @@ pub async fn get_segments(
 
 /// Save a manual translation for a segment.
 ///
-/// Sets `status = 'translated'` and updates `updated_at`.
-/// Returns the updated `Segment` row.
+/// 1. Runs QA checks (placeholders, line length, BOM) and stores the score.
+/// 2. Inserts the (source, target) pair into the global TM (lang_pair: "ja-en").
+/// 3. Sets `status = 'translated'` and updates `updated_at`.
+///
+/// Returns the updated `Segment` row (includes fresh `qa_score`).
 #[tauri::command]
 pub async fn update_segment(
     id: String,
     target_text: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<Segment, String> {
+    // Fetch source_text + engine for QA and TM
+    let (source_text, engine): (String, String) = sqlx::query_as::<_, (String, String)>(
+        "SELECT s.source_text, p.engine \
+         FROM segments s \
+         JOIN source_files sf ON s.source_file_id = sf.id \
+         JOIN projects p ON sf.project_id = p.id \
+         WHERE s.id = ?",
+    )
+    .bind(&id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // QA check
+    let qa_result = qa::check(&source_text, &target_text);
+    let qa_score = qa_result.score as i64;
+
+    // Update DB with new translation + QA score
     sqlx::query(
         "UPDATE segments \
-         SET target_text = ?, status = 'translated', updated_at = datetime('now') \
+         SET target_text = ?, status = 'translated', qa_score = ?, \
+             updated_at = datetime('now') \
          WHERE id = ?",
     )
     .bind(&target_text)
+    .bind(qa_score)
     .bind(&id)
     .execute(&state.db)
     .await
     .map_err(|e| e.to_string())?;
+
+    // Insert into TM (best-effort — never fail the command if TM insert fails)
+    let _ = tm::insert(&source_text, &target_text, &engine, "ja-en", &state.db).await;
 
     sqlx::query_as::<_, Segment>(
         "SELECT id, source_file_id, json_key, source_text, target_text, \
@@ -311,6 +379,221 @@ pub async fn export_project(
     }
 
     Ok(())
+}
+
+/// Launch a batch LLM translation in a background task (non-blocking).
+///
+/// If `ids` is non-empty, translates exactly those segments.
+/// If `ids` is empty and `file_id` is provided, translates all untranslated
+/// segments in that file (status = 'untranslated').
+///
+/// Spawns a `tokio::spawn` task and emits `h2s://llm/started` immediately,
+/// then `h2s://llm/progress` per batch.
+#[tauri::command]
+pub async fn translate_segments(
+    ids: Vec<String>,
+    file_id: Option<String>,
+    provider_config: ProviderConfig,
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    use tauri::Emitter;
+
+    // Fetch (id, source_text) pairs — either from explicit ids or from file
+    let pairs: Vec<(String, String)> = if !ids.is_empty() {
+        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        let query = format!("SELECT id, source_text FROM segments WHERE id IN ({placeholders})");
+        let mut q = sqlx::query_as::<_, (String, String)>(&query);
+        for id in &ids {
+            q = q.bind(id);
+        }
+        q.fetch_all(&state.db).await.map_err(|e| e.to_string())?
+    } else if let Some(fid) = file_id {
+        sqlx::query_as::<_, (String, String)>(
+            "SELECT id, source_text FROM segments \
+             WHERE source_file_id = ? AND (status = 'untranslated' OR target_text = '') \
+             ORDER BY rowid",
+        )
+        .bind(&fid)
+        .fetch_all(&state.db)
+        .await
+        .map_err(|e| e.to_string())?
+    } else {
+        return Ok(());
+    };
+
+    if pairs.is_empty() {
+        return Ok(());
+    }
+
+    let count = pairs.len();
+    let _ = app.emit("h2s://llm/started", serde_json::json!({ "count": count }));
+
+    let db = state.db.clone();
+    let handle = app.clone();
+
+    tokio::spawn(async move {
+        let provider = OllamaProvider::new(
+            &provider_config.url,
+            &provider_config.model,
+            std::time::Duration::from_secs(120),
+        );
+        let context = TranslationContext {
+            source_lang: "ja".to_string(),
+            target_lang: "en".to_string(),
+            glossary_terms: vec![],
+        };
+
+        match pipeline::run(pairs, &provider, context, &db, &handle).await {
+            Ok(results) => {
+                for r in results {
+                    let _ = sqlx::query(
+                        "UPDATE segments \
+                         SET target_text = ?, status = 'translated', \
+                             updated_at = datetime('now') \
+                         WHERE id = ?",
+                    )
+                    .bind(&r.translated_text)
+                    .bind(&r.id)
+                    .execute(&db)
+                    .await;
+                }
+                let _ = handle.emit("h2s://llm/completed", serde_json::json!({ "count": count }));
+            }
+            Err(e) => {
+                let _ = handle.emit(
+                    "h2s://llm/error",
+                    serde_json::json!({ "message": e.to_string() }),
+                );
+            }
+        }
+    });
+
+    Ok(())
+}
+
+/// Return TM exact-match suggestions for a given source text.
+#[tauri::command]
+pub async fn get_tm_suggestions(
+    source_text: String,
+    lang_pair: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<tm::TmEntry>, String> {
+    let hash = tm::hash_source(&source_text);
+    match tm::lookup_exact(&hash, &lang_pair, &state.db)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        Some(entry) => Ok(vec![entry]),
+        None => Ok(vec![]),
+    }
+}
+
+/// Run QA checks on a (source, target) pair and return the result.
+///
+/// Does not touch the database — useful for live checking in the UI
+/// before the user saves.
+#[tauri::command]
+pub fn qa_check_segment(source_text: String, target_text: String) -> qa::QaResult {
+    qa::check(&source_text, &target_text)
+}
+
+/// Return a QA summary for all segments in a project.
+#[tauri::command]
+pub async fn get_qa_report(
+    project_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<QaReport, String> {
+    let total_segments: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM segments s \
+         JOIN source_files sf ON s.source_file_id = sf.id \
+         WHERE sf.project_id = ?",
+    )
+    .bind(&project_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let ok_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM segments s \
+         JOIN source_files sf ON s.source_file_id = sf.id \
+         WHERE sf.project_id = ? AND (qa_score = 100 OR qa_score IS NULL)",
+    )
+    .bind(&project_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Fetch all non-null qa_score to compute errors_by_type
+    let qa_scores: Vec<i64> = sqlx::query_scalar(
+        "SELECT qa_score FROM segments s \
+         JOIN source_files sf ON s.source_file_id = sf.id \
+         WHERE sf.project_id = ? AND qa_score IS NOT NULL AND qa_score < 100",
+    )
+    .bind(&project_id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let error_count = qa_scores.len() as i64;
+
+    // errors_by_type: approximate from score ranges
+    // (exact type breakdown would require storing error types in DB — F3 improvement)
+    let mut errors_by_type: HashMap<String, usize> = HashMap::new();
+    for score in &qa_scores {
+        if *score <= 75 {
+            *errors_by_type.entry("placeholder".to_string()).or_insert(0) += 1;
+        } else if *score <= 90 {
+            *errors_by_type
+                .entry("line_too_long".to_string())
+                .or_insert(0) += 1;
+        } else {
+            *errors_by_type.entry("bom".to_string()).or_insert(0) += 1;
+        }
+    }
+
+    Ok(QaReport {
+        total_segments,
+        ok_count,
+        error_count,
+        errors_by_type,
+    })
+}
+
+/// Fetch the list of available models from an Ollama instance.
+///
+/// Calls `GET {url}/api/tags` with a 5-second timeout and returns the model
+/// names. Returns an error string if the server is unreachable or the response
+/// cannot be parsed.
+#[tauri::command]
+pub async fn get_ollama_models(url: String) -> Result<Vec<String>, String> {
+    #[derive(Deserialize)]
+    struct OllamaModel {
+        name: String,
+    }
+    #[derive(Deserialize)]
+    struct OllamaTagsResponse {
+        models: Vec<OllamaModel>,
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let endpoint = format!("{}/api/tags", url.trim_end_matches('/'));
+    let resp = client
+        .get(&endpoint)
+        .send()
+        .await
+        .map_err(|_| "Impossible de contacter Ollama — vérifiez l'URL".to_string())?;
+
+    let body: OllamaTagsResponse = resp
+        .json()
+        .await
+        .map_err(|e| format!("Réponse inattendue d'Ollama : {e}"))?;
+
+    Ok(body.models.into_iter().map(|m| m.name).collect())
 }
 
 // ---------------------------------------------------------------------------

@@ -1,22 +1,252 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { FileTree } from "@/components/editor/FileTree";
 import { SegmentGrid } from "@/components/editor/SegmentGrid";
+import { TMPanel } from "@/components/editor/TMPanel";
+import { QAPanel } from "@/components/editor/QAPanel";
 import { openProject, useProjectStore } from "@/stores/project";
+import { useEditorStore } from "@/stores/editor";
+import {
+  useLlmStore,
+  useIsTranslating,
+  useTranslationProgress,
+} from "@/stores/llm";
+import { Toaster } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
-import { FolderOpen, Loader2 } from "lucide-react";
+import { Download, FolderOpen, Loader2, Play, X } from "lucide-react";
+import { toast } from "sonner";
 
-function Toolbar() {
+// ---------------------------------------------------------------------------
+// Placeholder highlight helper
+// ---------------------------------------------------------------------------
+
+const PH_RE = /\\[VNPCI]\[\d+\]|\\[G\\$.|!><^{}]|\[%\d+\]/g;
+
+export function HighlightedSource({ text }: { text: string }) {
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+  PH_RE.lastIndex = 0;
+  while ((match = PH_RE.exec(text)) !== null) {
+    if (match.index > last) {
+      parts.push(text.slice(last, match.index));
+    }
+    parts.push(
+      <mark
+        key={match.index}
+        className="rounded bg-blue-500/20 px-0.5 text-blue-400 font-mono"
+      >
+        {match[0]}
+      </mark>,
+    );
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) {
+    parts.push(text.slice(last));
+  }
+  return <>{parts}</>;
+}
+
+// ---------------------------------------------------------------------------
+// LLM config modal
+// ---------------------------------------------------------------------------
+
+interface LlmConfigModalProps {
+  onClose: () => void;
+  onStart: (segmentIds: string[], fileId?: string) => void;
+}
+
+function LlmConfigModal({ onClose, onStart }: LlmConfigModalProps) {
+  const { providerConfig, setProviderConfig } = useLlmStore();
+  const activeFileId = useEditorStore((s) => s.activeFileId);
+
+  const [models, setModels] = useState<string[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
+  // Local URL draft so we can reuse it on blur without triggering on every keystroke
+  const [urlDraft, setUrlDraft] = useState(providerConfig.url);
+
+  async function fetchModels(url: string) {
+    setModelsLoading(true);
+    setModelsError(null);
+    try {
+      const list = await invoke<string[]>("get_ollama_models", { url });
+      setModels(list);
+      // Pre-select current model if present, otherwise first in list
+      if (list.length > 0) {
+        const keep = list.includes(providerConfig.model)
+          ? providerConfig.model
+          : list[0];
+        setProviderConfig({ model: keep });
+      }
+    } catch (err) {
+      setModelsError("Impossible de contacter Ollama — vérifiez l'URL");
+      setModels([]);
+    } finally {
+      setModelsLoading(false);
+    }
+  }
+
+  // Load models on mount
+  useEffect(() => {
+    void fetchModels(providerConfig.url);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function handleUrlBlur() {
+    const trimmed = urlDraft.trim();
+    setProviderConfig({ url: trimmed });
+    void fetchModels(trimmed);
+  }
+
+  function handleStart() {
+    onStart([], activeFileId ?? undefined);
+    onClose();
+  }
+
+  const canStart =
+    !!activeFileId && (models.length > 0 || providerConfig.model.trim() !== "");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="w-96 rounded-lg border bg-background p-4 shadow-xl">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold">Configuration LLM</h2>
+          <button type="button" onClick={onClose}>
+            <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">
+              URL Ollama
+            </label>
+            <input
+              type="text"
+              className="w-full rounded border bg-muted/30 px-2 py-1.5 text-xs outline-none focus:border-primary"
+              value={urlDraft}
+              onChange={(e) => setUrlDraft(e.target.value)}
+              onBlur={handleUrlBlur}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">
+              Modèle
+            </label>
+            {models.length > 0 ? (
+              <Select
+                value={providerConfig.model}
+                onValueChange={(v) => setProviderConfig({ model: v })}
+              >
+                <SelectTrigger className="h-8 w-full text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {models.map((m) => (
+                    <SelectItem key={m} value={m} className="text-xs">
+                      {m}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <>
+                <Select disabled>
+                  <SelectTrigger className="h-8 w-full text-xs">
+                    <SelectValue
+                      placeholder={
+                        modelsLoading
+                          ? "Chargement des modèles…"
+                          : "Aucun modèle disponible"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent />
+                </Select>
+                {/* Fallback text input when Ollama is unreachable */}
+                {modelsError && (
+                  <input
+                    type="text"
+                    className="mt-1.5 w-full rounded border bg-muted/30 px-2 py-1.5 text-xs outline-none focus:border-primary"
+                    placeholder="Saisir le modèle manuellement"
+                    value={providerConfig.model}
+                    onChange={(e) =>
+                      setProviderConfig({ model: e.target.value })
+                    }
+                  />
+                )}
+              </>
+            )}
+            {modelsError && (
+              <p className="mt-1 text-[11px] text-destructive">{modelsError}</p>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-4 flex justify-end gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs"
+            onClick={onClose}
+          >
+            Annuler
+          </Button>
+          <Button
+            size="sm"
+            className="h-7 text-xs"
+            onClick={handleStart}
+            disabled={!canStart}
+          >
+            {modelsLoading ? (
+              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+            ) : (
+              <Play className="mr-1 h-3 w-3" />
+            )}
+            Traduire
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Toolbar
+// ---------------------------------------------------------------------------
+
+function Toolbar({ onOpenLlmConfig }: { onOpenLlmConfig: () => void }) {
   const [isOpening, setIsOpening] = useState(false);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const activeProject = useProjectStore((s) =>
     s.projects.find((p) => p.id === s.activeProjectId),
   );
+  const isTranslating = useIsTranslating();
+  const progress = useTranslationProgress();
+
+  async function handleExport() {
+    if (!activeProjectId) return;
+    try {
+      await invoke("export_project", { projectId: activeProjectId });
+      toast.success("Jeu exporté avec les traductions");
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }
 
   async function handleOpenGame() {
     const selected = await open({
@@ -57,6 +287,38 @@ function Toolbar() {
         Ouvrir un jeu
       </Button>
 
+      {activeProjectId && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 gap-1.5 text-xs"
+          onClick={onOpenLlmConfig}
+          disabled={isTranslating}
+        >
+          {isTranslating ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Play className="h-3.5 w-3.5" />
+          )}
+          {isTranslating
+            ? `Traduction… ${progress > 0 ? `${progress}%` : ""}`
+            : "Traduire"}
+        </Button>
+      )}
+
+      {activeProjectId && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 gap-1.5 text-xs"
+          onClick={() => void handleExport()}
+          disabled={isTranslating}
+        >
+          <Download className="h-3.5 w-3.5" />
+          Exporter
+        </Button>
+      )}
+
       {activeProjectId && activeProject && (
         <span className="ml-1 truncate text-xs text-muted-foreground">
           {activeProject.name}
@@ -65,21 +327,56 @@ function Toolbar() {
           </span>
         </span>
       )}
+
+      {/* Progress bar */}
+      {isTranslating && progress >= 0 && (
+        <div className="ml-auto mr-2 h-1.5 w-32 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-all duration-300"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      )}
     </div>
   );
 }
 
+// ---------------------------------------------------------------------------
+// App
+// ---------------------------------------------------------------------------
+
 export default function App() {
+  const [showLlmConfig, setShowLlmConfig] = useState(false);
+  const { startTranslation } = useLlmStore();
+  const activeSegmentSourceText = useEditorStore(
+    (s) => s.activeSegmentSourceText,
+  );
+  const activeSegmentTargetText = useEditorStore(
+    (s) => s.activeSegmentTargetText,
+  );
+
+  // The target text for live QA is tracked in SegmentGrid via onSave callbacks.
+  // For the QAPanel draft preview, we read the active segment's text from DOM
+  // (simplest approach for MVP: derive from rendered input value is tricky,
+  //  so we show QA based on the last-saved state instead).
+  //
+  // TODO F3: pipe live target draft through editor store for real-time QA.
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
-      <Toolbar />
+      <Toolbar onOpenLlmConfig={() => setShowLlmConfig(true)} />
 
       <ResizablePanelGroup
         orientation="horizontal"
         className="flex-1 overflow-hidden"
       >
         {/* Left: FileTree */}
-        <ResizablePanel defaultSize={18} minSize={12} maxSize={30}>
+        <ResizablePanel
+          defaultSize="20%"
+          minSize="15%"
+          maxSize="35%"
+          collapsible={false}
+        >
           <div className="flex h-full flex-col overflow-hidden border-r">
             <div className="shrink-0 border-b px-3 py-2 text-xs font-medium text-muted-foreground select-none">
               Fichiers
@@ -90,33 +387,49 @@ export default function App() {
           </div>
         </ResizablePanel>
 
-        <ResizableHandle />
+        <ResizableHandle withHandle={true} />
 
         {/* Centre: SegmentGrid */}
-        <ResizablePanel defaultSize={60} minSize={40}>
+        <ResizablePanel defaultSize="55%" minSize="40%" collapsible={false}>
           <div className="flex h-full flex-col overflow-hidden">
-            <SegmentGrid />
+            <SegmentGrid highlightPlaceholders />
           </div>
         </ResizablePanel>
 
-        <ResizableHandle />
+        <ResizableHandle withHandle={true} />
 
-        {/* Right: SidePanel (placeholder — F2) */}
-        <ResizablePanel defaultSize={22} minSize={16} maxSize={35}>
+        {/* Right: TM + QA side panels */}
+        <ResizablePanel
+          defaultSize="25%"
+          minSize="20%"
+          maxSize="40%"
+          collapsible={false}
+        >
           <div className="flex h-full flex-col overflow-hidden border-l">
-            <div className="shrink-0 border-b px-3 py-2 text-xs font-medium text-muted-foreground select-none">
-              TM / Glossaire
-            </div>
-            <div className="flex flex-1 items-center justify-center p-4">
-              <p className="text-center text-xs text-muted-foreground leading-relaxed">
-                Mémoire de traduction
-                <br />
-                et glossaire — F2
-              </p>
-            </div>
+            <ResizablePanelGroup orientation="vertical">
+              <ResizablePanel defaultSize={55} minSize={30}>
+                <TMPanel />
+              </ResizablePanel>
+              <ResizableHandle />
+              <ResizablePanel defaultSize={45} minSize={25}>
+                <QAPanel
+                  sourceText={activeSegmentSourceText}
+                  targetText={activeSegmentTargetText}
+                />
+              </ResizablePanel>
+            </ResizablePanelGroup>
           </div>
         </ResizablePanel>
       </ResizablePanelGroup>
+
+      {showLlmConfig && (
+        <LlmConfigModal
+          onClose={() => setShowLlmConfig(false)}
+          onStart={(ids, fileId) => void startTranslation(ids, fileId)}
+        />
+      )}
+
+      <Toaster />
     </div>
   );
 }

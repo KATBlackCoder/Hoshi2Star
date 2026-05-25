@@ -68,7 +68,7 @@
 ---
 
 ## F1 — Parsers MV/MZ + UI skeleton
-**Statut : [~] En cours**
+**Statut : [x] Complet**
 **Critère de sortie : Ouvrir un jeu MV/MZ et afficher ses segments dans la grille.**
 
 ### Engine Layer — RPG Maker MV/MZ
@@ -106,46 +106,46 @@
 ---
 
 ## F2 — LLM pipeline + TM + MVP vendable
-**Statut : [ ] À démarrer**
+**Statut : [~] En cours**
 **Critère de sortie : Pré-traduire un jeu MV/MZ avec Ollama local, TM exact match fonctionnelle, QA placeholders live. Ce milestone = MVP vendable.**
 
 ### LLM Layer
 - [x] `src-tauri/src/llm/tokenizer.rs` — détection et remplacement placeholders par UUID opaques (`⟦ph_001⟧`) — implémenté en F1
-- [ ] `src-tauri/src/llm/provider.rs` — trait `LlmProvider` + implémentations :
-  - [ ] `OllamaProvider` (local, priorité MVP)
+- [x] `src-tauri/src/llm/provider.rs` — trait `LlmProvider` + implémentations :
+  - [x] `OllamaProvider` (local, priorité MVP)
   - [ ] `OpenAIProvider` (clé user fournie)
   - [ ] `DeepSeekProvider`
-- [ ] `src-tauri/src/llm/pipeline.rs` — orchestration passes :
-  - Passe 1 : translate (avec glossaire injecté dans le prompt)
-  - Passe 2 : review (consistency sur fenêtre de 10 segments)
-  - Passe 3 (optionnel) : tone
-- [ ] `src-tauri/src/llm/batch.rs` — groupement segments (batch de 20–50), déduplication par hash
-- [ ] Validation post-LLM : restauration UUIDs → placeholders originaux, rejet si UUID manquant
+- [x] `src-tauri/src/llm/pipeline.rs` — orchestration passes :
+  - [x] Passe 1 : translate (avec glossaire injecté dans le prompt)
+  - [ ] Passe 2 : review (consistency sur fenêtre de 10 segments)
+  - [ ] Passe 3 (optionnel) : tone
+- [x] `src-tauri/src/llm/batch.rs` — groupement segments (batch de 20–50), déduplication par hash
+- [x] Validation post-LLM : restauration UUIDs → placeholders originaux, rejet si UUID manquant
 
 ### Core Layer — TM v1
-- [ ] `src-tauri/migrations/0002_tm.sql` — table `tm_entries (source_hash, source_text, target_text, engine, lang_pair, confidence)`
-- [ ] `src-tauri/src/core/tm.rs` — insert, lookup exact match (hash SHA-256 du segment normalisé)
-- [ ] TM auto-alimentée à chaque validation manuelle de segment
+- [x] `src-tauri/migrations/0002_tm.sql` — table `tm_entries (source_hash, source_text, target_text, engine, lang_pair, confidence)`
+- [x] `src-tauri/src/core/tm.rs` — insert, lookup exact match (hash SHA-256 du segment normalisé)
+- [x] TM auto-alimentée à chaque validation manuelle de segment
 
 ### Core Layer — QA v1
-- [ ] `src-tauri/src/core/qa.rs` — checks sur chaque segment sauvegardé :
-  - Placeholders : tous ceux du source présents dans le target
-  - Longueur message box : MV/MZ max ~50 chars/ligne × 4 lignes (configurable)
-  - BOM UTF-8 détecté dans le target
-- [ ] QA score par segment (0–100) retourné avec chaque `update_segment`
+- [x] `src-tauri/src/core/qa.rs` — checks sur chaque segment sauvegardé :
+  - [x] Placeholders : tous ceux du source présents dans le target
+  - [x] Longueur message box : MV/MZ max ~50 chars/ligne × 4 lignes (configurable)
+  - [x] BOM UTF-8 détecté dans le target
+- [x] QA score par segment (0–100) retourné avec chaque `update_segment`
 
 ### Commands Tauri — F2
-- [ ] `translate_segments(ids: Vec<String>, provider_config)` — lance pipeline LLM en background (tokio::spawn), émet events de progression
-- [ ] `get_tm_suggestions(source_text, lang_pair)` — exact match TM
-- [ ] `get_qa_report(project_id)` — résumé des erreurs QA du projet
+- [x] `translate_segments(ids: Vec<String>, provider_config)` — lance pipeline LLM en background (tokio::spawn), émet events de progression
+- [x] `get_tm_suggestions(source_text, lang_pair)` — exact match TM
+- [x] `get_qa_report(project_id)` — résumé des erreurs QA du projet
 
 ### CAT UI — F2
-- [ ] `src/components/editor/TMPanel.tsx` — sidebar TM : affiche suggestions exact match
-- [ ] `src/components/editor/QAPanel.tsx` — erreurs QA live sur le segment actif
-- [ ] `src/stores/llm.ts` — Zustand : `isTranslating`, `translationProgress`, `providerConfig`
-- [ ] Settings panel : configuration provider LLM (URL Ollama, clé API, modèle)
-- [ ] Indicateur progression traduction batch (event `h2s://llm/progress`)
-- [ ] Highlight placeholders dans le source (couleur distincte)
+- [x] `src/components/editor/TMPanel.tsx` — sidebar TM : affiche suggestions exact match
+- [x] `src/components/editor/QAPanel.tsx` — erreurs QA live sur le segment actif
+- [x] `src/stores/llm.ts` — Zustand : `isTranslating`, `translationProgress`, `providerConfig`
+- [x] Settings panel : configuration provider LLM (URL Ollama, clé API, modèle)
+- [x] Indicateur progression traduction batch (event `h2s://llm/progress`)
+- [x] Highlight placeholders dans le source (couleur distincte — composant HighlightedSource, F2 partiel)
 
 ### Distribution MVP
 - [ ] Build installeur Windows (`.msi` via `pnpm tauri build`)

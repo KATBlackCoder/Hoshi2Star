@@ -6,20 +6,52 @@ import {
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useProjectStore } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { createSegmentColumns } from "@/features/editor/columns";
 import type { PaginatedSegments, Segment } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-export function SegmentGrid() {
+interface SegmentGridProps {
+  highlightPlaceholders?: boolean;
+}
+
+export function SegmentGrid({
+  highlightPlaceholders = false,
+}: SegmentGridProps) {
+  void highlightPlaceholders; // consumed by columns in future — prop reserved for F2
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const activeFileId = useEditorStore((s) => s.activeFileId);
   const setActiveSegment = useEditorStore((s) => s.setActiveSegment);
   const activeSegmentId = useEditorStore((s) => s.activeSegmentId);
 
+  // Ref so handleSave (useCallback) can read the active id without re-registering
+  const activeSegmentIdRef = useRef(activeSegmentId);
+  activeSegmentIdRef.current = activeSegmentId;
+
   const [segments, setSegments] = useState<Segment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Keep latest ids in a ref so the completed-listener can use them without
+  // being re-registered on every render.
+  const activeProjectIdRef = useRef(activeProjectId);
+  const activeFileIdRef = useRef(activeFileId);
+  activeProjectIdRef.current = activeProjectId;
+  activeFileIdRef.current = activeFileId;
+
+  const loadSegments = useCallback((projectId: string, fileId: string) => {
+    setIsLoading(true);
+    invoke<PaginatedSegments>("get_segments", {
+      projectId,
+      fileId,
+      page: 0,
+      pageSize: 5000,
+    })
+      .then((result) => setSegments(result.items))
+      .catch(() => setSegments([]))
+      .finally(() => setIsLoading(false));
+  }, []);
 
   // Fetch segments whenever the active file changes
   useEffect(() => {
@@ -27,26 +59,38 @@ export function SegmentGrid() {
       setSegments([]);
       return;
     }
-    setIsLoading(true);
-    invoke<PaginatedSegments>("get_segments", {
-      projectId: activeProjectId,
-      fileId: activeFileId,
-      page: 0,
-      pageSize: 5000,
-    })
-      .then((result) => setSegments(result.items))
-      .catch(() => setSegments([]))
-      .finally(() => setIsLoading(false));
-  }, [activeProjectId, activeFileId]);
+    loadSegments(activeProjectId, activeFileId);
+  }, [activeProjectId, activeFileId, loadSegments]);
+
+  // Re-fetch when LLM pipeline completes so translated segments appear immediately
+  useEffect(() => {
+    const unlisten = listen("h2s://llm/completed", () => {
+      const pid = activeProjectIdRef.current;
+      const fid = activeFileIdRef.current;
+      if (pid && fid) loadSegments(pid, fid);
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [loadSegments]);
 
   // Save a segment translation and update local state
-  const handleSave = useCallback(async (id: string, text: string) => {
-    const updated = await invoke<Segment>("update_segment", {
-      id,
-      targetText: text,
-    });
-    setSegments((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
-  }, []);
+  const handleSave = useCallback(
+    async (id: string, text: string) => {
+      const updated = await invoke<Segment>("update_segment", {
+        id,
+        targetText: text,
+      });
+      setSegments((prev) =>
+        prev.map((s) => (s.id === updated.id ? updated : s)),
+      );
+      // Keep QA panel fresh if the saved segment is currently active
+      if (id === activeSegmentIdRef.current) {
+        setActiveSegment(id, updated.sourceText, updated.targetText);
+      }
+    },
+    [setActiveSegment],
+  );
 
   // Tab → scroll to + focus next row
   const parentRef = useRef<HTMLDivElement>(null);
@@ -162,7 +206,13 @@ export function SegmentGrid() {
                   right: 0,
                   transform: `translateY(${virtualRow.start}px)`,
                 }}
-                onClick={() => setActiveSegment(row.original.id)}
+                onClick={() =>
+                  setActiveSegment(
+                    row.original.id,
+                    row.original.sourceText,
+                    row.original.targetText,
+                  )
+                }
                 className={cn(
                   "flex border-b border-border/50 hover:bg-accent/30 transition-colors cursor-pointer",
                   activeSegmentId === row.original.id && "bg-accent/50",

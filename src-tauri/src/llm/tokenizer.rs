@@ -29,7 +29,7 @@ static RE_MVMZ: LazyLock<Regex> = LazyLock::new(|| {
     // Characters matched after the leading backslash: G \ $ . | ! > < ^ { }
     Regex::new(
         r"(?x)
-          \\[VNPCI]\[\d+\]        # Groupe A — codes avec argument numérique
+          \\[VNPCIvnpci]\[\d+\]   # Groupe A — codes avec argument numérique (maj + min)
         | \\[G\\$.|!><^{}]        # Groupe B — codes sans argument
         | \[%\d+\]                # Groupe D (MV) — [%1] [%2] …
         ",
@@ -42,10 +42,10 @@ static RE_MVMZ: LazyLock<Regex> = LazyLock::new(|| {
 static RE_MZONLY: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?x)
-          \\(?:PX|PY|FS)\[\d+\]  # Groupe C — MZ position/font codes (avant A!)
-        | \\[VNPCI]\[\d+\]        # Groupe A — codes avec argument numérique
-        | \\[G\\$.|!><^{}]        # Groupe B — codes sans argument
-        | %\d+                    # Groupe D (MZ) — %1 %2 … (sans crochets)
+          \\(?:PX|PY|FS|px|py|fs)\[\d+\]  # Groupe C — MZ position/font codes (avant A!)
+        | \\[VNPCIvnpci]\[\d+\]            # Groupe A — codes avec argument numérique (maj + min)
+        | \\[G\\$.|!><^{}]                 # Groupe B — codes sans argument
+        | %\d+                             # Groupe D (MZ) — %1 %2 … (sans crochets)
         ",
     )
     .expect("RE_MZONLY regex must compile")
@@ -306,5 +306,25 @@ mod tests {
         // restore on empty tokenized string with empty map → OK
         let restored = Tokenizer::restore("", &result.map).unwrap();
         assert_eq!(restored, "");
+    }
+
+    // 11. Codes lowercase (\n[n], \v[n], \c[n]) — variantes community plugins
+    #[test]
+    fn test_lowercase_codes_tokenized() {
+        // \n[1] (lowercase n) must be tokenized like \N[1] (uppercase)
+        let result = Tokenizer::tokenize(r"\n[1]", Engine::MvMz);
+        assert_eq!(result.text, "⟦ph_0⟧");
+        assert_eq!(result.map.get("⟦ph_0⟧").unwrap(), r"\n[1]");
+
+        // Mixed: \n[1] + real text — token present but content remains
+        let result2 = Tokenizer::tokenize(r"\n[1] 反応なし…", Engine::MvMz);
+        assert_eq!(result2.map.len(), 1);
+        assert!(result2.text.contains("反応なし…"));
+
+        // Round-trip must preserve lowercase form
+        let original = r"\c[3]\n[1] テスト";
+        let tok = Tokenizer::tokenize(original, Engine::MvMz);
+        let restored = Tokenizer::restore(&tok.text, &tok.map).unwrap();
+        assert_eq!(restored, original);
     }
 }

@@ -43,3 +43,49 @@ export interface PaginatedSegments {
   page: number;
   pageSize: number;
 }
+
+// ---------------------------------------------------------------------------
+// TM
+// ---------------------------------------------------------------------------
+
+export interface TmEntry {
+  id: string;
+  sourceHash: string;
+  sourceText: string;
+  targetText: string;
+  engine: string;
+  langPair: string;
+  confidence: number;
+  createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// QA
+// ---------------------------------------------------------------------------
+
+export type QaErrorType =
+  | { type: "missing_placeholder"; placeholder: string }
+  | { type: "line_too_long"; line: number; length: number; max: number }
+  | { type: "bom_detected" };
+
+export interface QaResult {
+  score: number;
+  errors: QaErrorType[];
+}
+
+export interface QaReport {
+  totalSegments: number;
+  okCount: number;
+  errorCount: number;
+  errorsByType: Record<string, number>;
+}
+
+// ---------------------------------------------------------------------------
+// LLM
+// ---------------------------------------------------------------------------
+
+export interface ProviderConfig {
+  url: string;
+  model: string;
+  apiKey?: string;
+}

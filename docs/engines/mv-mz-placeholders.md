@@ -26,7 +26,8 @@ Si ⟦ph_0⟧ dupliqué → REJET, retry.
 ### Groupe A — Avec argument numérique (communs MV + MZ)
 ```rust
 // \V[n]  \N[n]  \P[n]  \C[n]  \I[n]
-r"\\[VNPCI]\[\d+\]"
+// + variantes lowercase \v[n] \n[n] \p[n] \c[n] \i[n] (community plugins)
+r"\\[VNPCIvnpci]\[\d+\]"
 ```
 
 ### Groupe B — Sans argument (communs MV + MZ)
@@ -41,8 +42,8 @@ r"\\[G\\$.|!><^{}]"
 
 ### Groupe C — Spécifiques MZ uniquement
 ```rust
-// \PX[n]  \PY[n]  \FS[n]
-r"\\(?:PX|PY|FS)\[\d+\]"
+// \PX[n]  \PY[n]  \FS[n]  + variantes lowercase
+r"\\(?:PX|PY|FS|px|py|fs)\[\d+\]"
 ```
 
 ### Groupe D — Substitutions dynamiques (termes BD)
@@ -61,11 +62,11 @@ r"%\d+"
 // Toujours tester Groupe C avant Groupe A pour éviter
 // que \P capture \PX et \PY
 const PLACEHOLDER_REGEX: &str = r"(?x)
-    \\(?:PX|PY|FS)\[\d+\]  # Groupe C — MZ spécifique (avant Groupe A)
-  | \\[VNPCI]\[\d+\]        # Groupe A — avec argument
-  | \\[G\\$.|!><^{}]        # Groupe B — sans argument (✅ valide crate regex)
-  | \[%\d+\]                # Groupe D — MV substitution
-  | %\d+                    # Groupe D — MZ substitution
+    \\(?:PX|PY|FS|px|py|fs)\[\d+\]  # Groupe C — MZ spécifique (avant Groupe A)
+  | \\[VNPCIvnpci]\[\d+\]           # Groupe A — avec argument (maj + min)
+  | \\[G\\$.|!><^{}]                # Groupe B — sans argument (✅ valide crate regex)
+  | \[%\d+\]                        # Groupe D — MV substitution
+  | %\d+                            # Groupe D — MZ substitution
 ";
 ```
 
@@ -75,12 +76,12 @@ const PLACEHOLDER_REGEX: &str = r"(?x)
 
 | Code | Moteur | Tokeniser ? | Résultat traduisible ? | Note |
 |------|--------|------------|----------------------|------|
-| `\V[n]` | MV + MZ | ✅ Oui | ⚠️ Parfois | Si la variable contient du texte JP → à traduire en DB séparément |
-| `\N[n]` | MV + MZ | ✅ Oui | ✅ Oui | Nom d'acteur → traduire dans la DB acteurs |
-| `\P[n]` | MV + MZ | ✅ Oui | ✅ Oui | Nom du membre d'équipe → idem \N |
+| `\V[n]` / `\v[n]` | MV + MZ | ✅ Oui | ⚠️ Parfois | Si la variable contient du texte JP → à traduire en DB séparément |
+| `\N[n]` / `\n[n]` | MV + MZ | ✅ Oui | ✅ Oui | Nom d'acteur → traduire dans la DB acteurs |
+| `\P[n]` / `\p[n]` | MV + MZ | ✅ Oui | ✅ Oui | Nom du membre d'équipe → idem \N |
 | `\G` | MV + MZ | ✅ Oui | ✅ Oui | Unité monétaire → traduire dans Terms > Currency |
-| `\C[n]` | MV + MZ | ✅ Oui | ❌ Non | Couleur uniquement — aucun texte |
-| `\I[n]` | MV + MZ | ✅ Oui | ❌ Non | Icône — aucun texte |
+| `\C[n]` / `\c[n]` | MV + MZ | ✅ Oui | ❌ Non | Couleur uniquement — aucun texte |
+| `\I[n]` / `\i[n]` | MV + MZ | ✅ Oui | ❌ Non | Icône — aucun texte |
 | `\{` | MV + MZ | ✅ Oui | ❌ Non | Augmente taille texte |
 | `\}` | MV + MZ | ✅ Oui | ❌ Non | Diminue taille texte |
 | `\\` | MV + MZ | ✅ Oui | ❌ Non | Backslash littéral |
@@ -178,6 +179,7 @@ mod tests {
     // 8. %1 dans Terms MZ vs 100% dans texte libre
     // 9. \\ (double backslash) préservé correctement
     // 10. Segment vide → pas d'erreur
+    // 11. Codes lowercase (\n[n], \c[n], \v[n]) — community plugins
 }
 ```
 
@@ -201,3 +203,4 @@ Le tokenizer les préserve dans les dialogues mais ne les traduit pas.
 | Date | Correction |
 |------|-----------|
 | 2026-05-24 | Regex Groupe B : `\\[G\\\$\.\|\!\>\<\^\{\}]` → `\\[G\\$.\|!><^{}]` — escape sequences invalides dans char class détectées par clippy lors de l'implémentation du tokenizer |
+| 2026-05-25 | Groupes A et C étendus aux minuscules (`[VNPCIvnpci]`, `px\|py\|fs`) — jeu réel utilisant `\n[n]` et `\c[n]` (community plugins) causait une extraction de segments non-traduisibles |

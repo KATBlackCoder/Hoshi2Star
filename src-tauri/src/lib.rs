@@ -2,13 +2,15 @@
 // main.rs délègue à run() pour compatibilité mobile future.
 
 pub mod commands;
+pub mod core;
 pub mod db;
 pub mod engines;
 pub mod llm;
 pub mod state;
 
 use commands::project::{
-    export_project, get_segments, get_source_files, open_project, update_segment,
+    export_project, get_ollama_models, get_qa_report, get_segments, get_source_files,
+    get_tm_suggestions, open_project, qa_check_segment, translate_segments, update_segment,
 };
 use state::AppState;
 use tauri::Manager;
@@ -40,6 +42,11 @@ pub fn run() {
             get_segments,
             update_segment,
             export_project,
+            translate_segments,
+            get_tm_suggestions,
+            get_qa_report,
+            qa_check_segment,
+            get_ollama_models,
         ]);
 
     #[cfg(debug_assertions)]

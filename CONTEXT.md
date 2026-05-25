@@ -199,6 +199,10 @@ cargo fmt --manifest-path src-tauri/Cargo.toml
 ❌  npx shadcn-ui@latest add ...   (ancien package déprécié)
 ✅  pnpm dlx shadcn@latest add ...
 
+❌  struct Foo { pub my_field: String }  (serde serialize en snake_case)
+✅  ajouter #[serde(rename_all = "camelCase")] sur chaque struct IPC
+   (serde ne fait PAS de conversion automatique — Tauri v2 non plus)
+
 ❌  fn my_cmd(s: &str) -> String  (async command avec &str)
 ✅  fn my_cmd(s: String) -> Result<String, String>
 
@@ -208,9 +212,9 @@ cargo fmt --manifest-path src-tauri/Cargo.toml
 ❌  Traduire les placeholders \V[12] avec le LLM
 ✅  Tokeniser avant envoi → ⟦ph_001⟧ → restaurer après réponse
 
-❌  WEBKIT_DISABLE_DMABUF_RENDERER non défini sur GPU NVIDIA (fenêtre blanche)
-✅  export WEBKIT_DISABLE_DMABUF_RENDERER=1  dans ~/.zshrc (X11)
-   ou export __NV_DISABLE_EXPLICIT_SYNC=1  (Wayland)
+❌  WEBKIT_DISABLE_DMABUF_RENDERER non défini sur GPU NVIDIA (fenêtre blanche, X11)
+✅  export __NV_DISABLE_EXPLICIT_SYNC=1  dans ~/.config/fish/config.fish (Wayland — env actuel)
+   ou export WEBKIT_DISABLE_DMABUF_RENDERER=1  (X11 uniquement)
 ```
 
 ---
