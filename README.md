@@ -8,7 +8,26 @@
 
 **星 → ★ — CAT editor + LLM orchestrator for fan translation of Japanese RPG games**
 
-> Screenshot coming soon
+## Screenshots
+
+### Before & After
+| Original (日本語) | Translated (English) |
+|:-:|:-:|
+| ![Game in Japanese](docs/screenshots/01-game-original-jp.png) | ![Game in English](docs/screenshots/05-game-translated-en.png) |
+
+### Hoshi2Star in action
+
+**1. Open the app**
+![Empty state](docs/screenshots/02-hoshi2star-empty.png)
+
+**2. Load a game — segments extracted**
+![Segments before translation](docs/screenshots/03-segments-before.png)
+
+**3. Configure Ollama and translate**
+![LLM configuration](docs/screenshots/06-llm-config.png)
+
+**4. Segments translated in 27s — QA score 100**
+![Segments after translation](docs/screenshots/04-segments-translated.png)
 
 ---
 

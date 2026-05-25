@@ -8,7 +8,26 @@
 
 **星 → ★ — Éditeur CAT + orchestrateur LLM pour la traduction fan de jeux RPG japonais**
 
-> Capture d'écran à venir
+## Screenshots
+
+### Avant & Après
+| Original (日本語) | Traduit (English) |
+|:-:|:-:|
+| ![Jeu en japonais](docs/screenshots/01-game-original-jp.png) | ![Jeu en anglais](docs/screenshots/05-game-translated-en.png) |
+
+### Hoshi2Star en action
+
+**1. Ouvrir l'application**
+![État initial](docs/screenshots/02-hoshi2star-empty.png)
+
+**2. Charger un jeu — segments extraits**
+![Segments avant traduction](docs/screenshots/03-segments-before.png)
+
+**3. Configurer Ollama et traduire**
+![Configuration LLM](docs/screenshots/06-llm-config.png)
+
+**4. Segments traduits en 27s — score QA 100**
+![Segments après traduction](docs/screenshots/04-segments-translated.png)
 
 ---
 
