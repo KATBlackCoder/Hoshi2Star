@@ -72,7 +72,7 @@ jobs:
 
             ### Prerequisites
             - [Ollama](https://ollama.ai) installed locally
-            - Recommended model: `ollama pull qwen3:4b`
+            - Recommended model: `ollama pull qwen3:4b-instruct-2507-q4_K_M`
 
             ### Installation
             - **Linux**: download `.AppImage` →

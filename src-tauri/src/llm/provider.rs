@@ -11,6 +11,7 @@
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 use std::time::Duration;
 use thiserror::Error;
 
@@ -64,7 +65,7 @@ pub trait LlmProvider: Send + Sync {
 /// Default Ollama URL when none is provided.
 pub const DEFAULT_OLLAMA_URL: &str = "http://localhost:11434";
 /// Default model — consistent with the hoshi-trans reference pipeline.
-pub const DEFAULT_OLLAMA_MODEL: &str = "qwen3:4b";
+pub const DEFAULT_OLLAMA_MODEL: &str = "qwen3:4b-instruct-2507-q4_K_M";
 /// Default per-request timeout.
 pub const DEFAULT_TIMEOUT_SECS: u64 = 120;
 
@@ -156,7 +157,9 @@ impl LlmProvider for OllamaProvider {
             .enumerate()
             .map(|(i, s)| format!("[{}] {}", i + 1, s))
             .collect();
-        let prompt_body = numbered.join("\n");
+        // /no_think désactive le bloc <think> de qwen3 (et des modèles compatibles).
+        // Les autres modèles ignorent silencieusement cette directive.
+        let prompt_body = format!("/no_think\n{}", numbered.join("\n"));
 
         let system_prompt = format!(
             "You are a professional game localisation assistant.\n\
@@ -241,9 +244,29 @@ impl LlmProvider for OllamaProvider {
 // Response parser
 // ---------------------------------------------------------------------------
 
-/// Parse the numbered response lines `[1] text`, `[2] text`, … into a plain
-/// `Vec<String>`.  Returns an error if the count doesn't match `expected`.
+/// Regex matching qwen3-style `<think>…</think>` blocks (possibly multiline).
+static THINK_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?s)<think>.*?</think>").expect("valid regex"));
+
+/// Remove all `<think>…</think>` blocks from an LLM response.
+///
+/// qwen3 (and other reasoning models) prepend a thinking section before the
+/// actual answer.  The parser must not see those lines.
+fn strip_think_blocks(raw: &str) -> String {
+    THINK_RE.replace_all(raw, "").into_owned()
+}
+
+/// Parse numbered response lines into a plain `Vec<String>`.
+///
+/// Accepts two formats:
+/// - `[1] text`  (preferred — what the system prompt requests)
+/// - `1. text`   (fallback — some models ignore the bracket format)
+///
+/// Returns an error if any line number is missing after all lines are parsed.
 fn parse_numbered_response(raw: &str, expected: usize) -> Result<Vec<String>, LlmError> {
+    let stripped = strip_think_blocks(raw);
+    let raw = stripped.trim();
+
     let mut out: Vec<Option<String>> = vec![None; expected];
 
     for line in raw.lines() {
@@ -251,12 +274,24 @@ fn parse_numbered_response(raw: &str, expected: usize) -> Result<Vec<String>, Ll
         if line.is_empty() {
             continue;
         }
-        // Accept both `[1] text` and `1. text`
+        // Pattern 1: [1] text
         if let Some(rest) = line.strip_prefix('[') {
             if let Some(bracket) = rest.find(']') {
                 if let Ok(idx) = rest[..bracket].parse::<usize>() {
                     if idx >= 1 && idx <= expected {
                         out[idx - 1] = Some(rest[bracket + 1..].trim().to_string());
+                    }
+                }
+            }
+        }
+        // Pattern 2: 1. text (sans crochets — fallback si le modèle ignore le format)
+        else if let Some(dot) = line.find('.') {
+            let num_part = &line[..dot];
+            if !num_part.is_empty() && num_part.chars().all(|c| c.is_ascii_digit()) {
+                if let Ok(idx) = num_part.parse::<usize>() {
+                    let text = line[dot + 1..].trim();
+                    if idx >= 1 && idx <= expected && !text.is_empty() {
+                        out[idx - 1] = Some(text.to_string());
                     }
                 }
             }
@@ -373,5 +408,21 @@ mod tests {
         let raw = "Hello\nWorld";
         let result = parse_numbered_response(raw, 2).unwrap();
         assert_eq!(result, vec!["Hello", "World"]);
+    }
+
+    #[test]
+    fn test_parse_think_block_stripped() {
+        // qwen3 thinking mode: block is ignored, real answer is parsed
+        let raw = "<think>\nraisonnement interne\n</think>\n[1] Hero";
+        let result = parse_numbered_response(raw, 1).unwrap();
+        assert_eq!(result, vec!["Hero"]);
+    }
+
+    #[test]
+    fn test_parse_dot_format() {
+        // Model returns "1. text" instead of "[1] text"
+        let raw = "1. Hero\n2. Sword";
+        let result = parse_numbered_response(raw, 2).unwrap();
+        assert_eq!(result, vec!["Hero", "Sword"]);
     }
 }

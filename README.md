@@ -38,7 +38,10 @@
 ## Prerequisites
 
 - **Ollama** installed: https://ollama.ai
-- Recommended model: `ollama pull qwen3:4b`
+- Recommended model: `ollama pull qwen3:4b-instruct-2507-q4_K_M`
+
+> The `-instruct` variant responds directly without a thinking
+> phase, which produces faster and more reliable translations.
 - **Linux**: webkit2gtk-4.1 (usually already installed)
 - **Windows**: no additional prerequisites
 
