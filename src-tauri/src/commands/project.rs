@@ -672,9 +672,9 @@ fn read_vx_ace_game_title(system_rvdata2_path: &Path) -> Option<String> {
 ///
 /// Returns `(file_name, absolute_file_path, file_type, raw_bytes)`.
 /// Skips files with unrecognised names (`"unknown"` file type).
-fn collect_rvdata2_files(
-    data_dir: &Path,
-) -> Result<Vec<(String, String, String, Vec<u8>)>, std::io::Error> {
+type RvData2Entry = (String, String, String, Vec<u8>);
+
+fn collect_rvdata2_files(data_dir: &Path) -> Result<Vec<RvData2Entry>, std::io::Error> {
     let mut results = Vec::new();
 
     let entries = std::fs::read_dir(data_dir)?;
