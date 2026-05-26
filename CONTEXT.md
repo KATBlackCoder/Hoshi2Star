@@ -23,7 +23,7 @@ Template : `docs/journal/TEMPLATE.md`.
 | Couche | Technologie | Note critique |
 |--------|------------|---------------|
 | Runtime desktop | **Tauri v2** (NOT v1) | API, imports et capabilities entièrement différents |
-| Backend | **Rust** stable, tokio, sqlx 0.8 (sqlite), serde, thiserror | Async partout |
+| Backend | **Rust** stable, tokio, sqlx 0.8 (sqlite), serde, thiserror, marshal-rs 2.0.1 | Async partout |
 | Frontend | **React 19**, TypeScript strict (`"strict": true`) | Pas de `any` implicite |
 | UI components | **shadcn/ui** (owned in `src/components/ui/`) | Jamais npm-installés |
 | Data grid | **TanStack Table v8** + TanStack Virtual | Headless uniquement |
@@ -84,6 +84,8 @@ hoshi2star/
 │   ├── capabilities/           ← ACL JSON (PAS allowlist dans tauri.conf.json)
 │   ├── migrations/             ← sqlx migrate! files
 │   └── Cargo.toml
+├── .cargo/
+│   └── config.toml             ← rustflags target-cpu=native (requis par marshal-rs/gxhash)
 ├── .claude/
 │   └── settings.json           ← hooks PreToolUse / PostToolUse
 └── .mcp.json                   ← MCP servers (scope project)
@@ -215,6 +217,9 @@ cargo fmt --manifest-path src-tauri/Cargo.toml
 ❌  WEBKIT_DISABLE_DMABUF_RENDERER non défini sur GPU NVIDIA (fenêtre blanche, X11)
 ✅  export __NV_DISABLE_EXPLICIT_SYNC=1  dans ~/.config/fish/config.fish (Wayland — env actuel)
    ou export WEBKIT_DISABLE_DMABUF_RENDERER=1  (X11 uniquement)
+
+❌  cargo build sans .cargo/config.toml → marshal-rs échoue (gxhash exige AES+SSE2)
+✅  .cargo/config.toml à la racine avec rustflags = ["-C", "target-cpu=native"]
 ```
 
 ---
@@ -259,7 +264,7 @@ Voir `docs/adr/` pour le détail. Résumé :
 - **ADR-001** : SQLite via sqlx async (pas rusqlite sync, pas tauri-plugin-sql) — isolation DB côté Rust, pas d'accès JS direct
 - **ADR-002** : Placeholder tokenisation Rust-side avant tout envoi LLM — UUID opaque → restauration post-réponse avec validation
 - **ADR-003** : TM globale à l'installation (pas par projet) — fuzzy matching cross-projet = différenciateur clé vs Translator++
-- **ADR-004** : MVP limité à RPG Maker MV/MZ uniquement — JSON natif, marché le plus large, complexité minimale
+- **ADR-004** : MVP limité à RPG Maker MV/MZ (JSON natif) — VX Ace ajouté en F3 via marshal-rs (Ruby Marshal binary)
 - **ADR-005** : `lib.rs` comme entrée (pas `main.rs`) — requis pour les builds mobiles futurs Tauri
 
 ---
