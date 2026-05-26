@@ -31,9 +31,9 @@ Même architecture que le moteur MV/MZ : `extractor.rs` + `injector.rs` + `detec
 **Dépend de :** rien
 
 Tâches :
-- [ ] Ajouter `marshal-rs = "0"` dans `[dependencies]` (ou la version exacte trouvée sur crates.io)
-- [ ] Vérifier le nom d'import Rust : `use marshal_rs::{load_utf8, dump};` (tiret → underscore)
-- [ ] `cargo build` sans erreur de compilation
+- [x] Ajouter `marshal-rs = "0"` dans `[dependencies]` (ou la version exacte trouvée sur crates.io)
+- [x] Vérifier le nom d'import Rust : `use marshal_rs::{load_utf8, dump};` (tiret → underscore)
+- [x] `cargo build` sans erreur de compilation
 
 Test de validation :
 ```bash
@@ -65,13 +65,13 @@ Commit message : `build(deps): add marshal-rs for VX Ace .rvdata2 parsing`
 > (`"1"`, `"2"`, ...) → JSON Pointer `/1/name` (à confirmer).
 
 Tâches :
-- [ ] Créer un test `#[test] fn inspect_marshal_structure()` dans `extractor.rs`
+- [x] Créer un test `#[test] fn inspect_marshal_structure()` dans `extractor.rs`
   qui construit un `Value` JSON minimal représentant un acteur VX Ace, le `dump()`
   en marshal, puis le recharge avec `load_utf8()` et affiche la structure avec `dbg!()`
-- [ ] Tester sur les types clés : Array d'objets (Actors), Hash (MapInfos), objet Map imbriqué
-- [ ] Documenter dans ce fichier (section **Résultats investigation**) la structure exacte
+- [x] Tester sur les types clés : Array d'objets (Actors), Hash (MapInfos), objet Map imbriqué
+- [x] Documenter dans ce fichier (section **Résultats investigation**) la structure exacte
   des JSON Pointer paths pour : `Actors`, `Items`, `Map001`, `MapInfos`, `System`
-- [ ] Si la structure diffère de l'hypothèse, adapter les Steps 4 et 6 avant de les implémenter
+- [x] Si la structure diffère de l'hypothèse, adapter les Steps 4 et 6 avant de les implémenter
 
 Test de validation :
 ```bash
@@ -138,12 +138,12 @@ fn to_bytes(v: serde_json::Value) -> Vec<u8> {
 **Dépend de :** Step 2 (les paths sont connus)
 
 Tâches :
-- [ ] Créer `src-tauri/src/engines/vx_ace/` avec les 3 fichiers
-- [ ] `mod.rs` : `pub mod extractor; pub mod injector;` (pas de decryptor pour Temps 1)
-- [ ] `extractor.rs` : module doc + `use marshal_rs::load_utf8;` + stubs vides
-- [ ] `injector.rs` : module doc + `use marshal_rs::dump;` + stubs vides
-- [ ] Ajouter `pub mod vx_ace;` dans `engines/mod.rs`
-- [ ] `cargo build` sans erreur
+- [x] Créer `src-tauri/src/engines/vx_ace/` avec les 3 fichiers
+- [x] `mod.rs` : `pub mod extractor; pub mod injector;` (pas de decryptor pour Temps 1)
+- [x] `extractor.rs` : module doc + `use marshal_rs::load_utf8;` + stubs vides
+- [x] `injector.rs` : module doc + `use marshal_rs::dump;` + stubs vides
+- [x] Ajouter `pub mod vx_ace;` dans `engines/mod.rs`
+- [x] `cargo build` sans erreur
 
 Test de validation :
 ```bash
@@ -169,25 +169,25 @@ Commit message : `feat(engines): scaffold vx_ace module structure (extractor, in
 > - `Troops` : même pattern que MV/MZ (Array → pages → list)
 
 Tâches :
-- [ ] Copier/adapter `SegmentKind` et `ExtractedSegment` depuis `mv_mz/extractor.rs`
+- [x] Copier/adapter `SegmentKind` et `ExtractedSegment` depuis `mv_mz/extractor.rs`
   (duplication intentionnelle — pas d'abstraction prématurée)
-- [ ] Implémenter `pub fn extract_from_bytes(file_name: &str, bytes: &[u8]) -> Vec<ExtractedSegment>`
+- [x] Implémenter `pub fn extract_from_bytes(file_name: &str, bytes: &[u8]) -> Vec<ExtractedSegment>`
   qui appelle `load_utf8(bytes)` puis dispatch vers la bonne fonction
-- [ ] `extract_actors(value: &Value)` — `[null, {name, nickname, description}, ...]`
-- [ ] `extract_items(value: &Value)` — `[null, {name, description}, ...]`
-- [ ] `extract_weapons(value: &Value)` — idem Items
-- [ ] `extract_armors(value: &Value)` — idem Items
-- [ ] `extract_skills(value: &Value)` — `name`, `description`, `message1`, `message2`
-- [ ] `extract_states(value: &Value)` — `name`, `message1`–`message4`
-- [ ] `extract_enemies(value: &Value)` — `name` uniquement
-- [ ] `extract_troops(value: &Value)` — pages → list (codes 401, 102 identiques VX Ace)
-- [ ] `extract_map_infos(value: &Value)` — Hash `{"1": {name}, "2": {name}, ...}`
-- [ ] `extract_common_events(value: &Value)` — `[null, {name, list}, ...]`
-- [ ] `extract_map(value: &Value)` — `events` Hash → pages → list (codes 401, 102, **pas de 101 speaker**)
-- [ ] `extract_system(value: &Value)` — `game_title`, `currency_unit`, `terms`
+- [x] `extract_actors(value: &Value)` — `[null, {name, nickname, description}, ...]`
+- [x] `extract_items(value: &Value)` — `[null, {name, description}, ...]`
+- [x] `extract_weapons(value: &Value)` — idem Items
+- [x] `extract_armors(value: &Value)` — idem Items
+- [x] `extract_skills(value: &Value)` — `name`, `description`, `message1`, `message2`
+- [x] `extract_states(value: &Value)` — `name`, `message1`–`message4`
+- [x] `extract_enemies(value: &Value)` — `name` uniquement
+- [x] `extract_troops(value: &Value)` — pages → list (codes 401, 102 identiques VX Ace)
+- [x] `extract_map_infos(value: &Value)` — Hash `{"1": {name}, "2": {name}, ...}`
+- [x] `extract_common_events(value: &Value)` — `[null, {name, list}, ...]`
+- [x] `extract_map(value: &Value)` — `events` Hash → pages → list (codes 401, 102, **pas de 101 speaker**)
+- [x] `extract_system(value: &Value)` — `game_title`, `currency_unit`, `terms`
   (attention : fields snake_case Ruby, pas camelCase)
-- [ ] Filtre `is_empty()` / `trim().is_empty()` sur chaque texte (identique MV/MZ)
-- [ ] **Réutiliser** `is_placeholder_only()` de MV/MZ directement — VX Ace utilise les mêmes
+- [x] Filtre `is_empty()` / `trim().is_empty()` sur chaque texte (identique MV/MZ)
+- [x] **Réutiliser** `is_placeholder_only()` de MV/MZ directement — VX Ace utilise les mêmes
   placeholders (`\V[n]`, `\N[n]`, `\C[n]`, etc.) — tokenizer existant OK
 
 Test de validation :
@@ -211,19 +211,19 @@ Commit message : `feat(vx_ace): implement extractor for all rvdata2 file types`
 > Le round-trip complet (bytes → Value → extract → inject → dump → bytes) est testé au Step 7.
 
 Tâches :
-- [ ] `test_extract_actors_basic` — 2 acteurs, vérifier name/nickname/description
-- [ ] `test_extract_actors_skips_null` — premier élément null ignoré
-- [ ] `test_extract_items_name_and_description`
-- [ ] `test_extract_skills_with_messages` — message1 rempli, message2 vide → 3 segments
-- [ ] `test_extract_states_four_messages`
-- [ ] `test_extract_map_infos_hash_keys` — clés `"1"`, `"2"` → JSON Pointer `/1/name`, `/2/name`
-- [ ] `test_extract_common_events_name_and_dialogue`
-- [ ] `test_extract_map_dialogue_code_401`
-- [ ] `test_extract_map_choices_code_102`
-- [ ] `test_extract_map_no_speaker_in_code_101` — VX Ace : code 101 sans speaker name
-- [ ] `test_extract_system_game_title_snake_case` — field `game_title` (pas `gameTitle`)
-- [ ] `test_extract_skips_empty_strings`
-- [ ] `test_extract_skips_whitespace_only`
+- [x] `test_extract_actors_basic` — 2 acteurs, vérifier name/nickname/description
+- [x] `test_extract_actors_skips_null` — premier élément null ignoré
+- [x] `test_extract_items_name_and_description`
+- [x] `test_extract_skills_with_messages` — message1 rempli, message2 vide → 3 segments
+- [x] `test_extract_states_four_messages`
+- [x] `test_extract_map_infos_hash_keys` — clés `"1"`, `"2"` → JSON Pointer `/1/name`, `/2/name`
+- [x] `test_extract_common_events_name_and_dialogue`
+- [x] `test_extract_map_dialogue_code_401`
+- [x] `test_extract_map_choices_code_102`
+- [x] `test_extract_map_no_speaker_in_code_101` — VX Ace : code 101 sans speaker name
+- [x] `test_extract_system_game_title_snake_case` — field `game_title` (pas `gameTitle`)
+- [x] `test_extract_skips_empty_strings`
+- [x] `test_extract_skips_whitespace_only`
 
 Test de validation :
 ```bash
@@ -246,11 +246,11 @@ Commit message : `test(vx_ace): unit tests for all extractor functions`
 > Le module expose donc deux fonctions publiques : `inject()` (même API que MV/MZ) + `serialize()`.
 
 Tâches :
-- [ ] Reprendre `InjectorError` (KeyNotFound, NotAString) — identique MV/MZ
-- [ ] `pub fn inject(value: &mut Value, translations: &[(&str, &str)]) -> Result<(), InjectorError>`
+- [x] Reprendre `InjectorError` (KeyNotFound, NotAString) — identique MV/MZ
+- [x] `pub fn inject(value: &mut Value, translations: &[(&str, &str)]) -> Result<(), InjectorError>`
   — exactement la même implémentation que `mv_mz/injector.rs` (pointer_mut)
-- [ ] `pub fn serialize(value: Value) -> Vec<u8>` — appelle `marshal_rs::dump(value)`
-- [ ] `pub fn inject_and_serialize(bytes: &[u8], translations: &[(&str, &str)]) -> Result<Vec<u8>, InjectorError>`
+- [x] `pub fn serialize(value: Value) -> Vec<u8>` — appelle `marshal_rs::dump(value)`
+- [x] `pub fn inject_and_serialize(bytes: &[u8], translations: &[(&str, &str)]) -> Result<Vec<u8>, InjectorError>`
   — fonction convenience : `load_utf8(bytes)` → `inject()` → `serialize()`
 
 Test de validation :
@@ -274,12 +274,12 @@ Commit message : `feat(vx_ace): implement injector (pointer_mut + marshal dump)`
 > `load_utf8(dump(load_utf8(bytes))) == load_utf8(bytes)` (Value idempotent, pas bytes).
 
 Tâches :
-- [ ] `test_inject_actor_name` — injecter une traduction sur `/1/name`, vérifier le Value
-- [ ] `test_inject_error_key_not_found` — clé absente → InjectorError::KeyNotFound
-- [ ] `test_inject_error_not_a_string` — cible non-string → InjectorError::NotAString
-- [ ] `test_round_trip_actors` — extract → inject (source comme target) → Value identique
-- [ ] `test_round_trip_map` — extract_map → inject → Value identique
-- [ ] `test_serialize_produces_valid_marshal` — `load_utf8(serialize(value))` == value original
+- [x] `test_inject_actor_name` — injecter une traduction sur `/1/name`, vérifier le Value
+- [x] `test_inject_error_key_not_found` — clé absente → InjectorError::KeyNotFound
+- [x] `test_inject_error_not_a_string` — cible non-string → InjectorError::NotAString
+- [x] `test_round_trip_actors` — extract → inject (source comme target) → Value identique
+- [x] `test_round_trip_map` — extract_map → inject → Value identique
+- [x] `test_serialize_produces_valid_marshal` — `load_utf8(serialize(value))` == value original
   (idempotence du Value, pas des bytes)
 
 Test de validation :
@@ -308,13 +308,13 @@ Commit message : `test(vx_ace): round-trip and error tests for injector`
 > Absence de `www/data/` n'est PAS nécessaire (MV/MZ détecté avant grâce à System.json).
 
 Tâches :
-- [ ] Ajouter `VxAce` à `enum Engine`
-- [ ] Implémenter `find_vx_ace_data_dir(game_dir: &Path) -> Option<PathBuf>`
+- [x] Ajouter `VxAce` à `enum Engine`
+- [x] Implémenter `find_vx_ace_data_dir(game_dir: &Path) -> Option<PathBuf>`
   — cherche `Data/` puis `data/` (fallback case-insensitive Linux)
-- [ ] Implémenter `is_vx_ace_data_dir(dir: &Path) -> bool`
+- [x] Implémenter `is_vx_ace_data_dir(dir: &Path) -> bool`
   — vérifie `System.rvdata2` présent dans le dossier
-- [ ] Dans `detect_engine()` : ajouter la branche VX Ace APRÈS la branche MV/MZ existante
-- [ ] Tests unitaires (tempdir) :
+- [x] Dans `detect_engine()` : ajouter la branche VX Ace APRÈS la branche MV/MZ existante
+- [x] Tests unitaires (tempdir) :
   - `test_detect_vx_ace_data_dir` — `Data/System.rvdata2` présent
   - `test_detect_vx_ace_fallback_lowercase` — `data/System.rvdata2` (Linux)
   - `test_detect_mv_mz_not_confused_with_vx_ace` — `data/System.json` → MvMz (pas VxAce)
@@ -337,20 +337,20 @@ Commit message : `feat(detector): add Engine::VxAce detection (Data/*.rvdata2 + 
 **Dépend de :** Step 4, Step 6, Step 8
 
 Tâches :
-- [ ] Ajouter `use crate::engines::vx_ace::{extractor as vx_extractor, injector as vx_injector};`
-- [ ] Dans `open_project` : ajouter `Engine::VxAce => "vx_ace"` dans le match `engine_str`
-- [ ] Implémenter `collect_rvdata2_files(data_dir: &Path) -> Result<Vec<(String, String, String, Vec<u8>)>, io::Error>`
+- [x] Ajouter `use crate::engines::vx_ace::{extractor as vx_extractor, injector as vx_injector};`
+- [x] Dans `open_project` : ajouter `Engine::VxAce => "vx_ace"` dans le match `engine_str`
+- [x] Implémenter `collect_rvdata2_files(data_dir: &Path) -> Result<Vec<(String, String, String, Vec<u8>)>, io::Error>`
   — analogue à `collect_json_files()` mais retourne `Vec<u8>` (binaire, pas string)
   — filtre les extensions `.rvdata2` uniquement
   — pas de parsing JSON (le parsing est délégué à `extract_from_bytes`)
-- [ ] Implémenter `classify_vx_ace_file(file_name: &str) -> &'static str`
+- [x] Implémenter `classify_vx_ace_file(file_name: &str) -> &'static str`
   — `Actors.rvdata2` → `"vx_actors"`, `Map001.rvdata2` → `"vx_map"`, etc.
   — utiliser des types distincts `"vx_*"` pour différencier dans le FileTree
-- [ ] Dans `open_project` : branche `Engine::VxAce` utilise `collect_rvdata2_files()` et
+- [x] Dans `open_project` : branche `Engine::VxAce` utilise `collect_rvdata2_files()` et
   `vx_extractor::extract_from_bytes(file_name, &bytes)` pour chaque fichier
-- [ ] Dans `export_project` : branche `vx_ace` utilise `vx_injector::inject_and_serialize()`
+- [x] Dans `export_project` : branche `vx_ace` utilise `vx_injector::inject_and_serialize()`
   et écrit `Vec<u8>` (pas string) avec `std::fs::write(path, bytes)`
-- [ ] Tests unitaires :
+- [x] Tests unitaires :
   - `test_classify_vx_ace_map_files` — `Map001.rvdata2` → `"vx_map"`
   - `test_classify_vx_ace_data_files` — `Actors.rvdata2` → `"vx_actors"`, etc.
 
@@ -376,11 +376,11 @@ Commit message : `feat(commands): dispatch Engine::VxAce in open_project and exp
 > vs Blue/Green pour MV/MZ — distinction visuelle sans complexité excessive.
 
 Tâches :
-- [ ] Dans `fileIcon()`, ajouter les cas `"vx_map"`, `"vx_actors"`, `"vx_armors"`, `"vx_weapons"`,
+- [x] Dans `fileIcon()`, ajouter les cas `"vx_map"`, `"vx_actors"`, `"vx_armors"`, `"vx_weapons"`,
   `"vx_skills"`, `"vx_items"`, `"vx_enemies"`, `"vx_classes"`, `"vx_common_events"`,
   `"vx_map_infos"`, `"vx_system"`, `"vx_states"`, `"vx_troops"`
-- [ ] Couleur distincte : `text-amber-400` pour les types VX Ace (vs couleurs actuelles MV/MZ)
-- [ ] `pnpm typecheck` sans erreur
+- [x] Couleur distincte : `text-amber-400` pour les types VX Ace (vs couleurs actuelles MV/MZ)
+- [x] `pnpm typecheck` sans erreur
 
 Test de validation :
 ```bash
@@ -433,13 +433,13 @@ git push origin main
 
 ## Mise à jour après complétion
 
-- [ ] Cocher dans ROADMAP.md :
+- [x] Cocher dans ROADMAP.md :
   - `[ ] Intégration marshal-rs` → `[x]`
   - `[ ] src-tauri/src/engines/vx_ace/extractor.rs` → `[x]`
   - `[ ] src-tauri/src/engines/vx_ace/injector.rs` → `[x]`
   - Laisser `[ ] Support archive .rgss3a` pour f3-02
   - Laisser `[ ] Tests round-trip VX Ace` → `[x]`
-- [ ] Mettre à jour CHANGELOG.md (skill `update-changelog`)
-- [ ] Créer journal `docs/journal/YYYY-MM-DD-f3-01-vx-ace.md`
-- [ ] Statut de ce plan → `[x] Complété`
-- [ ] Créer `docs/plans/f3-02-vx-ace-rgss3a.md` pour le Temps 2 (archives `.rgss3a` + zlib)
+- [x] Mettre à jour CHANGELOG.md (skill `update-changelog`)
+- [x] Créer journal `docs/journal/YYYY-MM-DD-f3-01-vx-ace.md`
+- [x] Statut de ce plan → `[x] Complété`
+- [x] Créer `docs/plans/f3-02-vx-ace-rgss3a.md` pour le Temps 2 (archives `.rgss3a` + zlib)
