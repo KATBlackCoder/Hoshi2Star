@@ -11,8 +11,9 @@ use std::path::Path;
 use crate::{
     core::{qa, tm},
     engines::{
-        detector::{detect_engine, find_data_dir, Engine},
+        detector::{detect_engine, find_data_dir, find_vx_ace_data_dir, Engine},
         mv_mz::{extractor, injector},
+        vx_ace::{extractor as vx_extractor, injector as vx_injector},
     },
     llm::{
         pipeline,
@@ -123,16 +124,19 @@ pub async fn open_project(
     };
 
     // 2. Locate data directory (MV/MZ: data/ or www/data/ — VX Ace: Data/ or data/)
-    let data_dir = if engine_str == "vx_ace" {
-        crate::engines::detector::find_vx_ace_data_dir(game_dir)
-            .ok_or_else(|| "Cannot find Data/ directory in VX Ace game folder".to_string())?
-    } else {
-        find_data_dir(game_dir)
-            .ok_or_else(|| "Cannot find data directory in game folder".to_string())?
+    let data_dir = match engine {
+        Engine::VxAce => find_vx_ace_data_dir(game_dir)
+            .ok_or_else(|| "Cannot find Data/ directory in VX Ace game folder".to_string())?,
+        Engine::MvMz => find_data_dir(game_dir)
+            .ok_or_else(|| "Cannot find data directory in game folder".to_string())?,
     };
 
-    // 3. Read game title from System.json (fallback: folder name)
-    let game_title = read_game_title(&data_dir.join("System.json")).unwrap_or_else(|| {
+    // 3. Read game title (MV/MZ: System.json gameTitle — VX Ace: System.rvdata2 game_title)
+    let game_title = match engine {
+        Engine::MvMz => read_game_title(&data_dir.join("System.json")),
+        Engine::VxAce => read_vx_ace_game_title(&data_dir.join("System.rvdata2")),
+    }
+    .unwrap_or_else(|| {
         game_dir
             .file_name()
             .and_then(|n| n.to_str())
@@ -155,39 +159,72 @@ pub async fn open_project(
         .map_err(|e| e.to_string())?;
 
     // 5. Walk data directory: read, extract, insert source_files + segments
-    let entries = collect_json_files(&data_dir).map_err(|e| e.to_string())?;
+    match engine {
+        Engine::MvMz => {
+            let entries = collect_json_files(&data_dir).map_err(|e| e.to_string())?;
+            for (file_name, file_path, file_type, json_value) in &entries {
+                let file_id = uuid::Uuid::new_v4().to_string();
+                sqlx::query(
+                    "INSERT INTO source_files (id, project_id, file_name, file_path, file_type) \
+                     VALUES (?, ?, ?, ?, ?)",
+                )
+                .bind(&file_id)
+                .bind(&project_id)
+                .bind(file_name)
+                .bind(file_path)
+                .bind(file_type)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
 
-    for (file_name, file_path, file_type, json_value) in &entries {
-        let file_id = uuid::Uuid::new_v4().to_string();
+                for seg in dispatch_extract(file_name, json_value) {
+                    let seg_id = uuid::Uuid::new_v4().to_string();
+                    sqlx::query(
+                        "INSERT INTO segments (id, source_file_id, json_key, source_text) \
+                         VALUES (?, ?, ?, ?)",
+                    )
+                    .bind(&seg_id)
+                    .bind(&file_id)
+                    .bind(&seg.key)
+                    .bind(&seg.source)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                }
+            }
+        }
+        Engine::VxAce => {
+            let entries = collect_rvdata2_files(&data_dir).map_err(|e| e.to_string())?;
+            for (file_name, file_path, file_type, bytes) in &entries {
+                let file_id = uuid::Uuid::new_v4().to_string();
+                sqlx::query(
+                    "INSERT INTO source_files (id, project_id, file_name, file_path, file_type) \
+                     VALUES (?, ?, ?, ?, ?)",
+                )
+                .bind(&file_id)
+                .bind(&project_id)
+                .bind(file_name)
+                .bind(file_path)
+                .bind(file_type)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
 
-        sqlx::query(
-            "INSERT INTO source_files (id, project_id, file_name, file_path, file_type) \
-             VALUES (?, ?, ?, ?, ?)",
-        )
-        .bind(&file_id)
-        .bind(&project_id)
-        .bind(file_name)
-        .bind(file_path)
-        .bind(file_type)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-
-        let segments = dispatch_extract(file_name, json_value);
-
-        for seg in segments {
-            let seg_id = uuid::Uuid::new_v4().to_string();
-            sqlx::query(
-                "INSERT INTO segments (id, source_file_id, json_key, source_text) \
-                 VALUES (?, ?, ?, ?)",
-            )
-            .bind(&seg_id)
-            .bind(&file_id)
-            .bind(&seg.key)
-            .bind(&seg.source)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
+                for seg in vx_extractor::extract_from_bytes(file_name, bytes) {
+                    let seg_id = uuid::Uuid::new_v4().to_string();
+                    sqlx::query(
+                        "INSERT INTO segments (id, source_file_id, json_key, source_text) \
+                         VALUES (?, ?, ?, ?)",
+                    )
+                    .bind(&seg_id)
+                    .bind(&file_id)
+                    .bind(&seg.key)
+                    .bind(&seg.source)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                }
+            }
         }
     }
 
@@ -334,8 +371,8 @@ pub async fn update_segment(
 
 /// Re-inject all translated segments back into the game files.
 ///
-/// Reads `target_text` from DB for each source file, calls the MV/MZ injector,
-/// and writes the result back to the original file path.
+/// Dispatches to the MV/MZ JSON injector or the VX Ace Marshal injector
+/// based on the `file_type` prefix stored in `source_files`.
 #[tauri::command]
 pub async fn export_project(
     project_id: String,
@@ -365,23 +402,32 @@ pub async fn export_project(
             continue;
         }
 
-        let raw = std::fs::read_to_string(&file.file_path)
-            .map_err(|e| format!("read {}: {e}", file.file_name))?;
-        let mut json: serde_json::Value =
-            serde_json::from_str(&raw).map_err(|e| format!("parse {}: {e}", file.file_name))?;
-
         let pairs: Vec<(&str, &str)> = translations
             .iter()
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect();
 
-        injector::inject(&mut json, &pairs)
-            .map_err(|e| format!("inject {}: {e}", file.file_name))?;
-
-        let out = serde_json::to_string(&json)
-            .map_err(|e| format!("serialise {}: {e}", file.file_name))?;
-        std::fs::write(&file.file_path, out)
-            .map_err(|e| format!("write {}: {e}", file.file_name))?;
+        if file.file_type.starts_with("vx_") {
+            // VX Ace: binary Marshal round-trip
+            let bytes = std::fs::read(&file.file_path)
+                .map_err(|e| format!("read {}: {e}", file.file_name))?;
+            let out = vx_injector::inject_and_serialize(&bytes, &pairs)
+                .map_err(|e| format!("inject {}: {e}", file.file_name))?;
+            std::fs::write(&file.file_path, out)
+                .map_err(|e| format!("write {}: {e}", file.file_name))?;
+        } else {
+            // MV/MZ: JSON text round-trip
+            let raw = std::fs::read_to_string(&file.file_path)
+                .map_err(|e| format!("read {}: {e}", file.file_name))?;
+            let mut json: serde_json::Value =
+                serde_json::from_str(&raw).map_err(|e| format!("parse {}: {e}", file.file_name))?;
+            injector::inject(&mut json, &pairs)
+                .map_err(|e| format!("inject {}: {e}", file.file_name))?;
+            let out = serde_json::to_string(&json)
+                .map_err(|e| format!("serialise {}: {e}", file.file_name))?;
+            std::fs::write(&file.file_path, out)
+                .map_err(|e| format!("write {}: {e}", file.file_name))?;
+        }
     }
 
     Ok(())
@@ -607,11 +653,89 @@ pub async fn get_ollama_models(url: String) -> Result<Vec<String>, String> {
 // Private helpers
 // ---------------------------------------------------------------------------
 
-/// Read `gameTitle` from a `System.json` path.
+/// Read `gameTitle` from a `System.json` path (MV/MZ).
 fn read_game_title(system_json_path: &Path) -> Option<String> {
     let content = std::fs::read_to_string(system_json_path).ok()?;
     let v: serde_json::Value = serde_json::from_str(&content).ok()?;
     v.get("gameTitle")?.as_str().map(|s| s.to_string())
+}
+
+/// Read `game_title` from a `System.rvdata2` path (VX Ace, snake_case field).
+fn read_vx_ace_game_title(system_rvdata2_path: &Path) -> Option<String> {
+    let bytes = std::fs::read(system_rvdata2_path).ok()?;
+    let mv: marshal_rs::Value = marshal_rs::load_utf8(&bytes, None).ok()?;
+    let json: serde_json::Value = mv.into();
+    json.get("game_title")?.as_str().map(|s| s.to_string())
+}
+
+/// Collect all relevant `.rvdata2` files from a VX Ace data directory.
+///
+/// Returns `(file_name, absolute_file_path, file_type, raw_bytes)`.
+/// Skips files with unrecognised names (`"unknown"` file type).
+fn collect_rvdata2_files(
+    data_dir: &Path,
+) -> Result<Vec<(String, String, String, Vec<u8>)>, std::io::Error> {
+    let mut results = Vec::new();
+
+    let entries = std::fs::read_dir(data_dir)?;
+    for entry in entries.flatten() {
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        if !file_name.ends_with(".rvdata2") {
+            continue;
+        }
+
+        let file_type = classify_vx_ace_file(&file_name);
+        if file_type == "unknown" {
+            continue;
+        }
+
+        let file_path = entry.path().to_string_lossy().to_string();
+        let bytes = match std::fs::read(entry.path()) {
+            Ok(b) => b,
+            Err(_) => continue, // skip unreadable files
+        };
+
+        results.push((file_name, file_path, file_type.to_string(), bytes));
+    }
+
+    // Deterministic order: sort by file name
+    results.sort_by(|a, b| a.0.cmp(&b.0));
+
+    Ok(results)
+}
+
+/// Map a VX Ace filename to a file type identifier.
+///
+/// Prefixed with `"vx_"` to distinguish from MV/MZ types in `file_type` column.
+/// Returns `"unknown"` for files that should be skipped.
+fn classify_vx_ace_file(file_name: &str) -> &'static str {
+    // Map files are Map001.rvdata2 … MapNNN.rvdata2 (but not MapInfos.rvdata2)
+    if file_name.starts_with("Map")
+        && file_name != "MapInfos.rvdata2"
+        && file_name
+            .trim_start_matches("Map")
+            .trim_end_matches(".rvdata2")
+            .parse::<u32>()
+            .is_ok()
+    {
+        return "vx_map";
+    }
+
+    match file_name {
+        "Actors.rvdata2" => "vx_actors",
+        "Armors.rvdata2" => "vx_armors",
+        "Classes.rvdata2" => "vx_classes",
+        "CommonEvents.rvdata2" => "vx_common_events",
+        "Enemies.rvdata2" => "vx_enemies",
+        "Items.rvdata2" => "vx_items",
+        "MapInfos.rvdata2" => "vx_map_infos",
+        "Skills.rvdata2" => "vx_skills",
+        "States.rvdata2" => "vx_states",
+        "System.rvdata2" => "vx_system",
+        "Troops.rvdata2" => "vx_troops",
+        "Weapons.rvdata2" => "vx_weapons",
+        _ => "unknown",
+    }
 }
 
 /// Collect all relevant JSON files from the MV/MZ data directory.
@@ -764,5 +888,34 @@ mod tests {
         let segs = dispatch_extract("Map001.json", &json);
         assert_eq!(segs.len(), 1);
         assert_eq!(segs[0].source, "セリフ");
+    }
+
+    // --- VX Ace classify ---
+
+    #[test]
+    fn test_classify_vx_ace_map_files() {
+        assert_eq!(classify_vx_ace_file("Map001.rvdata2"), "vx_map");
+        assert_eq!(classify_vx_ace_file("Map999.rvdata2"), "vx_map");
+        assert_eq!(classify_vx_ace_file("MapInfos.rvdata2"), "vx_map_infos");
+        assert_eq!(classify_vx_ace_file("MapBoss.rvdata2"), "unknown");
+    }
+
+    #[test]
+    fn test_classify_vx_ace_data_files() {
+        assert_eq!(classify_vx_ace_file("Actors.rvdata2"), "vx_actors");
+        assert_eq!(classify_vx_ace_file("Armors.rvdata2"), "vx_armors");
+        assert_eq!(classify_vx_ace_file("Classes.rvdata2"), "vx_classes");
+        assert_eq!(
+            classify_vx_ace_file("CommonEvents.rvdata2"),
+            "vx_common_events"
+        );
+        assert_eq!(classify_vx_ace_file("Enemies.rvdata2"), "vx_enemies");
+        assert_eq!(classify_vx_ace_file("Items.rvdata2"), "vx_items");
+        assert_eq!(classify_vx_ace_file("Skills.rvdata2"), "vx_skills");
+        assert_eq!(classify_vx_ace_file("States.rvdata2"), "vx_states");
+        assert_eq!(classify_vx_ace_file("System.rvdata2"), "vx_system");
+        assert_eq!(classify_vx_ace_file("Troops.rvdata2"), "vx_troops");
+        assert_eq!(classify_vx_ace_file("Weapons.rvdata2"), "vx_weapons");
+        assert_eq!(classify_vx_ace_file("Scripts.rvdata2"), "unknown");
     }
 }
