@@ -21,6 +21,7 @@ import {
 
 function fileIcon(fileType: string) {
   switch (fileType) {
+    // --- MV/MZ file types (JSON, various colours) ---
     case "map":
       return <Map className="h-3.5 w-3.5 shrink-0 text-blue-400" />;
     case "actors":
@@ -44,6 +45,30 @@ function fileIcon(fileType: string) {
       return (
         <Settings className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       );
+    // --- VX Ace file types (.rvdata2, amber colour scheme) ---
+    case "vx_map":
+      return <Map className="h-3.5 w-3.5 shrink-0 text-amber-400" />;
+    case "vx_actors":
+      return <Users className="h-3.5 w-3.5 shrink-0 text-amber-400" />;
+    case "vx_armors":
+    case "vx_weapons":
+      return <Shield className="h-3.5 w-3.5 shrink-0 text-amber-400" />;
+    case "vx_skills":
+      return <Wand className="h-3.5 w-3.5 shrink-0 text-amber-400" />;
+    case "vx_items":
+      return <Sword className="h-3.5 w-3.5 shrink-0 text-amber-400" />;
+    case "vx_enemies":
+      return <Skull className="h-3.5 w-3.5 shrink-0 text-amber-400" />;
+    case "vx_classes":
+      return <BookOpen className="h-3.5 w-3.5 shrink-0 text-amber-400" />;
+    case "vx_common_events":
+      return <MessageSquare className="h-3.5 w-3.5 shrink-0 text-amber-400" />;
+    case "vx_map_infos":
+      return <List className="h-3.5 w-3.5 shrink-0 text-amber-400" />;
+    case "vx_system":
+    case "vx_states":
+    case "vx_troops":
+      return <Settings className="h-3.5 w-3.5 shrink-0 text-amber-400" />;
     default:
       return (
         <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
