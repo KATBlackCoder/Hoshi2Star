@@ -6,13 +6,13 @@ Implémenter le support RPG Maker VX Ace pour les projets non-packagés (`.rvdat
 Utiliser le crate `marshal-rs` pour parser/sérialiser le format Ruby Marshal sans Ruby installé.
 Même architecture que le moteur MV/MZ : `extractor.rs` + `injector.rs` + `detector.rs` étendu.
 
-## Statut : [ ] À faire
+## Statut : [x] Complété (2026-05-26)
 
 ## Prérequis
 
 - [x] F1 complet (engines/mv_mz/ implémenté, patterns établis)
 - [x] F2 complet (commands/project.rs avec dispatch Engine, DB stable)
-- [ ] marshal-rs disponible sur crates.io ← à vérifier au Step 1
+- [x] marshal-rs disponible sur crates.io ← à vérifier au Step 1
 
 ## Estimation
 

@@ -155,15 +155,15 @@
 ---
 
 ## F3 — Polissage + VX Ace + beta privée
-**Statut : [ ] À démarrer**
+**Statut : [~] En cours**
 **Critère de sortie : 20–30 beta testeurs actifs, feedback collecté, VX Ace fonctionnel.**
 
 ### Engine Layer — RPG Maker VX Ace
-- [ ] Intégration `marshal-rs` (crate Rust, parse Ruby Marshal sans Ruby installé)
-- [ ] `src-tauri/src/engines/vx_ace/extractor.rs` — lecture `.rvdata2`
-- [ ] `src-tauri/src/engines/vx_ace/injector.rs` — réécriture `.rvdata2`
+- [x] Intégration `marshal-rs` (crate Rust, parse Ruby Marshal sans Ruby installé)
+- [x] `src-tauri/src/engines/vx_ace/extractor.rs` — lecture `.rvdata2`
+- [x] `src-tauri/src/engines/vx_ace/injector.rs` — réécriture `.rvdata2`
 - [ ] Support archive `.rgss3a` (extraction préalable)
-- [ ] Tests round-trip VX Ace
+- [x] Tests round-trip VX Ace
 
 ### Core Layer — TM v2 (fuzzy matching)
 - [ ] Levenshtein distance normalisée sur les segments (seuil 80 % configurable)

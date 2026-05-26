@@ -4,6 +4,15 @@ All notable changes to Hoshi2Star will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
+### Added
+- Add RPG Maker VX Ace engine support (marshal-rs, non-packaged `.rvdata2` projects)
+- Add `vx_ace/extractor.rs` — reads Actors, Armors, Weapons, Skills, Items, Enemies, Classes, CommonEvents, MapInfos, Maps, System from `.rvdata2`
+- Add `vx_ace/injector.rs` — re-serialises translated content back to Ruby Marshal binary
+- Add VX Ace file type icons in FileTree (amber color scheme, 12 `vx_*` types)
+- Add `Engine::VxAce` variant to detector with `Data/` → `data/` fallback for Linux case-sensitivity
+
+### Fixed
+- Fix `clippy::type_complexity` in `collect_rvdata2_files` via `RvData2Entry` type alias
 
 ## [0.2.1] - 2026-05-25
 ### Added
