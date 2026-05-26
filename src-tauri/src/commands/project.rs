@@ -115,15 +115,21 @@ pub async fn open_project(
 ) -> Result<Project, String> {
     let game_dir = Path::new(&path);
 
-    // 1. Detect engine (currently only MV/MZ)
+    // 1. Detect engine
     let engine = detect_engine(game_dir).map_err(|e| e.to_string())?;
     let engine_str = match engine {
         Engine::MvMz => "mv_mz",
+        Engine::VxAce => "vx_ace",
     };
 
-    // 2. Locate data directory
-    let data_dir = find_data_dir(game_dir)
-        .ok_or_else(|| "Cannot find data directory in game folder".to_string())?;
+    // 2. Locate data directory (MV/MZ: data/ or www/data/ — VX Ace: Data/ or data/)
+    let data_dir = if engine_str == "vx_ace" {
+        crate::engines::detector::find_vx_ace_data_dir(game_dir)
+            .ok_or_else(|| "Cannot find Data/ directory in VX Ace game folder".to_string())?
+    } else {
+        find_data_dir(game_dir)
+            .ok_or_else(|| "Cannot find data directory in game folder".to_string())?
+    };
 
     // 3. Read game title from System.json (fallback: folder name)
     let game_title = read_game_title(&data_dir.join("System.json")).unwrap_or_else(|| {
