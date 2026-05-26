@@ -1,0 +1,4 @@
+[build]
+# marshal-rs depends on gxhash which requires AES+SSE2 intrinsics.
+# target-cpu=native enables all features supported by the current CPU.
+rustflags = ["-C", "target-cpu=native"]
