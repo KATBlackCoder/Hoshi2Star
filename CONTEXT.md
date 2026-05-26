@@ -264,6 +264,16 @@ Voir `docs/adr/` pour le détail. Résumé :
 
 ---
 
+## Changelog
+
+Fichier : `CHANGELOG.md` (Keep a Changelog format)
+Skill : `.claude/skills/update-changelog/SKILL.md`
+
+Règle : mettre à jour `CHANGELOG.md` à la fin de chaque session qui produit des changements.
+Utiliser le skill `update-changelog`.
+
+---
+
 ## Progression du développement
 
 Voir `ROADMAP.md` pour l'état actuel du projet.
