@@ -10,6 +10,14 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - Add `vx_ace/injector.rs` — re-serialises translated content back to Ruby Marshal binary
 - Add VX Ace file type icons in FileTree (amber color scheme, 12 `vx_*` types)
 - Add `Engine::VxAce` variant to detector with `Data/` → `data/` fallback for Linux case-sensitivity
+- Add Git branch workflow to development conventions in CONTEXT.md
+
+### Changed
+- Disable VX Ace engine detection (code preserved in `engines/vx_ace/`, reactivation planned post-Wolf RPG)
+- Refocus roadmap: Wolf RPG F4 as absolute priority over VX Ace and other engines
+- Rename F3 phase: "Polissage + Glossaire + TM fuzzy + beta privée" (VX Ace removed from scope)
+- Rename F4 phase: "Wolf RPG (priorité absolue)" with explicit rationale (~40% of untranslated JP games on DLsite)
+- Add engine priority table to ROADMAP.md
 
 ### Fixed
 - Fix `clippy::type_complexity` in `collect_rvdata2_files` via `RvData2Entry` type alias

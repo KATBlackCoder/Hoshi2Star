@@ -13,9 +13,21 @@
 | **F0** | Pré-dev | Setup environnement et fondations |
 | **F1** | Mois 1–2 | Parsers MV/MZ + UI skeleton |
 | **F2** | Mois 3–4 | LLM pipeline + TM + **MVP vendable** |
-| **F3** | Mois 5–6 | Polissage + VX Ace + beta privée |
-| **F4** | Mois 7–9 | Wolf RPG + diff-aware + lancement public |
+| **F3** | Mois 5–6 | Polissage + Glossaire + TM fuzzy + beta privée |
+| **F4** | Mois 7–9 | Wolf RPG (priorité absolue) + diff-aware + lancement public |
 | **F5** | Mois 10–12 | Wolf v3/WolfX + Bakin + consolidation |
+
+---
+
+## Moteurs — ordre de priorité
+
+| Moteur | Statut | Priorité |
+|--------|--------|---------|
+| RPG Maker MV/MZ | ✅ Supporté | — |
+| Wolf RPG v1/v2/v3 | 🔜 F4 | **Absolue** |
+| RPG Maker VX Ace | ⏸ Code prêt, désactivé | Post-Wolf RPG |
+| RPG Developer Bakin | 🔜 F5 | Basse |
+| Autres (Ren'Py, Kirikiri) | 🔜 Backlog | Si demande |
 
 ---
 
@@ -154,16 +166,13 @@
 
 ---
 
-## F3 — Polissage + VX Ace + beta privée
+## F3 — Polissage + Glossaire + TM fuzzy + beta privée
 **Statut : [~] En cours**
-**Critère de sortie : 20–30 beta testeurs actifs, feedback collecté, VX Ace fonctionnel.**
+**Critère de sortie : 20–30 beta testeurs actifs, feedback collecté, TM fuzzy + glossaire fonctionnels.**
 
-### Engine Layer — RPG Maker VX Ace
-- [x] Intégration `marshal-rs` (crate Rust, parse Ruby Marshal sans Ruby installé)
-- [x] `src-tauri/src/engines/vx_ace/extractor.rs` — lecture `.rvdata2`
-- [x] `src-tauri/src/engines/vx_ace/injector.rs` — réécriture `.rvdata2`
-- [ ] Support archive `.rgss3a` (extraction préalable)
-- [x] Tests round-trip VX Ace
+### Engine Layer — VX Ace
+- [-] VX Ace reporté — code disponible dans engines/vx_ace/
+      mais désactivé. Réactivation prévue post-Wolf RPG stable.
 
 ### Core Layer — TM v2 (fuzzy matching)
 - [ ] Levenshtein distance normalisée sur les segments (seuil 80 % configurable)
@@ -189,9 +198,13 @@
 
 ---
 
-## F4 — Wolf RPG + diff-aware merge + lancement public
+## F4 — Wolf RPG (priorité absolue) + diff-aware merge + lancement public
 **Statut : [ ] À démarrer**
 **Critère de sortie : Lancement payant, Wolf RPG v1/v2 fonctionnel, diff-aware merge disponible.**
+
+> Wolf RPG est la priorité absolue — représente ~40% des jeux JP
+> non traduits sur DLsite. RuneTranslate le supporte déjà.
+> À compléter avant tout autre moteur.
 
 ### Engine Layer — Wolf RPG v1/v2
 - [ ] Intégration `rewolf-trans` (TypeScript) via sidecar Tauri ou bindings WASM

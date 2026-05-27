@@ -49,7 +49,7 @@ Template : `docs/journal/TEMPLATE.md`.
 │  SQLite TM · Glossaire · QA engine · Diff   │
 ├─────────────────────────────────────────────┤
 │  Engine Layer     src-tauri/src/engines/    │
-│  mv_mz/ · vx_ace/ · wolf/ · bakin/         │
+│  mv_mz/ · wolf/ (priorité F4) · vx_ace/ (désactivé) · bakin/ │
 ├─────────────────────────────────────────────┤
 │  Export Layer     src-tauri/src/export/     │
 │  Re-injector · Patch diff · Format .h2s     │
@@ -157,6 +157,35 @@ cargo fmt --manifest-path src-tauri/Cargo.toml
 
 **Avant tout commit** : `cargo fmt && cargo clippy -D warnings && pnpm typecheck`
 (enforced par hooks PostToolUse)
+
+---
+
+## Workflow Git — branches
+
+Toujours créer une branche avant de travailler :
+```bash
+git checkout -b <type>/<description-courte>
+```
+
+Types :
+- `feat/`  → nouvelle feature
+- `fix/`   → correction de bug
+- `chore/` → maintenance, docs, config
+- `plan/`  → création de plan uniquement
+
+Merge uniquement quand :
+- `cargo test` vert
+- `cargo clippy -D warnings` vert
+- `pnpm typecheck` vert
+- Review visuelle si UI modifiée
+
+```bash
+# Commandes merge
+git checkout main
+git merge --no-ff <branche>
+git push origin main
+git branch -d <branche>
+```
 
 ---
 
@@ -298,3 +327,5 @@ Avant de coder une feature, vérifier dans la roadmap :
 - **Monétisation** : one-shot 29 $ + 9 $/6 mois updates — pas d'abonnement mensuel (allergie fan-trad)
 - **Langue source principale** : Japonais (90 %+ du marché RPG Maker/Wolf). Korean et Chinese source en add-ons optionnels (9 $ chacun) — voir F5 dans ROADMAP.md
 - **MVP vendable** : mois 4 — MV/MZ + LLM pre-translation + TM exact match + QA placeholders
+- **Moteurs prioritaires** : MV/MZ ✅ → Wolf RPG F4 → autres post-stabilisation
+- **VX Ace** : code disponible mais désactivé volontairement — réactiver uniquement quand Wolf RPG est stable
