@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::{
-    core::{qa, tm},
+    core::{glossary, qa, tm},
     engines::{
         detector::{detect_engine, find_data_dir, find_vx_ace_data_dir, Engine},
         mv_mz::{extractor, injector},
@@ -491,10 +491,38 @@ pub async fn translate_segments(
             &provider_config.model,
             std::time::Duration::from_secs(120),
         );
+
+        // Resolve the project_id from the first segment so we can load glossary terms.
+        let lang_pair = "ja-en";
+        let glossary_terms: Vec<(String, String)> = if let Some((first_id, _)) = pairs.first() {
+            let pid: Option<String> = sqlx::query_scalar(
+                "SELECT sf.project_id FROM segments s \
+                 JOIN source_files sf ON s.source_file_id = sf.id \
+                 WHERE s.id = ? LIMIT 1",
+            )
+            .bind(first_id)
+            .fetch_optional(&db)
+            .await
+            .ok()
+            .flatten();
+            match pid {
+                Some(project_id) => glossary::list_for_project(&db, &project_id, lang_pair)
+                    .await
+                    .unwrap_or_default()
+                    .into_iter()
+                    .take(30)
+                    .map(|t| (t.source_text, t.target_text))
+                    .collect(),
+                None => vec![],
+            }
+        } else {
+            vec![]
+        };
+
         let context = TranslationContext {
             source_lang: "ja".to_string(),
             target_lang: "en".to_string(),
-            glossary_terms: vec![],
+            glossary_terms,
         };
 
         match pipeline::run(pairs, &provider, context, &db, &handle).await {
