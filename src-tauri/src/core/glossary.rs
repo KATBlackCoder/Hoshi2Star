@@ -11,6 +11,7 @@
 //! Terms extracted by the LLM pipeline are flagged `auto_generated = true`.
 //! Manual additions use `auto_generated = false`.
 
+use crate::llm::provider::LlmProvider;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, SqlitePool};
 
@@ -150,6 +151,155 @@ pub async fn list_for_project(
 }
 
 // ---------------------------------------------------------------------------
+// LLM extraction
+// ---------------------------------------------------------------------------
+
+/// Local struct for deserializing LLM-generated JSON term suggestions.
+#[derive(Debug, Deserialize)]
+struct ExtractedTerm {
+    source: String,
+    target: String,
+    #[serde(default)]
+    domain: String,
+}
+
+/// Query the LLM to identify glossary-worthy terms from a project's name fields.
+///
+/// Scans `Actors`, `Skills`, `Items`, and `States` segments (json_key `%/name`),
+/// sends up to 200 unique source texts to the LLM, and stores up to 50 results.
+///
+/// Returns only newly created terms (existing source_text entries are skipped).
+/// On JSON parse failure, logs a warning and returns an empty Vec — no panic.
+pub async fn extract_terms_from_project(
+    pool: &SqlitePool,
+    provider: &impl LlmProvider,
+    project_id: &str,
+    lang_pair: &str,
+) -> Result<Vec<GlossaryTerm>, String> {
+    // 1. Fetch up to 200 unique source texts from name fields
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT DISTINCT s.source_text \
+         FROM segments s \
+         JOIN source_files sf ON s.source_file_id = sf.id \
+         WHERE sf.project_id = ? \
+           AND sf.file_type IN ('actors', 'skills', 'items', 'states') \
+           AND s.json_key LIKE '%/name' \
+         LIMIT 200",
+    )
+    .bind(project_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if rows.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let source_list = rows
+        .iter()
+        .map(|(s,)| s.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // 2. Build extraction prompt
+    let system = "You are a Japanese game localization expert.\n\
+        Identify proper nouns and game-specific terms that must be translated consistently.\n\
+        Respond ONLY with a JSON array. No explanation. No markdown.";
+
+    let lang_target = lang_pair.split('-').nth(1).unwrap_or("en").to_uppercase();
+    let user = format!(
+        "/no_think\n\
+        Here are source texts from a Japanese RPG. Identify up to 50 terms worth glossarizing \
+        (character names, place names, skill names, item names, class names).\n\
+        For each term, provide a suggested {lang_target} translation.\n\
+        Format: [{{\"source\":\"JP term\",\"target\":\"{lang_target} term\",\
+        \"domain\":\"character|skill|item|state|other\"}}]\n\n\
+        Source texts:\n{source_list}"
+    );
+
+    // 3. Call LLM — single chat turn
+    let raw = provider
+        .chat(system, &user)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 4. Robustly parse the JSON array from the response
+    let extracted = parse_json_array(&raw);
+
+    // 5. Insert new terms in DB (skip duplicates, limit to 50)
+    let mut created = Vec::new();
+    for term in extracted.into_iter().take(50) {
+        if term.source.is_empty() || term.target.is_empty() {
+            continue;
+        }
+
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM glossary_terms WHERE source_text = ? AND project_id = ?",
+        )
+        .bind(&term.source)
+        .bind(project_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+
+        if count > 0 {
+            continue;
+        }
+
+        if let Ok(gt) = insert_term(
+            pool,
+            &term.source,
+            &term.target,
+            lang_pair,
+            &term.domain,
+            Some(project_id),
+            true,
+        )
+        .await
+        {
+            created.push(gt);
+        }
+    }
+
+    Ok(created)
+}
+
+/// Extract the first JSON array `[…]` from a raw LLM response.
+///
+/// LLMs often wrap JSON in markdown code fences or add explanatory text —
+/// this function searches for the first `[` and the last `]` to find the array.
+/// Returns an empty Vec on any parse error.
+fn parse_json_array(raw: &str) -> Vec<ExtractedTerm> {
+    // Strip <think>…</think> blocks that reasoning models may emit
+    let stripped = {
+        static THINK_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+            regex::Regex::new(r"(?s)<think>.*?</think>").expect("valid regex")
+        });
+        THINK_RE.replace_all(raw, "").into_owned()
+    };
+
+    let start = stripped.find('[');
+    let end = stripped.rfind(']');
+
+    match (start, end) {
+        (Some(s), Some(e)) if s < e => {
+            let slice = &stripped[s..=e];
+            match serde_json::from_str::<Vec<ExtractedTerm>>(slice) {
+                Ok(terms) => terms,
+                Err(e) => {
+                    eprintln!("[glossary] JSON parse error: {e}");
+                    vec![]
+                }
+            }
+        }
+        _ => {
+            eprintln!("[glossary] no JSON array found in LLM response");
+            vec![]
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
@@ -172,6 +322,10 @@ async fn fetch_by_id(pool: &SqlitePool, id: &str) -> Result<GlossaryTerm, sqlx::
 mod tests {
     use super::*;
     use crate::db::pool::init;
+    use crate::llm::provider::OllamaProvider;
+    use httpmock::prelude::*;
+    use serde_json::json;
+    use std::time::Duration;
     use tempfile::NamedTempFile;
 
     async fn test_db() -> (SqlitePool, NamedTempFile) {
@@ -244,6 +398,129 @@ mod tests {
         assert_eq!(terms.len(), 1);
         assert_eq!(terms[0].target_text, "Sorcerer");
         assert_eq!(terms[0].project_id, Some("proj-1".to_string()));
+    }
+
+    // ---- Extraction tests --------------------------------------------------
+
+    fn make_provider(server: &MockServer) -> OllamaProvider {
+        OllamaProvider::new(&server.base_url(), "test-model", Duration::from_secs(5))
+    }
+
+    async fn insert_actor_segment(db: &SqlitePool, project_id: &str) {
+        sqlx::query(
+            "INSERT INTO projects (id, name, engine, game_path) VALUES (?, 'G', 'mv_mz', '/tmp')",
+        )
+        .bind(project_id)
+        .execute(db)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO source_files \
+             (id, project_id, file_name, file_path, file_type) \
+             VALUES (?, ?, 'Actors.json', '/tmp/Actors.json', 'actors')",
+        )
+        .bind(format!("sf-{project_id}"))
+        .bind(project_id)
+        .execute(db)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO segments (id, source_file_id, json_key, source_text) \
+             VALUES (?, ?, '/1/name', '勇者')",
+        )
+        .bind(format!("s-{project_id}"))
+        .bind(format!("sf-{project_id}"))
+        .execute(db)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_extract_valid_json() {
+        let (db, _file) = test_db().await;
+        insert_actor_segment(&db, "p-extract-valid").await;
+
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/chat");
+            then.status(200).json_body(json!({
+                "message": {
+                    "role": "assistant",
+                    "content": r#"[{"source":"勇者","target":"Hero","domain":"character"}]"#
+                }
+            }));
+        });
+
+        let provider = make_provider(&server);
+        let terms = extract_terms_from_project(&db, &provider, "p-extract-valid", "ja-en")
+            .await
+            .expect("extract");
+
+        assert_eq!(terms.len(), 1);
+        assert_eq!(terms[0].source_text, "勇者");
+        assert_eq!(terms[0].target_text, "Hero");
+        assert_eq!(terms[0].domain, "character");
+        assert!(terms[0].auto_generated);
+        assert_eq!(terms[0].project_id, Some("p-extract-valid".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_extract_invalid_json_returns_empty() {
+        let (db, _file) = test_db().await;
+        insert_actor_segment(&db, "p-extract-invalid").await;
+
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/chat");
+            then.status(200).json_body(json!({
+                "message": {
+                    "role": "assistant",
+                    "content": "Sorry, I cannot help with that."
+                }
+            }));
+        });
+
+        let provider = make_provider(&server);
+        let terms = extract_terms_from_project(&db, &provider, "p-extract-invalid", "ja-en")
+            .await
+            .expect("no panic on invalid JSON");
+
+        assert!(terms.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_extract_limit_50() {
+        let (db, _file) = test_db().await;
+        insert_actor_segment(&db, "p-extract-limit").await;
+
+        // Build a JSON array of 100 terms
+        let many_terms: Vec<serde_json::Value> = (1..=100)
+            .map(|i| {
+                json!({
+                    "source": format!("用語{i}"),
+                    "target": format!("Term{i}"),
+                    "domain": "other"
+                })
+            })
+            .collect();
+
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/chat");
+            then.status(200).json_body(json!({
+                "message": {
+                    "role": "assistant",
+                    "content": serde_json::to_string(&many_terms).unwrap()
+                }
+            }));
+        });
+
+        let provider = make_provider(&server);
+        let terms = extract_terms_from_project(&db, &provider, "p-extract-limit", "ja-en")
+            .await
+            .expect("extract");
+
+        assert_eq!(terms.len(), 50, "should be capped at 50");
     }
 
     #[tokio::test]
