@@ -45,12 +45,16 @@ pub fn detect_engine(game_dir: &Path) -> Result<Engine, DetectionError> {
         }
     }
 
-    // 2. VX Ace: look for Data/System.rvdata2 (capital D) or data/System.rvdata2 (fallback)
-    if let Some(vx_dir) = find_vx_ace_data_dir(game_dir) {
-        if is_vx_ace_data_dir(&vx_dir) {
-            return Ok(Engine::VxAce);
-        }
-    }
+    // 2. VX Ace détection désactivée temporairement —
+    //    code conservé dans engines/vx_ace/ pour réactivation future.
+    //    Priorité actuelle : Wolf RPG (F4).
+    //    Réactiver en décommentant ce bloc quand VX Ace sera
+    //    la prochaine priorité.
+    // if let Some(vx_dir) = find_vx_ace_data_dir(game_dir) {
+    //     if is_vx_ace_data_dir(&vx_dir) {
+    //         return Ok(Engine::VxAce);
+    //     }
+    // }
 
     Err(DetectionError::UnknownEngine)
 }
@@ -176,6 +180,7 @@ mod tests {
     // --- VX Ace detection ---
 
     #[test]
+    #[ignore = "VX Ace désactivé — réactiver en F5"]
     fn test_detect_vx_ace_data_dir_capital() {
         // VX Ace canonical: Data/ with capital D
         let dir = tempfile::tempdir().unwrap();
@@ -188,6 +193,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "VX Ace désactivé — réactiver en F5"]
     fn test_detect_vx_ace_fallback_lowercase() {
         // Linux fallback: data/ (lowercase) when game was extracted without preserving case
         let dir = tempfile::tempdir().unwrap();
