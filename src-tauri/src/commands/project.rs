@@ -338,7 +338,7 @@ pub async fn update_segment(
     .map_err(|e| e.to_string())?;
 
     // QA check
-    let qa_result = qa::check(&source_text, &target_text);
+    let qa_result = qa::check(&source_text, &target_text, &[]);
     let qa_score = qa_result.score as i64;
 
     // Update DB with new translation + QA score
@@ -576,7 +576,7 @@ pub async fn get_tm_suggestions(
 /// before the user saves.
 #[tauri::command]
 pub fn qa_check_segment(source_text: String, target_text: String) -> qa::QaResult {
-    qa::check(&source_text, &target_text)
+    qa::check(&source_text, &target_text, &[])
 }
 
 /// Return a QA summary for all segments in a project.
