@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::{
-    core::{glossary, qa, report, tm},
+    core::{glossary, manifest, qa, report, tm},
     engines::{
         detector::{detect_engine, find_data_dir, find_vx_ace_data_dir, Engine},
         mv_mz::{extractor, injector},
@@ -92,6 +92,17 @@ impl Default for ProviderConfig {
     }
 }
 
+/// Wrapper returned by `open_project`.
+///
+/// `was_restored: true` means the project already existed in DB and was loaded
+/// from the manifest — no re-extraction was performed.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenProjectResult {
+    pub project: Project,
+    pub was_restored: bool,
+}
+
 /// Summary of QA errors for a whole project.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -108,12 +119,52 @@ pub struct QaReport {
 
 /// Open a game folder: detect engine, extract all segments, persist to DB.
 ///
-/// Returns the newly created `Project` row (id, name, engine, game_path, timestamps).
+/// If a `.hoshi2star.json` manifest exists and the project is already in the DB,
+/// returns the existing project immediately (`was_restored: true`) without
+/// re-extracting. Otherwise performs a full extraction (`was_restored: false`).
 #[tauri::command]
 pub async fn open_project(
     path: String,
     state: tauri::State<'_, AppState>,
-) -> Result<Project, String> {
+) -> Result<OpenProjectResult, String> {
+    // 0. Smart restore: check manifest before doing any engine detection
+    let mut preserved_project_id: Option<String> = None;
+    match manifest::read_manifest(&path) {
+        Ok(Some(mf)) => {
+            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects WHERE id = ?")
+                .bind(&mf.project_id)
+                .fetch_one(&state.db)
+                .await
+                .unwrap_or(0);
+            if count > 0 {
+                // Project exists in DB — update last_opened_at (via update_stats, which
+                // refreshes the timestamp using the private now_iso8601())
+                if let Err(e) = manifest::update_stats(&path, mf.stats.clone()) {
+                    log::warn!("manifest update failed for {path}: {e}");
+                }
+                let project = sqlx::query_as::<_, Project>(
+                    "SELECT id, name, engine, game_path, created_at, updated_at \
+                     FROM projects WHERE id = ?",
+                )
+                .bind(&mf.project_id)
+                .fetch_one(&state.db)
+                .await
+                .map_err(|e| e.to_string())?;
+                return Ok(OpenProjectResult {
+                    project,
+                    was_restored: true,
+                });
+            } else {
+                // Manifest exists but project was deleted from DB — reuse the same ID
+                preserved_project_id = Some(mf.project_id.clone());
+            }
+        }
+        Ok(None) => {}
+        Err(e) => {
+            log::warn!("manifest read error for {path}: {e}");
+        }
+    }
+
     let game_dir = Path::new(&path);
 
     // 1. Detect engine
@@ -147,7 +198,7 @@ pub async fn open_project(
     // 4. All inserts wrapped in a single transaction for performance
     let mut tx = state.db.begin().await.map_err(|e| e.to_string())?;
 
-    let project_id = uuid::Uuid::new_v4().to_string();
+    let project_id = preserved_project_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     sqlx::query("INSERT INTO projects (id, name, engine, game_path) VALUES (?, ?, ?, ?)")
         .bind(&project_id)
@@ -159,6 +210,9 @@ pub async fn open_project(
         .map_err(|e| e.to_string())?;
 
     // 5. Walk data directory: read, extract, insert source_files + segments
+    let mut file_count: u32 = 0;
+    let mut segment_count: u32 = 0;
+
     match engine {
         Engine::MvMz => {
             let entries = collect_json_files(&data_dir).map_err(|e| e.to_string())?;
@@ -176,6 +230,7 @@ pub async fn open_project(
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
+                file_count += 1;
 
                 for seg in dispatch_extract(file_name, json_value) {
                     let seg_id = uuid::Uuid::new_v4().to_string();
@@ -190,6 +245,7 @@ pub async fn open_project(
                     .execute(&mut *tx)
                     .await
                     .map_err(|e| e.to_string())?;
+                    segment_count += 1;
                 }
             }
         }
@@ -209,6 +265,7 @@ pub async fn open_project(
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
+                file_count += 1;
 
                 for seg in vx_extractor::extract_from_bytes(file_name, bytes) {
                     let seg_id = uuid::Uuid::new_v4().to_string();
@@ -223,12 +280,30 @@ pub async fn open_project(
                     .execute(&mut *tx)
                     .await
                     .map_err(|e| e.to_string())?;
+                    segment_count += 1;
                 }
             }
         }
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
+
+    // Write manifest (best-effort — never fail open_project if this errors)
+    let manifest_data = manifest::ManifestData::new(
+        project_id.clone(),
+        game_title.clone(),
+        engine_str.to_string(),
+        path.clone(),
+        manifest::ManifestStats {
+            file_count,
+            segment_count,
+            translated_count: 0,
+            glossary_term_count: 0,
+        },
+    );
+    if let Err(e) = manifest::write_manifest(&path, &manifest_data) {
+        log::warn!("manifest write failed for {path}: {e}");
+    }
 
     // 6. Fetch the newly created project row (includes DB-generated timestamps)
     let project = sqlx::query_as::<_, Project>(
@@ -240,7 +315,10 @@ pub async fn open_project(
     .await
     .map_err(|e| e.to_string())?;
 
-    Ok(project)
+    Ok(OpenProjectResult {
+        project,
+        was_restored: false,
+    })
 }
 
 /// List all source files belonging to a project.
@@ -357,6 +435,38 @@ pub async fn update_segment(
 
     // Insert into TM (best-effort — never fail the command if TM insert fails)
     let _ = tm::insert(&source_text, &target_text, &engine, "ja-en", &state.db).await;
+
+    // Update manifest stats (best-effort — indicative only, never blocks the command)
+    let stats_row = sqlx::query_as::<_, (String, i64, i64, i64, i64)>(
+        "SELECT p.game_path,
+            (SELECT COUNT(*) FROM source_files sf2 WHERE sf2.project_id = p.id),
+            (SELECT COUNT(*) FROM segments s2
+               JOIN source_files sf2 ON s2.source_file_id = sf2.id
+               WHERE sf2.project_id = p.id),
+            (SELECT COUNT(*) FROM segments s2
+               JOIN source_files sf2 ON s2.source_file_id = sf2.id
+               WHERE sf2.project_id = p.id AND s2.status = 'translated'),
+            (SELECT COUNT(*) FROM glossary_terms g
+               WHERE g.project_id = p.id OR g.project_id IS NULL)
+         FROM segments s
+           JOIN source_files sf ON s.source_file_id = sf.id
+           JOIN projects p ON sf.project_id = p.id
+         WHERE s.id = ?",
+    )
+    .bind(&id)
+    .fetch_optional(&state.db)
+    .await;
+    if let Ok(Some((game_path, files, segs, translated, glossary))) = stats_row {
+        let _ = manifest::update_stats(
+            &game_path,
+            manifest::ManifestStats {
+                file_count: files as u32,
+                segment_count: segs as u32,
+                translated_count: translated as u32,
+                glossary_term_count: glossary as u32,
+            },
+        );
+    }
 
     sqlx::query_as::<_, Segment>(
         "SELECT id, source_file_id, json_key, source_text, target_text, \
@@ -492,8 +602,10 @@ pub async fn translate_segments(
             std::time::Duration::from_secs(120),
         );
 
-        // Resolve the project_id from the first segment so we can load glossary terms.
+        // Resolve the project_id from the first segment so we can load glossary terms
+        // and later update the manifest stats.
         let lang_pair = "ja-en";
+        let mut resolved_project_id: Option<String> = None;
         let glossary_terms: Vec<(String, String)> = if let Some((first_id, _)) = pairs.first() {
             let pid: Option<String> = sqlx::query_scalar(
                 "SELECT sf.project_id FROM segments s \
@@ -507,6 +619,7 @@ pub async fn translate_segments(
             .flatten();
             match pid {
                 Some(project_id) => {
+                    resolved_project_id = Some(project_id.clone());
                     let all_terms = glossary::list_for_project(&db, &project_id, lang_pair)
                         .await
                         .unwrap_or_default();
@@ -563,6 +676,36 @@ pub async fn translate_segments(
                     .bind(&r.id)
                     .execute(&db)
                     .await;
+                }
+                // Update manifest stats once at end of batch (not per-segment)
+                if let Some(ref pid) = resolved_project_id {
+                    let stats_row = sqlx::query_as::<_, (String, i64, i64, i64, i64)>(
+                        "SELECT p.game_path,
+                            (SELECT COUNT(*) FROM source_files sf2 WHERE sf2.project_id = p.id),
+                            (SELECT COUNT(*) FROM segments s2
+                               JOIN source_files sf2 ON s2.source_file_id = sf2.id
+                               WHERE sf2.project_id = p.id),
+                            (SELECT COUNT(*) FROM segments s2
+                               JOIN source_files sf2 ON s2.source_file_id = sf2.id
+                               WHERE sf2.project_id = p.id AND s2.status = 'translated'),
+                            (SELECT COUNT(*) FROM glossary_terms g
+                               WHERE g.project_id = p.id OR g.project_id IS NULL)
+                         FROM projects p WHERE p.id = ?",
+                    )
+                    .bind(pid)
+                    .fetch_optional(&db)
+                    .await;
+                    if let Ok(Some((game_path, files, segs, translated, glossary))) = stats_row {
+                        let _ = manifest::update_stats(
+                            &game_path,
+                            manifest::ManifestStats {
+                                file_count: files as u32,
+                                segment_count: segs as u32,
+                                translated_count: translated as u32,
+                                glossary_term_count: glossary as u32,
+                            },
+                        );
+                    }
                 }
                 let _ = handle.emit("h2s://llm/completed", serde_json::json!({ "count": count }));
             }

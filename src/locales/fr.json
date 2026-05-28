@@ -96,5 +96,8 @@
   },
   "lang": {
     "toggle": "FR"
+  },
+  "project": {
+    "restored": "Projet restauré — reprise de la traduction"
   }
 }

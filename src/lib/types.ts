@@ -17,6 +17,11 @@ export interface Project {
   updatedAt: string;
 }
 
+export interface OpenProjectResult {
+  project: Project;
+  wasRestored: boolean;
+}
+
 export interface SourceFile {
   id: string;
   projectId: string;
