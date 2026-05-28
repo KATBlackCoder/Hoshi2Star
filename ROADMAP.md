@@ -180,15 +180,15 @@
 - [ ] Export TM au format TMX standard (compatibilité OmegaT/Trados)
 
 ### Core Layer — Glossaire v1
-- [ ] `src-tauri/migrations/0003_glossary.sql` — `glossary_terms (source, target, lang_pair, domain, project_id nullable)`
-- [ ] `src-tauri/src/core/glossary.rs` — CRUD termes, deux niveaux (global + projet-local)
-- [ ] Injection des termes dans le prompt de traduction (passe 1)
+- [x] `src-tauri/migrations/0003_glossary.sql` — `glossary_terms (source, target, lang_pair, domain, project_id nullable)`
+- [x] `src-tauri/src/core/glossary.rs` — CRUD termes, deux niveaux (global + projet-local)
+- [x] Injection des termes dans le prompt de traduction (passe 1)
 
 ### CAT UI — F3
-- [ ] `src/components/editor/GlossaryPanel.tsx` — affichage termes reconnus dans le segment actif
-- [ ] Highlight inline des termes glossaire dans le source
+- [x] `src/components/editor/GlossaryPanel.tsx` — affichage termes reconnus dans le segment actif
+- [x] Highlight inline des termes glossaire dans le source
 - [ ] TM sidebar avec fuzzy suggestions (% match affiché)
-- [ ] QA : warning si terme glossaire non respecté dans le target
+- [x] QA : warning si terme glossaire non respecté dans le target
 - [ ] Rapport QA exportable HTML
 
 ### Beta privée

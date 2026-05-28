@@ -5,6 +5,16 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 ### Added
+- Add glossary system: two-level CRUD (global + project-local) backed by SQLite `0003_glossary.sql`
+- Add LLM auto-extraction of glossary terms from Actors/Skills/Items/States name fields (`extract_terms_from_project`)
+- Add glossary injection into LLM translation prompt (up to 30 terms, `TranslationContext.glossary_terms`)
+- Add `QaError::GlossaryMismatch` check (−15 pts) when a known source term is not translated using its glossary target
+- Add `GlossaryPanel` with inline CRUD (add/edit/delete), auto-extract button, i18n (EN/FR)
+- Add glossary term highlight (green) in SegmentGrid source column
+- Add `GlossaryPanel` as third resizable panel in SidePanel (TM=40 / QA=30 / Glossary=30)
+- Add 5 Tauri IPC commands: `get_glossary`, `add_glossary_term`, `update_glossary_term`, `delete_glossary_term`, `extract_glossary_terms`
+- Add `chat()` method to `LlmProvider` trait for single-turn raw completion
+- Add shadcn `AlertDialog` and `Input` components
 - Add RPG Maker VX Ace engine support (marshal-rs, non-packaged `.rvdata2` projects)
 - Add `vx_ace/extractor.rs` — reads Actors, Armors, Weapons, Skills, Items, Enemies, Classes, CommonEvents, MapInfos, Maps, System from `.rvdata2`
 - Add `vx_ace/injector.rs` — re-serialises translated content back to Ruby Marshal binary
