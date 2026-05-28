@@ -59,6 +59,12 @@ export interface TmEntry {
   createdAt: string;
 }
 
+export interface TmSuggestion {
+  entry: TmEntry;
+  score: number;
+  matchType: "exact" | "fuzzy";
+}
+
 // ---------------------------------------------------------------------------
 // QA
 // ---------------------------------------------------------------------------

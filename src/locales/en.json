@@ -33,7 +33,13 @@
     "empty": "Select a segment to view TM suggestions",
     "searching": "Searching...",
     "noMatch": "No TM match",
-    "confidence": "{{percent}}%"
+    "confidence": "{{percent}}%",
+    "exact": "Exact",
+    "fuzzy": "~{{percent}}%",
+    "export": "Export TM (.tmx)",
+    "exporting": "Exporting...",
+    "exportSuccess": "TM exported successfully",
+    "exportError": "Export failed: {{error}}"
   },
   "qaPanel": {
     "title": "QA",

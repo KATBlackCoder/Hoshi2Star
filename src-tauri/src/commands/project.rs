@@ -578,21 +578,17 @@ pub async fn translate_segments(
     Ok(())
 }
 
-/// Return TM exact-match suggestions for a given source text.
+/// Return TM fuzzy suggestions for a given source text.
+/// Exact matches (score 1.0) sort to the top; fuzzy matches follow.
 #[tauri::command]
 pub async fn get_tm_suggestions(
     source_text: String,
     lang_pair: String,
     state: tauri::State<'_, AppState>,
-) -> Result<Vec<tm::TmEntry>, String> {
-    let hash = tm::hash_source(&source_text);
-    match tm::lookup_exact(&hash, &lang_pair, &state.db)
+) -> Result<Vec<tm::TmSuggestion>, String> {
+    tm::lookup_fuzzy(&source_text, &lang_pair, 0.80, 5, &state.db)
         .await
-        .map_err(|e| e.to_string())?
-    {
-        Some(entry) => Ok(vec![entry]),
-        None => Ok(vec![]),
-    }
+        .map_err(|e| e.to_string())
 }
 
 /// Run QA checks on a (source, target) pair and return the result.
@@ -891,6 +887,38 @@ fn dispatch_extract(file_name: &str, json: &serde_json::Value) -> Vec<extractor:
         "Weapons.json" => extractor::extract_weapons(json),
         _ => vec![],
     }
+}
+
+/// Export the global TM for a given language pair to a TMX 1.4 file.
+///
+/// Writes the file to `output_path`. Compatible with OmegaT, Trados, memoQ.
+#[tauri::command]
+pub async fn export_tm(
+    lang_pair: String,
+    output_path: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let entries = sqlx::query_as::<_, tm::TmEntry>(
+        "SELECT id, source_hash, source_text, target_text, engine, lang_pair, \
+                confidence, created_at \
+         FROM tm_entries WHERE lang_pair = ? ORDER BY created_at ASC",
+    )
+    .bind(&lang_pair)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let src_lang = lang_pair
+        .split_once('-')
+        .map(|(s, _)| s)
+        .unwrap_or("und")
+        .to_string();
+
+    let tmx = tm::generate_tmx(&entries, &src_lang);
+
+    tokio::fs::write(&output_path, tmx)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------------

@@ -45,6 +45,62 @@ pub fn hash_source(text: &str) -> String {
     hex::encode(digest)
 }
 
+/// A TM suggestion enriched with a similarity score and match type.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TmSuggestion {
+    pub entry: TmEntry,
+    /// Normalised similarity score in [0.0, 1.0].
+    pub score: f32,
+    /// `"exact"` when score == 1.0, `"fuzzy"` otherwise.
+    pub match_type: String,
+}
+
+// ---------------------------------------------------------------------------
+// Fuzzy matching — Levenshtein distance
+// ---------------------------------------------------------------------------
+
+/// Wagner-Fischer algorithm using two rows (O(m) space).
+/// Operates on Unicode `char`s, not bytes — required for correct Japanese scoring.
+fn levenshtein(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let n = a.len();
+    let m = b.len();
+
+    if n == 0 {
+        return m;
+    }
+    if m == 0 {
+        return n;
+    }
+
+    let mut prev: Vec<usize> = (0..=m).collect();
+    let mut curr: Vec<usize> = vec![0; m + 1];
+
+    for i in 1..=n {
+        curr[0] = i;
+        for j in 1..=m {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+
+    prev[m]
+}
+
+/// Normalised similarity: `1.0 - edit_distance / max(len_a, len_b)`.
+/// Returns `1.0` for identical strings (including two empty strings).
+pub fn similarity_score(a: &str, b: &str) -> f32 {
+    let max_len = a.chars().count().max(b.chars().count());
+    if max_len == 0 {
+        return 1.0;
+    }
+    let dist = levenshtein(a, b);
+    1.0 - (dist as f32 / max_len as f32)
+}
+
 // ---------------------------------------------------------------------------
 // Database operations
 // ---------------------------------------------------------------------------
@@ -80,6 +136,65 @@ pub async fn insert(
     Ok(())
 }
 
+/// Fuzzy lookup: scans all TM entries for `lang_pair` in memory, scores each
+/// against `source_text` using normalised Levenshtein, and returns the top
+/// `limit` suggestions with score >= `threshold`.
+///
+/// Exact matches (score == 1.0) sort to the top naturally.
+///
+/// # Performance
+/// Scans all TM entries in memory. Acceptable for ~5k entries.
+/// For larger TMs, consider a trigram index (backlog F5).
+pub async fn lookup_fuzzy(
+    source_text: &str,
+    lang_pair: &str,
+    threshold: f32,
+    limit: usize,
+    db: &SqlitePool,
+) -> Result<Vec<TmSuggestion>, sqlx::Error> {
+    let entries = sqlx::query_as::<_, TmEntry>(
+        "SELECT id, source_hash, source_text, target_text, engine, lang_pair, \
+                confidence, created_at \
+         FROM tm_entries WHERE lang_pair = ?",
+    )
+    .bind(lang_pair)
+    .fetch_all(db)
+    .await?;
+
+    let normalised_query = source_text.trim().to_lowercase();
+
+    let mut suggestions: Vec<TmSuggestion> = entries
+        .into_iter()
+        .filter_map(|entry| {
+            let normalised_entry = entry.source_text.trim().to_lowercase();
+            let score = similarity_score(&normalised_query, &normalised_entry);
+            if score >= threshold {
+                let match_type = if (score - 1.0_f32).abs() < f32::EPSILON {
+                    "exact".to_string()
+                } else {
+                    "fuzzy".to_string()
+                };
+                Some(TmSuggestion {
+                    entry,
+                    score,
+                    match_type,
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    suggestions.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    suggestions.truncate(limit);
+
+    Ok(suggestions)
+}
+
 /// Exact-match lookup: returns the most recently saved entry for
 /// `(source_hash, lang_pair)`, or `None` if no match exists.
 pub async fn lookup_exact(
@@ -98,6 +213,58 @@ pub async fn lookup_exact(
     .bind(lang_pair)
     .fetch_optional(db)
     .await
+}
+
+// ---------------------------------------------------------------------------
+// TMX export
+// ---------------------------------------------------------------------------
+
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// Generate a TMX 1.4 document from a slice of TM entries.
+/// `src_lang` is the BCP-47 language code of the source (e.g. `"ja"`).
+pub fn generate_tmx(entries: &[TmEntry], src_lang: &str) -> String {
+    use std::fmt::Write as _;
+
+    let mut out = String::new();
+    let _ = writeln!(out, r#"<?xml version="1.0" encoding="UTF-8"?>"#);
+    let _ = writeln!(out, r#"<tmx version="1.4">"#);
+    let _ = writeln!(
+        out,
+        r#"  <header creationtool="Hoshi2Star" creationtoolversion="0.3.0" datatype="plaintext" segtype="sentence" adminlang="en-US" srclang="{src_lang}" o-tmf="Hoshi2Star"/>"#,
+    );
+    let _ = writeln!(out, "  <body>");
+
+    for entry in entries {
+        let tgt_lang = entry
+            .lang_pair
+            .split_once('-')
+            .map(|(_, t)| t)
+            .unwrap_or("und")
+            .to_string();
+
+        let _ = writeln!(out, "    <tu>");
+        let _ = writeln!(
+            out,
+            r#"      <tuv xml:lang="{src_lang}"><seg>{}</seg></tuv>"#,
+            xml_escape(&entry.source_text)
+        );
+        let _ = writeln!(
+            out,
+            r#"      <tuv xml:lang="{tgt_lang}"><seg>{}</seg></tuv>"#,
+            xml_escape(&entry.target_text)
+        );
+        let _ = writeln!(out, "    </tu>");
+    }
+
+    let _ = writeln!(out, "  </body>");
+    let _ = writeln!(out, "</tmx>");
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -179,5 +346,190 @@ mod tests {
         assert!(lookup_exact(&hash, "ja-en", &db).await.unwrap().is_some());
         // ja-fr → not found
         assert!(lookup_exact(&hash, "ja-fr", &db).await.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_levenshtein_known_values() {
+        assert_eq!(levenshtein("kitten", "sitting"), 3);
+        assert_eq!(levenshtein("", "abc"), 3);
+        assert_eq!(levenshtein("abc", ""), 3);
+        assert_eq!(levenshtein("abc", "abc"), 0);
+        assert_eq!(levenshtein("", ""), 0);
+    }
+
+    #[test]
+    fn test_similarity_identical() {
+        assert!((similarity_score("こんにちは", "こんにちは") - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_similarity_close() {
+        // "こんにちは" vs "こんにちわ" — 1 char differs out of 5
+        let score = similarity_score("こんにちは", "こんにちわ");
+        assert!(score >= 0.80, "expected >= 0.80, got {score}");
+    }
+
+    #[test]
+    fn test_similarity_empty() {
+        assert!((similarity_score("", "") - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_similarity_ascii() {
+        // "hello" vs "helo" → dist=1, max_len=5 → 0.80
+        let score = similarity_score("hello", "helo");
+        assert!((score - 0.80).abs() < 0.001, "expected ~0.80, got {score}");
+    }
+
+    #[tokio::test]
+    async fn test_fuzzy_exact_match_returns_score_1() {
+        let (db, _file) = test_db().await;
+        insert("こんにちは", "Hello", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert");
+
+        let results = lookup_fuzzy("こんにちは", "ja-en", 0.80, 10, &db)
+            .await
+            .expect("fuzzy lookup");
+
+        assert_eq!(results.len(), 1);
+        assert!((results[0].score - 1.0).abs() < f32::EPSILON);
+        assert_eq!(results[0].match_type, "exact");
+        assert_eq!(results[0].entry.target_text, "Hello");
+    }
+
+    #[tokio::test]
+    async fn test_fuzzy_similar_returns_high_score() {
+        let (db, _file) = test_db().await;
+        insert("こんにちは", "Hello", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert");
+
+        // "こんにちわ" differs by 1 char out of 5 → score ~0.80
+        let results = lookup_fuzzy("こんにちわ", "ja-en", 0.80, 10, &db)
+            .await
+            .expect("fuzzy lookup");
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].score >= 0.80, "score was {}", results[0].score);
+        assert_eq!(results[0].match_type, "fuzzy");
+    }
+
+    #[tokio::test]
+    async fn test_fuzzy_dissimilar_filtered_out() {
+        let (db, _file) = test_db().await;
+        insert("ABC", "Hello", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert");
+
+        let results = lookup_fuzzy("XYZ", "ja-en", 0.80, 10, &db)
+            .await
+            .expect("fuzzy lookup");
+
+        assert!(
+            results.is_empty(),
+            "expected no results for dissimilar text"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_fuzzy_threshold_respected() {
+        let (db, _file) = test_db().await;
+        // "abcde" vs "abcde" → score 1.0 (above)
+        insert("abcde", "T1", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert");
+        // "abcde" vs "abcxx" → dist=2, max=5 → score 0.60 (below 0.80)
+        insert("abcxx", "T2", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert");
+
+        let results = lookup_fuzzy("abcde", "ja-en", 0.80, 10, &db)
+            .await
+            .expect("fuzzy lookup");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].entry.target_text, "T1");
+    }
+
+    #[tokio::test]
+    async fn test_fuzzy_sorted_by_score_descending() {
+        let (db, _file) = test_db().await;
+        // Exact match
+        insert("abcde", "Exact", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert");
+        // 1 diff → score 0.80
+        insert("abcdx", "Near", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert");
+
+        let results = lookup_fuzzy("abcde", "ja-en", 0.80, 10, &db)
+            .await
+            .expect("fuzzy lookup");
+
+        assert!(results.len() >= 2);
+        assert!(
+            results[0].score >= results[1].score,
+            "results not sorted descending"
+        );
+        assert_eq!(results[0].entry.target_text, "Exact");
+    }
+
+    #[tokio::test]
+    async fn test_fuzzy_empty_tm_returns_empty() {
+        let (db, _file) = test_db().await;
+
+        let results = lookup_fuzzy("anything", "ja-en", 0.80, 10, &db)
+            .await
+            .expect("fuzzy lookup");
+
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_generate_tmx_structure() {
+        let entries = vec![TmEntry {
+            id: "1".to_string(),
+            source_hash: "abc".to_string(),
+            source_text: "こんにちは".to_string(),
+            target_text: "Hello".to_string(),
+            engine: "mv_mz".to_string(),
+            lang_pair: "ja-en".to_string(),
+            confidence: 1.0,
+            created_at: "2026-05-28T00:00:00".to_string(),
+        }];
+
+        let tmx = generate_tmx(&entries, "ja");
+
+        assert!(tmx.contains("<tmx"), "missing <tmx");
+        assert!(tmx.contains("<header"), "missing <header");
+        assert!(tmx.contains("<body>"), "missing <body>");
+        assert!(tmx.contains("<tu>"), "missing <tu>");
+        assert!(tmx.contains("xml:lang=\"ja\""), "missing src lang");
+        assert!(tmx.contains("xml:lang=\"en\""), "missing tgt lang");
+        assert!(tmx.contains("こんにちは"), "missing source text");
+        assert!(tmx.contains("Hello"), "missing target text");
+    }
+
+    #[test]
+    fn test_generate_tmx_xml_escape() {
+        let entries = vec![TmEntry {
+            id: "2".to_string(),
+            source_hash: "def".to_string(),
+            source_text: "A & B < C > D \"E\"".to_string(),
+            target_text: "escaped".to_string(),
+            engine: "mv_mz".to_string(),
+            lang_pair: "ja-en".to_string(),
+            confidence: 1.0,
+            created_at: "2026-05-28T00:00:00".to_string(),
+        }];
+
+        let tmx = generate_tmx(&entries, "ja");
+
+        assert!(tmx.contains("&amp;"), "& not escaped");
+        assert!(tmx.contains("&lt;"), "< not escaped");
+        assert!(tmx.contains("&gt;"), "> not escaped");
+        assert!(tmx.contains("&quot;"), "\" not escaped");
     }
 }

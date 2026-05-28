@@ -13,7 +13,7 @@ use commands::glossary::{
     update_glossary_term,
 };
 use commands::project::{
-    export_project, get_ollama_models, get_qa_report, get_segments, get_source_files,
+    export_project, export_tm, get_ollama_models, get_qa_report, get_segments, get_source_files,
     get_tm_suggestions, open_project, qa_check_segment, translate_segments, update_segment,
 };
 use state::AppState;
@@ -56,6 +56,7 @@ pub fn run() {
             update_glossary_term,
             delete_glossary_term,
             extract_glossary_terms,
+            export_tm,
         ]);
 
     #[cfg(debug_assertions)]
