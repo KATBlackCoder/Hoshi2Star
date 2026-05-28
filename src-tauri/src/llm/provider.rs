@@ -56,6 +56,15 @@ pub trait LlmProvider: Send + Sync {
 
     /// Check that the provider is reachable and ready.
     fn health_check(&self) -> impl std::future::Future<Output = Result<(), LlmError>> + Send;
+
+    /// Send a single system + user message and return the raw response string.
+    ///
+    /// Used for non-translation tasks such as glossary term extraction.
+    fn chat(
+        &self,
+        system: &str,
+        user: &str,
+    ) -> impl std::future::Future<Output = Result<String, LlmError>> + Send;
 }
 
 // ---------------------------------------------------------------------------
@@ -237,6 +246,38 @@ impl LlmProvider for OllamaProvider {
                 message: format!("HTTP {}", resp.status()),
             })
         }
+    }
+
+    async fn chat(&self, system: &str, user: &str) -> Result<String, LlmError> {
+        let request = OllamaChatRequest {
+            model: self.model.clone(),
+            messages: vec![
+                OllamaMessage {
+                    role: "system",
+                    content: system.to_string(),
+                },
+                OllamaMessage {
+                    role: "user",
+                    content: user.to_string(),
+                },
+            ],
+            stream: false,
+        };
+
+        let resp = self
+            .client
+            .post(format!("{}/api/chat", self.base_url))
+            .json(&request)
+            .send()
+            .await
+            .map_err(LlmError::Http)?;
+
+        let parsed: OllamaChatResponse = resp
+            .json()
+            .await
+            .map_err(|e| LlmError::ResponseFormat(e.to_string()))?;
+
+        Ok(parsed.message.content)
     }
 }
 

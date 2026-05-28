@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { GlossaryTerm } from "@/lib/types";
 
 interface EditorState {
   activeFileId: string | null;
@@ -7,6 +8,8 @@ interface EditorState {
   activeSegmentSourceText: string | null;
   /** Target text of the currently selected segment — for live QA check. */
   activeSegmentTargetText: string | null;
+  /** Glossary terms for the active project — used for inline highlight. */
+  glossaryTerms: GlossaryTerm[];
 
   // Actions
   setActiveFile: (id: string | null) => void;
@@ -15,6 +18,7 @@ interface EditorState {
     sourceText?: string | null,
     targetText?: string | null,
   ) => void;
+  setGlossaryTerms: (terms: GlossaryTerm[]) => void;
 }
 
 export const useEditorStore = create<EditorState>()((set) => ({
@@ -22,6 +26,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   activeSegmentId: null,
   activeSegmentSourceText: null,
   activeSegmentTargetText: null,
+  glossaryTerms: [],
 
   setActiveFile: (id) =>
     set({
@@ -37,6 +42,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
       activeSegmentSourceText: sourceText,
       activeSegmentTargetText: targetText,
     }),
+
+  setGlossaryTerms: (terms) => set({ glossaryTerms: terms }),
 }));
 
 // Selectors
@@ -47,3 +54,4 @@ export const useActiveSegmentSourceText = () =>
   useEditorStore((s) => s.activeSegmentSourceText);
 export const useActiveSegmentTargetText = () =>
   useEditorStore((s) => s.activeSegmentTargetText);
+export const useGlossaryTerms = () => useEditorStore((s) => s.glossaryTerms);

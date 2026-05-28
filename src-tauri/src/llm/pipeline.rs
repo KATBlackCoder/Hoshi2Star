@@ -317,6 +317,10 @@ mod tests {
         async fn health_check(&self) -> Result<(), LlmError> {
             Ok(())
         }
+
+        async fn chat(&self, _system: &str, _user: &str) -> Result<String, LlmError> {
+            Ok(String::new())
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

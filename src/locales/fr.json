@@ -46,6 +46,21 @@
       "bom_detected": "BOM UTF-8 détecté en début de target"
     }
   },
+  "glossaryPanel": {
+    "title": "Glossaire",
+    "extract": "Extraire Auto",
+    "extracting": "Extraction…",
+    "addTerm": "Ajouter un terme",
+    "source": "Source",
+    "target": "Cible",
+    "domain": "Domaine",
+    "scope": "Portée",
+    "global": "Global",
+    "project": "Projet",
+    "auto": "Auto",
+    "noTerms": "Aucun terme glossaire",
+    "deleteConfirm": "Supprimer ce terme ?"
+  },
   "llmModal": {
     "title": "Configuration LLM",
     "urlLabel": "URL Ollama",
