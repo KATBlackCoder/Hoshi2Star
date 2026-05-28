@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::{
-    core::{glossary, qa, report, tm},
+    core::{glossary, manifest, qa, report, tm},
     engines::{
         detector::{detect_engine, find_data_dir, find_vx_ace_data_dir, Engine},
         mv_mz::{extractor, injector},
@@ -159,6 +159,9 @@ pub async fn open_project(
         .map_err(|e| e.to_string())?;
 
     // 5. Walk data directory: read, extract, insert source_files + segments
+    let mut file_count: u32 = 0;
+    let mut segment_count: u32 = 0;
+
     match engine {
         Engine::MvMz => {
             let entries = collect_json_files(&data_dir).map_err(|e| e.to_string())?;
@@ -176,6 +179,7 @@ pub async fn open_project(
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
+                file_count += 1;
 
                 for seg in dispatch_extract(file_name, json_value) {
                     let seg_id = uuid::Uuid::new_v4().to_string();
@@ -190,6 +194,7 @@ pub async fn open_project(
                     .execute(&mut *tx)
                     .await
                     .map_err(|e| e.to_string())?;
+                    segment_count += 1;
                 }
             }
         }
@@ -209,6 +214,7 @@ pub async fn open_project(
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
+                file_count += 1;
 
                 for seg in vx_extractor::extract_from_bytes(file_name, bytes) {
                     let seg_id = uuid::Uuid::new_v4().to_string();
@@ -223,12 +229,30 @@ pub async fn open_project(
                     .execute(&mut *tx)
                     .await
                     .map_err(|e| e.to_string())?;
+                    segment_count += 1;
                 }
             }
         }
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
+
+    // Write manifest (best-effort — never fail open_project if this errors)
+    let manifest_data = manifest::ManifestData::new(
+        project_id.clone(),
+        game_title.clone(),
+        engine_str.to_string(),
+        path.clone(),
+        manifest::ManifestStats {
+            file_count,
+            segment_count,
+            translated_count: 0,
+            glossary_term_count: 0,
+        },
+    );
+    if let Err(e) = manifest::write_manifest(&path, &manifest_data) {
+        log::warn!("manifest write failed for {path}: {e}");
+    }
 
     // 6. Fetch the newly created project row (includes DB-generated timestamps)
     let project = sqlx::query_as::<_, Project>(
