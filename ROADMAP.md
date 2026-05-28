@@ -175,9 +175,9 @@
       mais désactivé. Réactivation prévue post-Wolf RPG stable.
 
 ### Core Layer — TM v2 (fuzzy matching)
-- [ ] Levenshtein distance normalisée sur les segments (seuil 80 % configurable)
-- [ ] `src-tauri/src/core/tm.rs` — `lookup_fuzzy(source_text, threshold)` → `Vec<TmSuggestion>`
-- [ ] Export TM au format TMX standard (compatibilité OmegaT/Trados)
+- [x] Levenshtein distance normalisée sur les segments (seuil 80 % configurable)
+- [x] `src-tauri/src/core/tm.rs` — `lookup_fuzzy(source_text, threshold)` → `Vec<TmSuggestion>`
+- [x] Export TM au format TMX standard (compatibilité OmegaT/Trados)
 
 ### Core Layer — Glossaire v1
 - [x] `src-tauri/migrations/0003_glossary.sql` — `glossary_terms (source, target, lang_pair, domain, project_id nullable)`
@@ -187,7 +187,7 @@
 ### CAT UI — F3
 - [x] `src/components/editor/GlossaryPanel.tsx` — affichage termes reconnus dans le segment actif
 - [x] Highlight inline des termes glossaire dans le source
-- [ ] TM sidebar avec fuzzy suggestions (% match affiché)
+- [x] TM sidebar avec fuzzy suggestions (% match affiché)
 - [x] QA : warning si terme glossaire non respecté dans le target
 - [ ] Rapport QA exportable HTML
 
