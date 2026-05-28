@@ -26,7 +26,13 @@
     "empty": "Sélectionner un fichier dans le panneau gauche",
     "loading": "Chargement…",
     "noSegments": "Aucun segment dans ce fichier",
-    "footer": "{{count}} segments"
+    "footer": "{{count}} segments",
+    "footerFiltered": "{{shown}} / {{total}} segments",
+    "filterAll": "Tous les segments",
+    "filterQaErrors": "QA : Erreurs uniquement",
+    "filterQaCritical": "QA : Score < 70",
+    "filterUntranslated": "Non traduits",
+    "filterNeedsReview": "À réviser"
   },
   "tmPanel": {
     "title": "Mémoire de traduction",

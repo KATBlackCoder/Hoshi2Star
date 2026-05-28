@@ -26,7 +26,13 @@
     "empty": "Select a file in the left panel",
     "loading": "Loading...",
     "noSegments": "No segments in this file",
-    "footer": "{{count}} segments"
+    "footer": "{{count}} segments",
+    "footerFiltered": "{{shown}} / {{total}} segments",
+    "filterAll": "All segments",
+    "filterQaErrors": "QA: Errors only",
+    "filterQaCritical": "QA: Score < 70",
+    "filterUntranslated": "Untranslated",
+    "filterNeedsReview": "Needs review"
   },
   "tmPanel": {
     "title": "Translation Memory",

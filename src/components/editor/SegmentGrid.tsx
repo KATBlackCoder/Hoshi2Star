@@ -1,4 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useTranslation } from "react-i18next";
 import {
   useReactTable,
@@ -35,6 +42,9 @@ export function SegmentGrid({
 
   const [segments, setSegments] = useState<Segment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [qaFilter, setQaFilter] = useState<
+    "all" | "errors" | "critical" | "untranslated" | "needs_review"
+  >("all");
 
   // Keep latest ids in a ref so the completed-listener can use them without
   // being re-registered on every render.
@@ -64,6 +74,32 @@ export function SegmentGrid({
     }
     loadSegments(activeProjectId, activeFileId);
   }, [activeProjectId, activeFileId, loadSegments]);
+
+  // Reset filter when switching files
+  useEffect(() => {
+    setQaFilter("all");
+  }, [activeFileId]);
+
+  const filteredSegments = useMemo(() => {
+    switch (qaFilter) {
+      case "errors":
+        return segments.filter(
+          (s) =>
+            s.qaScore !== null && s.qaScore !== undefined && s.qaScore < 100,
+        );
+      case "critical":
+        return segments.filter(
+          (s) =>
+            s.qaScore !== null && s.qaScore !== undefined && s.qaScore < 70,
+        );
+      case "untranslated":
+        return segments.filter((s) => s.status === "untranslated");
+      case "needs_review":
+        return segments.filter((s) => s.status === "needs_review");
+      default:
+        return segments;
+    }
+  }, [segments, qaFilter]);
 
   // Re-fetch when LLM pipeline completes so translated segments appear immediately
   useEffect(() => {
@@ -132,45 +168,47 @@ export function SegmentGrid({
   // Tab → scroll to + focus next row
   const parentRef = useRef<HTMLDivElement>(null);
 
-  const virtualizer = useVirtualizer({
-    count: segments.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 40,
-    overscan: 10,
-  });
-
   const handleTabNext = useCallback(
     (currentIndex: number) => {
       const nextIndex = currentIndex + 1;
-      if (nextIndex >= segments.length) return;
+      if (nextIndex >= filteredSegments.length) return;
       virtualizer.scrollToIndex(nextIndex, { align: "auto" });
       requestAnimationFrame(() => {
         const nextInput = document.getElementById(`target-input-${nextIndex}`);
         nextInput?.focus();
       });
     },
-    [segments.length, virtualizer],
+    // virtualizer is stable by ref — safe to omit from deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filteredSegments.length],
   );
 
   const columns = useMemo(
     () =>
       createSegmentColumns({
-        totalRows: segments.length,
+        totalRows: filteredSegments.length,
         onSave: handleSave,
         onTabNext: handleTabNext,
         t,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [segments.length, handleSave, handleTabNext, i18n.language],
+    [filteredSegments.length, handleSave, handleTabNext, i18n.language],
   );
 
   const table = useReactTable({
-    data: segments,
+    data: filteredSegments,
     columns,
     getCoreRowModel: getCoreRowModel(),
   });
 
   const rows = table.getRowModel().rows;
+
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 40,
+    overscan: 10,
+  });
 
   // Empty states
   if (!activeFileId) {
@@ -228,6 +266,42 @@ export function SegmentGrid({
         )}
       </div>
 
+      {/* Toolbar: QA filter */}
+      <div className="shrink-0 border-b px-3 py-1.5 flex items-center gap-2">
+        <Select
+          value={qaFilter}
+          onValueChange={(v) =>
+            setQaFilter(
+              v as
+                | "all"
+                | "errors"
+                | "critical"
+                | "untranslated"
+                | "needs_review",
+            )
+          }
+        >
+          <SelectTrigger className="h-7 w-48 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t("segmentGrid.filterAll")}</SelectItem>
+            <SelectItem value="errors">
+              {t("segmentGrid.filterQaErrors")}
+            </SelectItem>
+            <SelectItem value="critical">
+              {t("segmentGrid.filterQaCritical")}
+            </SelectItem>
+            <SelectItem value="untranslated">
+              {t("segmentGrid.filterUntranslated")}
+            </SelectItem>
+            <SelectItem value="needs_review">
+              {t("segmentGrid.filterNeedsReview")}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       {/* Virtual body */}
       <div ref={parentRef} className="flex-1 overflow-auto">
         <div
@@ -282,9 +356,16 @@ export function SegmentGrid({
         </div>
       </div>
 
-      {/* Footer: segment count */}
+      {/* Footer: segment count (filtered / total) */}
       <div className="shrink-0 border-t px-3 py-1.5 text-xs text-muted-foreground">
-        {t("segmentGrid.footer", { count: segments.length.toLocaleString() })}
+        {qaFilter === "all"
+          ? t("segmentGrid.footer", {
+              count: segments.length.toLocaleString(),
+            })
+          : t("segmentGrid.footerFiltered", {
+              shown: filteredSegments.length.toLocaleString(),
+              total: segments.length.toLocaleString(),
+            })}
       </div>
     </div>
   );
