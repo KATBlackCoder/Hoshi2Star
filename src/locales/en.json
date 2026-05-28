@@ -46,6 +46,9 @@
     "empty": "Select a segment to view QA errors",
     "score": "Score",
     "ok": "Segment OK",
+    "export": "Export QA Report",
+    "exportSuccess": "QA report exported",
+    "exportError": "Export failed: {{error}}",
     "errors": {
       "missing_placeholder": "Missing placeholder: {{name}}",
       "line_too_long": "Line {{line}} too wide ({{units}} / {{maxUnits}} units — {{chars}} chars)",
