@@ -191,6 +191,9 @@
 - [x] QA : warning si terme glossaire non respecté dans le target
 - [x] Rapport QA exportable HTML
 
+### Persistence projet
+- [x] Manifest `.hoshi2star.json` — écriture à l'ouverture, réouverture sans ré-extraction, stats auto-mises à jour
+
 ### Beta privée
 - [ ] Recrutement 20–30 testeurs via Discord fan-trad / F95zone
 - [ ] Feedback form intégré à l'app (event `h2s://feedback/submit`)

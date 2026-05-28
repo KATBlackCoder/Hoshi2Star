@@ -5,6 +5,12 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 ### Added
+- Add project manifest `.hoshi2star.json` written at game folder root on `open_project` success (stores project ID, title, engine, file count, segment count)
+- Add smart restore: if manifest + DB entry match on re-open, project returned immediately without re-extracting (`wasRestored: true`)
+- Add toast "Project restored — continuing where you left off" on smart restore (i18n EN/FR)
+- Add manifest stats auto-update after each `update_segment` (manual segment save)
+- Add manifest stats update once at end of `translate_segments` batch (before `h2s://llm/completed` event)
+- Add `log` crate to Rust dependencies for manifest warning messages
 - Add QA HTML report export — standalone self-contained file with inline CSS/JS, no external dependencies
 - Add `collect_qa_details()` in new `core/report.rs` — recalculates `qa::check()` at export time, returns only segments with `score < 100`
 - Add `generate_qa_html()` — dark-themed HTML with error stats, file/score/type filters (JS inline), bilingual (EN/FR)
