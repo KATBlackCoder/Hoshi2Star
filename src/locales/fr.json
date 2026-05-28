@@ -59,7 +59,10 @@
     "project": "Projet",
     "auto": "Auto",
     "noTerms": "Aucun terme glossaire",
-    "deleteConfirm": "Supprimer ce terme ?"
+    "deleteConfirm": "Supprimer ce terme ?",
+    "extractDone": "termes extraits",
+    "extractNoTerms": "Aucun nouveau terme trouvé — le jeu n'a peut-être pas de fichiers Actors/Skills/Items/States, ou tous les termes sont déjà dans le glossaire",
+    "extractError": "Erreur d'extraction"
   },
   "llmModal": {
     "title": "Configuration LLM",

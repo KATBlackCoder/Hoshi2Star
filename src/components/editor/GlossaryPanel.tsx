@@ -16,6 +16,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -28,6 +35,20 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useProviderConfig } from "@/stores/llm";
 import type { GlossaryTerm } from "@/lib/types";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const DOMAINS = [
+  { value: "general", label: "General" },
+  { value: "characters", label: "Characters" },
+  { value: "combat", label: "Combat" },
+  { value: "items", label: "Items" },
+  { value: "story", label: "Story" },
+  { value: "ui", label: "UI" },
+  { value: "system", label: "System" },
+] as const;
 
 // ---------------------------------------------------------------------------
 // Props
@@ -51,7 +72,10 @@ interface EditRowProps {
 function EditRow({ term, onSave, onCancel }: EditRowProps) {
   const [source, setSource] = useState(term.sourceText);
   const [target, setTarget] = useState(term.targetText);
-  const [domain, setDomain] = useState(term.domain);
+  // Normalize: LLM may return singular ("character") or empty string — fall back to "general"
+  const [domain, setDomain] = useState(
+    DOMAINS.some((d) => d.value === term.domain) ? term.domain : "general",
+  );
 
   return (
     <div className="flex items-center gap-1 py-1">
@@ -65,12 +89,18 @@ function EditRow({ term, onSave, onCancel }: EditRowProps) {
         value={target}
         onChange={(e) => setTarget(e.target.value)}
       />
-      <Input
-        className="h-6 w-20 text-xs px-1"
-        value={domain}
-        onChange={(e) => setDomain(e.target.value)}
-        placeholder="domain"
-      />
+      <Select value={domain} onValueChange={setDomain}>
+        <SelectTrigger className="h-6 w-24 text-xs px-1">
+          <SelectValue placeholder="Domain" />
+        </SelectTrigger>
+        <SelectContent>
+          {DOMAINS.map((d) => (
+            <SelectItem key={d.value} value={d.value} className="text-xs">
+              {d.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       <button
         type="button"
         className="shrink-0 p-0.5 text-green-500 hover:text-green-400"
@@ -106,7 +136,7 @@ function AddForm({ langPair, projectId, onAdd, onCancel }: AddFormProps) {
   const { t } = useTranslation();
   const [source, setSource] = useState("");
   const [target, setTarget] = useState("");
-  const [domain, setDomain] = useState("");
+  const [domain, setDomain] = useState("general");
 
   async function handleSubmit() {
     if (!source.trim() || !target.trim()) return;
@@ -139,12 +169,18 @@ function AddForm({ langPair, projectId, onAdd, onCancel }: AddFormProps) {
         value={target}
         onChange={(e) => setTarget(e.target.value)}
       />
-      <Input
-        className="h-6 w-20 text-xs px-1"
-        placeholder={t("glossaryPanel.domain")}
-        value={domain}
-        onChange={(e) => setDomain(e.target.value)}
-      />
+      <Select value={domain} onValueChange={setDomain}>
+        <SelectTrigger className="h-6 w-24 text-xs px-1">
+          <SelectValue placeholder={t("glossaryPanel.domain")} />
+        </SelectTrigger>
+        <SelectContent>
+          {DOMAINS.map((d) => (
+            <SelectItem key={d.value} value={d.value} className="text-xs">
+              {d.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       <button
         type="button"
         className="shrink-0 p-0.5 text-green-500 hover:text-green-400"
@@ -199,24 +235,36 @@ export function GlossaryPanel({ projectId, langPair }: GlossaryPanelProps) {
 
   // Listen for extraction-done events
   useEffect(() => {
-    const unlisten = listen<{ projectId: string; terms: GlossaryTerm[] }>(
-      "h2s://glossary/extraction-done",
-      (event) => {
-        if (event.payload.projectId === projectId) {
-          setIsExtracting(false);
-          setTerms((prev) => {
-            const existingIds = new Set(prev.map((t) => t.id));
-            const newTerms = event.payload.terms.filter(
-              (t) => !existingIds.has(t.id),
-            );
-            return [...prev, ...newTerms];
-          });
-          toast.success(
-            `${event.payload.terms.length} ${t("glossaryPanel.title").toLowerCase()} terms extracted`,
-          );
-        }
-      },
-    );
+    const unlisten = listen<{
+      projectId: string;
+      terms: GlossaryTerm[];
+      error: string | null;
+    }>("h2s://glossary/extraction-done", (event) => {
+      if (event.payload.projectId !== projectId) return;
+      setIsExtracting(false);
+
+      if (event.payload.error) {
+        toast.error(
+          `${t("glossaryPanel.extractError")}: ${event.payload.error}`,
+          { duration: 8000 },
+        );
+        return;
+      }
+
+      const newTerms = event.payload.terms;
+      setTerms((prev) => {
+        const existingIds = new Set(prev.map((t) => t.id));
+        return [...prev, ...newTerms.filter((t) => !existingIds.has(t.id))];
+      });
+
+      if (newTerms.length === 0) {
+        toast.info(t("glossaryPanel.extractNoTerms"), { duration: 5000 });
+      } else {
+        toast.success(
+          `${newTerms.length} ${t("glossaryPanel.title").toLowerCase()} ${t("glossaryPanel.extractDone")}`,
+        );
+      }
+    });
     return () => {
       unlisten.then((fn) => fn());
     };

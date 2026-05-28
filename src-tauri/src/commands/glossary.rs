@@ -96,14 +96,20 @@ pub async fn extract_glossary_terms(
         };
         let provider = OllamaProvider::new(url, model, Duration::from_secs(120));
 
-        let terms = glossary::extract_terms_from_project(&db, &provider, &project_id, &lang_pair)
-            .await
-            .unwrap_or_default();
+        let payload =
+            match glossary::extract_terms_from_project(&db, &provider, &project_id, &lang_pair)
+                .await
+            {
+                Ok(terms) => {
+                    serde_json::json!({ "projectId": project_id, "terms": terms, "error": null })
+                }
+                Err(e) => {
+                    eprintln!("[glossary] extraction error: {e}");
+                    serde_json::json!({ "projectId": project_id, "terms": [], "error": e })
+                }
+            };
 
-        let _ = app.emit(
-            "h2s://glossary/extraction-done",
-            serde_json::json!({ "projectId": project_id, "terms": terms }),
-        );
+        let _ = app.emit("h2s://glossary/extraction-done", payload);
     });
 
     Ok(())
