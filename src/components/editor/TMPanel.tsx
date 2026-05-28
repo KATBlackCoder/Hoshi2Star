@@ -6,27 +6,36 @@ import {
   useActiveSegmentId,
   useActiveSegmentSourceText,
 } from "@/stores/editor";
-import type { TmEntry } from "@/lib/types";
+import type { TmSuggestion } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function ConfidenceBadge({ value }: { value: number }) {
-  const pct = Math.round(value * 100);
+function MatchBadge({
+  score,
+  matchType,
+}: {
+  score: number;
+  matchType: "exact" | "fuzzy";
+}) {
+  const { t } = useTranslation();
+  const isExact = matchType === "exact";
+  const pct = Math.round(score * 100);
+
   return (
     <span
       className={cn(
         "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
-        pct >= 90
+        isExact
           ? "bg-green-500/20 text-green-400"
-          : pct >= 70
-            ? "bg-yellow-500/20 text-yellow-400"
-            : "bg-red-500/20 text-red-400",
+          : pct >= 90
+            ? "bg-green-500/10 text-green-300"
+            : "bg-yellow-500/20 text-yellow-400",
       )}
     >
-      {pct}%
+      {isExact ? t("tmPanel.exact") : t("tmPanel.fuzzy", { percent: pct })}
     </span>
   );
 }
@@ -45,10 +54,10 @@ export function TMPanel({ onApply }: TMPanelProps) {
   const activeSegmentId = useActiveSegmentId();
   const sourceText = useActiveSegmentSourceText();
 
-  const { data: suggestions = [], isLoading } = useQuery<TmEntry[]>({
+  const { data: suggestions = [], isLoading } = useQuery<TmSuggestion[]>({
     queryKey: ["tm-suggestions", sourceText],
     queryFn: () =>
-      invoke<TmEntry[]>("get_tm_suggestions", {
+      invoke<TmSuggestion[]>("get_tm_suggestions", {
         sourceText: sourceText!,
         langPair: "ja-en",
       }),
@@ -83,20 +92,25 @@ export function TMPanel({ onApply }: TMPanelProps) {
           </p>
         )}
 
-        {suggestions.map((entry) => (
+        {suggestions.map((suggestion) => (
           <button
-            key={entry.id}
+            key={suggestion.entry.id}
             type="button"
-            onClick={() => onApply?.(entry.targetText)}
+            onClick={() => onApply?.(suggestion.entry.targetText)}
             className="mb-1.5 w-full rounded border border-border/50 bg-muted/20 p-2 text-left hover:bg-accent/40 transition-colors"
           >
             <div className="mb-1 flex items-center justify-between gap-2">
               <span className="truncate text-[10px] text-muted-foreground">
-                {entry.sourceText}
+                {suggestion.entry.sourceText}
               </span>
-              <ConfidenceBadge value={entry.confidence} />
+              <MatchBadge
+                score={suggestion.score}
+                matchType={suggestion.matchType}
+              />
             </div>
-            <p className="text-xs leading-relaxed">{entry.targetText}</p>
+            <p className="text-xs leading-relaxed">
+              {suggestion.entry.targetText}
+            </p>
           </button>
         ))}
       </div>

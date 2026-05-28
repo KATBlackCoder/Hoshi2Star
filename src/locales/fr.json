@@ -33,7 +33,9 @@
     "empty": "Sélectionnez un segment pour voir les suggestions TM",
     "searching": "Recherche…",
     "noMatch": "Aucune correspondance TM",
-    "confidence": "{{percent}}%"
+    "confidence": "{{percent}}%",
+    "exact": "Exact",
+    "fuzzy": "~{{percent}}%"
   },
   "qaPanel": {
     "title": "QA",
