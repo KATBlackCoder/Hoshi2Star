@@ -25,12 +25,12 @@ et export au format TMX standard compatible OmegaT/Trados/memoQ.
 
 ```
 F3 — Core Layer — TM v2 (fuzzy matching) :
-  [ ] Levenshtein distance normalisée sur les segments (seuil 80 % configurable)
-  [ ] src-tauri/src/core/tm.rs — lookup_fuzzy(source_text, threshold) → Vec<TmSuggestion>
-  [ ] Export TM au format TMX standard (compatibilité OmegaT/Trados)
+  [x] Levenshtein distance normalisée sur les segments (seuil 80 % configurable)
+  [x] src-tauri/src/core/tm.rs — lookup_fuzzy(source_text, threshold) → Vec<TmSuggestion>
+  [x] Export TM au format TMX standard (compatibilité OmegaT/Trados)
 
 F3 — CAT UI — F3 :
-  [ ] TM sidebar avec fuzzy suggestions (% match affiché)
+  [x] TM sidebar avec fuzzy suggestions (% match affiché)
 ```
 
 ---
@@ -55,11 +55,11 @@ triviale (~25 lignes), évite toute dépendance externe, et donne un contrôle t
 la normalisation Unicode (trim + to_lowercase, cohérent avec `hash_source`).
 
 Tâches :
-- [ ] Implémenter `fn levenshtein(a: &str, b: &str) -> usize` :
+- [x] Implémenter `fn levenshtein(a: &str, b: &str) -> usize` :
   - Algorithme Wagner-Fischer (2 rangées, O(n×m) temps, O(min(n,m)) espace)
   - Opérer sur `char`s (pas bytes) pour corriger le comptage Unicode japonais
   - Cas limites : si `a` ou `b` est vide → retourner `len` de l'autre
-- [ ] Implémenter `pub fn similarity_score(a: &str, b: &str) -> f32` :
+- [x] Implémenter `pub fn similarity_score(a: &str, b: &str) -> f32` :
   ```rust
   let dist = levenshtein(a, b);
   let max_len = a.chars().count().max(b.chars().count());
@@ -68,7 +68,7 @@ Tâches :
   ```
   - Normalise entre 0.0 (totalement différent) et 1.0 (identique)
   - `pub` : sera réutilisée dans `lookup_fuzzy`
-- [ ] Tests unitaires dans `#[cfg(test)] mod tests` :
+- [x] Tests unitaires dans `#[cfg(test)] mod tests` :
   - `test_levenshtein_known_values` : `levenshtein("kitten", "sitting") == 3`, `levenshtein("", "abc") == 3`, `levenshtein("abc", "abc") == 0`
   - `test_similarity_identical` : `similarity_score("こんにちは", "こんにちは") == 1.0`
   - `test_similarity_close` : `similarity_score("こんにちは", "こんにちわ") >= 0.80`
@@ -97,7 +97,7 @@ Commit message : `feat(core): add Levenshtein + similarity_score to tm.rs — no
 **Dépend de :** *(aucun — struct indépendante)*
 
 Tâches :
-- [ ] Dans `tm.rs`, après la définition de `TmEntry`, ajouter :
+- [x] Dans `tm.rs`, après la définition de `TmEntry`, ajouter :
   ```rust
   #[derive(Debug, Clone, Serialize, Deserialize)]
   #[serde(rename_all = "camelCase")]
@@ -107,7 +107,7 @@ Tâches :
       pub match_type: String, // "exact" | "fuzzy"
   }
   ```
-- [ ] Dans `src/lib/types.ts`, ajouter l'interface TS :
+- [x] Dans `src/lib/types.ts`, ajouter l'interface TS :
   ```ts
   export interface TmSuggestion {
     entry: TmEntry
@@ -144,7 +144,7 @@ Au-delà, le temps de réponse peut dépasser 50 ms. Documenter cette limite dan
 prévoir un index trigram en F5 si nécessaire.
 
 Tâches :
-- [ ] Signature :
+- [x] Signature :
   ```rust
   pub async fn lookup_fuzzy(
       source_text: &str,
@@ -154,7 +154,7 @@ Tâches :
       db: &SqlitePool,
   ) -> Result<Vec<TmSuggestion>, sqlx::Error>
   ```
-- [ ] Logique :
+- [x] Logique :
   1. Charger toutes les entrées TM pour `lang_pair` :
      ```sql
      SELECT id, source_hash, source_text, target_text, engine,
@@ -166,12 +166,12 @@ Tâches :
   3. Filtre `score >= threshold` → `match_type` = si `score == 1.0` alors `"exact"` sinon `"fuzzy"`
   4. Trier par score décroissant
   5. Prendre les `limit` premiers
-- [ ] Commentaire de performance au-dessus de la fonction :
+- [x] Commentaire de performance au-dessus de la fonction :
   ```rust
   // Scans all TM entries in memory. Acceptable for ~5k entries.
   // For larger TMs, consider a trigram index (backlog F5).
   ```
-- [ ] Tests unitaires (avec une DB in-memory via `test_db()` existante) :
+- [x] Tests unitaires (avec une DB in-memory via `test_db()` existante) :
   - `test_fuzzy_exact_match_returns_score_1` : insérer "こんにちは"/"Hello" → query "こんにちは" → score 1.0, match_type "exact"
   - `test_fuzzy_similar_returns_high_score` : insérer "こんにちは"/"Hello" → query "こんにちわ" → score >= 0.80
   - `test_fuzzy_dissimilar_filtered_out` : insérer "ABC"/"Hello" → query "XYZ" → résultat vide (score < 0.80)
@@ -204,7 +204,7 @@ Commit message : `feat(core): implement lookup_fuzzy — Levenshtein scan, thres
 **Dépend de :** Step 2, Step 3
 
 Tâches :
-- [ ] Modifier `get_tm_suggestions` (actuellement lignes ~582–596) :
+- [x] Modifier `get_tm_suggestions` (actuellement lignes ~582–596) :
   ```rust
   #[tauri::command]
   pub async fn get_tm_suggestions(
@@ -220,8 +220,8 @@ Tâches :
   - `threshold = 0.80` (80 %) — valeur par défaut
   - `limit = 5` — max 5 suggestions dans le panel
   - Les exact matches (score 1.0) apparaissent naturellement en tête après le tri
-- [ ] Supprimer la construction du hash SHA-256 (plus besoin dans cette command)
-- [ ] Vérifier que la signature est cohérente avec `lib.rs` (generate_handler — pas de
+- [x] Supprimer la construction du hash SHA-256 (plus besoin dans cette command)
+- [x] Vérifier que la signature est cohérente avec `lib.rs` (generate_handler — pas de
   changement d'enregistrement nécessaire, même nom de command)
 
 Test de validation :
@@ -248,9 +248,9 @@ Commit message : `feat(commands): get_tm_suggestions — switch to lookup_fuzzy 
 **Dépend de :** Step 2 (type TS `TmSuggestion`)
 
 Tâches :
-- [ ] Changer le type de `useQuery` : `TmEntry[]` → `TmSuggestion[]`
+- [x] Changer le type de `useQuery` : `TmEntry[]` → `TmSuggestion[]`
   - L'`invoke` retourne maintenant `TmSuggestion[]`, les données sont dans `suggestion.entry`
-- [ ] Remplacer `ConfidenceBadge` par un nouveau `MatchBadge` :
+- [x] Remplacer `ConfidenceBadge` par un nouveau `MatchBadge` :
   ```
   score 1.0                → vert    "Exact"
   score >= 0.9 && < 1.0   → vert clair "~90%"
@@ -259,18 +259,18 @@ Tâches :
   - Label : utiliser `t("tmPanel.exact")` si `matchType === 'exact'`,
     sinon `t("tmPanel.fuzzy", { percent: Math.round(score * 100) })`
   - Les couleurs restent cohérentes avec l'existant (`ConfidenceBadge` actuel)
-- [ ] Mettre à jour le rendu des cards :
+- [x] Mettre à jour le rendu des cards :
   - `entry.id` → `suggestion.entry.id` (key)
   - `entry.targetText` → `suggestion.entry.targetText`
   - `entry.sourceText` → `suggestion.entry.sourceText`
   - `entry.confidence` remplacé par `suggestion.score`
-- [ ] Ajouter les clés i18n dans `tmPanel` section :
+- [x] Ajouter les clés i18n dans `tmPanel` section :
   ```json
   "exact": "Exact",
   "fuzzy": "~{{percent}}%"
   ```
   Versions en et fr.
-- [ ] Supprimer `ConfidenceBadge` (n'est plus utilisé)
+- [x] Supprimer `ConfidenceBadge` (n'est plus utilisé)
 
 Test de validation :
 ```bash
@@ -299,7 +299,7 @@ et l'écrit sur disque.
 généré avec `std::fmt::Write` en ~30 lignes. 0 dépendance supplémentaire.
 
 Tâches :
-- [ ] Dans `tm.rs`, ajouter `pub fn generate_tmx(entries: &[TmEntry], src_lang: &str) -> String` :
+- [x] Dans `tm.rs`, ajouter `pub fn generate_tmx(entries: &[TmEntry], src_lang: &str) -> String` :
   - Construire le XML TMX 1.4 manuellement via `use std::fmt::Write` :
     ```xml
     <?xml version="1.0" encoding="UTF-8"?>
@@ -319,7 +319,7 @@ Tâches :
   - Test unitaire `test_generate_tmx_structure` : vérifier que la sortie contient
     `<tmx`, `<header`, `<body`, `<tu`, les valeurs source et target
 
-- [ ] Dans `commands/project.rs`, ajouter :
+- [x] Dans `commands/project.rs`, ajouter :
   ```rust
   #[tauri::command]
   pub async fn export_tm(
@@ -332,7 +332,7 @@ Tâches :
   - Appeler `tm::generate_tmx(&entries, &src_lang_from_lang_pair)`
   - Écrire dans `output_path` avec `tokio::fs::write`
   - `project_id: Option<String>` reporté en backlog (export filtré par projet — cas d'usage futur)
-- [ ] Enregistrer dans `generate_handler![..., export_tm]` dans `lib.rs`
+- [x] Enregistrer dans `generate_handler![..., export_tm]` dans `lib.rs`
 
 Test de validation :
 ```bash
@@ -358,7 +358,7 @@ un dialog de sauvegarde et appelle `export_tm`.
 **Dépend de :** Step 5, Step 6
 
 Tâches :
-- [ ] Dans le header du `TMPanel`, ajouter un `Button` shadcn (variant `ghost`, size `xs`)
+- [x] Dans le header du `TMPanel`, ajouter un `Button` shadcn (variant `ghost`, size `xs`)
   avec icône `Download` (lucide-react) et tooltip `t("tmPanel.export")` :
   ```tsx
   <Button variant="ghost" size="icon" className="h-5 w-5 ml-auto"
@@ -366,7 +366,7 @@ Tâches :
     <Download className="h-3 w-3" />
   </Button>
   ```
-- [ ] `handleExport` :
+- [x] `handleExport` :
   ```ts
   const path = await save({ filters: [{ name: 'TMX', extensions: ['tmx'] }] })
   if (!path) return
@@ -379,7 +379,7 @@ Tâches :
   - `save` importé de `@tauri-apps/plugin-dialog` (déjà installé)
   - `toast` de `sonner` (déjà utilisé dans le projet)
   - `isExporting: boolean` dans un `useState` local
-- [ ] Clés i18n à ajouter dans `tmPanel` :
+- [x] Clés i18n à ajouter dans `tmPanel` :
   ```json
   "export": "Export TM (.tmx)",
   "exporting": "Exporting...",
@@ -387,7 +387,7 @@ Tâches :
   "exportError": "Export failed: {{error}}"
   ```
   Versions en et fr.
-- [ ] Vérifier que `capabilities/default.json` inclut la permission `dialog:default`
+- [x] Vérifier que `capabilities/default.json` inclut la permission `dialog:default`
   (déjà nécessaire pour l'import projet F1 — ne devrait pas manquer)
 
 Test de validation :
