@@ -8,6 +8,10 @@ pub mod engines;
 pub mod llm;
 pub mod state;
 
+use commands::glossary::{
+    add_glossary_term, delete_glossary_term, extract_glossary_terms, get_glossary,
+    update_glossary_term,
+};
 use commands::project::{
     export_project, get_ollama_models, get_qa_report, get_segments, get_source_files,
     get_tm_suggestions, open_project, qa_check_segment, translate_segments, update_segment,
@@ -47,6 +51,11 @@ pub fn run() {
             get_qa_report,
             qa_check_segment,
             get_ollama_models,
+            get_glossary,
+            add_glossary_term,
+            update_glossary_term,
+            delete_glossary_term,
+            extract_glossary_terms,
         ]);
 
     #[cfg(debug_assertions)]
