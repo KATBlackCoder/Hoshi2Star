@@ -436,6 +436,38 @@ pub async fn update_segment(
     // Insert into TM (best-effort — never fail the command if TM insert fails)
     let _ = tm::insert(&source_text, &target_text, &engine, "ja-en", &state.db).await;
 
+    // Update manifest stats (best-effort — indicative only, never blocks the command)
+    let stats_row = sqlx::query_as::<_, (String, i64, i64, i64, i64)>(
+        "SELECT p.game_path,
+            (SELECT COUNT(*) FROM source_files sf2 WHERE sf2.project_id = p.id),
+            (SELECT COUNT(*) FROM segments s2
+               JOIN source_files sf2 ON s2.source_file_id = sf2.id
+               WHERE sf2.project_id = p.id),
+            (SELECT COUNT(*) FROM segments s2
+               JOIN source_files sf2 ON s2.source_file_id = sf2.id
+               WHERE sf2.project_id = p.id AND s2.status = 'translated'),
+            (SELECT COUNT(*) FROM glossary_terms g
+               WHERE g.project_id = p.id OR g.project_id IS NULL)
+         FROM segments s
+           JOIN source_files sf ON s.source_file_id = sf.id
+           JOIN projects p ON sf.project_id = p.id
+         WHERE s.id = ?",
+    )
+    .bind(&id)
+    .fetch_optional(&state.db)
+    .await;
+    if let Ok(Some((game_path, files, segs, translated, glossary))) = stats_row {
+        let _ = manifest::update_stats(
+            &game_path,
+            manifest::ManifestStats {
+                file_count: files as u32,
+                segment_count: segs as u32,
+                translated_count: translated as u32,
+                glossary_term_count: glossary as u32,
+            },
+        );
+    }
+
     sqlx::query_as::<_, Segment>(
         "SELECT id, source_file_id, json_key, source_text, target_text, \
                 status, qa_score, created_at, updated_at \
@@ -570,8 +602,10 @@ pub async fn translate_segments(
             std::time::Duration::from_secs(120),
         );
 
-        // Resolve the project_id from the first segment so we can load glossary terms.
+        // Resolve the project_id from the first segment so we can load glossary terms
+        // and later update the manifest stats.
         let lang_pair = "ja-en";
+        let mut resolved_project_id: Option<String> = None;
         let glossary_terms: Vec<(String, String)> = if let Some((first_id, _)) = pairs.first() {
             let pid: Option<String> = sqlx::query_scalar(
                 "SELECT sf.project_id FROM segments s \
@@ -585,6 +619,7 @@ pub async fn translate_segments(
             .flatten();
             match pid {
                 Some(project_id) => {
+                    resolved_project_id = Some(project_id.clone());
                     let all_terms = glossary::list_for_project(&db, &project_id, lang_pair)
                         .await
                         .unwrap_or_default();
@@ -641,6 +676,36 @@ pub async fn translate_segments(
                     .bind(&r.id)
                     .execute(&db)
                     .await;
+                }
+                // Update manifest stats once at end of batch (not per-segment)
+                if let Some(ref pid) = resolved_project_id {
+                    let stats_row = sqlx::query_as::<_, (String, i64, i64, i64, i64)>(
+                        "SELECT p.game_path,
+                            (SELECT COUNT(*) FROM source_files sf2 WHERE sf2.project_id = p.id),
+                            (SELECT COUNT(*) FROM segments s2
+                               JOIN source_files sf2 ON s2.source_file_id = sf2.id
+                               WHERE sf2.project_id = p.id),
+                            (SELECT COUNT(*) FROM segments s2
+                               JOIN source_files sf2 ON s2.source_file_id = sf2.id
+                               WHERE sf2.project_id = p.id AND s2.status = 'translated'),
+                            (SELECT COUNT(*) FROM glossary_terms g
+                               WHERE g.project_id = p.id OR g.project_id IS NULL)
+                         FROM projects p WHERE p.id = ?",
+                    )
+                    .bind(pid)
+                    .fetch_optional(&db)
+                    .await;
+                    if let Ok(Some((game_path, files, segs, translated, glossary))) = stats_row {
+                        let _ = manifest::update_stats(
+                            &game_path,
+                            manifest::ManifestStats {
+                                file_count: files as u32,
+                                segment_count: segs as u32,
+                                translated_count: translated as u32,
+                                glossary_term_count: glossary as u32,
+                            },
+                        );
+                    }
                 }
                 let _ = handle.emit("h2s://llm/completed", serde_json::json!({ "count": count }));
             }
