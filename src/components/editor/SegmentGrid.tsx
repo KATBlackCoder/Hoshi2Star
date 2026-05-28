@@ -11,7 +11,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useProjectStore } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { createSegmentColumns } from "@/features/editor/columns";
-import type { PaginatedSegments, Segment } from "@/lib/types";
+import type { GlossaryTerm, PaginatedSegments, Segment } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface SegmentGridProps {
@@ -27,6 +27,7 @@ export function SegmentGrid({
   const activeFileId = useEditorStore((s) => s.activeFileId);
   const setActiveSegment = useEditorStore((s) => s.setActiveSegment);
   const activeSegmentId = useEditorStore((s) => s.activeSegmentId);
+  const setGlossaryTerms = useEditorStore((s) => s.setGlossaryTerms);
 
   // Ref so handleSave (useCallback) can read the active id without re-registering
   const activeSegmentIdRef = useRef(activeSegmentId);
@@ -75,6 +76,40 @@ export function SegmentGrid({
       void unlisten.then((fn) => fn());
     };
   }, [loadSegments]);
+
+  // Load glossary terms when the active project changes
+  useEffect(() => {
+    if (!activeProjectId) {
+      setGlossaryTerms([]);
+      return;
+    }
+    invoke<GlossaryTerm[]>("get_glossary", {
+      projectId: activeProjectId,
+      langPair: "ja-en",
+    })
+      .then(setGlossaryTerms)
+      .catch(() => setGlossaryTerms([]));
+  }, [activeProjectId, setGlossaryTerms]);
+
+  // Refresh glossary terms after auto-extraction completes
+  useEffect(() => {
+    const unlisten = listen<{ projectId: string; terms: GlossaryTerm[] }>(
+      "h2s://glossary/extraction-done",
+      (event) => {
+        if (event.payload.projectId === activeProjectIdRef.current) {
+          invoke<GlossaryTerm[]>("get_glossary", {
+            projectId: event.payload.projectId,
+            langPair: "ja-en",
+          })
+            .then(setGlossaryTerms)
+            .catch(() => {});
+        }
+      },
+    );
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [setGlossaryTerms]);
 
   // Save a segment translation and update local state
   const handleSave = useCallback(
