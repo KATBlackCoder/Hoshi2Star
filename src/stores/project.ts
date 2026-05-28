@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
-import type { Project, SourceFile } from "@/lib/types";
+import type { OpenProjectResult, Project, SourceFile } from "@/lib/types";
 
 interface ProjectState {
   projects: Project[];
@@ -34,9 +34,15 @@ export const useActiveProject = () =>
 
 export const useSourceFiles = () => useProjectStore((s) => s.sourceFiles);
 
-// Thunk: open a game folder via Tauri and register the project in the store
-export async function openProject(gamePath: string): Promise<Project> {
-  const project = await invoke<Project>("open_project", { path: gamePath });
+// Thunk: open a game folder via Tauri and register the project in the store.
+// Returns { project, wasRestored } so callers can show a toast if wasRestored === true.
+export async function openProject(
+  gamePath: string,
+): Promise<OpenProjectResult> {
+  const result = await invoke<OpenProjectResult>("open_project", {
+    path: gamePath,
+  });
+  const { project, wasRestored } = result;
   useProjectStore.getState().addProject(project);
   useProjectStore.getState().setActiveProject(project.id);
 
@@ -45,5 +51,5 @@ export async function openProject(gamePath: string): Promise<Project> {
   });
   useProjectStore.getState().setSourceFiles(files);
 
-  return project;
+  return { project, wasRestored };
 }

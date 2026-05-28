@@ -92,6 +92,17 @@ impl Default for ProviderConfig {
     }
 }
 
+/// Wrapper returned by `open_project`.
+///
+/// `was_restored: true` means the project already existed in DB and was loaded
+/// from the manifest — no re-extraction was performed.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenProjectResult {
+    pub project: Project,
+    pub was_restored: bool,
+}
+
 /// Summary of QA errors for a whole project.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -108,12 +119,52 @@ pub struct QaReport {
 
 /// Open a game folder: detect engine, extract all segments, persist to DB.
 ///
-/// Returns the newly created `Project` row (id, name, engine, game_path, timestamps).
+/// If a `.hoshi2star.json` manifest exists and the project is already in the DB,
+/// returns the existing project immediately (`was_restored: true`) without
+/// re-extracting. Otherwise performs a full extraction (`was_restored: false`).
 #[tauri::command]
 pub async fn open_project(
     path: String,
     state: tauri::State<'_, AppState>,
-) -> Result<Project, String> {
+) -> Result<OpenProjectResult, String> {
+    // 0. Smart restore: check manifest before doing any engine detection
+    let mut preserved_project_id: Option<String> = None;
+    match manifest::read_manifest(&path) {
+        Ok(Some(mf)) => {
+            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects WHERE id = ?")
+                .bind(&mf.project_id)
+                .fetch_one(&state.db)
+                .await
+                .unwrap_or(0);
+            if count > 0 {
+                // Project exists in DB — update last_opened_at (via update_stats, which
+                // refreshes the timestamp using the private now_iso8601())
+                if let Err(e) = manifest::update_stats(&path, mf.stats.clone()) {
+                    log::warn!("manifest update failed for {path}: {e}");
+                }
+                let project = sqlx::query_as::<_, Project>(
+                    "SELECT id, name, engine, game_path, created_at, updated_at \
+                     FROM projects WHERE id = ?",
+                )
+                .bind(&mf.project_id)
+                .fetch_one(&state.db)
+                .await
+                .map_err(|e| e.to_string())?;
+                return Ok(OpenProjectResult {
+                    project,
+                    was_restored: true,
+                });
+            } else {
+                // Manifest exists but project was deleted from DB — reuse the same ID
+                preserved_project_id = Some(mf.project_id.clone());
+            }
+        }
+        Ok(None) => {}
+        Err(e) => {
+            log::warn!("manifest read error for {path}: {e}");
+        }
+    }
+
     let game_dir = Path::new(&path);
 
     // 1. Detect engine
@@ -147,7 +198,7 @@ pub async fn open_project(
     // 4. All inserts wrapped in a single transaction for performance
     let mut tx = state.db.begin().await.map_err(|e| e.to_string())?;
 
-    let project_id = uuid::Uuid::new_v4().to_string();
+    let project_id = preserved_project_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     sqlx::query("INSERT INTO projects (id, name, engine, game_path) VALUES (?, ?, ?, ?)")
         .bind(&project_id)
@@ -264,7 +315,10 @@ pub async fn open_project(
     .await
     .map_err(|e| e.to_string())?;
 
-    Ok(project)
+    Ok(OpenProjectResult {
+        project,
+        was_restored: false,
+    })
 }
 
 /// List all source files belonging to a project.
