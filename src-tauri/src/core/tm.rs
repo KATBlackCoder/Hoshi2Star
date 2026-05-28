@@ -46,6 +46,51 @@ pub fn hash_source(text: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Fuzzy matching — Levenshtein distance
+// ---------------------------------------------------------------------------
+
+/// Wagner-Fischer algorithm using two rows (O(m) space).
+/// Operates on Unicode `char`s, not bytes — required for correct Japanese scoring.
+fn levenshtein(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let n = a.len();
+    let m = b.len();
+
+    if n == 0 {
+        return m;
+    }
+    if m == 0 {
+        return n;
+    }
+
+    let mut prev: Vec<usize> = (0..=m).collect();
+    let mut curr: Vec<usize> = vec![0; m + 1];
+
+    for i in 1..=n {
+        curr[0] = i;
+        for j in 1..=m {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+
+    prev[m]
+}
+
+/// Normalised similarity: `1.0 - edit_distance / max(len_a, len_b)`.
+/// Returns `1.0` for identical strings (including two empty strings).
+pub fn similarity_score(a: &str, b: &str) -> f32 {
+    let max_len = a.chars().count().max(b.chars().count());
+    if max_len == 0 {
+        return 1.0;
+    }
+    let dist = levenshtein(a, b);
+    1.0 - (dist as f32 / max_len as f32)
+}
+
+// ---------------------------------------------------------------------------
 // Database operations
 // ---------------------------------------------------------------------------
 
@@ -179,5 +224,38 @@ mod tests {
         assert!(lookup_exact(&hash, "ja-en", &db).await.unwrap().is_some());
         // ja-fr → not found
         assert!(lookup_exact(&hash, "ja-fr", &db).await.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_levenshtein_known_values() {
+        assert_eq!(levenshtein("kitten", "sitting"), 3);
+        assert_eq!(levenshtein("", "abc"), 3);
+        assert_eq!(levenshtein("abc", ""), 3);
+        assert_eq!(levenshtein("abc", "abc"), 0);
+        assert_eq!(levenshtein("", ""), 0);
+    }
+
+    #[test]
+    fn test_similarity_identical() {
+        assert!((similarity_score("こんにちは", "こんにちは") - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_similarity_close() {
+        // "こんにちは" vs "こんにちわ" — 1 char differs out of 5
+        let score = similarity_score("こんにちは", "こんにちわ");
+        assert!(score >= 0.80, "expected >= 0.80, got {score}");
+    }
+
+    #[test]
+    fn test_similarity_empty() {
+        assert!((similarity_score("", "") - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_similarity_ascii() {
+        // "hello" vs "helo" → dist=1, max_len=5 → 0.80
+        let score = similarity_score("hello", "helo");
+        assert!((score - 0.80).abs() < 0.001, "expected ~0.80, got {score}");
     }
 }
