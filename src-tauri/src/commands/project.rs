@@ -578,21 +578,17 @@ pub async fn translate_segments(
     Ok(())
 }
 
-/// Return TM exact-match suggestions for a given source text.
+/// Return TM fuzzy suggestions for a given source text.
+/// Exact matches (score 1.0) sort to the top; fuzzy matches follow.
 #[tauri::command]
 pub async fn get_tm_suggestions(
     source_text: String,
     lang_pair: String,
     state: tauri::State<'_, AppState>,
-) -> Result<Vec<tm::TmEntry>, String> {
-    let hash = tm::hash_source(&source_text);
-    match tm::lookup_exact(&hash, &lang_pair, &state.db)
+) -> Result<Vec<tm::TmSuggestion>, String> {
+    tm::lookup_fuzzy(&source_text, &lang_pair, 0.80, 5, &state.db)
         .await
-        .map_err(|e| e.to_string())?
-    {
-        Some(entry) => Ok(vec![entry]),
-        None => Ok(vec![]),
-    }
+        .map_err(|e| e.to_string())
 }
 
 /// Run QA checks on a (source, target) pair and return the result.
