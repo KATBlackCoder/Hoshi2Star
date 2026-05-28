@@ -30,6 +30,10 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - Add engine priority table to ROADMAP.md
 
 ### Fixed
+- Fix placeholder validation failures now falling back to `needs_review` status instead of blocking the batch — `h2s://llm/placeholder-warning` event emitted per segment, toast shown in UI
+- Fix incorrect segment_id reported in placeholder validation errors (was always the first segment of the batch)
+- Reduce glossary injection to relevant terms only (filtered by batch content, max 20; fallback: 10 shortest) — improves LLM attention on placeholder preservation
+- Strengthen system prompt with explicit CRITICAL RULE block for ⟦ph_N⟧ token preservation
 - Fix `clippy::type_complexity` in `collect_rvdata2_files` via `RvData2Entry` type alias
 
 ## [0.2.1] - 2026-05-25
