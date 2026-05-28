@@ -216,6 +216,58 @@ pub async fn lookup_exact(
 }
 
 // ---------------------------------------------------------------------------
+// TMX export
+// ---------------------------------------------------------------------------
+
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// Generate a TMX 1.4 document from a slice of TM entries.
+/// `src_lang` is the BCP-47 language code of the source (e.g. `"ja"`).
+pub fn generate_tmx(entries: &[TmEntry], src_lang: &str) -> String {
+    use std::fmt::Write as _;
+
+    let mut out = String::new();
+    let _ = writeln!(out, r#"<?xml version="1.0" encoding="UTF-8"?>"#);
+    let _ = writeln!(out, r#"<tmx version="1.4">"#);
+    let _ = writeln!(
+        out,
+        r#"  <header creationtool="Hoshi2Star" creationtoolversion="0.3.0" datatype="plaintext" segtype="sentence" adminlang="en-US" srclang="{src_lang}" o-tmf="Hoshi2Star"/>"#,
+    );
+    let _ = writeln!(out, "  <body>");
+
+    for entry in entries {
+        let tgt_lang = entry
+            .lang_pair
+            .split_once('-')
+            .map(|(_, t)| t)
+            .unwrap_or("und")
+            .to_string();
+
+        let _ = writeln!(out, "    <tu>");
+        let _ = writeln!(
+            out,
+            r#"      <tuv xml:lang="{src_lang}"><seg>{}</seg></tuv>"#,
+            xml_escape(&entry.source_text)
+        );
+        let _ = writeln!(
+            out,
+            r#"      <tuv xml:lang="{tgt_lang}"><seg>{}</seg></tuv>"#,
+            xml_escape(&entry.target_text)
+        );
+        let _ = writeln!(out, "    </tu>");
+    }
+
+    let _ = writeln!(out, "  </body>");
+    let _ = writeln!(out, "</tmx>");
+    out
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -433,5 +485,51 @@ mod tests {
             .expect("fuzzy lookup");
 
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_generate_tmx_structure() {
+        let entries = vec![TmEntry {
+            id: "1".to_string(),
+            source_hash: "abc".to_string(),
+            source_text: "こんにちは".to_string(),
+            target_text: "Hello".to_string(),
+            engine: "mv_mz".to_string(),
+            lang_pair: "ja-en".to_string(),
+            confidence: 1.0,
+            created_at: "2026-05-28T00:00:00".to_string(),
+        }];
+
+        let tmx = generate_tmx(&entries, "ja");
+
+        assert!(tmx.contains("<tmx"), "missing <tmx");
+        assert!(tmx.contains("<header"), "missing <header");
+        assert!(tmx.contains("<body>"), "missing <body>");
+        assert!(tmx.contains("<tu>"), "missing <tu>");
+        assert!(tmx.contains("xml:lang=\"ja\""), "missing src lang");
+        assert!(tmx.contains("xml:lang=\"en\""), "missing tgt lang");
+        assert!(tmx.contains("こんにちは"), "missing source text");
+        assert!(tmx.contains("Hello"), "missing target text");
+    }
+
+    #[test]
+    fn test_generate_tmx_xml_escape() {
+        let entries = vec![TmEntry {
+            id: "2".to_string(),
+            source_hash: "def".to_string(),
+            source_text: "A & B < C > D \"E\"".to_string(),
+            target_text: "escaped".to_string(),
+            engine: "mv_mz".to_string(),
+            lang_pair: "ja-en".to_string(),
+            confidence: 1.0,
+            created_at: "2026-05-28T00:00:00".to_string(),
+        }];
+
+        let tmx = generate_tmx(&entries, "ja");
+
+        assert!(tmx.contains("&amp;"), "& not escaped");
+        assert!(tmx.contains("&lt;"), "< not escaped");
+        assert!(tmx.contains("&gt;"), "> not escaped");
+        assert!(tmx.contains("&quot;"), "\" not escaped");
     }
 }
