@@ -1865,6 +1865,7 @@ version = "0.2.1"
 dependencies = [
  "hex",
  "httpmock",
+ "log",
  "marshal-rs",
  "regex",
  "reqwest 0.12.28",
