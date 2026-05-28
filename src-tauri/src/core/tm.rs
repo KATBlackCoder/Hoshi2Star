@@ -136,6 +136,65 @@ pub async fn insert(
     Ok(())
 }
 
+/// Fuzzy lookup: scans all TM entries for `lang_pair` in memory, scores each
+/// against `source_text` using normalised Levenshtein, and returns the top
+/// `limit` suggestions with score >= `threshold`.
+///
+/// Exact matches (score == 1.0) sort to the top naturally.
+///
+/// # Performance
+/// Scans all TM entries in memory. Acceptable for ~5k entries.
+/// For larger TMs, consider a trigram index (backlog F5).
+pub async fn lookup_fuzzy(
+    source_text: &str,
+    lang_pair: &str,
+    threshold: f32,
+    limit: usize,
+    db: &SqlitePool,
+) -> Result<Vec<TmSuggestion>, sqlx::Error> {
+    let entries = sqlx::query_as::<_, TmEntry>(
+        "SELECT id, source_hash, source_text, target_text, engine, lang_pair, \
+                confidence, created_at \
+         FROM tm_entries WHERE lang_pair = ?",
+    )
+    .bind(lang_pair)
+    .fetch_all(db)
+    .await?;
+
+    let normalised_query = source_text.trim().to_lowercase();
+
+    let mut suggestions: Vec<TmSuggestion> = entries
+        .into_iter()
+        .filter_map(|entry| {
+            let normalised_entry = entry.source_text.trim().to_lowercase();
+            let score = similarity_score(&normalised_query, &normalised_entry);
+            if score >= threshold {
+                let match_type = if (score - 1.0_f32).abs() < f32::EPSILON {
+                    "exact".to_string()
+                } else {
+                    "fuzzy".to_string()
+                };
+                Some(TmSuggestion {
+                    entry,
+                    score,
+                    match_type,
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    suggestions.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    suggestions.truncate(limit);
+
+    Ok(suggestions)
+}
+
 /// Exact-match lookup: returns the most recently saved entry for
 /// `(source_hash, lang_pair)`, or `None` if no match exists.
 pub async fn lookup_exact(
@@ -268,5 +327,111 @@ mod tests {
         // "hello" vs "helo" → dist=1, max_len=5 → 0.80
         let score = similarity_score("hello", "helo");
         assert!((score - 0.80).abs() < 0.001, "expected ~0.80, got {score}");
+    }
+
+    #[tokio::test]
+    async fn test_fuzzy_exact_match_returns_score_1() {
+        let (db, _file) = test_db().await;
+        insert("こんにちは", "Hello", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert");
+
+        let results = lookup_fuzzy("こんにちは", "ja-en", 0.80, 10, &db)
+            .await
+            .expect("fuzzy lookup");
+
+        assert_eq!(results.len(), 1);
+        assert!((results[0].score - 1.0).abs() < f32::EPSILON);
+        assert_eq!(results[0].match_type, "exact");
+        assert_eq!(results[0].entry.target_text, "Hello");
+    }
+
+    #[tokio::test]
+    async fn test_fuzzy_similar_returns_high_score() {
+        let (db, _file) = test_db().await;
+        insert("こんにちは", "Hello", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert");
+
+        // "こんにちわ" differs by 1 char out of 5 → score ~0.80
+        let results = lookup_fuzzy("こんにちわ", "ja-en", 0.80, 10, &db)
+            .await
+            .expect("fuzzy lookup");
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].score >= 0.80, "score was {}", results[0].score);
+        assert_eq!(results[0].match_type, "fuzzy");
+    }
+
+    #[tokio::test]
+    async fn test_fuzzy_dissimilar_filtered_out() {
+        let (db, _file) = test_db().await;
+        insert("ABC", "Hello", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert");
+
+        let results = lookup_fuzzy("XYZ", "ja-en", 0.80, 10, &db)
+            .await
+            .expect("fuzzy lookup");
+
+        assert!(
+            results.is_empty(),
+            "expected no results for dissimilar text"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_fuzzy_threshold_respected() {
+        let (db, _file) = test_db().await;
+        // "abcde" vs "abcde" → score 1.0 (above)
+        insert("abcde", "T1", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert");
+        // "abcde" vs "abcxx" → dist=2, max=5 → score 0.60 (below 0.80)
+        insert("abcxx", "T2", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert");
+
+        let results = lookup_fuzzy("abcde", "ja-en", 0.80, 10, &db)
+            .await
+            .expect("fuzzy lookup");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].entry.target_text, "T1");
+    }
+
+    #[tokio::test]
+    async fn test_fuzzy_sorted_by_score_descending() {
+        let (db, _file) = test_db().await;
+        // Exact match
+        insert("abcde", "Exact", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert");
+        // 1 diff → score 0.80
+        insert("abcdx", "Near", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert");
+
+        let results = lookup_fuzzy("abcde", "ja-en", 0.80, 10, &db)
+            .await
+            .expect("fuzzy lookup");
+
+        assert!(results.len() >= 2);
+        assert!(
+            results[0].score >= results[1].score,
+            "results not sorted descending"
+        );
+        assert_eq!(results[0].entry.target_text, "Exact");
+    }
+
+    #[tokio::test]
+    async fn test_fuzzy_empty_tm_returns_empty() {
+        let (db, _file) = test_db().await;
+
+        let results = lookup_fuzzy("anything", "ja-en", 0.80, 10, &db)
+            .await
+            .expect("fuzzy lookup");
+
+        assert!(results.is_empty());
     }
 }
