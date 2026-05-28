@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::{
-    core::{glossary, qa, tm},
+    core::{glossary, qa, report, tm},
     engines::{
         detector::{detect_engine, find_data_dir, find_vx_ace_data_dir, Engine},
         mv_mz::{extractor, injector},
@@ -660,6 +660,34 @@ pub async fn get_qa_report(
         error_count,
         errors_by_type,
     })
+}
+
+/// Export a QA report for the project as a standalone HTML file.
+///
+/// QA errors are recalculated at export time — no DB storage required.
+/// If all segments pass QA, the report is still generated with a pass message.
+#[tauri::command]
+pub async fn export_qa_report(
+    project_id: String,
+    output_path: String,
+    lang: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let project_title: String = sqlx::query_scalar("SELECT name FROM projects WHERE id = ?")
+        .bind(&project_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let details = report::collect_qa_details(&state.db, &project_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let html = report::generate_qa_html(&project_title, &details, &lang);
+
+    tokio::fs::write(&output_path, html.as_bytes())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Fetch the list of available models from an Ollama instance.

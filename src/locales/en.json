@@ -26,7 +26,13 @@
     "empty": "Select a file in the left panel",
     "loading": "Loading...",
     "noSegments": "No segments in this file",
-    "footer": "{{count}} segments"
+    "footer": "{{count}} segments",
+    "footerFiltered": "{{shown}} / {{total}} segments",
+    "filterAll": "All segments",
+    "filterQaErrors": "QA: Errors only",
+    "filterQaCritical": "QA: Score < 70",
+    "filterUntranslated": "Untranslated",
+    "filterNeedsReview": "Needs review"
   },
   "tmPanel": {
     "title": "Translation Memory",
@@ -46,6 +52,9 @@
     "empty": "Select a segment to view QA errors",
     "score": "Score",
     "ok": "Segment OK",
+    "export": "Export QA Report",
+    "exportSuccess": "QA report exported",
+    "exportError": "Export failed: {{error}}",
     "errors": {
       "missing_placeholder": "Missing placeholder: {{name}}",
       "line_too_long": "Line {{line}} too wide ({{units}} / {{maxUnits}} units — {{chars}} chars)",

@@ -1,7 +1,11 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { AlertTriangle, CheckCircle } from "lucide-react";
+import { save } from "@tauri-apps/plugin-dialog";
+import { AlertTriangle, CheckCircle, FileDown } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { useActiveSegmentId } from "@/stores/editor";
 import { useProjectStore } from "@/stores/project";
 import type { QaErrorType, QaReport, QaResult } from "@/lib/types";
@@ -76,9 +80,28 @@ interface QAPanelProps {
 }
 
 export function QAPanel({ sourceText, targetText }: QAPanelProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const activeSegmentId = useActiveSegmentId();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExport = async () => {
+    if (!activeProjectId) return;
+    const path = await save({
+      filters: [{ name: "HTML", extensions: ["html"] }],
+      defaultPath: "qa-report.html",
+    });
+    if (!path) return;
+    setIsExporting(true);
+    invoke("export_qa_report", {
+      projectId: activeProjectId,
+      outputPath: path,
+      lang: i18n.language,
+    })
+      .then(() => toast.success(t("qaPanel.exportSuccess")))
+      .catch((e) => toast.error(t("qaPanel.exportError", { error: String(e) })))
+      .finally(() => setIsExporting(false));
+  };
 
   // Real-time QA: invoked as a query keyed on source+target text
   // Uses a simple hash to avoid re-running on identical input
@@ -105,7 +128,7 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Header with project QA badge */}
-      <div className="shrink-0 border-b px-3 py-2 flex items-center justify-between">
+      <div className="shrink-0 border-b px-3 py-2 flex items-center gap-2">
         <span className="text-xs font-medium text-muted-foreground select-none">
           {t("qaPanel.title")}
         </span>
@@ -113,6 +136,18 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
           <span className="text-[10px] text-muted-foreground tabular-nums">
             {qaReport.okCount}/{qaReport.totalSegments} ok
           </span>
+        )}
+        {activeProjectId && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-5 w-5 ml-auto"
+            onClick={handleExport}
+            disabled={isExporting}
+            title={t("qaPanel.export")}
+          >
+            <FileDown className="h-3 w-3" />
+          </Button>
         )}
       </div>
 
