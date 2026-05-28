@@ -189,7 +189,7 @@
 - [x] Highlight inline des termes glossaire dans le source
 - [x] TM sidebar avec fuzzy suggestions (% match affiché)
 - [x] QA : warning si terme glossaire non respecté dans le target
-- [ ] Rapport QA exportable HTML
+- [x] Rapport QA exportable HTML
 
 ### Beta privée
 - [ ] Recrutement 20–30 testeurs via Discord fan-trad / F95zone
