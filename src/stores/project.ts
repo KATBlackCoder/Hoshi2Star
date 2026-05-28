@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { t } from "i18next";
+import { toast } from "sonner";
 import type { OpenProjectResult, Project, SourceFile } from "@/lib/types";
 
 interface ProjectState {
@@ -50,6 +52,10 @@ export async function openProject(
     projectId: project.id,
   });
   useProjectStore.getState().setSourceFiles(files);
+
+  if (wasRestored) {
+    toast.success(t("project.restored"));
+  }
 
   return { project, wasRestored };
 }

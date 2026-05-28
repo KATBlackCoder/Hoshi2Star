@@ -96,5 +96,8 @@
   },
   "lang": {
     "toggle": "EN"
+  },
+  "project": {
+    "restored": "Project restored — continuing where you left off"
   }
 }
