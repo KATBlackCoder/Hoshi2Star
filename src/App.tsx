@@ -18,6 +18,7 @@ import { FileTree } from "@/components/editor/FileTree";
 import { SegmentGrid } from "@/components/editor/SegmentGrid";
 import { TMPanel } from "@/components/editor/TMPanel";
 import { QAPanel } from "@/components/editor/QAPanel";
+import { GlossaryPanel } from "@/components/editor/GlossaryPanel";
 import { openProject, useProjectStore } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import {
@@ -401,6 +402,7 @@ function Toolbar({ onOpenLlmConfig }: { onOpenLlmConfig: () => void }) {
 export default function App() {
   const [showLlmConfig, setShowLlmConfig] = useState(false);
   const { startTranslation } = useLlmStore();
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const activeSegmentSourceText = useEditorStore(
     (s) => s.activeSegmentSourceText,
   );
@@ -451,15 +453,19 @@ export default function App() {
         >
           <div className="flex h-full flex-col overflow-hidden border-l">
             <ResizablePanelGroup orientation="vertical">
-              <ResizablePanel defaultSize={55} minSize={30}>
+              <ResizablePanel defaultSize={40} minSize={25}>
                 <TMPanel />
               </ResizablePanel>
               <ResizableHandle />
-              <ResizablePanel defaultSize={45} minSize={25}>
+              <ResizablePanel defaultSize={30} minSize={20}>
                 <QAPanel
                   sourceText={activeSegmentSourceText}
                   targetText={activeSegmentTargetText}
                 />
+              </ResizablePanel>
+              <ResizableHandle />
+              <ResizablePanel defaultSize={30} minSize={20}>
+                <GlossaryPanel projectId={activeProjectId} langPair="ja-en" />
               </ResizablePanel>
             </ResizablePanelGroup>
           </div>
