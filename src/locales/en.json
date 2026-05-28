@@ -35,7 +35,11 @@
     "noMatch": "No TM match",
     "confidence": "{{percent}}%",
     "exact": "Exact",
-    "fuzzy": "~{{percent}}%"
+    "fuzzy": "~{{percent}}%",
+    "export": "Export TM (.tmx)",
+    "exporting": "Exporting...",
+    "exportSuccess": "TM exported successfully",
+    "exportError": "Export failed: {{error}}"
   },
   "qaPanel": {
     "title": "QA",

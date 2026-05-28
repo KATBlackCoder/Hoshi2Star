@@ -1,7 +1,10 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { BookOpen } from "lucide-react";
+import { save } from "@tauri-apps/plugin-dialog";
+import { toast } from "sonner";
+import { BookOpen, Download } from "lucide-react";
 import {
   useActiveSegmentId,
   useActiveSegmentSourceText,
@@ -53,6 +56,7 @@ export function TMPanel({ onApply }: TMPanelProps) {
   const { t } = useTranslation();
   const activeSegmentId = useActiveSegmentId();
   const sourceText = useActiveSegmentSourceText();
+  const [isExporting, setIsExporting] = useState(false);
 
   const { data: suggestions = [], isLoading } = useQuery<TmSuggestion[]>({
     queryKey: ["tm-suggestions", sourceText],
@@ -65,12 +69,35 @@ export function TMPanel({ onApply }: TMPanelProps) {
     staleTime: 1000 * 60, // TM changes rarely during a session
   });
 
+  async function handleExport() {
+    const path = await save({
+      filters: [{ name: "TMX", extensions: ["tmx"] }],
+    });
+    if (!path) return;
+    setIsExporting(true);
+    invoke("export_tm", { langPair: "ja-en", outputPath: path })
+      .then(() => toast.success(t("tmPanel.exportSuccess")))
+      .catch((e: unknown) =>
+        toast.error(t("tmPanel.exportError", { error: String(e) })),
+      )
+      .finally(() => setIsExporting(false));
+  }
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Header */}
       <div className="shrink-0 border-b px-3 py-2 text-xs font-medium text-muted-foreground select-none flex items-center gap-1.5">
         <BookOpen className="h-3 w-3" />
-        {t("tmPanel.title")}
+        <span className="flex-1">{t("tmPanel.title")}</span>
+        <button
+          type="button"
+          onClick={handleExport}
+          disabled={isExporting}
+          title={t("tmPanel.export")}
+          className="rounded p-0.5 hover:bg-accent/40 disabled:opacity-50 transition-colors"
+        >
+          <Download className="h-3 w-3" />
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
