@@ -38,6 +38,9 @@ pub struct TranslationResult {
     pub translated_text: String,
     /// `true` when the translation came from the TM (no LLM call was made).
     pub from_tm: bool,
+    /// `true` when placeholder validation failed after all retries — source text
+    /// was kept as a temporary translation with status `needs_review`.
+    pub needs_review: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -50,10 +53,14 @@ pub struct ProgressPayload {
 pub enum PipelineError {
     #[error("LLM provider error: {0}")]
     Provider(String),
-    #[error("Placeholder validation failed after {attempts} attempt(s) on segment '{segment_id}'")]
-    ValidationFailed { segment_id: String, attempts: u32 },
     #[error("Database error: {0}")]
     Database(String),
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaceholderWarningPayload {
+    pub segment_id: String,
 }
 
 impl From<LlmError> for PipelineError {
@@ -129,7 +136,8 @@ where
 // Entry point used by Tauri commands (emits events via AppHandle)
 // ---------------------------------------------------------------------------
 
-/// Tauri-aware wrapper: emits `h2s://llm/progress` after each batch.
+/// Tauri-aware wrapper: emits `h2s://llm/progress` after each batch,
+/// and `h2s://llm/placeholder-warning` for each segment that fell back to needs_review.
 pub async fn run<P>(
     segments: Vec<(String, String)>,
     provider: &P,
@@ -141,10 +149,21 @@ where
     P: LlmProvider,
 {
     let handle = app_handle.clone();
-    run_inner(segments, provider, context, db, move |done, total| {
+    let results = run_inner(segments, provider, context, db, move |done, total| {
         let _ = handle.emit("h2s://llm/progress", ProgressPayload { done, total });
     })
-    .await
+    .await?;
+
+    for r in results.iter().filter(|r| r.needs_review) {
+        let _ = app_handle.emit(
+            "h2s://llm/placeholder-warning",
+            PlaceholderWarningPayload {
+                segment_id: r.id.clone(),
+            },
+        );
+    }
+
+    Ok(results)
 }
 
 // ---------------------------------------------------------------------------
@@ -164,8 +183,8 @@ where
     let batch_len = segments.len();
     let (unique_segs, idx_map) = batch::dedup_by_hash(segments.clone());
 
-    // Translation table indexed by position in `segments`
-    let mut translations: Vec<Option<(String, bool)>> = vec![None; batch_len];
+    // Translation table: (translated_text, from_tm, needs_review)
+    let mut translations: Vec<Option<(String, bool, bool)>> = vec![None; batch_len];
 
     // Track which unique segments still need LLM
     let mut to_translate: Vec<usize> = Vec::new(); // indices into `unique_segs`
@@ -177,7 +196,7 @@ where
 
         if let Some(entry) = tm_hit {
             for &orig_idx in idx_map.get(&seg.hash).into_iter().flatten() {
-                translations[orig_idx] = Some((entry.target_text.clone(), true));
+                translations[orig_idx] = Some((entry.target_text.clone(), true, false));
             }
         } else {
             to_translate.push(unique_idx);
@@ -194,11 +213,14 @@ where
 
         let texts_for_llm: Vec<String> = tokenized.iter().map(|t| t.text.clone()).collect();
 
-        // Retry loop — couvre deux cas d'échec récupérables :
-        //   1. ResponseFormat : le LLM a retourné un mauvais nombre de lignes
-        //   2. Placeholder manquant : Tokenizer::restore échoue
-        // Les erreurs réseau (Http, Unavailable) sont propagées immédiatement.
+        // Retry loop — two recoverable failure cases:
+        //   1. ResponseFormat: LLM returned wrong line count
+        //   2. Missing placeholder: Tokenizer::restore fails
+        // Network errors (Http, Unavailable) propagate immediately.
+        // After MAX_RETRIES failures, all affected segments fall back to
+        // source_text + needs_review instead of blocking the whole batch.
         let mut attempt = 0u32;
+        let mut failed_unique_idx: Option<usize> = None;
         let restored_texts = loop {
             let llm_result = provider
                 .translate(texts_for_llm.clone(), context.clone())
@@ -213,42 +235,59 @@ where
                 Err(e) => return Err(PipelineError::from(e)),
             };
 
-            // Validate + restore
-            let mut all_ok = true;
+            // Validate + restore, tracking the first failing segment index
+            let mut fail_at: Option<usize> = None;
             let mut restored = Vec::with_capacity(llm_out.len());
-            for (resp, tok) in llm_out.iter().zip(tokenized.iter()) {
+            for (i, (resp, tok)) in llm_out.iter().zip(tokenized.iter()).enumerate() {
                 match Tokenizer::restore(resp, &tok.map) {
                     Ok(r) => restored.push(r),
                     Err(_) => {
-                        all_ok = false;
+                        fail_at = Some(i);
                         break;
                     }
                 }
             }
 
-            if all_ok {
+            if fail_at.is_none() {
                 break restored;
             }
 
             attempt += 1;
             if attempt >= MAX_RETRIES {
-                let first_id = unique_segs[to_translate[0]].id.clone();
-                return Err(PipelineError::ValidationFailed {
-                    segment_id: first_id,
-                    attempts: MAX_RETRIES,
-                });
+                // Record the real failing segment ID for logging / event emission
+                failed_unique_idx = Some(to_translate[fail_at.unwrap()]);
+                break vec![];
             }
         };
 
-        // Spread LLM results back
-        for (llm_idx, &unique_idx) in to_translate.iter().enumerate() {
-            let translated = restored_texts[llm_idx].clone();
-            for &orig_idx in idx_map
-                .get(&unique_segs[unique_idx].hash)
-                .into_iter()
-                .flatten()
-            {
-                translations[orig_idx] = Some((translated.clone(), false));
+        if let Some(fu_idx) = failed_unique_idx {
+            // Fallback: keep source_text as target + mark needs_review
+            let failed_id = &unique_segs[fu_idx].id;
+            eprintln!(
+                "[h2s] placeholder validation failed after {MAX_RETRIES} attempt(s) \
+                 on segment '{failed_id}' — falling back to needs_review"
+            );
+            for &unique_idx in &to_translate {
+                let source = unique_segs[unique_idx].text.clone();
+                for &orig_idx in idx_map
+                    .get(&unique_segs[unique_idx].hash)
+                    .into_iter()
+                    .flatten()
+                {
+                    translations[orig_idx] = Some((source.clone(), false, true));
+                }
+            }
+        } else {
+            // Spread successful LLM results back
+            for (llm_idx, &unique_idx) in to_translate.iter().enumerate() {
+                let translated = restored_texts[llm_idx].clone();
+                for &orig_idx in idx_map
+                    .get(&unique_segs[unique_idx].hash)
+                    .into_iter()
+                    .flatten()
+                {
+                    translations[orig_idx] = Some((translated.clone(), false, false));
+                }
             }
         }
     }
@@ -258,11 +297,13 @@ where
         .iter()
         .enumerate()
         .map(|(i, (id, _))| {
-            let (translated_text, from_tm) = translations[i].take().unwrap_or_default();
+            let (translated_text, from_tm, needs_review) =
+                translations[i].take().unwrap_or_default();
             TranslationResult {
                 id: id.clone(),
                 translated_text,
                 from_tm,
+                needs_review,
             }
         })
         .collect())
@@ -443,6 +484,36 @@ mod tests {
         assert_eq!(provider.calls(), 2, "should retry once on ResponseFormat");
         assert_eq!(results[0].translated_text, "Hero");
         assert!(!results[0].from_tm);
+    }
+
+    #[tokio::test]
+    async fn test_placeholder_failure_falls_back_to_needs_review() {
+        let (db, _f) = test_db().await;
+
+        // MockProvider always returns a response without ⟦ph_0⟧ — fails restore every time.
+        // After MAX_RETRIES (3) the segment must have needs_review=true and keep source_text.
+        let provider = MockProvider::new(vec![
+            Ok(vec!["lost token".to_string()]),
+            Ok(vec!["lost token".to_string()]),
+            Ok(vec!["lost token".to_string()]),
+        ]);
+
+        let results = run_inner(
+            vec![("s1".to_string(), r"\V[12] pièces".to_string())],
+            &provider,
+            ctx(),
+            &db,
+            |_, _| {},
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(provider.calls(), 3, "should exhaust all retries");
+        assert!(results[0].needs_review, "segment must be needs_review");
+        assert_eq!(
+            results[0].translated_text, r"\V[12] pièces",
+            "source_text kept as fallback"
+        );
     }
 
     #[tokio::test]

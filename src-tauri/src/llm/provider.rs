@@ -173,7 +173,9 @@ impl LlmProvider for OllamaProvider {
         let system_prompt = format!(
             "You are a professional game localisation assistant.\n\
              Translate the following numbered lines from {src} to {tgt}.\n\
-             Preserve ALL opaque tokens in the form ⟦ph_N⟧ exactly as-is.\n\
+             CRITICAL RULE: Every ⟦ph_N⟧ token in the source MUST appear identically in your \
+             translation. Never translate, remove, paraphrase or modify any ⟦ph_N⟧ token. \
+             If you cannot place a token naturally, keep it at the end of the translated sentence.\n\
              Output ONLY the translated lines, one per line, with the same numbering.{glossary}",
             src = context.source_lang,
             tgt = context.target_lang,
@@ -465,5 +467,27 @@ mod tests {
         let raw = "1. Hero\n2. Sword";
         let result = parse_numbered_response(raw, 2).unwrap();
         assert_eq!(result, vec!["Hero", "Sword"]);
+    }
+
+    #[tokio::test]
+    async fn test_system_prompt_contains_placeholder_instruction() {
+        let server = MockServer::start();
+        // The mock only matches if the request body contains "CRITICAL RULE".
+        // If the system prompt omits it, the mock won't fire and the call fails.
+        let m = server.mock(|when, then| {
+            when.method(POST)
+                .path("/api/chat")
+                .body_contains("CRITICAL RULE");
+            then.status(200).json_body(json!({
+                "message": { "role": "assistant", "content": "[1] Hero" }
+            }));
+        });
+        let provider = make_provider(&server);
+        let result = provider
+            .translate(vec!["主人公".to_string()], ctx())
+            .await
+            .expect("translate must succeed");
+        m.assert(); // verifies the mock was hit exactly once
+        assert_eq!(result, vec!["Hero"]);
     }
 }
