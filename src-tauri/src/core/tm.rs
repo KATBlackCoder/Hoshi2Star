@@ -45,6 +45,17 @@ pub fn hash_source(text: &str) -> String {
     hex::encode(digest)
 }
 
+/// A TM suggestion enriched with a similarity score and match type.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TmSuggestion {
+    pub entry: TmEntry,
+    /// Normalised similarity score in [0.0, 1.0].
+    pub score: f32,
+    /// `"exact"` when score == 1.0, `"fuzzy"` otherwise.
+    pub match_type: String,
+}
+
 // ---------------------------------------------------------------------------
 // Fuzzy matching — Levenshtein distance
 // ---------------------------------------------------------------------------
