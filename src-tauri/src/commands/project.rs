@@ -506,13 +506,32 @@ pub async fn translate_segments(
             .ok()
             .flatten();
             match pid {
-                Some(project_id) => glossary::list_for_project(&db, &project_id, lang_pair)
-                    .await
-                    .unwrap_or_default()
-                    .into_iter()
-                    .take(30)
-                    .map(|t| (t.source_text, t.target_text))
-                    .collect(),
+                Some(project_id) => {
+                    let all_terms = glossary::list_for_project(&db, &project_id, lang_pair)
+                        .await
+                        .unwrap_or_default();
+
+                    // Keep only terms whose source appears in at least one segment
+                    let mut relevant: Vec<(String, String)> = all_terms
+                        .iter()
+                        .filter(|t| pairs.iter().any(|(_, src)| src.contains(&t.source_text)))
+                        .take(20)
+                        .map(|t| (t.source_text.clone(), t.target_text.clone()))
+                        .collect();
+
+                    // Fallback: 10 shortest terms (short proper names = less prompt noise)
+                    if relevant.is_empty() {
+                        let mut by_len = all_terms;
+                        by_len.sort_by_key(|t| t.source_text.len());
+                        relevant = by_len
+                            .into_iter()
+                            .take(10)
+                            .map(|t| (t.source_text, t.target_text))
+                            .collect();
+                    }
+
+                    relevant
+                }
                 None => vec![],
             }
         } else {
@@ -528,13 +547,19 @@ pub async fn translate_segments(
         match pipeline::run(pairs, &provider, context, &db, &handle).await {
             Ok(results) => {
                 for r in results {
+                    let status = if r.needs_review {
+                        "needs_review"
+                    } else {
+                        "translated"
+                    };
                     let _ = sqlx::query(
                         "UPDATE segments \
-                         SET target_text = ?, status = 'translated', \
+                         SET target_text = ?, status = ?, \
                              updated_at = datetime('now') \
                          WHERE id = ?",
                     )
                     .bind(&r.translated_text)
+                    .bind(status)
                     .bind(&r.id)
                     .execute(&db)
                     .await;

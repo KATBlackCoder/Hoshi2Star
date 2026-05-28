@@ -49,6 +49,7 @@ const DEFAULT_CONFIG: ProviderConfig = {
 let progressUnlisten: UnlistenFn | null = null;
 let completedUnlisten: UnlistenFn | null = null;
 let errorUnlisten: UnlistenFn | null = null;
+let warningUnlisten: UnlistenFn | null = null;
 
 export const useLlmStore = create<LlmState>()((set, get) => ({
   isTranslating: false,
@@ -90,6 +91,7 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
     progressUnlisten?.();
     completedUnlisten?.();
     errorUnlisten?.();
+    warningUnlisten?.();
 
     // Listen to progress events from Rust pipeline
     progressUnlisten = await listen<ProgressPayload>(
@@ -107,6 +109,7 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
       progressUnlisten?.();
       completedUnlisten?.();
       errorUnlisten?.();
+      warningUnlisten?.();
     });
 
     errorUnlisten = await listen<{ message: string }>(
@@ -123,6 +126,18 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
         progressUnlisten?.();
         completedUnlisten?.();
         errorUnlisten?.();
+        warningUnlisten?.();
+      },
+    );
+
+    warningUnlisten = await listen<{ segmentId: string }>(
+      "h2s://llm/placeholder-warning",
+      (event) => {
+        const shortId = event.payload.segmentId.slice(0, 8);
+        toast.warning(
+          `⚠️ Segment ${shortId}… : placeholder non préservé — marqué comme 'À réviser'`,
+          { duration: 5000 },
+        );
       },
     );
 
@@ -141,6 +156,7 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
       progressUnlisten?.();
       completedUnlisten?.();
       errorUnlisten?.();
+      warningUnlisten?.();
     }
   },
 
