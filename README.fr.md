@@ -2,7 +2,7 @@
 
 # Hoshi2Star ★
 
-![Version](https://img.shields.io/badge/version-0.2.1-blue)
+![Version](https://img.shields.io/badge/version-0.3.0-blue)
 ![Licence](https://img.shields.io/badge/licence-MIT-green)
 ![Plateformes](https://img.shields.io/badge/plateformes-Linux%20%7C%20Windows-lightgrey)
 
@@ -39,6 +39,11 @@
 - QA automatique : placeholders, longueur de ligne, BOM UTF-8
 - Export des traductions dans les fichiers du jeu
 - Interface CAT 3 panneaux : Fichiers | Grille | TM + QA
+- Liste de projets — projets récents avec cartes de progression, continuer ou supprimer en un clic
+- Bouton traduire par segment — retraduire un segment sans passer par le batch
+- Extraction auto du glossaire — le LLM détecte les termes clés automatiquement à l'ouverture
+- TM fuzzy matching — seuil de similarité 80% avec distance de Levenshtein
+- Export rapport QA en HTML autonome
 
 ---
 
@@ -57,7 +62,7 @@
 ## Prérequis
 
 - **Ollama** installé : https://ollama.ai
-- Modèle recommandé : `ollama pull qwen3:4b-instruct-2507-q4_K_M`
+- Modèle recommandé : `ollama pull qwen3:4b-instruct-2507-q8_0`
 
 > La variante `-instruct` répond directement sans phase de
 > raisonnement, ce qui produit des traductions plus rapides

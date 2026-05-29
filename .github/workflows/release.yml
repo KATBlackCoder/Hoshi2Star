@@ -67,22 +67,26 @@ jobs:
             Interface available in **English and French** 🇬🇧 🇫🇷
 
             📖 See [README.md](https://github.com/KATBlackCoder/Hoshi2Star#readme)
-            for full documentation and quick start guide.
-            🇫🇷 [Lire en français](https://github.com/KATBlackCoder/Hoshi2Star/blob/main/README.fr.md)
+
+            ### What's new in v0.3.0
+
+            - Project list with progress cards on startup
+            - Glossary auto-extraction + manual CRUD
+            - TM fuzzy matching (80% Levenshtein)
+            - QA HTML report export
+            - Per-segment translate button
+            - Project manifest (`.hoshi2star.json`) for smart restore
+            - Groupe E community plugin placeholder support
 
             ### Prerequisites
             - [Ollama](https://ollama.ai) installed locally
-            - Recommended model: `ollama pull qwen3:4b-instruct-2507-q4_K_M`
+            - Recommended model: `ollama pull qwen3:4b-instruct-2507-q8_0`
 
             ### Installation
             - **Linux**: download `.AppImage` →
               `chmod +x hoshi2star_*.AppImage` →
               `./hoshi2star_*.AppImage`
             - **Windows**: download and run the `.msi`
-
-            ### MVP Limitations
-            - Engines: RPG Maker MV and MZ only
-            - Source language: Japanese
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
