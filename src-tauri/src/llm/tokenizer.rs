@@ -22,14 +22,16 @@ use std::sync::LazyLock;
 // Regex patterns (compiled once at first use)
 // ---------------------------------------------------------------------------
 
-/// MV/MZ combined: Groupe A + Groupe B + Groupe D (MV `[%n]` form).
+/// MV/MZ combined: Groupe A + Groupe B + Groupe D (MV `[%n]` form) + Groupe E (plugins).
 /// NOTE: `\PX/\PY/\FS` (Groupe C) are NOT included — they are MZ-only.
 static RE_MVMZ: LazyLock<Regex> = LazyLock::new(|| {
     // Inside a character class [..], only \\ needs escaping — other chars are literal.
     // Characters matched after the leading backslash: G \ $ . | ! > < ^ { }
+    // Groupe E MUST come before Groupe A to avoid partial matches on \+word.
     Regex::new(
         r"(?x)
-          \\[VNPCIvnpci]\[\d+\]   # Groupe A — codes avec argument numérique (maj + min)
+          \\[+\-]\w+\[\d+\]        # Groupe E — plugin codes (\+switch[n], \-var[n], …)
+        | \\[VNPCIvnpci]\[\d+\]   # Groupe A — codes avec argument numérique (maj + min)
         | \\[G\\$.|!><^{}]        # Groupe B — codes sans argument
         | \[%\d+\]                # Groupe D (MV) — [%1] [%2] …
         ",
@@ -37,12 +39,13 @@ static RE_MVMZ: LazyLock<Regex> = LazyLock::new(|| {
     .expect("RE_MVMZ regex must compile")
 });
 
-/// MZ-only: Groupe C (before A!) + Groupe A + Groupe B + Groupe D (MZ bare `%n` form).
+/// MZ-only: Groupe C (before A!) + Groupe A + Groupe B + Groupe D (MZ bare `%n` form) + Groupe E.
 /// Groupe C MUST come before Groupe A to prevent `\P` from consuming `\PX`/`\PY`/`\FS`.
 static RE_MZONLY: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?x)
-          \\(?:PX|PY|FS|px|py|fs)\[\d+\]  # Groupe C — MZ position/font codes (avant A!)
+          \\[+\-]\w+\[\d+\]                # Groupe E — plugin codes (\+switch[n], …)
+        | \\(?:PX|PY|FS|px|py|fs)\[\d+\]  # Groupe C — MZ position/font codes (avant A!)
         | \\[VNPCIvnpci]\[\d+\]            # Groupe A — codes avec argument numérique (maj + min)
         | \\[G\\$.|!><^{}]                 # Groupe B — codes sans argument
         | %\d+                             # Groupe D (MZ) — %1 %2 … (sans crochets)
@@ -306,6 +309,21 @@ mod tests {
         // restore on empty tokenized string with empty map → OK
         let restored = Tokenizer::restore("", &result.map).unwrap();
         assert_eq!(restored, "");
+    }
+
+    // 11b. Groupe E — plugin codes \+switch[n], \-var[n]
+    #[test]
+    fn test_plugin_codes_tokenized() {
+        let result = Tokenizer::tokenize(r"\+switch[269]", Engine::MvMz);
+        assert_eq!(result.text, "⟦ph_0⟧");
+        assert_eq!(result.map.get("⟦ph_0⟧").unwrap(), r"\+switch[269]");
+
+        // Round-trip
+        let original = r"Go to \+switch[270] and talk to \N[1].";
+        let tok = Tokenizer::tokenize(original, Engine::MvMz);
+        assert_eq!(tok.map.len(), 2);
+        let restored = Tokenizer::restore(&tok.text, &tok.map).unwrap();
+        assert_eq!(restored, original);
     }
 
     // 11. Codes lowercase (\n[n], \v[n], \c[n]) — variantes community plugins

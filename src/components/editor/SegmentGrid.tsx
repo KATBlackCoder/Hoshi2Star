@@ -11,15 +11,25 @@ import {
   useReactTable,
   getCoreRowModel,
   flexRender,
+  type RowSelectionState,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useProjectStore } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
+import { useLlmStore, useIsTranslating } from "@/stores/llm";
 import { createSegmentColumns } from "@/features/editor/columns";
-import type { GlossaryTerm, PaginatedSegments, Segment } from "@/lib/types";
+import type {
+  GlossaryTerm,
+  PaginatedSegments,
+  Segment,
+  SourceFile,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { Play } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 interface SegmentGridProps {
   highlightPlaceholders?: boolean;
@@ -31,12 +41,14 @@ export function SegmentGrid({
   void highlightPlaceholders; // consumed by columns in future — prop reserved for F2
   const { t, i18n } = useTranslation();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const setSourceFiles = useProjectStore((s) => s.setSourceFiles);
   const activeFileId = useEditorStore((s) => s.activeFileId);
   const setActiveSegment = useEditorStore((s) => s.setActiveSegment);
   const activeSegmentId = useEditorStore((s) => s.activeSegmentId);
   const setGlossaryTerms = useEditorStore((s) => s.setGlossaryTerms);
+  const { startTranslation, providerConfig } = useLlmStore();
+  const isTranslating = useIsTranslating();
 
-  // Ref so handleSave (useCallback) can read the active id without re-registering
   const activeSegmentIdRef = useRef(activeSegmentId);
   activeSegmentIdRef.current = activeSegmentId;
 
@@ -45,9 +57,8 @@ export function SegmentGrid({
   const [qaFilter, setQaFilter] = useState<
     "all" | "errors" | "critical" | "untranslated" | "needs_review"
   >("all");
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
-  // Keep latest ids in a ref so the completed-listener can use them without
-  // being re-registered on every render.
   const activeProjectIdRef = useRef(activeProjectId);
   const activeFileIdRef = useRef(activeFileId);
   activeProjectIdRef.current = activeProjectId;
@@ -66,7 +77,15 @@ export function SegmentGrid({
       .finally(() => setIsLoading(false));
   }, []);
 
-  // Fetch segments whenever the active file changes
+  const reloadSourceFiles = useCallback(
+    (projectId: string) => {
+      invoke<SourceFile[]>("get_source_files", { projectId })
+        .then(setSourceFiles)
+        .catch(() => {});
+    },
+    [setSourceFiles],
+  );
+
   useEffect(() => {
     if (!activeProjectId || !activeFileId) {
       setSegments([]);
@@ -75,9 +94,10 @@ export function SegmentGrid({
     loadSegments(activeProjectId, activeFileId);
   }, [activeProjectId, activeFileId, loadSegments]);
 
-  // Reset filter when switching files
+  // Reset filter + selection when switching files
   useEffect(() => {
     setQaFilter("all");
+    setRowSelection({});
   }, [activeFileId]);
 
   const filteredSegments = useMemo(() => {
@@ -101,17 +121,18 @@ export function SegmentGrid({
     }
   }, [segments, qaFilter]);
 
-  // Re-fetch when LLM pipeline completes so translated segments appear immediately
+  // Re-fetch segments + source files when LLM pipeline completes
   useEffect(() => {
     const unlisten = listen("h2s://llm/completed", () => {
       const pid = activeProjectIdRef.current;
       const fid = activeFileIdRef.current;
       if (pid && fid) loadSegments(pid, fid);
+      if (pid) reloadSourceFiles(pid);
     });
     return () => {
       void unlisten.then((fn) => fn());
     };
-  }, [loadSegments]);
+  }, [loadSegments, reloadSourceFiles]);
 
   // Load glossary terms when the active project changes
   useEffect(() => {
@@ -127,7 +148,6 @@ export function SegmentGrid({
       .catch(() => setGlossaryTerms([]));
   }, [activeProjectId, setGlossaryTerms]);
 
-  // Refresh glossary terms after auto-extraction completes
   useEffect(() => {
     const unlisten = listen<{ projectId: string; terms: GlossaryTerm[] }>(
       "h2s://glossary/extraction-done",
@@ -147,7 +167,6 @@ export function SegmentGrid({
     };
   }, [setGlossaryTerms]);
 
-  // Save a segment translation and update local state
   const handleSave = useCallback(
     async (id: string, text: string) => {
       const updated = await invoke<Segment>("update_segment", {
@@ -157,7 +176,6 @@ export function SegmentGrid({
       setSegments((prev) =>
         prev.map((s) => (s.id === updated.id ? updated : s)),
       );
-      // Keep QA panel fresh if the saved segment is currently active
       if (id === activeSegmentIdRef.current) {
         setActiveSegment(id, updated.sourceText, updated.targetText);
       }
@@ -165,7 +183,36 @@ export function SegmentGrid({
     [setActiveSegment],
   );
 
-  // Tab → scroll to + focus next row
+  // Translate a single segment directly (no config modal — uses current providerConfig)
+  const handleTranslate = useCallback(
+    (segmentId: string) => {
+      if (!providerConfig.model.trim()) {
+        toast.error(t("segmentGrid.noModelConfigured"));
+        return;
+      }
+      void startTranslation([segmentId], undefined);
+    },
+    [startTranslation, providerConfig.model, t],
+  );
+
+  // Translate selected rows
+  const selectedIds = useMemo(
+    () =>
+      Object.keys(rowSelection)
+        .map((idx) => filteredSegments[Number(idx)]?.id)
+        .filter(Boolean),
+    [rowSelection, filteredSegments],
+  );
+
+  function handleTranslateSelected() {
+    if (!providerConfig.model.trim()) {
+      toast.error(t("segmentGrid.noModelConfigured"));
+      return;
+    }
+    void startTranslation(selectedIds, undefined);
+    setRowSelection({});
+  }
+
   const parentRef = useRef<HTMLDivElement>(null);
 
   const handleTabNext = useCallback(
@@ -178,7 +225,6 @@ export function SegmentGrid({
         nextInput?.focus();
       });
     },
-    // virtualizer is stable by ref — safe to omit from deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [filteredSegments.length],
   );
@@ -189,16 +235,26 @@ export function SegmentGrid({
         totalRows: filteredSegments.length,
         onSave: handleSave,
         onTabNext: handleTabNext,
+        onTranslate: handleTranslate,
         t,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filteredSegments.length, handleSave, handleTabNext, i18n.language],
+    [
+      filteredSegments.length,
+      handleSave,
+      handleTabNext,
+      handleTranslate,
+      i18n.language,
+    ],
   );
 
   const table = useReactTable({
     data: filteredSegments,
     columns,
     getCoreRowModel: getCoreRowModel(),
+    enableRowSelection: true,
+    state: { rowSelection },
+    onRowSelectionChange: setRowSelection,
   });
 
   const rows = table.getRowModel().rows;
@@ -210,7 +266,6 @@ export function SegmentGrid({
     overscan: 10,
   });
 
-  // Empty states
   if (!activeFileId) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -253,11 +308,13 @@ export function SegmentGrid({
               key={header.id}
               className={cn(
                 "flex items-center px-3 py-2 select-none",
+                header.id === "select" && "w-9 shrink-0 justify-center",
                 header.id === "index" && "w-14 shrink-0",
                 header.id === "sourceText" && "flex-1 min-w-0",
                 header.id === "targetText" && "flex-1 min-w-0",
                 header.id === "status" && "w-24 shrink-0",
                 header.id === "qaScore" && "w-14 shrink-0",
+                header.id === "actions" && "w-9 shrink-0",
               )}
             >
               {flexRender(header.column.columnDef.header, header.getContext())}
@@ -266,7 +323,7 @@ export function SegmentGrid({
         )}
       </div>
 
-      {/* Toolbar: QA filter */}
+      {/* Toolbar: QA filter + batch translate */}
       <div className="shrink-0 border-b px-3 py-1.5 flex items-center gap-2">
         <Select
           value={qaFilter}
@@ -300,6 +357,19 @@ export function SegmentGrid({
             </SelectItem>
           </SelectContent>
         </Select>
+
+        {selectedIds.length >= 2 && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1.5 text-xs"
+            disabled={isTranslating}
+            onClick={handleTranslateSelected}
+          >
+            <Play className="h-3 w-3" />
+            {t("segmentGrid.translateSelected", { count: selectedIds.length })}
+          </Button>
+        )}
       </div>
 
       {/* Virtual body */}
@@ -329,7 +399,7 @@ export function SegmentGrid({
                   )
                 }
                 className={cn(
-                  "flex border-b border-border/50 hover:bg-accent/30 transition-colors cursor-pointer",
+                  "group flex border-b border-border/50 hover:bg-accent/30 transition-colors cursor-pointer",
                   activeSegmentId === row.original.id && "bg-accent/50",
                 )}
               >
@@ -338,6 +408,8 @@ export function SegmentGrid({
                     key={cell.id}
                     className={cn(
                       "flex items-start px-3 py-2 min-h-10",
+                      cell.column.id === "select" &&
+                        "w-9 shrink-0 justify-center items-center",
                       cell.column.id === "index" && "w-14 shrink-0 justify-end",
                       cell.column.id === "sourceText" && "flex-1 min-w-0",
                       cell.column.id === "targetText" && "flex-1 min-w-0",
@@ -345,6 +417,8 @@ export function SegmentGrid({
                         "w-24 shrink-0 items-center",
                       cell.column.id === "qaScore" &&
                         "w-14 shrink-0 justify-center items-center",
+                      cell.column.id === "actions" &&
+                        "w-9 shrink-0 justify-center items-center",
                     )}
                   >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}

@@ -193,6 +193,19 @@
 
 ### Persistence projet
 - [x] Manifest `.hoshi2star.json` — écriture à l'ouverture, réouverture sans ré-extraction, stats auto-mises à jour
+- [x] `translation_secs` per-file in DB (`0004_source_files_translation_secs.sql`) — durée de traduction persistée entre sessions
+
+### Gestion des projets
+- [x] `list_projects` Tauri command — liste tous les projets connus en DB (triés par dernière mise à jour)
+- [x] `delete_project` Tauri command — supprime projet + fichiers + segments (cascade) + `.hoshi2star.json`
+- [x] `ProjectList` panel — affiché à l'ouverture si aucun projet actif, avec boutons Continuer / Supprimer
+
+### Tokenizer — Groupe E
+- [x] Patterns `\+word[n]` / `\-word[n]` ajoutés à `RE_MVMZ` (community plugins courants : `\+switch[n]`, `\+variable[n]`, etc.)
+
+### SegmentGrid — UX traduction
+- [x] Bouton Traduire par ligne (colonne `actions`) — retraduit un segment individuel sans ouvrir le modal
+- [x] Colonne checkbox de sélection — sélectionner ≥2 lignes affiche un bouton "Traduire N lignes" dans la toolbar
 
 ### Beta privée
 - [ ] Recrutement 20–30 testeurs via Discord fan-trad / F95zone

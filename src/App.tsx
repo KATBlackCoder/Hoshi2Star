@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FileTree } from "@/components/editor/FileTree";
+import { ProjectList } from "@/components/editor/ProjectList";
 import { SegmentGrid } from "@/components/editor/SegmentGrid";
 import { TMPanel } from "@/components/editor/TMPanel";
 import { QAPanel } from "@/components/editor/QAPanel";
@@ -36,7 +37,7 @@ import { toast } from "sonner";
 // Placeholder highlight helper
 // ---------------------------------------------------------------------------
 
-const PH_RE = /\\[VNPCI]\[\d+\]|\\[G\\$.|!><^{}]|\[%\d+\]/g;
+const PH_RE = /\\[+\-]\w+\[\d+\]|\\[VNPCI]\[\d+\]|\\[G\\$.|!><^{}]|\[%\d+\]/g;
 
 export function HighlightedSource({ text }: { text: string }) {
   const parts: React.ReactNode[] = [];
@@ -435,10 +436,14 @@ export default function App() {
 
         <ResizableHandle withHandle={true} />
 
-        {/* Centre: SegmentGrid */}
+        {/* Centre: ProjectList (no active project) or SegmentGrid */}
         <ResizablePanel defaultSize="55%" minSize="40%" collapsible={false}>
           <div className="flex h-full flex-col overflow-hidden">
-            <SegmentGrid highlightPlaceholders />
+            {activeProjectId ? (
+              <SegmentGrid highlightPlaceholders />
+            ) : (
+              <ProjectList />
+            )}
           </div>
         </ResizablePanel>
 

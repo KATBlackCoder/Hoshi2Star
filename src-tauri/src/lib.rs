@@ -13,9 +13,9 @@ use commands::glossary::{
     update_glossary_term,
 };
 use commands::project::{
-    export_project, export_qa_report, export_tm, get_ollama_models, get_qa_report, get_segments,
-    get_source_files, get_tm_suggestions, open_project, qa_check_segment, translate_segments,
-    update_segment,
+    delete_project, export_project, export_qa_report, export_tm, get_ollama_models, get_qa_report,
+    get_segments, get_source_files, get_tm_suggestions, list_projects, open_project,
+    qa_check_segment, translate_segments, update_segment,
 };
 use state::AppState;
 use tauri::Manager;
@@ -59,6 +59,8 @@ pub fn run() {
             extract_glossary_terms,
             export_tm,
             export_qa_report,
+            list_projects,
+            delete_project,
         ]);
 
     #[cfg(debug_assertions)]

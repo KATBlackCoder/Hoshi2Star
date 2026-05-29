@@ -57,6 +57,17 @@ r"\[%\d+\]"
 r"%\d+"
 ```
 
+### Groupe E — Community plugins (verbe + argument numérique)
+```rust
+// \+switch[n]  \-switch[n]  \+variable[n]  \-variable[n]  etc.
+// Forme : \ suivi de + ou -, suivi de 1–20 lettres ASCII, suivi de [n]
+// Exemples confirmés : \+switch[269] \-switch[270] \+variable[12]
+r"\\[+\-][A-Za-z]{1,20}\[\d+\]"
+```
+
+> **Note :** le Groupe E est inclus dans `RE_MVMZ` (utilisé pour les dialogues MV et MZ).
+> Il n'est **pas** spécifique à MZ — ces plugins fonctionnent dans les deux moteurs.
+
 ### Regex combinée complète (ordre important)
 ```rust
 // Toujours tester Groupe C avant Groupe A pour éviter
@@ -67,6 +78,7 @@ const PLACEHOLDER_REGEX: &str = r"(?x)
   | \\[G\\$.|!><^{}]                # Groupe B — sans argument (✅ valide crate regex)
   | \[%\d+\]                        # Groupe D — MV substitution
   | %\d+                            # Groupe D — MZ substitution
+  | \\[+\-][A-Za-z]{1,20}\[\d+\]   # Groupe E — community plugin verbs (\+switch[n])
 ";
 ```
 
@@ -97,6 +109,7 @@ const PLACEHOLDER_REGEX: &str = r"(?x)
 | `\FS[n]` | MZ only | ✅ Oui | ❌ Non | Taille de police |
 | `[%n]` | MV only | ✅ Oui | ✅ Oui | Terms > Messages — valeur dynamique |
 | `%n` | MZ only | ✅ Oui | ✅ Oui | Terms Settings — valeur dynamique |
+| `\+word[n]` / `\-word[n]` | MV + MZ (plugins) | ✅ Oui | ❌ Non | Community plugins — ex: `\+switch[269]`, `\-variable[12]` |
 
 ---
 
@@ -180,6 +193,7 @@ mod tests {
     // 9. \\ (double backslash) préservé correctement
     // 10. Segment vide → pas d'erreur
     // 11. Codes lowercase (\n[n], \c[n], \v[n]) — community plugins
+    // 12. Groupe E : \+switch[n] / \-switch[n] — community plugin codes
 }
 ```
 
@@ -204,3 +218,4 @@ Le tokenizer les préserve dans les dialogues mais ne les traduit pas.
 |------|-----------|
 | 2026-05-24 | Regex Groupe B : `\\[G\\\$\.\|\!\>\<\^\{\}]` → `\\[G\\$.\|!><^{}]` — escape sequences invalides dans char class détectées par clippy lors de l'implémentation du tokenizer |
 | 2026-05-25 | Groupes A et C étendus aux minuscules (`[VNPCIvnpci]`, `px\|py\|fs`) — jeu réel utilisant `\n[n]` et `\c[n]` (community plugins) causait une extraction de segments non-traduisibles |
+| 2026-05-29 | Groupe E ajouté : `\\[+\-][A-Za-z]{1,20}\[\d+\]` — jeu réel avec `\+switch[269]` / `\-switch[270]` causait des warnings de placeholder non préservé |

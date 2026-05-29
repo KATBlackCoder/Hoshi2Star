@@ -32,7 +32,10 @@
     "filterQaErrors": "QA : Erreurs uniquement",
     "filterQaCritical": "QA : Score < 70",
     "filterUntranslated": "Non traduits",
-    "filterNeedsReview": "À réviser"
+    "filterNeedsReview": "À réviser",
+    "translateRow": "Traduire ce segment",
+    "translateSelected": "Traduire {{count}} lignes",
+    "noModelConfigured": "Aucun modèle LLM configuré — ouvrez d'abord le menu Traduire"
   },
   "tmPanel": {
     "title": "Mémoire de traduction",
@@ -99,5 +102,14 @@
   },
   "project": {
     "restored": "Projet restauré — reprise de la traduction"
+  },
+  "projectList": {
+    "title": "Projets récents",
+    "empty": "Aucun projet — ouvrez un dossier de jeu pour commencer",
+    "continue": "Continuer",
+    "delete": "Supprimer le projet",
+    "deleted": "Projet « {{name}} » supprimé",
+    "openError": "Impossible d'ouvrir le projet",
+    "deleteError": "Impossible de supprimer le projet"
   }
 }

@@ -28,6 +28,7 @@ export interface SourceFile {
   fileName: string;
   filePath: string;
   fileType: string;
+  translationSecs: number | null;
 }
 
 export interface Segment {

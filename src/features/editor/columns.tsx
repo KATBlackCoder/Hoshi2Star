@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { GlossaryTerm, Segment, SegmentStatus } from "@/lib/types";
 import { useGlossaryTerms } from "@/stores/editor";
 import { cn } from "@/lib/utils";
+import { Play } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Status badge
@@ -105,7 +106,7 @@ function EditableCell({
 // Source text highlight (placeholders + glossary terms)
 // ---------------------------------------------------------------------------
 
-const PH_RE = /\\[VNPCI]\[\d+\]|\\[G\\$.|!><^{}]|\[%\d+\]/g;
+const PH_RE = /\\[+\-]\w+\[\d+\]|\\[VNPCI]\[\d+\]|\\[G\\$.|!><^{}]|\[%\d+\]/g;
 
 /** Escape special regex characters in a string. */
 function escapeRe(s: string) {
@@ -198,6 +199,7 @@ export interface SegmentColumnMeta {
   totalRows: number;
   onSave: (id: string, text: string) => Promise<void>;
   onTabNext: (currentIndex: number) => void;
+  onTranslate: (segmentId: string) => void;
   t: (key: string) => string;
 }
 
@@ -205,6 +207,33 @@ export function createSegmentColumns(
   meta: SegmentColumnMeta,
 ): ColumnDef<Segment>[] {
   return [
+    // Checkbox selection column
+    helper.display({
+      id: "select",
+      size: 36,
+      header: ({ table }) => (
+        <input
+          type="checkbox"
+          className="h-3.5 w-3.5 cursor-pointer accent-primary"
+          checked={table.getIsAllPageRowsSelected()}
+          ref={(el) => {
+            if (el) el.indeterminate = table.getIsSomePageRowsSelected();
+          }}
+          onChange={table.getToggleAllPageRowsSelectedHandler()}
+          onClick={(e) => e.stopPropagation()}
+        />
+      ),
+      cell: ({ row }) => (
+        <input
+          type="checkbox"
+          className="h-3.5 w-3.5 cursor-pointer accent-primary"
+          checked={row.getIsSelected()}
+          onChange={row.getToggleSelectedHandler()}
+          onClick={(e) => e.stopPropagation()}
+        />
+      ),
+    }) as ColumnDef<Segment>,
+
     helper.display({
       id: "index",
       header: meta.t("segmentGrid.columns.number"),
@@ -265,6 +294,26 @@ export function createSegmentColumns(
           </span>
         );
       },
+    }) as ColumnDef<Segment>,
+
+    // Per-row translate button
+    helper.display({
+      id: "actions",
+      size: 36,
+      header: () => null,
+      cell: (ctx) => (
+        <button
+          type="button"
+          title={meta.t("segmentGrid.translateRow")}
+          className="flex h-6 w-6 items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-primary/20 text-muted-foreground hover:text-primary transition-all"
+          onClick={(e) => {
+            e.stopPropagation();
+            meta.onTranslate(ctx.row.original.id);
+          }}
+        >
+          <Play className="h-3 w-3" />
+        </button>
+      ),
     }) as ColumnDef<Segment>,
   ];
 }

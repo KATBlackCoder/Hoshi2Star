@@ -32,7 +32,10 @@
     "filterQaErrors": "QA: Errors only",
     "filterQaCritical": "QA: Score < 70",
     "filterUntranslated": "Untranslated",
-    "filterNeedsReview": "Needs review"
+    "filterNeedsReview": "Needs review",
+    "translateRow": "Translate this segment",
+    "translateSelected": "Translate {{count}} lines",
+    "noModelConfigured": "No LLM model configured — open the Translate menu first"
   },
   "tmPanel": {
     "title": "Translation Memory",
@@ -99,5 +102,14 @@
   },
   "project": {
     "restored": "Project restored — continuing where you left off"
+  },
+  "projectList": {
+    "title": "Recent projects",
+    "empty": "No projects yet — open a game folder to get started",
+    "continue": "Continue",
+    "delete": "Delete project",
+    "deleted": "Project \"{{name}}\" deleted",
+    "openError": "Failed to open project",
+    "deleteError": "Failed to delete project"
   }
 }

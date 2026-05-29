@@ -45,6 +45,7 @@ pub struct SourceFile {
     pub file_name: String,
     pub file_path: String,
     pub file_type: String,
+    pub translation_secs: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
@@ -328,7 +329,7 @@ pub async fn get_source_files(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<SourceFile>, String> {
     sqlx::query_as::<_, SourceFile>(
-        "SELECT id, project_id, file_name, file_path, file_type \
+        "SELECT id, project_id, file_name, file_path, file_type, translation_secs \
          FROM source_files WHERE project_id = ? ORDER BY file_name",
     )
     .bind(&project_id)
@@ -570,13 +571,13 @@ pub async fn translate_segments(
             q = q.bind(id);
         }
         q.fetch_all(&state.db).await.map_err(|e| e.to_string())?
-    } else if let Some(fid) = file_id {
+    } else if let Some(ref fid) = file_id {
         sqlx::query_as::<_, (String, String)>(
             "SELECT id, source_text FROM segments \
              WHERE source_file_id = ? AND (status = 'untranslated' OR target_text = '') \
              ORDER BY rowid",
         )
-        .bind(&fid)
+        .bind(fid)
         .fetch_all(&state.db)
         .await
         .map_err(|e| e.to_string())?
@@ -594,6 +595,7 @@ pub async fn translate_segments(
 
     let db = state.db.clone();
     let handle = app.clone();
+    let translation_start = std::time::Instant::now();
 
     tokio::spawn(async move {
         let provider = OllamaProvider::new(
@@ -706,6 +708,16 @@ pub async fn translate_segments(
                             },
                         );
                     }
+                }
+                // Persist per-file translation duration when a whole file was translated
+                if let Some(ref fid) = file_id {
+                    let elapsed = translation_start.elapsed().as_secs() as i64;
+                    let _ =
+                        sqlx::query("UPDATE source_files SET translation_secs = ? WHERE id = ?")
+                            .bind(elapsed)
+                            .bind(fid)
+                            .execute(&db)
+                            .await;
                 }
                 let _ = handle.emit("h2s://llm/completed", serde_json::json!({ "count": count }));
             }
@@ -1090,6 +1102,47 @@ pub async fn export_tm(
     tokio::fs::write(&output_path, tmx)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// List all projects in the DB, ordered by most recently updated.
+#[tauri::command]
+pub async fn list_projects(state: tauri::State<'_, AppState>) -> Result<Vec<Project>, String> {
+    sqlx::query_as::<_, Project>(
+        "SELECT id, name, engine, game_path, created_at, updated_at \
+         FROM projects ORDER BY updated_at DESC",
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Delete a project and all its data (cascades to source_files + segments).
+/// Also removes the `.hoshi2star.json` manifest from the game folder (best-effort).
+#[tauri::command]
+pub async fn delete_project(
+    project_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    // Fetch game_path before deleting so we can remove the manifest
+    let game_path: Option<String> =
+        sqlx::query_scalar("SELECT game_path FROM projects WHERE id = ?")
+            .bind(&project_id)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    sqlx::query("DELETE FROM projects WHERE id = ?")
+        .bind(&project_id)
+        .execute(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if let Some(path) = game_path {
+        let manifest_path = std::path::Path::new(&path).join(".hoshi2star.json");
+        let _ = std::fs::remove_file(manifest_path);
+    }
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

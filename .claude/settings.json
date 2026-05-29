@@ -1,4 +1,18 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(node -e ':*)",
+      "Read(//tmp/runetranslate-src/out/preload/**)",
+      "Read(//tmp/runetranslate-src/resources/evb/**)",
+      "Read(//tmp/runetranslate-src/resources/unity/**)",
+      "Read(//tmp/runetranslate-src/resources/renpy/rpatool/**)",
+      "Read(//tmp/runetranslate-src/resources/renpy/savetool/**)",
+      "Read(//tmp/runetranslate-src/resources/renpy/unrpyc/decompiler/**)",
+      "Read(//tmp/runetranslate-src/resources/renpy/unrpyc/**)",
+      "Bash(ls *.config.*)",
+      "Bash(pnpm lint *)"
+    ]
+  },
   "hooks": {
     "PostToolUse": [
       {

@@ -21,16 +21,13 @@ interface LlmState {
   error: string | null;
   /** timestamp Date.now() when translation started, null when idle */
   translationStartTime: number | null;
-  /** fileId → elapsed seconds after completion */
-  fileTranslationTimes: Record<string, number>;
 
   // Actions
   setProviderConfig: (cfg: Partial<ProviderConfig>) => void;
   startTranslation: (segmentIds: string[], fileId?: string) => Promise<void>;
   reset: () => void;
   startTimer: () => void;
-  stopTimer: (fileId: string) => void;
-  clearFileTime: (fileId: string) => void;
+  stopTimer: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -57,29 +54,13 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
   providerConfig: { ...DEFAULT_CONFIG },
   error: null,
   translationStartTime: null,
-  fileTranslationTimes: {},
 
   setProviderConfig: (cfg) =>
     set((s) => ({ providerConfig: { ...s.providerConfig, ...cfg } })),
 
   startTimer: () => set({ translationStartTime: Date.now() }),
 
-  stopTimer: (fileId) => {
-    const { translationStartTime, fileTranslationTimes } = get();
-    if (translationStartTime === null) return;
-    const elapsed = Math.floor((Date.now() - translationStartTime) / 1000);
-    set({
-      translationStartTime: null,
-      fileTranslationTimes: { ...fileTranslationTimes, [fileId]: elapsed },
-    });
-  },
-
-  clearFileTime: (fileId) =>
-    set((s) => {
-      const times = { ...s.fileTranslationTimes };
-      delete times[fileId];
-      return { fileTranslationTimes: times };
-    }),
+  stopTimer: () => set({ translationStartTime: null }),
 
   startTranslation: async (segmentIds, fileId) => {
     if (get().isTranslating) return;
@@ -104,7 +85,7 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
     );
 
     completedUnlisten = await listen("h2s://llm/completed", () => {
-      if (fileId) get().stopTimer(fileId);
+      get().stopTimer();
       set({ isTranslating: false, translationProgress: 100 });
       progressUnlisten?.();
       completedUnlisten?.();
@@ -176,5 +157,3 @@ export const useTranslationProgress = () =>
 export const useProviderConfig = () => useLlmStore((s) => s.providerConfig);
 export const useTranslationStartTime = () =>
   useLlmStore((s) => s.translationStartTime);
-export const useFileTranslationTimes = () =>
-  useLlmStore((s) => s.fileTranslationTimes);
