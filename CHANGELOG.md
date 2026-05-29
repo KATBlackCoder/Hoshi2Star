@@ -4,7 +4,20 @@ All notable changes to Hoshi2Star will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
+
+## [0.3.0] - 2026-05-29
 ### Added
+- Add per-row Translate button in SegmentGrid — retranslates a single segment without opening the LLM config modal
+- Add checkbox selection column in SegmentGrid — select 2+ segments to show a batch "Translate N lines" button next to the filter dropdown
+- Add `ProjectList` panel — displayed when no project is open, lists all known projects from DB with Continue and Delete actions
+- Add `list_projects` Tauri command — returns all projects sorted by most recently updated
+- Add `delete_project` Tauri command — removes project row (cascade deletes files + segments) and deletes `.hoshi2star.json` manifest file
+- Add `translation_secs` column to `source_files` table (migration `0004_source_files_translation_secs.sql`) — persists per-file translation duration across sessions
+- Add Groupe E plugin placeholder pattern `\+word[n]` / `\-word[n]` to tokenizer `RE_MVMZ` — covers common community plugin codes such as `\+switch[269]`
+- Add test `test_plugin_codes_tokenized` for Groupe E patterns in `tokenizer.rs`
+- Add `project.translationSecs` field to `SourceFile` TypeScript type
+- Add project management i18n keys `projectList.*` (EN + FR)
+- Add `segmentGrid.translateRow` / `translateSelected` / `noModelConfigured` i18n keys (EN + FR)
 - Add project manifest `.hoshi2star.json` written at game folder root on `open_project` success (stores project ID, title, engine, file count, segment count)
 - Add smart restore: if manifest + DB entry match on re-open, project returned immediately without re-extracting (`wasRestored: true`)
 - Add toast "Project restored — continuing where you left off" on smart restore (i18n EN/FR)
@@ -45,6 +58,7 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - Add Git branch workflow to development conventions in CONTEXT.md
 
 ### Changed
+- Replace Zustand `fileTranslationTimes` in-memory store with DB-persisted `translation_secs` on `source_files` — translation duration now survives app restarts
 - Disable VX Ace engine detection (code preserved in `engines/vx_ace/`, reactivation planned post-Wolf RPG)
 - Refocus roadmap: Wolf RPG F4 as absolute priority over VX Ace and other engines
 - Rename F3 phase: "Polissage + Glossaire + TM fuzzy + beta privée" (VX Ace removed from scope)
@@ -52,6 +66,8 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - Add engine priority table to ROADMAP.md
 
 ### Fixed
+- Fix translation duration badge disappearing after reopening a project — duration now read from `source_files.translation_secs` (DB) instead of ephemeral Zustand store
+- Fix `translate_segments` partial-move compile error when `file_id` passed via `if let Some(fid)` then reused in async block
 - Fix placeholder validation failures now falling back to `needs_review` status instead of blocking the batch — `h2s://llm/placeholder-warning` event emitted per segment, toast shown in UI
 - Fix incorrect segment_id reported in placeholder validation errors (was always the first segment of the batch)
 - Reduce glossary injection to relevant terms only (filtered by batch content, max 20; fallback: 10 shortest) — improves LLM attention on placeholder preservation
@@ -101,5 +117,6 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - TanStack Query for async Tauri invoke() calls
 - GitHub Actions CI/CD for Linux + Windows builds
 
+[0.3.0]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.3.0
 [0.2.1]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.2.1
 [0.2.0]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.2.0
