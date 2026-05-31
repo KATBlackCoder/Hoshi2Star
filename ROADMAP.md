@@ -207,6 +207,9 @@
 - [x] Bouton Traduire par ligne (colonne `actions`) — retraduit un segment individuel sans ouvrir le modal
 - [x] Colonne checkbox de sélection — sélectionner ≥2 lignes affiche un bouton "Traduire N lignes" dans la toolbar
 
+### Polissage UI
+- [x] Settings modal — Ollama URL/modèle, thème, langue, persistence tauri-plugin-store
+
 ### Beta privée
 - [ ] Recrutement 20–30 testeurs via Discord fan-trad / F95zone
 - [ ] Feedback form intégré à l'app (event `h2s://feedback/submit`)

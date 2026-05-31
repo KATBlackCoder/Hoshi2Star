@@ -4,6 +4,19 @@ All notable changes to Hoshi2Star will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
+### Added
+- Add Settings modal (⚙ button in toolbar) — LLM config (Ollama URL + model), theme toggle (light/dark), language toggle (EN/FR), persisted via tauri-plugin-store to settings.json in app data dir
+- Add settings loaded on app startup from settings.json (merge with defaults for first launch)
+- Add Translate button auto-opens Settings if no model is configured (toast + auto-open)
+
+### Changed
+- Move LLM configuration from modal on Translate button to persistent Settings modal (⚙)
+- Move language toggle from toolbar to Settings modal
+- Move theme toggle to Settings modal
+- Translate button now starts translation directly (no intermediate modal) when model is configured
+
+### Removed
+- Remove LlmConfigModal component — replaced by SettingsModal
 
 ## [0.3.0] - 2026-05-29
 ### Added
