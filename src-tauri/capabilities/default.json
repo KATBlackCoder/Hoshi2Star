@@ -7,6 +7,10 @@
     "core:default",
     "opener:default",
     "dialog:default",
-    "mcp-bridge:default"
+    "mcp-bridge:default",
+    "store:allow-load",
+    "store:allow-get",
+    "store:allow-set",
+    "store:allow-save"
   ]
 }
