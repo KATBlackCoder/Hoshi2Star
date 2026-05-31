@@ -35,7 +35,7 @@
     "filterNeedsReview": "Needs review",
     "translateRow": "Translate this segment",
     "translateSelected": "Translate {{count}} lines",
-    "noModelConfigured": "No LLM model configured — open the Translate menu first"
+    "noModelConfigured": "No LLM model configured — open Settings (⚙)"
   },
   "tmPanel": {
     "title": "Translation Memory",
@@ -81,6 +81,31 @@
     "extractDone": "terms extracted",
     "extractNoTerms": "No new terms found — the game may have no Actors/Skills/Items/States, or all terms are already in the glossary",
     "extractError": "Extraction error"
+  },
+  "settings": {
+    "title": "Settings",
+    "llm": {
+      "section": "LLM (Ollama)",
+      "urlLabel": "Ollama URL",
+      "modelLabel": "Model",
+      "modelLoading": "Loading models...",
+      "modelNone": "No model available",
+      "modelManual": "Enter model name manually",
+      "modelError": "Cannot reach Ollama — check the URL",
+      "testButton": "Test"
+    },
+    "appearance": {
+      "section": "Appearance",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "language": {
+      "section": "Language"
+    },
+    "reset": "Reset to defaults",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saved": "Settings saved"
   },
   "llmModal": {
     "title": "LLM Configuration",
