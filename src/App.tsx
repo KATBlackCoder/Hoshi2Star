@@ -7,19 +7,13 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { FileTree } from "@/components/editor/FileTree";
 import { ProjectList } from "@/components/editor/ProjectList";
 import { SegmentGrid } from "@/components/editor/SegmentGrid";
 import { TMPanel } from "@/components/editor/TMPanel";
 import { QAPanel } from "@/components/editor/QAPanel";
 import { GlossaryPanel } from "@/components/editor/GlossaryPanel";
+import { SettingsModal } from "@/components/settings/SettingsModal";
 import { openProject, useProjectStore } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import {
@@ -28,9 +22,17 @@ import {
   useTranslationProgress,
   useTranslationStartTime,
 } from "@/stores/llm";
+import { useSettingsStore } from "@/stores/settings";
 import { Toaster } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
-import { Clock, Download, FolderOpen, Loader2, Play, X } from "lucide-react";
+import {
+  Clock,
+  Download,
+  FolderOpen,
+  Loader2,
+  Play,
+  Settings,
+} from "lucide-react";
 import { toast } from "sonner";
 
 // ---------------------------------------------------------------------------
@@ -102,173 +104,17 @@ function TranslationTimer() {
 }
 
 // ---------------------------------------------------------------------------
-// LLM config modal
-// ---------------------------------------------------------------------------
-
-interface LlmConfigModalProps {
-  onClose: () => void;
-  onStart: (segmentIds: string[], fileId?: string) => void;
-}
-
-function LlmConfigModal({ onClose, onStart }: LlmConfigModalProps) {
-  const { t } = useTranslation();
-  const { providerConfig, setProviderConfig } = useLlmStore();
-  const activeFileId = useEditorStore((s) => s.activeFileId);
-
-  const [models, setModels] = useState<string[]>([]);
-  const [modelsLoading, setModelsLoading] = useState(false);
-  const [modelsError, setModelsError] = useState<string | null>(null);
-  const [urlDraft, setUrlDraft] = useState(providerConfig.url);
-
-  async function fetchModels(url: string) {
-    setModelsLoading(true);
-    setModelsError(null);
-    try {
-      const list = await invoke<string[]>("get_ollama_models", { url });
-      setModels(list);
-      if (list.length > 0) {
-        const keep = list.includes(providerConfig.model)
-          ? providerConfig.model
-          : list[0];
-        setProviderConfig({ model: keep });
-      }
-    } catch {
-      setModelsError(t("llmModal.modelError"));
-      setModels([]);
-    } finally {
-      setModelsLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    void fetchModels(providerConfig.url);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  function handleUrlBlur() {
-    const trimmed = urlDraft.trim();
-    setProviderConfig({ url: trimmed });
-    void fetchModels(trimmed);
-  }
-
-  function handleStart() {
-    onStart([], activeFileId ?? undefined);
-    onClose();
-  }
-
-  const canStart =
-    !!activeFileId && (models.length > 0 || providerConfig.model.trim() !== "");
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-96 rounded-lg border bg-background p-4 shadow-xl">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">{t("llmModal.title")}</h2>
-          <button type="button" onClick={onClose}>
-            <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-          </button>
-        </div>
-
-        <div className="space-y-3">
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">
-              {t("llmModal.urlLabel")}
-            </label>
-            <input
-              type="text"
-              className="w-full rounded border bg-muted/30 px-2 py-1.5 text-xs outline-none focus:border-primary"
-              value={urlDraft}
-              onChange={(e) => setUrlDraft(e.target.value)}
-              onBlur={handleUrlBlur}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">
-              {t("llmModal.modelLabel")}
-            </label>
-            {models.length > 0 ? (
-              <Select
-                value={providerConfig.model}
-                onValueChange={(v) => setProviderConfig({ model: v })}
-              >
-                <SelectTrigger className="h-8 w-full text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {models.map((m) => (
-                    <SelectItem key={m} value={m} className="text-xs">
-                      {m}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <>
-                <Select disabled>
-                  <SelectTrigger className="h-8 w-full text-xs">
-                    <SelectValue
-                      placeholder={
-                        modelsLoading
-                          ? t("llmModal.modelLoading")
-                          : t("llmModal.modelNone")
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent />
-                </Select>
-                {modelsError && (
-                  <input
-                    type="text"
-                    className="mt-1.5 w-full rounded border bg-muted/30 px-2 py-1.5 text-xs outline-none focus:border-primary"
-                    placeholder={t("llmModal.modelManual")}
-                    value={providerConfig.model}
-                    onChange={(e) =>
-                      setProviderConfig({ model: e.target.value })
-                    }
-                  />
-                )}
-              </>
-            )}
-            {modelsError && (
-              <p className="mt-1 text-[11px] text-destructive">{modelsError}</p>
-            )}
-          </div>
-        </div>
-
-        <div className="mt-4 flex justify-end gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-xs"
-            onClick={onClose}
-          >
-            {t("llmModal.cancel")}
-          </Button>
-          <Button
-            size="sm"
-            className="h-7 text-xs"
-            onClick={handleStart}
-            disabled={!canStart}
-          >
-            {modelsLoading ? (
-              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-            ) : (
-              <Play className="mr-1 h-3 w-3" />
-            )}
-            {t("llmModal.start")}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Toolbar
 // ---------------------------------------------------------------------------
 
-function Toolbar({ onOpenLlmConfig }: { onOpenLlmConfig: () => void }) {
-  const { t, i18n } = useTranslation();
+function Toolbar({
+  onOpenSettings,
+  onTranslate,
+}: {
+  onOpenSettings: () => void;
+  onTranslate: () => void;
+}) {
+  const { t } = useTranslation();
   const [isOpening, setIsOpening] = useState(false);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const activeProject = useProjectStore((s) =>
@@ -305,10 +151,6 @@ function Toolbar({ onOpenLlmConfig }: { onOpenLlmConfig: () => void }) {
     }
   }
 
-  function handleToggleLang() {
-    void i18n.changeLanguage(i18n.language === "fr" ? "en" : "fr");
-  }
-
   return (
     <div className="flex h-10 shrink-0 items-center gap-3 border-b px-3">
       <span className="text-sm font-semibold tracking-tight select-none">
@@ -335,7 +177,7 @@ function Toolbar({ onOpenLlmConfig }: { onOpenLlmConfig: () => void }) {
           size="sm"
           variant="outline"
           className="h-7 gap-1.5 text-xs"
-          onClick={onOpenLlmConfig}
+          onClick={onTranslate}
           disabled={isTranslating}
         >
           {isTranslating ? (
@@ -362,15 +204,6 @@ function Toolbar({ onOpenLlmConfig }: { onOpenLlmConfig: () => void }) {
         </Button>
       )}
 
-      <Button
-        size="sm"
-        variant="ghost"
-        className="h-7 text-xs"
-        onClick={handleToggleLang}
-      >
-        {i18n.language === "fr" ? "🇬🇧 EN" : "🇫🇷 FR"}
-      </Button>
-
       {activeProjectId && activeProject && (
         <span className="ml-1 truncate text-xs text-muted-foreground">
           {activeProject.name}
@@ -382,7 +215,7 @@ function Toolbar({ onOpenLlmConfig }: { onOpenLlmConfig: () => void }) {
 
       {/* Progress bar + timer */}
       {isTranslating && progress >= 0 && (
-        <div className="ml-auto flex items-center gap-2 mr-2">
+        <div className="flex items-center gap-2 mr-2">
           <TranslationTimer />
           <div className="h-1.5 w-32 overflow-hidden rounded-full bg-muted">
             <div
@@ -392,6 +225,17 @@ function Toolbar({ onOpenLlmConfig }: { onOpenLlmConfig: () => void }) {
           </div>
         </div>
       )}
+
+      {/* Settings button — pushed to the right */}
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 w-7 p-0 ml-auto"
+        onClick={onOpenSettings}
+        title={t("settings.title")}
+      >
+        <Settings className="h-4 w-4" />
+      </Button>
     </div>
   );
 }
@@ -401,9 +245,12 @@ function Toolbar({ onOpenLlmConfig }: { onOpenLlmConfig: () => void }) {
 // ---------------------------------------------------------------------------
 
 export default function App() {
-  const [showLlmConfig, setShowLlmConfig] = useState(false);
-  const { startTranslation } = useLlmStore();
+  const [showSettings, setShowSettings] = useState(false);
+  const { startTranslation, providerConfig } = useLlmStore();
+  const { loadSettings } = useSettingsStore();
+  const { t } = useTranslation();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const activeFileId = useEditorStore((s) => s.activeFileId);
   const activeSegmentSourceText = useEditorStore(
     (s) => s.activeSegmentSourceText,
   );
@@ -411,9 +258,25 @@ export default function App() {
     (s) => s.activeSegmentTargetText,
   );
 
+  useEffect(() => {
+    void loadSettings();
+  }, [loadSettings]);
+
+  function handleTranslate() {
+    if (!providerConfig.model.trim()) {
+      toast.warning(t("segmentGrid.noModelConfigured"));
+      setShowSettings(true);
+      return;
+    }
+    void startTranslation([], activeFileId ?? undefined);
+  }
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
-      <Toolbar onOpenLlmConfig={() => setShowLlmConfig(true)} />
+      <Toolbar
+        onOpenSettings={() => setShowSettings(true)}
+        onTranslate={handleTranslate}
+      />
 
       <ResizablePanelGroup
         orientation="horizontal"
@@ -477,12 +340,10 @@ export default function App() {
         </ResizablePanel>
       </ResizablePanelGroup>
 
-      {showLlmConfig && (
-        <LlmConfigModal
-          onClose={() => setShowLlmConfig(false)}
-          onStart={(ids, fileId) => void startTranslation(ids, fileId)}
-        />
-      )}
+      <SettingsModal
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
 
       <Toaster />
     </div>
