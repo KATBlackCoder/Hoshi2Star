@@ -4,20 +4,22 @@
 //! 1. Deduplicate by hash (`batch::dedup_by_hash`)
 //! 2. For each unique segment: check TM — if exact match, skip LLM
 //! 3. Tokenize remaining segments (ADR-002: placeholders → ⟦ph_N⟧)
-//! 4. Send tokenized batch to the provider
+//! 4. Send tokenized batch to the provider via `split::llm_translate_with_split`
 //! 5. Validate + restore placeholders; retry up to `MAX_RETRIES` times if invalid
 //! 6. Spread translations back to all original positions
 //! 7. Call `on_progress(done, total)` after each batch
 //!
 //! The pipeline is generic over `P: LlmProvider` so it can be tested with a
 //! mock provider without needing dynamic dispatch.
-
-use std::future::Future;
-use std::pin::Pin;
+//!
+//! Recursive batch-split logic lives in `split.rs`.
+//! Event payload types live in `progress.rs`.
 
 use crate::core::tm;
 use crate::llm::batch;
+use crate::llm::progress::{PlaceholderWarningPayload, ProgressPayload};
 use crate::llm::provider::{LlmError, LlmProvider, TranslationContext};
+use crate::llm::split::llm_translate_with_split;
 use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
 use serde::Serialize;
 use sqlx::SqlitePool;
@@ -28,7 +30,6 @@ use thiserror::Error;
 // Constants
 // ---------------------------------------------------------------------------
 
-const MAX_RETRIES: u32 = 3;
 const DEFAULT_BATCH_SIZE: usize = 20;
 
 // ---------------------------------------------------------------------------
@@ -46,24 +47,12 @@ pub struct TranslationResult {
     pub needs_review: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct ProgressPayload {
-    pub done: usize,
-    pub total: usize,
-}
-
 #[derive(Debug, Error)]
 pub enum PipelineError {
     #[error("LLM provider error: {0}")]
     Provider(String),
     #[error("Database error: {0}")]
     Database(String),
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlaceholderWarningPayload {
-    pub segment_id: String,
 }
 
 impl From<LlmError> for PipelineError {
@@ -167,118 +156,6 @@ where
     }
 
     Ok(results)
-}
-
-// ---------------------------------------------------------------------------
-// Recursive batch split helper
-// ---------------------------------------------------------------------------
-
-/// Translate segments at LOCAL positions `indices` within `tokenized`.
-/// Returns `Vec<(local_idx, translated_text, needs_review)>`.
-///
-/// On `ResponseFormat` or placeholder failure exhausted after MAX_RETRIES:
-///   - len > 1 → split in half and recurse on each half
-///   - len == 1 → terminal needs_review (cannot split further)
-#[allow(clippy::type_complexity)]
-fn llm_translate_with_split<'a, P>(
-    // IMPORTANT: indices are LOCAL into tokenized[] — NOT into unique_segs[]
-    indices: Vec<usize>,
-    tokenized: &'a [crate::llm::tokenizer::Tokenized],
-    provider: &'a P,
-    context: &'a TranslationContext,
-) -> Pin<Box<dyn Future<Output = Vec<(usize, String, bool)>> + Send + 'a>>
-where
-    P: LlmProvider,
-{
-    Box::pin(async move {
-        let texts_for_llm: Vec<String> =
-            indices.iter().map(|&i| tokenized[i].text.clone()).collect();
-
-        let mut attempt = 0u32;
-        let restored_texts: Vec<String> = loop {
-            let llm_result = provider
-                .translate(texts_for_llm.clone(), context.clone())
-                .await;
-
-            let llm_out = match llm_result {
-                Ok(out) => out,
-                Err(LlmError::ResponseFormat(_)) if attempt + 1 < MAX_RETRIES => {
-                    attempt += 1;
-                    continue;
-                }
-                Err(LlmError::ResponseFormat(_)) => {
-                    if indices.len() > 1 {
-                        let mid = indices.len() / 2;
-                        let left = indices[..mid].to_vec();
-                        let right = indices[mid..].to_vec();
-                        let mut results =
-                            llm_translate_with_split(left, tokenized, provider, context).await;
-                        results.extend(
-                            llm_translate_with_split(right, tokenized, provider, context).await,
-                        );
-                        return results;
-                    } else {
-                        log::warn!(
-                            "[h2s] single-segment ResponseFormat after {} attempts — \
-                             needs_review (local pos {})",
-                            MAX_RETRIES,
-                            indices[0]
-                        );
-                        return vec![(indices[0], String::new(), true)];
-                    }
-                }
-                Err(e) => {
-                    log::warn!("[h2s] non-recoverable LLM error in split batch: {e}");
-                    return indices.iter().map(|&i| (i, String::new(), true)).collect();
-                }
-            };
-
-            let mut restore_ok = true;
-            let mut restored = Vec::with_capacity(llm_out.len());
-            for (resp, &local_idx) in llm_out.iter().zip(indices.iter()) {
-                match Tokenizer::restore(resp, &tokenized[local_idx].map) {
-                    Ok(r) => restored.push(r),
-                    Err(_) => {
-                        restore_ok = false;
-                        break;
-                    }
-                }
-            }
-
-            if restore_ok {
-                break restored;
-            }
-
-            attempt += 1;
-            if attempt >= MAX_RETRIES {
-                if indices.len() > 1 {
-                    let mid = indices.len() / 2;
-                    let left = indices[..mid].to_vec();
-                    let right = indices[mid..].to_vec();
-                    let mut results =
-                        llm_translate_with_split(left, tokenized, provider, context).await;
-                    results.extend(
-                        llm_translate_with_split(right, tokenized, provider, context).await,
-                    );
-                    return results;
-                } else {
-                    log::warn!(
-                        "[h2s] single-segment placeholder failure after {} attempts — \
-                         needs_review (local pos {})",
-                        MAX_RETRIES,
-                        indices[0]
-                    );
-                    return vec![(indices[0], String::new(), true)];
-                }
-            }
-        };
-
-        indices
-            .into_iter()
-            .zip(restored_texts)
-            .map(|(i, text)| (i, text, false))
-            .collect()
-    })
 }
 
 // ---------------------------------------------------------------------------
