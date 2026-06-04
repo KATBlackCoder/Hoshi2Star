@@ -6,6 +6,8 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 ## [Unreleased]
 
 ### Changed
+- Split `commands/project.rs` (1 539 lines) into `commands/project.rs` (~727 lines, CRUD project/files/segments), `commands/translate.rs` (translate_segments, translate_all_segments, get_ollama_models), `commands/export.rs` (export_project, export_qa_report, export_tm, export_debug_json), `commands/qa.rs` (qa_check_segment, get_qa_report, get_tm_suggestions)
+- Extract domain types to `src-tauri/src/domain/types.rs` — Project, SourceFile, Segment, ProviderConfig, QaReport, ProjectStats, OpenProjectResult, PaginatedSegments; `commands/glossary.rs` updated to import from `domain::types` instead of `commands::project`
 - Extract `PH_RE` placeholder regex to `src/lib/constants.ts` — single source of truth shared by `App.tsx` and `columns.tsx`; each call site uses `clonePH_RE()` to get a fresh `RegExp` with reset `lastIndex`
 - Extract format helpers `formatDuration`, `engineLabel`, `relativeDate` to `src/lib/format.ts` — removed duplicate local definitions from `FileTree.tsx` and `ProjectList.tsx`
 - Create `src-tauri/src/utils/` module with `text::escape_xml` and `time::now_iso8601` — merged duplicate `xml_escape`/`html_escape` private fns from `core/tm.rs` and `core/report.rs` into a single public utility; extracted `now_iso8601` from `core/manifest.rs`
