@@ -5,7 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+### Added
+- Add `docs/architecture.md` — full architecture documentation: 5-layer ASCII diagram, module descriptions for all Rust and TypeScript modules, data-flow sequences for open/translate/restore, ADR summary table
+
 ### Changed
+- Split `llm/pipeline.rs` (718 lines) into `llm/pipeline.rs` (orchestration: `run` / `run_inner` / `translate_batch`), `llm/split.rs` (`llm_translate_with_split` + recursive split logic), `llm/progress.rs` (`ProgressPayload`, `PlaceholderWarningPayload`)
+- Move QA error label functions from `core/report.rs` into `impl QaError { pub fn label(&self, lang: &str) -> String }` in `core/qa.rs`; `report.rs` calls `escape_xml(&err.label(lang))` at the HTML render site
+
 - Split `commands/project.rs` (1 539 lines) into `commands/project.rs` (~727 lines, CRUD project/files/segments), `commands/translate.rs` (translate_segments, translate_all_segments, get_ollama_models), `commands/export.rs` (export_project, export_qa_report, export_tm, export_debug_json), `commands/qa.rs` (qa_check_segment, get_qa_report, get_tm_suggestions)
 - Extract domain types to `src-tauri/src/domain/types.rs` — Project, SourceFile, Segment, ProviderConfig, QaReport, ProjectStats, OpenProjectResult, PaginatedSegments; `commands/glossary.rs` updated to import from `domain::types` instead of `commands::project`
 - Extract `PH_RE` placeholder regex to `src/lib/constants.ts` — single source of truth shared by `App.tsx` and `columns.tsx`; each call site uses `clonePH_RE()` to get a fresh `RegExp` with reset `lastIndex`
