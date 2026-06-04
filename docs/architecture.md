@@ -1,6 +1,6 @@
 # Hoshi2Star — Architecture
 
-> Dernière mise à jour : 2026-06-04 (version 0.3.1)
+> Dernière mise à jour : 2026-06-04 (version 0.3.1 + sprint4 refactoring)
 > Ce document décrit l'architecture réelle de l'application.
 > À mettre à jour à chaque ajout de module majeur.
 
@@ -137,7 +137,7 @@ Couche métier pure — pas de `tauri::State`, pas d'`AppHandle`, testable sans 
 | Fichier | État géré | Thunks / actions |
 |---------|-----------|-----------------|
 | `editor.ts` | `activeFileId`, `activeSegmentId`, `activeSegmentSourceText/TargetText`, `glossaryTerms` | Sélecteurs exportés (`useActiveFileId`, `useGlossaryTerms`, etc.) |
-| `project.ts` | `projects[]`, `activeProjectId`, `sourceFiles[]`, `pendingGlossaryExtract`, `isExtractingGlossary` | `addProject`, `setActiveProject`, `setSourceFiles`, `removeProject`. Les thunks qui font `invoke()` sont dans `App.tsx`. |
+| `project.ts` | `projects[]`, `activeProjectId`, `sourceFiles[]`, `pendingGlossaryExtract`, `isExtractingGlossary` | `addProject`, `setActiveProject`, `setSourceFiles`, `removeProject`. Thunks `openProject`, `loadAllProjects`, `deleteProject` (font des `invoke()` directement dans le store). |
 | `llm.ts` | `isTranslating`, `translationProgress`, `providerConfig`, `isCooling`, `cooldownRemaining` | `startTranslation`, `startTranslateAll`, `setupTranslationListeners` (factorisation des 7 listeners en un seul helper) |
 | `settings.ts` | Thème, langue, `providerConfig` persisté via `tauri-plugin-store` dans `settings.json` | `loadSettings`, `saveSettings` |
 
@@ -156,17 +156,26 @@ Couche métier pure — pas de `tauri::State`, pas d'`AppHandle`, testable sans 
 
 | Composant | Rôle |
 |-----------|------|
+| `AppToolbar.tsx` | Barre d'outils principale — boutons Open/Translate/TranslateAll/ExportAll, badge projet actif + moteur, `TranslationTimer`, `CooldownBadge`, barre de progression. Lit les stores directement. |
+| `AppDialogs.tsx` | Toutes les modales conditionnelles de l'application — `SettingsModal`, `AboutModal`, `TranslateAllDialog`, `AlertDialog` export (confirm + blocked), `AlertDialog` glossaire. Reçoit un objet `handlers` depuis `App.tsx`. |
 | `SettingsModal.tsx` | Ollama URL + modèle, thème clair/sombre, langue EN/FR. Persisté via `tauri-plugin-store`. |
 | `AboutModal.tsx` | Tagline, auteur, licence MIT, adresses Bitcoin/Ethereum, lien GitHub. |
 | `TranslateAllDialog.tsx` | Stats projet + inputs durée travail / pause avant de lancer `translate_all_segments`. |
+
+### `hooks/`
+
+| Fichier | Rôle |
+|---------|------|
+| `useAppHandlers.ts` | Hook appelé une seule fois dans `App.tsx`. Encapsule les 7 handlers async de l'application (`handleTranslate`, `handleTranslateAll`, `handleTranslateAllStart`, `handleExportAll`, `handleExportConfirm`, `handleGlossaryConfirm`, `handleGlossaryDecline`) et les états dialog locaux (`showSettings`, `showAbout`, `exportDialog`, `exportStats`, `showTranslateAll`, `translateAllStats`). Gère aussi le listener `h2s://glossary/extraction-done`. |
 
 ### `lib/`
 
 | Fichier | Rôle |
 |---------|------|
 | `types.ts` | Interfaces TypeScript miroirs des structs Rust domain (`Project`, `Segment`, `TmSuggestion`, `QaResult`, `GlossaryTerm`, etc.). |
-| `constants.ts` | `PH_RE` — regex des placeholders partagée par `App.tsx` et `columns.tsx`. `clonePH_RE()` retourne une instance fraîche avec `lastIndex` remis à zéro. |
-| `format.ts` | `formatDuration(secs)`, `engineLabel(engine)`, `relativeDate(iso)` — helpers de formatage partagés par `FileTree.tsx` et `ProjectList.tsx`. |
+| `constants.ts` | `PH_RE` — regex des placeholders. `clonePH_RE()` retourne une instance fraîche avec `lastIndex` remis à zéro — utilisée par `AppToolbar.tsx`, `columns.tsx`, `highlight-utils.tsx`. |
+| `format.ts` | `formatDuration(secs)`, `engineLabel(engine)`, `relativeDate(iso)` — helpers partagés par `FileTree.tsx` et `ProjectList.tsx`. |
+| `highlight-utils.tsx` | `buildHighlightedNodes(text, glossaryTerms: string[], phRe: RegExp)` — surbrillance simultanée placeholders (bleu) et termes glossaire (vert). Testable sans shadcn ni stores. |
 | `i18n.ts` | Configuration i18next. Ressources EN/FR dans `src/locales/`. |
 | `utils.ts` | `cn()` — helper Tailwind merge (généré par shadcn). |
 
@@ -174,7 +183,7 @@ Couche métier pure — pas de `tauri::State`, pas d'`AppHandle`, testable sans 
 
 | Fichier | Rôle |
 |---------|------|
-| `columns.tsx` | Définitions colonnes TanStack Table pour `SegmentGrid`. Contient `EditableCell` (colonne Target éditable inline) et `buildHighlightedNodes` (surbrillance simultanée placeholders + termes glossaire). |
+| `columns.tsx` | Définitions colonnes TanStack Table pour `SegmentGrid`. Contient `EditableCell` (colonne Target éditable inline) et `SourceCell` (qui appelle `buildHighlightedNodes` depuis `@/lib/highlight-utils`). |
 
 ---
 
