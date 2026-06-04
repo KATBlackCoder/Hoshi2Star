@@ -7,8 +7,8 @@
 //! and emits `h2s://glossary/extraction-done` with the created terms when done.
 
 use crate::{
-    commands::project::ProviderConfig,
     core::glossary::{self, GlossaryTerm},
+    domain::types::ProviderConfig,
     llm::provider::{OllamaProvider, DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_URL},
     state::AppState,
 };
