@@ -7,6 +7,7 @@ pub mod db;
 pub mod engines;
 pub mod llm;
 pub mod state;
+pub mod utils;
 
 use commands::glossary::{
     add_glossary_term, delete_glossary_term, extract_glossary_terms, get_glossary,
@@ -14,8 +15,9 @@ use commands::glossary::{
 };
 use commands::project::{
     delete_project, export_debug_json, export_project, export_qa_report, export_tm,
-    get_ollama_models, get_qa_report, get_segments, get_source_files, get_tm_suggestions,
-    list_projects, open_project, qa_check_segment, translate_segments, update_segment,
+    get_ollama_models, get_project_stats, get_qa_report, get_segments, get_source_files,
+    get_tm_suggestions, list_projects, open_project, qa_check_segment, translate_all_segments,
+    translate_segments, update_segment,
 };
 use state::AppState;
 use tauri::Manager;
@@ -63,6 +65,8 @@ pub fn run() {
             export_debug_json,
             list_projects,
             delete_project,
+            get_project_stats,
+            translate_all_segments,
         ]);
 
     #[cfg(debug_assertions)]

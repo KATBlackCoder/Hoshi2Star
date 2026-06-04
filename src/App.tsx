@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { SettingsModal } from "@/components/settings/SettingsModal";
 import { AboutModal } from "@/components/AboutModal";
+import { TranslateAllDialog } from "@/components/TranslateAllDialog";
 import {
   openProject,
   useProjectStore,
@@ -38,6 +39,8 @@ import {
   useIsTranslating,
   useTranslationProgress,
   useTranslationStartTime,
+  useIsCooling,
+  useCooldownRemaining,
 } from "@/stores/llm";
 import { useSettingsStore } from "@/stores/settings";
 import { Toaster } from "@/components/ui/sonner";
@@ -48,23 +51,24 @@ import {
   Download,
   FolderOpen,
   Info,
+  Languages,
   Loader2,
   Play,
   Settings,
+  Snowflake,
 } from "lucide-react";
 import { toast } from "sonner";
+import { clonePH_RE } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
 // Placeholder highlight helper
 // ---------------------------------------------------------------------------
 
-const PH_RE = /\\[+\-]\w+\[\d+\]|\\[VNPCI]\[\d+\]|\\[G\\$.|!><^{}]|\[%\d+\]/g;
-
 export function HighlightedSource({ text }: { text: string }) {
   const parts: React.ReactNode[] = [];
   let last = 0;
   let match: RegExpExecArray | null;
-  PH_RE.lastIndex = 0;
+  const PH_RE = clonePH_RE();
   while ((match = PH_RE.exec(text)) !== null) {
     if (match.index > last) {
       parts.push(text.slice(last, match.index));
@@ -123,6 +127,28 @@ function TranslationTimer() {
 }
 
 // ---------------------------------------------------------------------------
+// Cooldown badge
+// ---------------------------------------------------------------------------
+
+function CooldownBadge() {
+  const isCooling = useIsCooling();
+  const remaining = useCooldownRemaining();
+  const { t } = useTranslation();
+
+  if (!isCooling) return null;
+
+  const mm = String(Math.floor(remaining / 60)).padStart(2, "0");
+  const ss = String(remaining % 60).padStart(2, "0");
+
+  return (
+    <div className="flex items-center gap-1 font-mono text-xs tabular-nums text-blue-400">
+      <Snowflake className="h-3 w-3 shrink-0 animate-pulse" />
+      {t("toolbar.translateAllCooling", { remaining: `${mm}:${ss}` })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Toolbar
 // ---------------------------------------------------------------------------
 
@@ -130,10 +156,14 @@ function Toolbar({
   onOpenSettings,
   onOpenAbout,
   onTranslate,
+  onTranslateAll,
+  onExportAll,
 }: {
   onOpenSettings: () => void;
   onOpenAbout: () => void;
   onTranslate: () => void;
+  onTranslateAll: () => void;
+  onExportAll: () => void;
 }) {
   const { t } = useTranslation();
   const [isOpening, setIsOpening] = useState(false);
@@ -144,16 +174,6 @@ function Toolbar({
   const isTranslating = useIsTranslating();
   const isExtractingGlossary = useIsExtractingGlossary();
   const progress = useTranslationProgress();
-
-  async function handleExport() {
-    if (!activeProjectId) return;
-    try {
-      await invoke("export_project", { projectId: activeProjectId });
-      toast.success(t("toasts.exportSuccess"));
-    } catch (err) {
-      toast.error(t("toasts.exportError", { error: String(err) }));
-    }
-  }
 
   async function handleOpenGame() {
     const selected = await open({
@@ -220,11 +240,28 @@ function Toolbar({
           size="sm"
           variant="outline"
           className="h-7 gap-1.5 text-xs"
-          onClick={() => void handleExport()}
+          onClick={onTranslateAll}
+          disabled={isTranslating || isExtractingGlossary}
+        >
+          {isTranslating ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Languages className="h-3.5 w-3.5" />
+          )}
+          {t("toolbar.translateAll")}
+        </Button>
+      )}
+
+      {activeProjectId && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 gap-1.5 text-xs"
+          onClick={onExportAll}
           disabled={isTranslating}
         >
           <Download className="h-3.5 w-3.5" />
-          {t("toolbar.export")}
+          {t("toolbar.exportAll")}
         </Button>
       )}
 
@@ -237,10 +274,11 @@ function Toolbar({
         </span>
       )}
 
-      {/* Progress bar + timer */}
+      {/* Progress bar + timer + cooldown */}
       {isTranslating && progress >= 0 && (
         <div className="flex items-center gap-2 mr-2">
           <TranslationTimer />
+          <CooldownBadge />
           <div className="h-1.5 w-32 overflow-hidden rounded-full bg-muted">
             <div
               className="h-full rounded-full bg-primary transition-all duration-300"
@@ -277,10 +315,23 @@ function Toolbar({
 // App
 // ---------------------------------------------------------------------------
 
+interface ProjectStats {
+  fileCount: number;
+  totalSegments: number;
+  untranslatedCount: number;
+}
+
 export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
-  const { startTranslation, providerConfig } = useLlmStore();
+  const [exportDialog, setExportDialog] = useState<
+    null | "confirm" | "blocked"
+  >(null);
+  const [exportStats, setExportStats] = useState<ProjectStats | null>(null);
+  const [showTranslateAll, setShowTranslateAll] = useState(false);
+  const [translateAllStats, setTranslateAllStats] =
+    useState<ProjectStats | null>(null);
+  const { startTranslation, startTranslateAll, providerConfig } = useLlmStore();
   const { loadSettings } = useSettingsStore();
   const { t } = useTranslation();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
@@ -342,6 +393,57 @@ export default function App() {
     setPendingGlossaryExtract(null);
   }
 
+  async function handleExportAll() {
+    if (!activeProjectId) return;
+    try {
+      const stats = await invoke<ProjectStats>("get_project_stats", {
+        projectId: activeProjectId,
+      });
+      setExportStats(stats);
+      setExportDialog(stats.untranslatedCount > 0 ? "blocked" : "confirm");
+    } catch (err) {
+      toast.error(t("toasts.exportError", { error: String(err) }));
+    }
+  }
+
+  async function handleExportConfirm() {
+    setExportDialog(null);
+    if (!activeProjectId) return;
+    try {
+      await invoke("export_project", { projectId: activeProjectId });
+      toast.success(t("toasts.exportSuccess"));
+    } catch (err) {
+      toast.error(t("toasts.exportError", { error: String(err) }));
+    }
+  }
+
+  async function handleTranslateAll() {
+    if (!activeProjectId) return;
+    if (!providerConfig.model.trim()) {
+      toast.warning(t("segmentGrid.noModelConfigured"));
+      setShowSettings(true);
+      return;
+    }
+    try {
+      const stats = await invoke<ProjectStats>("get_project_stats", {
+        projectId: activeProjectId,
+      });
+      setTranslateAllStats(stats);
+      setShowTranslateAll(true);
+    } catch (err) {
+      toast.error(t("toasts.exportError", { error: String(err) }));
+    }
+  }
+
+  function handleTranslateAllStart(
+    thresholdMins: number,
+    cooldownMins: number,
+  ) {
+    setShowTranslateAll(false);
+    if (!activeProjectId) return;
+    void startTranslateAll(activeProjectId, thresholdMins, cooldownMins);
+  }
+
   function handleTranslate() {
     if (!providerConfig.model.trim()) {
       toast.warning(t("segmentGrid.noModelConfigured"));
@@ -357,6 +459,8 @@ export default function App() {
         onOpenSettings={() => setShowSettings(true)}
         onOpenAbout={() => setShowAbout(true)}
         onTranslate={handleTranslate}
+        onTranslateAll={() => void handleTranslateAll()}
+        onExportAll={() => void handleExportAll()}
       />
 
       {isExtractingGlossary && (
@@ -434,6 +538,60 @@ export default function App() {
         onClose={() => setShowSettings(false)}
       />
       <AboutModal open={showAbout} onClose={() => setShowAbout(false)} />
+      <TranslateAllDialog
+        open={showTranslateAll}
+        segmentCount={translateAllStats?.untranslatedCount ?? 0}
+        fileCount={translateAllStats?.fileCount ?? 0}
+        onStart={handleTranslateAllStart}
+        onCancel={() => setShowTranslateAll(false)}
+      />
+
+      {/* Export All — confirmation (all translated) */}
+      <AlertDialog open={exportDialog === "confirm"}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("toolbar.exportAllConfirmTitle")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("toolbar.exportAllConfirmDesc", {
+                files: exportStats?.fileCount ?? 0,
+                segments: exportStats?.totalSegments ?? 0,
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setExportDialog(null)}>
+              {t("toolbar.exportAllNo")}
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={() => void handleExportConfirm()}>
+              {t("toolbar.exportAllYes")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Export All — blocked (untranslated segments remain) */}
+      <AlertDialog open={exportDialog === "blocked"}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("toolbar.exportAllBlockedTitle")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("toolbar.exportAllBlockedDesc", {
+                count: exportStats?.untranslatedCount ?? 0,
+                total: exportStats?.totalSegments ?? 0,
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setExportDialog(null)}>
+              {t("toolbar.exportAllClose")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={pendingGlossaryExtract !== null}>
         <AlertDialogContent>

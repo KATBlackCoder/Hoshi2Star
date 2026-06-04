@@ -4,6 +4,7 @@
 //! is always fresh. Glossary terms are not applied (indicative report only).
 
 use crate::core::qa::{self, QaError};
+use crate::utils::text::escape_xml;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
@@ -84,13 +85,6 @@ pub async fn collect_qa_details(
 // HTML generation
 // ---------------------------------------------------------------------------
 
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
 fn error_type_key(err: &QaError) -> &'static str {
     match err {
         QaError::MissingPlaceholder { .. } => "missing_placeholder",
@@ -103,7 +97,7 @@ fn error_type_key(err: &QaError) -> &'static str {
 fn error_label_en(err: &QaError) -> String {
     match err {
         QaError::MissingPlaceholder { placeholder } => {
-            format!("Missing placeholder: {}", html_escape(placeholder))
+            format!("Missing placeholder: {}", escape_xml(placeholder))
         }
         QaError::LineTooLong {
             line,
@@ -123,8 +117,8 @@ fn error_label_en(err: &QaError) -> String {
         } => {
             format!(
                 "Glossary mismatch: \"{}\" → expected \"{}\"",
-                html_escape(source_term),
-                html_escape(expected_target)
+                escape_xml(source_term),
+                escape_xml(expected_target)
             )
         }
     }
@@ -133,7 +127,7 @@ fn error_label_en(err: &QaError) -> String {
 fn error_label_fr(err: &QaError) -> String {
     match err {
         QaError::MissingPlaceholder { placeholder } => {
-            format!("Placeholder manquant : {}", html_escape(placeholder))
+            format!("Placeholder manquant : {}", escape_xml(placeholder))
         }
         QaError::LineTooLong {
             line,
@@ -153,8 +147,8 @@ fn error_label_fr(err: &QaError) -> String {
         } => {
             format!(
                 "Terme glossaire non respecté : \"{}\" → attendu \"{}\"",
-                html_escape(source_term),
-                html_escape(expected_target)
+                escape_xml(source_term),
+                escape_xml(expected_target)
             )
         }
     }
@@ -374,9 +368,9 @@ td{{padding:7px 10px;vertical-align:top}}
 <h1>{lbl_title} — {title_escaped}</h1>
 <p class="meta">{lbl_generated}: {now} &nbsp;·&nbsp; {total_with_errors} {lbl_segments_with_errors} / {total_checked} {lbl_checked}</p>
 "#,
-        lang = html_escape(lang),
+        lang = escape_xml(lang),
         lbl_title = lbl.title,
-        title_escaped = html_escape(project_title),
+        title_escaped = escape_xml(project_title),
         lbl_generated = lbl.generated,
         now = now,
         total_with_errors = total_with_errors,
@@ -427,7 +421,7 @@ td{{padding:7px 10px;vertical-align:top}}
         let _ = writeln!(
             out,
             "<option value=\"{escaped}\">{escaped}</option>",
-            escaped = html_escape(f)
+            escaped = escape_xml(f)
         );
     }
     let _ = write!(
@@ -500,16 +494,16 @@ td{{padding:7px 10px;vertical-align:top}}
             out,
             "<tr class=\"{score_class}\" data-file=\"{file_escaped}\" data-score=\"{score}\" data-errors=\"{data_errors}\">",
             score_class = score_class,
-            file_escaped = html_escape(&d.file_name),
+            file_escaped = escape_xml(&d.file_name),
             score = d.qa_score,
-            data_errors = html_escape(&data_errors),
+            data_errors = escape_xml(&data_errors),
         );
 
         // File col
         let _ = writeln!(
             out,
             "<td class=\"file-col\" title=\"{file_escaped}\">{file_escaped}</td>",
-            file_escaped = html_escape(&d.file_name),
+            file_escaped = escape_xml(&d.file_name),
         );
 
         // Segment number
@@ -519,14 +513,14 @@ td{{padding:7px 10px;vertical-align:top}}
         let _ = writeln!(
             out,
             "<td><span class=\"source-text\">{}</span></td>",
-            html_escape(&d.source_text)
+            escape_xml(&d.source_text)
         );
 
         // Target text
         let _ = writeln!(
             out,
             "<td><span class=\"target-text\">{}</span></td>",
-            html_escape(&d.target_text)
+            escape_xml(&d.target_text)
         );
 
         // Score badge
@@ -626,10 +620,10 @@ mod tests {
     }
 
     #[test]
-    fn test_html_escape_special_chars() {
-        assert_eq!(html_escape("a & <b>"), "a &amp; &lt;b&gt;");
-        assert_eq!(html_escape("\"quoted\""), "&quot;quoted&quot;");
-        assert_eq!(html_escape("こんにちは"), "こんにちは");
+    fn test_escape_xml_special_chars() {
+        assert_eq!(escape_xml("a & <b>"), "a &amp; &lt;b&gt;");
+        assert_eq!(escape_xml("\"quoted\""), "&quot;quoted&quot;");
+        assert_eq!(escape_xml("こんにちは"), "こんにちは");
     }
 
     #[test]

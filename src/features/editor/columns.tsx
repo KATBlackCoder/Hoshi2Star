@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { GlossaryTerm, Segment, SegmentStatus } from "@/lib/types";
 import { useGlossaryTerms } from "@/stores/editor";
 import { cn } from "@/lib/utils";
+import { clonePH_RE } from "@/lib/constants";
 import { Play } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -115,8 +116,6 @@ function EditableCell({
 // Source text highlight (placeholders + glossary terms)
 // ---------------------------------------------------------------------------
 
-const PH_RE = /\\[+\-]\w+\[\d+\]|\\[VNPCI]\[\d+\]|\\[G\\$.|!><^{}]|\[%\d+\]/g;
-
 /** Escape special regex characters in a string. */
 function escapeRe(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -137,7 +136,7 @@ function buildHighlightedNodes(
     const parts: React.ReactNode[] = [];
     let last = 0;
     let m: RegExpExecArray | null;
-    PH_RE.lastIndex = 0;
+    const PH_RE = clonePH_RE();
     while ((m = PH_RE.exec(chunk)) !== null) {
       if (m.index > last) parts.push(chunk.slice(last, m.index));
       parts.push(

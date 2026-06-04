@@ -10,6 +10,7 @@
 //! shared across all projects. `engine` and `lang_pair` columns allow
 //! scoped queries while preserving cross-project fuzzy potential (F3).
 
+use crate::utils::text::escape_xml;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, SqlitePool};
@@ -219,13 +220,6 @@ pub async fn lookup_exact(
 // TMX export
 // ---------------------------------------------------------------------------
 
-fn xml_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
 /// Generate a TMX 1.4 document from a slice of TM entries.
 /// `src_lang` is the BCP-47 language code of the source (e.g. `"ja"`).
 pub fn generate_tmx(entries: &[TmEntry], src_lang: &str) -> String {
@@ -252,12 +246,12 @@ pub fn generate_tmx(entries: &[TmEntry], src_lang: &str) -> String {
         let _ = writeln!(
             out,
             r#"      <tuv xml:lang="{src_lang}"><seg>{}</seg></tuv>"#,
-            xml_escape(&entry.source_text)
+            escape_xml(&entry.source_text)
         );
         let _ = writeln!(
             out,
             r#"      <tuv xml:lang="{tgt_lang}"><seg>{}</seg></tuv>"#,
-            xml_escape(&entry.target_text)
+            escape_xml(&entry.target_text)
         );
         let _ = writeln!(out, "    </tu>");
     }
