@@ -94,66 +94,6 @@ fn error_type_key(err: &QaError) -> &'static str {
     }
 }
 
-fn error_label_en(err: &QaError) -> String {
-    match err {
-        QaError::MissingPlaceholder { placeholder } => {
-            format!("Missing placeholder: {}", escape_xml(placeholder))
-        }
-        QaError::LineTooLong {
-            line,
-            units,
-            max_units,
-            char_count,
-        } => {
-            format!(
-                "Line {} too wide ({:.1} / {:.1} units — {} chars)",
-                line, units, max_units, char_count
-            )
-        }
-        QaError::BomDetected => "UTF-8 BOM detected at start".to_string(),
-        QaError::GlossaryMismatch {
-            source_term,
-            expected_target,
-        } => {
-            format!(
-                "Glossary mismatch: \"{}\" → expected \"{}\"",
-                escape_xml(source_term),
-                escape_xml(expected_target)
-            )
-        }
-    }
-}
-
-fn error_label_fr(err: &QaError) -> String {
-    match err {
-        QaError::MissingPlaceholder { placeholder } => {
-            format!("Placeholder manquant : {}", escape_xml(placeholder))
-        }
-        QaError::LineTooLong {
-            line,
-            units,
-            max_units,
-            char_count,
-        } => {
-            format!(
-                "Ligne {} trop longue ({:.1} / {:.1} unités — {} caract.)",
-                line, units, max_units, char_count
-            )
-        }
-        QaError::BomDetected => "BOM UTF-8 détecté en début de cible".to_string(),
-        QaError::GlossaryMismatch {
-            source_term,
-            expected_target,
-        } => {
-            format!(
-                "Terme glossaire non respecté : \"{}\" → attendu \"{}\"",
-                escape_xml(source_term),
-                escape_xml(expected_target)
-            )
-        }
-    }
-}
-
 struct Labels {
     title: &'static str,
     generated: &'static str,
@@ -535,11 +475,7 @@ td{{padding:7px 10px;vertical-align:top}}
         out.push_str("<td><div class=\"err-list\">\n");
         for err in &d.errors {
             let key = error_type_key(err);
-            let label = if use_fr {
-                error_label_fr(err)
-            } else {
-                error_label_en(err)
-            };
+            let label = escape_xml(&err.label(if use_fr { "fr" } else { "en" }));
             let _ = writeln!(
                 out,
                 "<div class=\"err-item\"><span class=\"err-dot {key}\"></span><span>{label}</span></div>",

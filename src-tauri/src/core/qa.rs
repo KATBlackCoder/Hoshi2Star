@@ -240,6 +240,77 @@ pub fn check(source: &str, target: &str, glossary_terms: &[(String, String)]) ->
 }
 
 // ---------------------------------------------------------------------------
+// Label helpers (used by report.rs for HTML output)
+// ---------------------------------------------------------------------------
+
+impl QaError {
+    /// Human-readable label for this error in the requested language.
+    ///
+    /// `lang` is `"fr"` for French; any other value falls back to English.
+    /// The returned string is plain text — callers must apply HTML escaping if
+    /// embedding in markup.
+    pub fn label(&self, lang: &str) -> String {
+        if lang == "fr" {
+            self.label_fr()
+        } else {
+            self.label_en()
+        }
+    }
+
+    fn label_en(&self) -> String {
+        match self {
+            QaError::MissingPlaceholder { placeholder } => {
+                format!("Missing placeholder: {placeholder}")
+            }
+            QaError::LineTooLong {
+                line,
+                units,
+                max_units,
+                char_count,
+            } => {
+                format!(
+                    "Line {line} too wide ({units:.1} / {max_units:.1} units — {char_count} chars)"
+                )
+            }
+            QaError::BomDetected => "UTF-8 BOM detected at start".to_string(),
+            QaError::GlossaryMismatch {
+                source_term,
+                expected_target,
+            } => {
+                format!("Glossary mismatch: \"{source_term}\" → expected \"{expected_target}\"")
+            }
+        }
+    }
+
+    fn label_fr(&self) -> String {
+        match self {
+            QaError::MissingPlaceholder { placeholder } => {
+                format!("Placeholder manquant : {placeholder}")
+            }
+            QaError::LineTooLong {
+                line,
+                units,
+                max_units,
+                char_count,
+            } => {
+                format!(
+                    "Ligne {line} trop longue ({units:.1} / {max_units:.1} unités — {char_count} caract.)"
+                )
+            }
+            QaError::BomDetected => "BOM UTF-8 détecté en début de cible".to_string(),
+            QaError::GlossaryMismatch {
+                source_term,
+                expected_target,
+            } => {
+                format!(
+                    "Terme glossaire non respecté : \"{source_term}\" → attendu \"{expected_target}\""
+                )
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
