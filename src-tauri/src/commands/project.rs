@@ -490,7 +490,7 @@ pub async fn export_project(
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let files = sqlx::query_as::<_, SourceFile>(
-        "SELECT id, project_id, file_name, file_path, file_type \
+        "SELECT id, project_id, file_name, file_path, file_type, translation_secs \
          FROM source_files WHERE project_id = ?",
     )
     .bind(&project_id)
@@ -1070,6 +1070,67 @@ fn dispatch_extract(file_name: &str, json: &serde_json::Value) -> Vec<extractor:
         "Weapons.json" => extractor::extract_weapons(json),
         _ => vec![],
     }
+}
+
+/// Export all segments for a project as a flat JSON file for debugging.
+///
+/// Writes `hoshi2star_debug.json` directly into the project's `game_path` folder.
+/// Only segments with a non-empty `target_text` are included.
+/// Returns the absolute path of the written file.
+#[tauri::command]
+pub async fn export_debug_json(
+    project_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    #[derive(Serialize)]
+    struct DebugSegment {
+        file: String,
+        key: String,
+        source: String,
+        target: String,
+        status: String,
+    }
+
+    let game_path: String = sqlx::query_scalar("SELECT game_path FROM projects WHERE id = ?")
+        .bind(&project_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let rows: Vec<(String, String, String, String, String)> = sqlx::query_as(
+        "SELECT sf.file_name, s.json_key, s.source_text, s.target_text, s.status \
+         FROM segments s \
+         JOIN source_files sf ON s.source_file_id = sf.id \
+         WHERE sf.project_id = ? AND s.target_text != '' \
+         ORDER BY sf.file_name, s.rowid",
+    )
+    .bind(&project_id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let segments: Vec<DebugSegment> = rows
+        .into_iter()
+        .map(|(file, key, source, target, status)| DebugSegment {
+            file,
+            key,
+            source,
+            target,
+            status,
+        })
+        .collect();
+
+    let output_path = std::path::Path::new(&game_path)
+        .join("hoshi2star_debug.json")
+        .to_string_lossy()
+        .to_string();
+
+    let json = serde_json::to_string_pretty(&segments).map_err(|e| e.to_string())?;
+    tokio::fs::write(&output_path, json.as_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(output_path)
 }
 
 /// Export the global TM for a given language pair to a TMX 1.4 file.

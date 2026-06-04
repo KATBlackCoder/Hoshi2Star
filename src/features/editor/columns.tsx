@@ -1,5 +1,5 @@
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { GlossaryTerm, Segment, SegmentStatus } from "@/lib/types";
 import { useGlossaryTerms } from "@/stores/editor";
@@ -49,6 +49,14 @@ function EditableCell({
 }: EditableCellProps) {
   const [value, setValue] = useState(initialValue);
   const savedRef = useRef(initialValue);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
 
   // Sync when the row data changes externally (e.g., after a save round-trip)
   if (
@@ -90,6 +98,7 @@ function EditableCell({
 
   return (
     <textarea
+      ref={textareaRef}
       id={`target-input-${rowIndex}`}
       className="w-full resize-none bg-transparent text-xs outline-none focus:bg-muted/30 rounded px-1 py-0.5 min-h-8"
       value={value}

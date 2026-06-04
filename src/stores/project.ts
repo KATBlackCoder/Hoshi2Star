@@ -8,18 +8,26 @@ interface ProjectState {
   projects: Project[];
   activeProjectId: string | null;
   sourceFiles: SourceFile[];
+  /** project.id en attente de réponse utilisateur (oui/non) — null si aucun */
+  pendingGlossaryExtract: string | null;
+  /** true pendant que extract_glossary_terms tourne en arrière-plan */
+  isExtractingGlossary: boolean;
 
   // Actions
   addProject: (project: Project) => void;
   setActiveProject: (id: string | null) => void;
   setSourceFiles: (files: SourceFile[]) => void;
   removeProject: (id: string) => void;
+  setPendingGlossaryExtract: (id: string | null) => void;
+  setExtractingGlossary: (v: boolean) => void;
 }
 
 export const useProjectStore = create<ProjectState>()((set) => ({
   projects: [],
   activeProjectId: null,
   sourceFiles: [],
+  pendingGlossaryExtract: null,
+  isExtractingGlossary: false,
 
   addProject: (project) =>
     set((state) => ({ projects: [...state.projects, project] })),
@@ -30,6 +38,10 @@ export const useProjectStore = create<ProjectState>()((set) => ({
 
   removeProject: (id) =>
     set((state) => ({ projects: state.projects.filter((p) => p.id !== id) })),
+
+  setPendingGlossaryExtract: (id) => set({ pendingGlossaryExtract: id }),
+
+  setExtractingGlossary: (v) => set({ isExtractingGlossary: v }),
 }));
 
 // Selectors
@@ -39,6 +51,12 @@ export const useActiveProject = () =>
   );
 
 export const useSourceFiles = () => useProjectStore((s) => s.sourceFiles);
+
+export const usePendingGlossaryExtract = () =>
+  useProjectStore((s) => s.pendingGlossaryExtract);
+
+export const useIsExtractingGlossary = () =>
+  useProjectStore((s) => s.isExtractingGlossary);
 
 // Thunk: open a game folder via Tauri and register the project in the store.
 export async function openProject(
@@ -50,6 +68,9 @@ export async function openProject(
   const { project, wasRestored } = result;
   useProjectStore.getState().addProject(project);
   useProjectStore.getState().setActiveProject(project.id);
+  if (!wasRestored) {
+    useProjectStore.getState().setPendingGlossaryExtract(project.id);
+  }
 
   const files = await invoke<SourceFile[]>("get_source_files", {
     projectId: project.id,

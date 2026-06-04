@@ -12,6 +12,9 @@
 //! The pipeline is generic over `P: LlmProvider` so it can be tested with a
 //! mock provider without needing dynamic dispatch.
 
+use std::future::Future;
+use std::pin::Pin;
+
 use crate::core::tm;
 use crate::llm::batch;
 use crate::llm::provider::{LlmError, LlmProvider, TranslationContext};
@@ -167,7 +170,119 @@ where
 }
 
 // ---------------------------------------------------------------------------
-// Batch translation (TM → LLM with retry)
+// Recursive batch split helper
+// ---------------------------------------------------------------------------
+
+/// Translate segments at LOCAL positions `indices` within `tokenized`.
+/// Returns `Vec<(local_idx, translated_text, needs_review)>`.
+///
+/// On `ResponseFormat` or placeholder failure exhausted after MAX_RETRIES:
+///   - len > 1 → split in half and recurse on each half
+///   - len == 1 → terminal needs_review (cannot split further)
+#[allow(clippy::type_complexity)]
+fn llm_translate_with_split<'a, P>(
+    // IMPORTANT: indices are LOCAL into tokenized[] — NOT into unique_segs[]
+    indices: Vec<usize>,
+    tokenized: &'a [crate::llm::tokenizer::Tokenized],
+    provider: &'a P,
+    context: &'a TranslationContext,
+) -> Pin<Box<dyn Future<Output = Vec<(usize, String, bool)>> + Send + 'a>>
+where
+    P: LlmProvider,
+{
+    Box::pin(async move {
+        let texts_for_llm: Vec<String> =
+            indices.iter().map(|&i| tokenized[i].text.clone()).collect();
+
+        let mut attempt = 0u32;
+        let restored_texts: Vec<String> = loop {
+            let llm_result = provider
+                .translate(texts_for_llm.clone(), context.clone())
+                .await;
+
+            let llm_out = match llm_result {
+                Ok(out) => out,
+                Err(LlmError::ResponseFormat(_)) if attempt + 1 < MAX_RETRIES => {
+                    attempt += 1;
+                    continue;
+                }
+                Err(LlmError::ResponseFormat(_)) => {
+                    if indices.len() > 1 {
+                        let mid = indices.len() / 2;
+                        let left = indices[..mid].to_vec();
+                        let right = indices[mid..].to_vec();
+                        let mut results =
+                            llm_translate_with_split(left, tokenized, provider, context).await;
+                        results.extend(
+                            llm_translate_with_split(right, tokenized, provider, context).await,
+                        );
+                        return results;
+                    } else {
+                        log::warn!(
+                            "[h2s] single-segment ResponseFormat after {} attempts — \
+                             needs_review (local pos {})",
+                            MAX_RETRIES,
+                            indices[0]
+                        );
+                        return vec![(indices[0], String::new(), true)];
+                    }
+                }
+                Err(e) => {
+                    log::warn!("[h2s] non-recoverable LLM error in split batch: {e}");
+                    return indices.iter().map(|&i| (i, String::new(), true)).collect();
+                }
+            };
+
+            let mut restore_ok = true;
+            let mut restored = Vec::with_capacity(llm_out.len());
+            for (resp, &local_idx) in llm_out.iter().zip(indices.iter()) {
+                match Tokenizer::restore(resp, &tokenized[local_idx].map) {
+                    Ok(r) => restored.push(r),
+                    Err(_) => {
+                        restore_ok = false;
+                        break;
+                    }
+                }
+            }
+
+            if restore_ok {
+                break restored;
+            }
+
+            attempt += 1;
+            if attempt >= MAX_RETRIES {
+                if indices.len() > 1 {
+                    let mid = indices.len() / 2;
+                    let left = indices[..mid].to_vec();
+                    let right = indices[mid..].to_vec();
+                    let mut results =
+                        llm_translate_with_split(left, tokenized, provider, context).await;
+                    results.extend(
+                        llm_translate_with_split(right, tokenized, provider, context).await,
+                    );
+                    return results;
+                } else {
+                    log::warn!(
+                        "[h2s] single-segment placeholder failure after {} attempts — \
+                         needs_review (local pos {})",
+                        MAX_RETRIES,
+                        indices[0]
+                    );
+                    return vec![(indices[0], String::new(), true)];
+                }
+            }
+        };
+
+        indices
+            .into_iter()
+            .zip(restored_texts)
+            .map(|(i, text)| (i, text, false))
+            .collect()
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Batch translation (TM → LLM with adaptive split)
 // ---------------------------------------------------------------------------
 
 async fn translate_batch<P>(
@@ -203,91 +318,34 @@ where
         }
     }
 
-    // Translate remaining segments via LLM
+    // Translate remaining segments via LLM with adaptive split on failure
     if !to_translate.is_empty() {
-        // Tokenize
         let tokenized: Vec<_> = to_translate
             .iter()
             .map(|&i| Tokenizer::tokenize(&unique_segs[i].text, TokEngine::MvMz))
             .collect();
 
-        let texts_for_llm: Vec<String> = tokenized.iter().map(|t| t.text.clone()).collect();
+        let local_indices: Vec<usize> = (0..to_translate.len()).collect();
+        let llm_results =
+            llm_translate_with_split(local_indices, &tokenized, provider, context).await;
 
-        // Retry loop — two recoverable failure cases:
-        //   1. ResponseFormat: LLM returned wrong line count
-        //   2. Missing placeholder: Tokenizer::restore fails
-        // Network errors (Http, Unavailable) propagate immediately.
-        // After MAX_RETRIES failures, all affected segments fall back to
-        // source_text + needs_review instead of blocking the whole batch.
-        let mut attempt = 0u32;
-        let mut failed_unique_idx: Option<usize> = None;
-        let restored_texts = loop {
-            let llm_result = provider
-                .translate(texts_for_llm.clone(), context.clone())
-                .await;
-
-            let llm_out = match llm_result {
-                Ok(out) => out,
-                Err(LlmError::ResponseFormat(_)) if attempt + 1 < MAX_RETRIES => {
-                    attempt += 1;
-                    continue;
-                }
-                Err(e) => return Err(PipelineError::from(e)),
+        for (local_idx, text, needs_review) in llm_results {
+            let global_unique_idx = to_translate[local_idx]; // LOCAL → GLOBAL
+            let final_text = if needs_review {
+                log::warn!(
+                    "[h2s] segment '{}' marked needs_review after adaptive split",
+                    unique_segs[global_unique_idx].id
+                );
+                unique_segs[global_unique_idx].text.clone()
+            } else {
+                text
             };
-
-            // Validate + restore, tracking the first failing segment index
-            let mut fail_at: Option<usize> = None;
-            let mut restored = Vec::with_capacity(llm_out.len());
-            for (i, (resp, tok)) in llm_out.iter().zip(tokenized.iter()).enumerate() {
-                match Tokenizer::restore(resp, &tok.map) {
-                    Ok(r) => restored.push(r),
-                    Err(_) => {
-                        fail_at = Some(i);
-                        break;
-                    }
-                }
-            }
-
-            if fail_at.is_none() {
-                break restored;
-            }
-
-            attempt += 1;
-            if attempt >= MAX_RETRIES {
-                // Record the real failing segment ID for logging / event emission
-                failed_unique_idx = Some(to_translate[fail_at.unwrap()]);
-                break vec![];
-            }
-        };
-
-        if let Some(fu_idx) = failed_unique_idx {
-            // Fallback: keep source_text as target + mark needs_review
-            let failed_id = &unique_segs[fu_idx].id;
-            eprintln!(
-                "[h2s] placeholder validation failed after {MAX_RETRIES} attempt(s) \
-                 on segment '{failed_id}' — falling back to needs_review"
-            );
-            for &unique_idx in &to_translate {
-                let source = unique_segs[unique_idx].text.clone();
-                for &orig_idx in idx_map
-                    .get(&unique_segs[unique_idx].hash)
-                    .into_iter()
-                    .flatten()
-                {
-                    translations[orig_idx] = Some((source.clone(), false, true));
-                }
-            }
-        } else {
-            // Spread successful LLM results back
-            for (llm_idx, &unique_idx) in to_translate.iter().enumerate() {
-                let translated = restored_texts[llm_idx].clone();
-                for &orig_idx in idx_map
-                    .get(&unique_segs[unique_idx].hash)
-                    .into_iter()
-                    .flatten()
-                {
-                    translations[orig_idx] = Some((translated.clone(), false, false));
-                }
+            for &orig_idx in idx_map
+                .get(&unique_segs[global_unique_idx].hash)
+                .into_iter()
+                .flatten()
+            {
+                translations[orig_idx] = Some((final_text.clone(), false, needs_review));
             }
         }
     }
@@ -514,6 +572,118 @@ mod tests {
             results[0].translated_text, r"\V[12] pièces",
             "source_text kept as fallback"
         );
+    }
+
+    #[tokio::test]
+    async fn test_response_format_exhausted_falls_back_to_needs_review() {
+        let (db, _f) = test_db().await;
+
+        // Provider always returns ResponseFormat — should exhaust MAX_RETRIES (3)
+        // and fall back to needs_review instead of crashing the whole batch.
+        let provider = MockProvider::new(vec![
+            Err(LlmError::ResponseFormat(
+                "missing translation for line 2".to_string(),
+            )),
+            Err(LlmError::ResponseFormat(
+                "missing translation for line 2".to_string(),
+            )),
+            Err(LlmError::ResponseFormat(
+                "missing translation for line 2".to_string(),
+            )),
+        ]);
+
+        let results = run_inner(
+            vec![("s1".to_string(), "ポーション".to_string())],
+            &provider,
+            ctx(),
+            &db,
+            |_, _| {},
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(provider.calls(), 3, "should exhaust all retries");
+        assert!(results[0].needs_review, "segment must be needs_review");
+        assert_eq!(
+            results[0].translated_text, "ポーション",
+            "source_text kept as fallback"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_response_format_triggers_split() {
+        let (db, _f) = test_db().await;
+        let rf = || Err(LlmError::ResponseFormat("bad format".to_string()));
+        let provider = MockProvider::new(vec![
+            rf(),
+            rf(),
+            rf(),                      // batch [s1,s2] — 3 retries → split
+            Ok(vec!["A".to_string()]), // [s1] alone → ok
+            Ok(vec!["B".to_string()]), // [s2] alone → ok
+        ]);
+
+        let results = run_inner(
+            vec![
+                ("s1".to_string(), "一".to_string()),
+                ("s2".to_string(), "二".to_string()),
+            ],
+            &provider,
+            ctx(),
+            &db,
+            |_, _| {},
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(provider.calls(), 5);
+        assert_eq!(results[0].translated_text, "A");
+        assert!(!results[0].needs_review);
+        assert_eq!(results[1].translated_text, "B");
+        assert!(!results[1].needs_review);
+    }
+
+    #[tokio::test]
+    async fn test_split_partial_success() {
+        let (db, _f) = test_db().await;
+        let rf = || Err(LlmError::ResponseFormat("bad format".to_string()));
+        let provider = MockProvider::new(vec![
+            rf(),
+            rf(),
+            rf(),                                       // [s1,s2,s3,s4] → split
+            Ok(vec!["A".to_string(), "B".to_string()]), // [s1,s2] → ok
+            rf(),
+            rf(),
+            rf(),                      // [s3,s4] → split
+            Ok(vec!["C".to_string()]), // [s3] → ok
+            rf(),
+            rf(),
+            rf(), // [s4] → needs_review (len==1)
+        ]);
+
+        let results = run_inner(
+            vec![
+                ("s1".to_string(), "一".to_string()),
+                ("s2".to_string(), "二".to_string()),
+                ("s3".to_string(), "三".to_string()),
+                ("s4".to_string(), "四".to_string()),
+            ],
+            &provider,
+            ctx(),
+            &db,
+            |_, _| {},
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(provider.calls(), 11);
+        assert_eq!(results[0].translated_text, "A");
+        assert!(!results[0].needs_review);
+        assert_eq!(results[1].translated_text, "B");
+        assert!(!results[1].needs_review);
+        assert_eq!(results[2].translated_text, "C");
+        assert!(!results[2].needs_review);
+        assert_eq!(results[3].translated_text, "四"); // source_text kept as fallback
+        assert!(results[3].needs_review);
     }
 
     #[tokio::test]

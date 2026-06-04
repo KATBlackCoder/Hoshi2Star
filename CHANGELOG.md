@@ -4,10 +4,19 @@ All notable changes to Hoshi2Star will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
+
+## [0.3.1] - 2026-06-04
 ### Added
+- Add About modal (ⓘ button in toolbar) — tagline, author, MIT license, Bitcoin + Ethereum donation addresses with copy buttons, GitHub link
+- Add `about.*` i18n keys (EN + FR)
+- Add glossary extraction prompt on new project open — `AlertDialog` appears when `wasRestored: false`, fires `extract_glossary_terms` on confirm, shows a slim non-blocking banner between toolbar and editor while extraction runs, disables Translate button (with explanatory label) until `h2s://glossary/extraction-done` event received
+- Add `pendingGlossaryExtract` and `isExtractingGlossary` flags to `useProjectStore` with `usePendingGlossaryExtract` / `useIsExtractingGlossary` selectors
+- Add `glossaryPrompt.*` i18n keys (EN + FR) — title, description, yes/no, extracting banner, blocked button label, extractDone (with count), extractDone_zero, extractError
 - Add Settings modal (⚙ button in toolbar) — LLM config (Ollama URL + model), theme toggle (light/dark), language toggle (EN/FR), persisted via tauri-plugin-store to settings.json in app data dir
 - Add settings loaded on app startup from settings.json (merge with defaults for first launch)
 - Add Translate button auto-opens Settings if no model is configured (toast + auto-open)
+- Add "Retry N failed" yellow button in SegmentGrid toolbar — retranslates all `needs_review` segments in one click (count from full segment list, not filtered view)
+- Add `retranslateNeedsReview` i18n key (EN + FR)
 
 ### Changed
 - Move LLM configuration from modal on Translate button to persistent Settings modal (⚙)
@@ -17,6 +26,10 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ### Removed
 - Remove LlmConfigModal component — replaced by SettingsModal
+
+### Fixed
+- Fix LLM batch translation permanently failing when `ResponseFormat` exhausts MAX_RETRIES — replaced flat retry loop with recursive `llm_translate_with_split` (Box::pin): on exhausted retries, batch splits in half and each half is retried independently; single-segment terminal failures fall back to `needs_review` instead of blocking the whole batch
+- Fix `eprintln!` in pipeline replaced with `log::warn!` for consistent structured logging
 
 ## [0.3.0] - 2026-05-29
 ### Added
@@ -130,6 +143,7 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - TanStack Query for async Tauri invoke() calls
 - GitHub Actions CI/CD for Linux + Windows builds
 
+[0.3.1]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.3.1
 [0.3.0]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.3.0
 [0.2.1]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.2.1
 [0.2.0]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.2.0

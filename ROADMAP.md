@@ -209,6 +209,10 @@
 
 ### Polissage UI
 - [x] Settings modal — Ollama URL/modèle, thème, langue, persistence tauri-plugin-store
+- [x] Glossary prompt on project open — AlertDialog après ouverture neuve (`wasRestored: false`), bannière non-bloquante pendant extraction, bouton Traduire désactivé jusqu'à fin extraction
+
+### Robustesse LLM
+- [x] **F3-11** — Batch adaptatif : split récursif sur `ResponseFormat` — `llm_translate_with_split` avec `Box::pin`, récursion bornée à `len==1`, 9 tests pipeline (dont Test A et Test C couvrant le split partiel)
 
 ### Beta privée
 - [ ] Recrutement 20–30 testeurs via Discord fan-trad / F95zone

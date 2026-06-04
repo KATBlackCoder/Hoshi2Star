@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   ResizableHandle,
@@ -13,8 +14,24 @@ import { SegmentGrid } from "@/components/editor/SegmentGrid";
 import { TMPanel } from "@/components/editor/TMPanel";
 import { QAPanel } from "@/components/editor/QAPanel";
 import { GlossaryPanel } from "@/components/editor/GlossaryPanel";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { SettingsModal } from "@/components/settings/SettingsModal";
-import { openProject, useProjectStore } from "@/stores/project";
+import { AboutModal } from "@/components/AboutModal";
+import {
+  openProject,
+  useProjectStore,
+  usePendingGlossaryExtract,
+  useIsExtractingGlossary,
+} from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import {
   useLlmStore,
@@ -26,9 +43,11 @@ import { useSettingsStore } from "@/stores/settings";
 import { Toaster } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
 import {
+  BookOpen,
   Clock,
   Download,
   FolderOpen,
+  Info,
   Loader2,
   Play,
   Settings,
@@ -109,9 +128,11 @@ function TranslationTimer() {
 
 function Toolbar({
   onOpenSettings,
+  onOpenAbout,
   onTranslate,
 }: {
   onOpenSettings: () => void;
+  onOpenAbout: () => void;
   onTranslate: () => void;
 }) {
   const { t } = useTranslation();
@@ -121,6 +142,7 @@ function Toolbar({
     s.projects.find((p) => p.id === s.activeProjectId),
   );
   const isTranslating = useIsTranslating();
+  const isExtractingGlossary = useIsExtractingGlossary();
   const progress = useTranslationProgress();
 
   async function handleExport() {
@@ -178,16 +200,18 @@ function Toolbar({
           variant="outline"
           className="h-7 gap-1.5 text-xs"
           onClick={onTranslate}
-          disabled={isTranslating}
+          disabled={isTranslating || isExtractingGlossary}
         >
-          {isTranslating ? (
+          {isExtractingGlossary || isTranslating ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
             <Play className="h-3.5 w-3.5" />
           )}
-          {isTranslating
-            ? `${t("toolbar.translating")} ${progress > 0 ? `${progress}%` : ""}`
-            : t("toolbar.translate")}
+          {isExtractingGlossary
+            ? t("glossaryPrompt.translationBlocked")
+            : isTranslating
+              ? `${t("toolbar.translating")} ${progress > 0 ? `${progress}%` : ""}`
+              : t("toolbar.translate")}
         </Button>
       )}
 
@@ -226,11 +250,20 @@ function Toolbar({
         </div>
       )}
 
-      {/* Settings button — pushed to the right */}
+      {/* About + Settings buttons — pushed to the right */}
       <Button
         size="sm"
         variant="ghost"
         className="h-7 w-7 p-0 ml-auto"
+        onClick={onOpenAbout}
+        title={t("about.title")}
+      >
+        <Info className="h-4 w-4" />
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 w-7 p-0"
         onClick={onOpenSettings}
         title={t("settings.title")}
       >
@@ -246,6 +279,7 @@ function Toolbar({
 
 export default function App() {
   const [showSettings, setShowSettings] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
   const { startTranslation, providerConfig } = useLlmStore();
   const { loadSettings } = useSettingsStore();
   const { t } = useTranslation();
@@ -257,10 +291,56 @@ export default function App() {
   const activeSegmentTargetText = useEditorStore(
     (s) => s.activeSegmentTargetText,
   );
+  const pendingGlossaryExtract = usePendingGlossaryExtract();
+  const isExtractingGlossary = useIsExtractingGlossary();
+  const { setPendingGlossaryExtract, setExtractingGlossary } =
+    useProjectStore.getState();
 
   useEffect(() => {
     void loadSettings();
   }, [loadSettings]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    listen<{ projectId: string; terms: unknown[]; error: string | null }>(
+      "h2s://glossary/extraction-done",
+      (event) => {
+        setExtractingGlossary(false);
+        if (event.payload.error) {
+          toast.error(t("glossaryPrompt.extractError"));
+        } else {
+          const count = event.payload.terms.length;
+          toast.success(t("glossaryPrompt.extractDone", { count }));
+        }
+      },
+    ).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, [setExtractingGlossary, t]);
+
+  async function handleGlossaryConfirm() {
+    if (!pendingGlossaryExtract) return;
+    const projectId = pendingGlossaryExtract;
+    setPendingGlossaryExtract(null);
+    setExtractingGlossary(true);
+    try {
+      await invoke("extract_glossary_terms", {
+        projectId,
+        langPair: "ja-en",
+        providerConfig: providerConfig,
+      });
+    } catch {
+      setExtractingGlossary(false);
+      toast.error(t("glossaryPrompt.extractError"));
+    }
+  }
+
+  function handleGlossaryDecline() {
+    setPendingGlossaryExtract(null);
+  }
 
   function handleTranslate() {
     if (!providerConfig.model.trim()) {
@@ -275,8 +355,17 @@ export default function App() {
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
       <Toolbar
         onOpenSettings={() => setShowSettings(true)}
+        onOpenAbout={() => setShowAbout(true)}
         onTranslate={handleTranslate}
       />
+
+      {isExtractingGlossary && (
+        <div className="flex h-7 shrink-0 items-center gap-2 border-b bg-muted/50 px-3 text-xs text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+          <BookOpen className="h-3 w-3 shrink-0" />
+          <span>{t("glossaryPrompt.extracting")}</span>
+        </div>
+      )}
 
       <ResizablePanelGroup
         orientation="horizontal"
@@ -344,6 +433,26 @@ export default function App() {
         open={showSettings}
         onClose={() => setShowSettings(false)}
       />
+      <AboutModal open={showAbout} onClose={() => setShowAbout(false)} />
+
+      <AlertDialog open={pendingGlossaryExtract !== null}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("glossaryPrompt.title")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("glossaryPrompt.description")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleGlossaryDecline}>
+              {t("glossaryPrompt.no")}
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={() => void handleGlossaryConfirm()}>
+              {t("glossaryPrompt.yes")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Toaster />
     </div>

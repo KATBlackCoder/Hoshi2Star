@@ -35,6 +35,7 @@
     "filterNeedsReview": "À réviser",
     "translateRow": "Traduire ce segment",
     "translateSelected": "Traduire {{count}} lignes",
+    "retranslateNeedsReview": "Réessayer {{count}} échoués",
     "noModelConfigured": "Aucun modèle LLM configuré — ouvrez les Paramètres (⚙)"
   },
   "tmPanel": {
@@ -127,6 +128,28 @@
   },
   "project": {
     "restored": "Projet restauré — reprise de la traduction"
+  },
+  "glossaryPrompt": {
+    "title": "📖 Glossaire auto",
+    "description": "🎮 Scanne les acteurs, skills, items et états du jeu pour pré-remplir ton glossaire. ⏱️ 10–30 s.",
+    "yes": "⚔️ Extraire",
+    "no": "Ignorer",
+    "extracting": "Extraction du glossaire en cours…",
+    "translationBlocked": "Glossaire en cours…",
+    "extractDone": "Glossaire prêt — {{count}} termes extraits.",
+    "extractDone_zero": "Extraction terminée — aucun nouveau terme trouvé.",
+    "extractError": "Extraction du glossaire échouée. Réessayez depuis le panneau Glossaire."
+  },
+  "about": {
+    "title": "À propos",
+    "tagline": "De 星 à ★ — un segment à la fois.",
+    "builtBy": "Créé par",
+    "openSource": "Open Source",
+    "supportTitle": "Soutenir le développement",
+    "bitcoin": "₿ Bitcoin",
+    "ethereum": "Ξ Ethereum",
+    "copied": "Adresse copiée !",
+    "close": "Fermer"
   },
   "projectList": {
     "title": "Projets récents",

@@ -27,7 +27,7 @@ import type {
   SourceFile,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { Play } from "lucide-react";
+import { Play, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
@@ -195,6 +195,11 @@ export function SegmentGrid({
     [startTranslation, providerConfig.model, t],
   );
 
+  const needsReviewIds = useMemo(
+    () => segments.filter((s) => s.status === "needs_review").map((s) => s.id),
+    [segments],
+  );
+
   // Translate selected rows
   const selectedIds = useMemo(
     () =>
@@ -357,6 +362,27 @@ export function SegmentGrid({
             </SelectItem>
           </SelectContent>
         </Select>
+
+        {needsReviewIds.length > 0 && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1.5 text-xs text-yellow-400 border-yellow-400/40 hover:bg-yellow-400/10"
+            disabled={isTranslating}
+            onClick={() => {
+              if (!providerConfig.model.trim()) {
+                toast.error(t("segmentGrid.noModelConfigured"));
+                return;
+              }
+              void startTranslation(needsReviewIds, undefined);
+            }}
+          >
+            <RefreshCw className="h-3 w-3" />
+            {t("segmentGrid.retranslateNeedsReview", {
+              count: needsReviewIds.length,
+            })}
+          </Button>
+        )}
 
         {selectedIds.length >= 2 && (
           <Button

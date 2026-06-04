@@ -161,7 +161,10 @@ impl LlmProvider for OllamaProvider {
             format!("\nGlossary:\n{}", pairs.join("\n"))
         };
 
-        let numbered: Vec<String> = segments
+        // Escape embedded newlines so they don't break the line-counting protocol.
+        // ⏎ (U+23CE) is the round-trip marker; restored after parsing.
+        let escaped: Vec<String> = segments.iter().map(|s| s.replace('\n', "⏎")).collect();
+        let numbered: Vec<String> = escaped
             .iter()
             .enumerate()
             .map(|(i, s)| format!("[{}] {}", i + 1, s))
@@ -220,7 +223,7 @@ impl LlmProvider for OllamaProvider {
                         .map_err(|e| LlmError::ResponseFormat(e.to_string()))?;
 
                     let lines = parse_numbered_response(&parsed.message.content, segments.len())?;
-                    return Ok(lines);
+                    return Ok(lines.into_iter().map(|l| l.replace('⏎', "\n")).collect());
                 }
             }
         }
@@ -489,5 +492,43 @@ mod tests {
             .expect("translate must succeed");
         m.assert(); // verifies the mock was hit exactly once
         assert_eq!(result, vec!["Hero"]);
+    }
+
+    #[tokio::test]
+    async fn test_translate_multiline_description_preserved() {
+        // Source has an embedded newline (RPG Maker item description pattern).
+        // The LLM sees "⏎" in place of the newline and echoes it back.
+        // The pipeline must restore "\n" in the final translation.
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(POST).path("/api/chat");
+            then.status(200).json_body(json!({
+                "message": {
+                    "role": "assistant",
+                    "content": "[1] A rare injectable ampoule not yet widely available.⏎Fully restores HP and MP."
+                }
+            }));
+        });
+        let provider = make_provider(&server);
+        let source =
+            "まだ表に出回っていない、貴重な注射式アンプル。\nHPとMPを全回復する".to_string();
+        let result = provider
+            .translate(vec![source], ctx())
+            .await
+            .expect("translate");
+        assert_eq!(
+            result,
+            vec!["A rare injectable ampoule not yet widely available.\nFully restores HP and MP."]
+        );
+    }
+
+    #[test]
+    fn test_parse_multiline_segment_via_newline_marker() {
+        // parse_numbered_response itself is line-based; the ⏎ marker stays opaque
+        // through it — the translate() wrapper restores it after.
+        let raw = "[1] First line⏎Second line\n[2] Other";
+        let result = parse_numbered_response(raw, 2).unwrap();
+        assert_eq!(result[0], "First line⏎Second line");
+        assert_eq!(result[1], "Other");
     }
 }

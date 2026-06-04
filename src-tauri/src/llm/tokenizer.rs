@@ -28,12 +28,15 @@ static RE_MVMZ: LazyLock<Regex> = LazyLock::new(|| {
     // Inside a character class [..], only \\ needs escaping — other chars are literal.
     // Characters matched after the leading backslash: G \ $ . | ! > < ^ { }
     // Groupe E MUST come before Groupe A to avoid partial matches on \+word.
+    // \n (literal newline U+000A) is tokenized last — preserves structural line breaks
+    // in multi-line fields (description, profile) so the segment stays on one line.
     Regex::new(
         r"(?x)
           \\[+\-]\w+\[\d+\]        # Groupe E — plugin codes (\+switch[n], \-var[n], …)
         | \\[VNPCIvnpci]\[\d+\]   # Groupe A — codes avec argument numérique (maj + min)
         | \\[G\\$.|!><^{}]        # Groupe B — codes sans argument
         | \[%\d+\]                # Groupe D (MV) — [%1] [%2] …
+        | \n                      # structural line break (description/profile fields)
         ",
     )
     .expect("RE_MVMZ regex must compile")
@@ -49,6 +52,7 @@ static RE_MZONLY: LazyLock<Regex> = LazyLock::new(|| {
         | \\[VNPCIvnpci]\[\d+\]            # Groupe A — codes avec argument numérique (maj + min)
         | \\[G\\$.|!><^{}]                 # Groupe B — codes sans argument
         | %\d+                             # Groupe D (MZ) — %1 %2 … (sans crochets)
+        | \n                               # structural line break (description/profile fields)
         ",
     )
     .expect("RE_MZONLY regex must compile")
@@ -323,6 +327,49 @@ mod tests {
         let tok = Tokenizer::tokenize(original, Engine::MvMz);
         assert_eq!(tok.map.len(), 2);
         let restored = Tokenizer::restore(&tok.text, &tok.map).unwrap();
+        assert_eq!(restored, original);
+    }
+
+    // 12. Description multi-ligne — \n littéral doit être tokenisé
+    #[test]
+    fn test_multiline_description_round_trip() {
+        let original = "動脈に直接打ち込む注射式アンプル\n使用者のHPを回復する";
+        let tokenized = Tokenizer::tokenize(original, Engine::MvMz);
+        assert_eq!(tokenized.map.len(), 1, "one newline → one token");
+        assert!(
+            !tokenized.text.contains('\n'),
+            "tokenized text must not contain literal newline"
+        );
+        assert_eq!(tokenized.map.get("⟦ph_0⟧").unwrap(), "\n");
+        let restored = Tokenizer::restore(&tokenized.text, &tokenized.map).unwrap();
+        assert_eq!(restored, original);
+    }
+
+    // 13. Description multi-ligne + codes RPG Maker — round-trip complet
+    #[test]
+    fn test_multiline_with_rpg_codes_round_trip() {
+        let original = "\\V[12]のダメージ！\n\\C[3]回復した。";
+        let tokenized = Tokenizer::tokenize(original, Engine::MvMz);
+        // \V[12] + \n + \C[3] = 3 tokens
+        assert_eq!(tokenized.map.len(), 3);
+        assert!(!tokenized.text.contains('\n'));
+        let restored = Tokenizer::restore(&tokenized.text, &tokenized.map).unwrap();
+        assert_eq!(restored, original);
+    }
+
+    // 14. \n[1] (code RPG Maker) ne doit PAS être confondu avec \n littéral
+    #[test]
+    fn test_rpg_newline_code_vs_literal_newline() {
+        // \n[1] = code RPG Maker "nom du personnage 1" — tokenisé via Groupe A
+        // \n (U+000A) = saut de ligne littéral — tokenisé via le nouveau pattern
+        let original = "\\n[1]\nTexte suivant";
+        let tokenized = Tokenizer::tokenize(original, Engine::MvMz);
+        assert_eq!(
+            tokenized.map.len(),
+            2,
+            "\\n[1] and literal \\n are two distinct tokens"
+        );
+        let restored = Tokenizer::restore(&tokenized.text, &tokenized.map).unwrap();
         assert_eq!(restored, original);
     }
 
