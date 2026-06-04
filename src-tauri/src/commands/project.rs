@@ -104,6 +104,15 @@ pub struct OpenProjectResult {
     pub was_restored: bool,
 }
 
+/// Project-level statistics: used by the frontend to gate the "Export All" flow.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectStats {
+    pub file_count: i64,
+    pub total_segments: i64,
+    pub untranslated_count: i64,
+}
+
 /// Summary of QA errors for a whole project.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -733,6 +742,217 @@ pub async fn translate_segments(
     Ok(())
 }
 
+/// Translate all untranslated segments across all files in a project, sequentially.
+///
+/// After each file, if `cooldown_threshold_secs` have elapsed since the last
+/// cooldown (or since start), the task sleeps for `cooldown_duration_secs` and
+/// emits one `h2s://llm/cooling { remainingSecs }` event per second so the
+/// frontend can display a countdown.
+#[tauri::command]
+pub async fn translate_all_segments(
+    project_id: String,
+    provider_config: ProviderConfig,
+    cooldown_threshold_secs: u64,
+    cooldown_duration_secs: u64,
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    use tauri::Emitter;
+
+    let files = sqlx::query_as::<_, SourceFile>(
+        "SELECT id, project_id, file_name, file_path, file_type, translation_secs \
+         FROM source_files WHERE project_id = ? ORDER BY file_name",
+    )
+    .bind(&project_id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let total_untranslated: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM segments s \
+         JOIN source_files sf ON s.source_file_id = sf.id \
+         WHERE sf.project_id = ? AND (s.status = 'untranslated' OR s.target_text = '')",
+    )
+    .bind(&project_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if total_untranslated == 0 {
+        let _ = app.emit("h2s://llm/completed", serde_json::json!({ "count": 0 }));
+        return Ok(());
+    }
+
+    let _ = app.emit(
+        "h2s://llm/started",
+        serde_json::json!({ "count": total_untranslated }),
+    );
+
+    let db = state.db.clone();
+    let handle = app.clone();
+
+    tokio::spawn(async move {
+        let provider = OllamaProvider::new(
+            &provider_config.url,
+            &provider_config.model,
+            std::time::Duration::from_secs(120),
+        );
+
+        let lang_pair = "ja-en";
+        let mut last_cooldown_at = std::time::Instant::now();
+
+        for file in &files {
+            let pairs: Vec<(String, String)> = match sqlx::query_as::<_, (String, String)>(
+                "SELECT id, source_text FROM segments \
+                 WHERE source_file_id = ? AND (status = 'untranslated' OR target_text = '') \
+                 ORDER BY rowid",
+            )
+            .bind(&file.id)
+            .fetch_all(&db)
+            .await
+            {
+                Ok(p) => p,
+                Err(e) => {
+                    let _ = handle.emit(
+                        "h2s://llm/error",
+                        serde_json::json!({ "message": e.to_string() }),
+                    );
+                    return;
+                }
+            };
+
+            if pairs.is_empty() {
+                continue;
+            }
+
+            // Load glossary terms filtered by batch content
+            let all_terms = glossary::list_for_project(&db, &project_id, lang_pair)
+                .await
+                .unwrap_or_default();
+            let mut glossary_terms: Vec<(String, String)> = all_terms
+                .iter()
+                .filter(|t| pairs.iter().any(|(_, src)| src.contains(&t.source_text)))
+                .take(20)
+                .map(|t| (t.source_text.clone(), t.target_text.clone()))
+                .collect();
+            if glossary_terms.is_empty() {
+                let mut by_len = all_terms;
+                by_len.sort_by_key(|t| t.source_text.len());
+                glossary_terms = by_len
+                    .into_iter()
+                    .take(10)
+                    .map(|t| (t.source_text, t.target_text))
+                    .collect();
+            }
+
+            let context = TranslationContext {
+                source_lang: "ja".to_string(),
+                target_lang: "en".to_string(),
+                glossary_terms,
+            };
+
+            let translation_start = std::time::Instant::now();
+
+            match pipeline::run(pairs, &provider, context, &db, &handle).await {
+                Ok(results) => {
+                    for r in results {
+                        let status = if r.needs_review {
+                            "needs_review"
+                        } else {
+                            "translated"
+                        };
+                        let _ = sqlx::query(
+                            "UPDATE segments \
+                             SET target_text = ?, status = ?, \
+                                 updated_at = datetime('now') \
+                             WHERE id = ?",
+                        )
+                        .bind(&r.translated_text)
+                        .bind(status)
+                        .bind(&r.id)
+                        .execute(&db)
+                        .await;
+                    }
+                    // Update per-file translation duration
+                    let elapsed = translation_start.elapsed().as_secs() as i64;
+                    let _ =
+                        sqlx::query("UPDATE source_files SET translation_secs = ? WHERE id = ?")
+                            .bind(elapsed)
+                            .bind(&file.id)
+                            .execute(&db)
+                            .await;
+                }
+                Err(e) => {
+                    let _ = handle.emit(
+                        "h2s://llm/error",
+                        serde_json::json!({ "message": e.to_string() }),
+                    );
+                    return;
+                }
+            }
+
+            // Cooldown: trigger after threshold elapsed since last rest
+            let threshold = if cooldown_threshold_secs == 0 {
+                1
+            } else {
+                cooldown_threshold_secs
+            };
+            if last_cooldown_at.elapsed().as_secs() >= threshold && cooldown_duration_secs > 0 {
+                let mut remaining = cooldown_duration_secs;
+                while remaining > 0 {
+                    let _ = handle.emit(
+                        "h2s://llm/cooling",
+                        serde_json::json!({ "remainingSecs": remaining }),
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    remaining -= 1;
+                }
+                let _ = handle.emit(
+                    "h2s://llm/cooling",
+                    serde_json::json!({ "remainingSecs": 0 }),
+                );
+                last_cooldown_at = std::time::Instant::now();
+            }
+        }
+
+        // Update manifest stats once at the end
+        let stats_row = sqlx::query_as::<_, (String, i64, i64, i64, i64)>(
+            "SELECT p.game_path,
+                (SELECT COUNT(*) FROM source_files sf2 WHERE sf2.project_id = p.id),
+                (SELECT COUNT(*) FROM segments s2
+                   JOIN source_files sf2 ON s2.source_file_id = sf2.id
+                   WHERE sf2.project_id = p.id),
+                (SELECT COUNT(*) FROM segments s2
+                   JOIN source_files sf2 ON s2.source_file_id = sf2.id
+                   WHERE sf2.project_id = p.id AND s2.status = 'translated'),
+                (SELECT COUNT(*) FROM glossary_terms g
+                   WHERE g.project_id = p.id OR g.project_id IS NULL)
+             FROM projects p WHERE p.id = ?",
+        )
+        .bind(&project_id)
+        .fetch_optional(&db)
+        .await;
+        if let Ok(Some((game_path, files_c, segs, translated, glossary))) = stats_row {
+            let _ = manifest::update_stats(
+                &game_path,
+                manifest::ManifestStats {
+                    file_count: files_c as u32,
+                    segment_count: segs as u32,
+                    translated_count: translated as u32,
+                    glossary_term_count: glossary as u32,
+                },
+            );
+        }
+
+        let _ = handle.emit(
+            "h2s://llm/completed",
+            serde_json::json!({ "count": total_untranslated }),
+        );
+    });
+
+    Ok(())
+}
+
 /// Return TM fuzzy suggestions for a given source text.
 /// Exact matches (score 1.0) sort to the top; fuzzy matches follow.
 #[tauri::command]
@@ -1163,6 +1383,38 @@ pub async fn export_tm(
     tokio::fs::write(&output_path, tmx)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Return lightweight project statistics used to gate the "Export All" action.
+///
+/// `untranslated_count` counts only `status = 'untranslated'` segments.
+/// Segments with `status = 'needs_review'` carry a fallback target_text and are
+/// considered exportable.
+#[tauri::command]
+pub async fn get_project_stats(
+    project_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<ProjectStats, String> {
+    let (file_count, total_segments, untranslated_count) = sqlx::query_as::<_, (i64, i64, i64)>(
+        "SELECT \
+            (SELECT COUNT(*) FROM source_files WHERE project_id = ?1), \
+            (SELECT COUNT(*) FROM segments s \
+               JOIN source_files sf ON s.source_file_id = sf.id \
+               WHERE sf.project_id = ?1), \
+            (SELECT COUNT(*) FROM segments s \
+               JOIN source_files sf ON s.source_file_id = sf.id \
+               WHERE sf.project_id = ?1 AND s.status = 'untranslated')",
+    )
+    .bind(&project_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(ProjectStats {
+        file_count,
+        total_segments,
+        untranslated_count,
+    })
 }
 
 /// List all projects in the DB, ordered by most recently updated.
