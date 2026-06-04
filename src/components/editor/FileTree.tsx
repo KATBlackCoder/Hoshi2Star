@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { useSourceFiles } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { cn } from "@/lib/utils";
+import { formatDuration } from "@/lib/format";
 import {
   FileText,
   Users,
@@ -73,13 +74,6 @@ function fileIcon(fileType: string) {
         <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       );
   }
-}
-
-function formatDuration(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
 export function FileTree() {

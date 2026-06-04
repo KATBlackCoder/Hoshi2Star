@@ -10,33 +10,8 @@ import {
   deleteProject,
 } from "@/stores/project";
 import type { Project } from "@/lib/types";
+import { engineLabel, relativeDate } from "@/lib/format";
 import { toast } from "sonner";
-
-function engineLabel(engine: string): string {
-  switch (engine) {
-    case "mv_mz":
-      return "MV/MZ";
-    case "vx_ace":
-      return "VX Ace";
-    case "wolf":
-      return "Wolf RPG";
-    case "bakin":
-      return "Bakin";
-    default:
-      return engine;
-  }
-}
-
-function relativeDate(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const days = Math.floor(diff / 86_400_000);
-  if (days === 0) return "Today";
-  if (days === 1) return "Yesterday";
-  if (days < 30) return `${days}d ago`;
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months}mo ago`;
-  return `${Math.floor(months / 12)}y ago`;
-}
 
 export function ProjectList() {
   const { t } = useTranslation();
