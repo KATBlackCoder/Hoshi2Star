@@ -4,21 +4,23 @@
 pub mod commands;
 pub mod core;
 pub mod db;
+pub mod domain;
 pub mod engines;
 pub mod llm;
 pub mod state;
 pub mod utils;
 
+use commands::export::{export_debug_json, export_project, export_qa_report, export_tm};
 use commands::glossary::{
     add_glossary_term, delete_glossary_term, extract_glossary_terms, get_glossary,
     update_glossary_term,
 };
 use commands::project::{
-    delete_project, export_debug_json, export_project, export_qa_report, export_tm,
-    get_ollama_models, get_project_stats, get_qa_report, get_segments, get_source_files,
-    get_tm_suggestions, list_projects, open_project, qa_check_segment, translate_all_segments,
-    translate_segments, update_segment,
+    delete_project, get_project_stats, get_segments, get_source_files, list_projects, open_project,
+    update_segment,
 };
+use commands::qa::{get_qa_report, get_tm_suggestions, qa_check_segment};
+use commands::translate::{get_ollama_models, translate_all_segments, translate_segments};
 use state::AppState;
 use tauri::Manager;
 

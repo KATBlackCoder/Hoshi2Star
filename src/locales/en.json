@@ -2,8 +2,23 @@
   "toolbar": {
     "openGame": "Open Game",
     "translate": "Translate",
-    "export": "Export",
-    "translating": "Translating..."
+    "exportAll": "Export All",
+    "translateAll": "Translate All",
+    "translating": "Translating...",
+    "translateAllDialogTitle": "Translate entire project",
+    "translateAllDialogDesc": "{{count}} segments to translate across {{files}} files.",
+    "translateAllThreshold": "Work duration (min)",
+    "translateAllCooldown": "Rest duration (min)",
+    "translateAllStart": "Start",
+    "translateAllCancel": "Cancel",
+    "translateAllCooling": "Resting {{remaining}}s…",
+    "exportAllConfirmTitle": "Export project",
+    "exportAllConfirmDesc": "{{files}} files · {{segments}} segments — export now?",
+    "exportAllYes": "Export",
+    "exportAllNo": "Cancel",
+    "exportAllBlockedTitle": "Translation incomplete",
+    "exportAllBlockedDesc": "{{count}} of {{total}} segments are not yet translated. Finish translating before exporting.",
+    "exportAllClose": "Close"
   },
   "fileTree": {
     "title": "Files",

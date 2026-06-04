@@ -214,6 +214,14 @@
 ### Robustesse LLM
 - [x] **F3-11** — Batch adaptatif : split récursif sur `ResponseFormat` — `llm_translate_with_split` avec `Box::pin`, récursion bornée à `len==1`, 9 tests pipeline (dont Test A et Test C couvrant le split partiel)
 
+### Toolbar UX — Export & Traduction
+- [x] **F3-12** — Bouton "Export All" (`Download`) — dialog bloquant si segments non traduits (compte + Close seulement), dialog de confirmation sinon (fichiers + segments)
+- [x] **F3-12** — Commande `get_project_stats` — `{ fileCount, totalSegments, untranslatedCount }` via une seule requête SQLite
+- [x] **F3-12** — Bouton "Translate All" (`Languages`) — dialog pré-traduction avec stats + inputs durée travail/pause (défaut 20 min / 3 min)
+- [x] **F3-12** — Commande `translate_all_segments` — traduction projet entier en fond (`tokio::spawn`), cooldown automatique avec événements `h2s://llm/cooling { remainingSecs }`
+- [x] **F3-12** — `CooldownBadge` dans la toolbar — icône `Snowflake` + compte à rebours `MM:SS` en bleu pendant la pause
+- [x] **F3-12** — `isCooling`, `cooldownRemaining`, `startTranslateAll` dans `useLlmStore`
+
 ### Beta privée
 - [ ] Recrutement 20–30 testeurs via Discord fan-trad / F95zone
 - [ ] Feedback form intégré à l'app (event `h2s://feedback/submit`)

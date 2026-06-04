@@ -2,8 +2,23 @@
   "toolbar": {
     "openGame": "Ouvrir un jeu",
     "translate": "Traduire",
-    "export": "Exporter",
-    "translating": "Traduction..."
+    "exportAll": "Tout exporter",
+    "translateAll": "Tout traduire",
+    "translating": "Traduction...",
+    "translateAllDialogTitle": "Traduire le projet entier",
+    "translateAllDialogDesc": "{{count}} segments à traduire dans {{files}} fichiers.",
+    "translateAllThreshold": "Durée de travail (min)",
+    "translateAllCooldown": "Durée de pause (min)",
+    "translateAllStart": "Démarrer",
+    "translateAllCancel": "Annuler",
+    "translateAllCooling": "Pause {{remaining}}s…",
+    "exportAllConfirmTitle": "Exporter le projet",
+    "exportAllConfirmDesc": "{{files}} fichiers · {{segments}} segments — confirmer l'export ?",
+    "exportAllYes": "Exporter",
+    "exportAllNo": "Annuler",
+    "exportAllBlockedTitle": "Traduction incomplète",
+    "exportAllBlockedDesc": "{{count}} segments sur {{total}} ne sont pas encore traduits. Terminez la traduction avant d'exporter.",
+    "exportAllClose": "Fermer"
   },
   "fileTree": {
     "title": "Fichiers",
