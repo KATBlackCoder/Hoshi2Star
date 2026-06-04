@@ -9,6 +9,10 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - Add `docs/architecture.md` — full architecture documentation: 5-layer ASCII diagram, module descriptions for all Rust and TypeScript modules, data-flow sequences for open/translate/restore, ADR summary table
 
 ### Changed
+- Extract `AppToolbar` component from `App.tsx` — toolbar buttons, `CooldownBadge`, `TranslationTimer`, progress bar; reads store state directly
+- Extract `AppDialogs` component from `App.tsx` — all conditional modals (`SettingsModal`, `AboutModal`, `TranslateAllDialog`, export `AlertDialog` x2, glossary `AlertDialog`)
+- Extract `useAppHandlers` hook from `App.tsx` — all async handlers (`handleTranslate`, `handleTranslateAll`, `handleExportAll`, `handleExportConfirm`, `handleGlossaryConfirm`, `handleGlossaryDecline`) + local dialog state; `App.tsx` reduced from 632 to 141 lines
+- Extract `buildHighlightedNodes` to `src/lib/highlight-utils.tsx` — new signature `(text, glossaryTerms: string[], phRe: RegExp)` makes the function independently testable; `columns.tsx` reduced from 328 to 257 lines
 - Split `llm/pipeline.rs` (718 lines) into `llm/pipeline.rs` (orchestration: `run` / `run_inner` / `translate_batch`), `llm/split.rs` (`llm_translate_with_split` + recursive split logic), `llm/progress.rs` (`ProgressPayload`, `PlaceholderWarningPayload`)
 - Move QA error label functions from `core/report.rs` into `impl QaError { pub fn label(&self, lang: &str) -> String }` in `core/qa.rs`; `report.rs` calls `escape_xml(&err.label(lang))` at the HTML render site
 
