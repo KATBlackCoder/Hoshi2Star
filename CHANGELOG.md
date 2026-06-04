@@ -5,6 +5,24 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+### Changed
+- Extract `PH_RE` placeholder regex to `src/lib/constants.ts` — single source of truth shared by `App.tsx` and `columns.tsx`; each call site uses `clonePH_RE()` to get a fresh `RegExp` with reset `lastIndex`
+- Extract format helpers `formatDuration`, `engineLabel`, `relativeDate` to `src/lib/format.ts` — removed duplicate local definitions from `FileTree.tsx` and `ProjectList.tsx`
+- Create `src-tauri/src/utils/` module with `text::escape_xml` and `time::now_iso8601` — merged duplicate `xml_escape`/`html_escape` private fns from `core/tm.rs` and `core/report.rs` into a single public utility; extracted `now_iso8601` from `core/manifest.rs`
+- Refactor `stores/llm.ts` — replace 5 module-level `UnlistenFn` variables and 7 identical teardown blocks with `setupTranslationListeners()` helper and a single `activeTeardown` ref; `startTranslation` and `startTranslateAll` now share all event-handling logic via callbacks
+
+### Added
+- Add "Export All" button in toolbar (`Download` icon) — checks project completeness before exporting; if untranslated segments remain, shows a blocking `AlertDialog` with the untranslated count (Close only); if all translated, shows a confirmation dialog (file + segment count) before exporting
+- Add `get_project_stats` Tauri command — returns `{ fileCount, totalSegments, untranslatedCount }` for a project via a single SQLite query using `?1` positional binding
+- Add `toolbar.exportAll*` i18n keys (EN + FR)
+- Add "Translate All" button in toolbar (`Languages` icon) — on click, fetches project stats, opens `TranslateAllDialog` with untranslated count + file count and two adjustable cooldown inputs (work duration default 20 min, rest duration default 3 min), then launches whole-project translation
+- Add `translate_all_segments` Tauri command — translates all untranslated segments across all project files sequentially in a background `tokio::spawn` task; after each file, checks elapsed time against threshold and if exceeded, emits `h2s://llm/cooling { remainingSecs }` once per second during the rest phase; updates manifest stats and emits `h2s://llm/completed` at the end
+- Add `isCooling: boolean` and `cooldownRemaining: number` state + `startTranslateAll` action + `coolingUnlisten` listener to `useLlmStore` — listens to `h2s://llm/cooling` events and updates cooling state
+- Add `useIsCooling` and `useCooldownRemaining` selectors to `llm.ts`
+- Add `CooldownBadge` component inline in `Toolbar` — displays `Snowflake` icon + `MM:SS` countdown in blue during cooldown phase
+- Add `TranslateAllDialog` component (`src/components/TranslateAllDialog.tsx`) — stats preview + two numeric inputs for threshold and cooldown duration
+- Add `toolbar.translateAll*` i18n keys (EN + FR)
+
 ## [0.3.1] - 2026-06-04
 ### Added
 - Add About modal (ⓘ button in toolbar) — tagline, author, MIT license, Bitcoin + Ethereum donation addresses with copy buttons, GitHub link
