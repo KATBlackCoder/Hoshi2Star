@@ -68,15 +68,15 @@ jobs:
 
             📖 See [README.md](https://github.com/KATBlackCoder/Hoshi2Star#readme)
 
-            ### What's new in v0.3.0
+            ### What's new in v0.3.2
 
-            - Project list with progress cards on startup
-            - Glossary auto-extraction + manual CRUD
-            - TM fuzzy matching (80% Levenshtein)
-            - QA HTML report export
-            - Per-segment translate button
-            - Project manifest (`.hoshi2star.json`) for smart restore
-            - Groupe E community plugin placeholder support
+            - **Translate All** — whole-project translation with automatic cooldown (configurable work/rest durations)
+            - **Export All** — one-click full project export with completeness check
+            - Settings modal (LLM config, theme, language, persisted across sessions)
+            - Glossary prompt on new project open with auto-extraction
+            - Adaptive batch split — recursive halving on LLM failures (no more blocked batches)
+            - Retry failed segments in one click
+            - Sprint 1–4 refactoring: App.tsx reduced to layout-only (141 lines)
 
             ### Prerequisites
             - [Ollama](https://ollama.ai) installed locally

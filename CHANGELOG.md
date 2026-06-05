@@ -3,7 +3,7 @@
 All notable changes to Hoshi2Star will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning](https://semver.org).
 
-## [Unreleased]
+## [0.3.2] - 2026-06-05
 
 ### Added
 - Add `docs/architecture.md` — full architecture documentation: 5-layer ASCII diagram, module descriptions for all Rust and TypeScript modules, data-flow sequences for open/translate/restore, ADR summary table
@@ -173,6 +173,7 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - TanStack Query for async Tauri invoke() calls
 - GitHub Actions CI/CD for Linux + Windows builds
 
+[0.3.2]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.3.2
 [0.3.1]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.3.1
 [0.3.0]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.3.0
 [0.2.1]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.2.1
