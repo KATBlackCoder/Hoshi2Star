@@ -1,6 +1,6 @@
 # Hoshi2Star — Architecture
 
-> Dernière mise à jour : 2026-06-04 (version 0.3.1 + sprint4 refactoring)
+> Dernière mise à jour : 2026-06-05 (version 0.3.2)
 > Ce document décrit l'architecture réelle de l'application.
 > À mettre à jour à chaque ajout de module majeur.
 
