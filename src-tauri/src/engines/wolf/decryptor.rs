@@ -146,6 +146,56 @@ pub(crate) fn key_conv(data: &mut [u8], offset: u64, key: &[u8; 12]) {
 }
 
 // ---------------------------------------------------------------------------
+// Step 4 — DXA v5 header (32-bit fields)
+// ---------------------------------------------------------------------------
+
+#[allow(dead_code)] // consumed by read_header (Step 5)
+struct DxHeaderV5 {
+    index_size: u32,
+    base_offset: u32,
+    index_offset: u32,
+    file_table_offset: u32,
+    dir_table_offset: u32,
+}
+
+/// Read and decrypt a DXA v5 header from raw archive bytes.
+///
+/// The encrypted body occupies `file[0x04..0x18]` (20 bytes, five u32 fields).
+#[allow(dead_code)] // called by read_header (Step 5)
+fn read_header_v5(data: &[u8], key: &[u8; 12]) -> Result<DxHeaderV5, DecryptorError> {
+    if data.len() < 0x18 {
+        return Err(DecryptorError::HeaderTooShort);
+    }
+    let mut buf = data[0x04..0x18].to_vec();
+    key_conv(&mut buf, 4, key);
+
+    let u32_at =
+        |off: usize| u32::from_le_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]]);
+
+    Ok(DxHeaderV5 {
+        index_size: u32_at(0x00),
+        base_offset: u32_at(0x04),
+        index_offset: u32_at(0x08),
+        file_table_offset: u32_at(0x0C),
+        dir_table_offset: u32_at(0x10),
+    })
+}
+
+/// Read the DXA signature and return the archive version byte.
+///
+/// Valid versions: 5, 6, 8. Errors on invalid signature or unsupported version.
+pub fn read_signature(data: &[u8]) -> Result<u8, DecryptorError> {
+    if data.len() < 4 || &data[0..2] != b"DX" {
+        return Err(DecryptorError::InvalidSignature);
+    }
+    let version = data[2];
+    if version != 5 && version != 6 && version != 8 {
+        return Err(DecryptorError::UnsupportedVersion(version));
+    }
+    Ok(version)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -221,5 +271,43 @@ mod tests {
     #[test]
     fn test_known_key_unknown() {
         assert!(known_key(Some("v9.99")).is_none());
+    }
+
+    // --- Step 4: read_signature + read_header_v5 ---
+
+    fn make_v5_header(key: &[u8; 12]) -> Vec<u8> {
+        let index_size: u32 = 0x1000;
+        let base_offset: u32 = 0x18;
+        let index_offset: u32 = 0x5000;
+        let file_table: u32 = 0x00;
+        let dir_table: u32 = 0x40;
+
+        let mut body = Vec::with_capacity(20);
+        body.extend_from_slice(&index_size.to_le_bytes());
+        body.extend_from_slice(&base_offset.to_le_bytes());
+        body.extend_from_slice(&index_offset.to_le_bytes());
+        body.extend_from_slice(&file_table.to_le_bytes());
+        body.extend_from_slice(&dir_table.to_le_bytes());
+        key_conv(&mut body, 4, key);
+
+        let mut hdr = vec![b'D', b'X', 5u8, 0u8];
+        hdr.extend_from_slice(&body);
+        hdr
+    }
+
+    #[test]
+    fn test_read_header_v5_synthetic() {
+        let key = [
+            0x38u8, 0x50, 0x40, 0x28, 0x72, 0x4F, 0x21, 0x70, 0x3B, 0x73, 0x35, 0x38,
+        ];
+        let hdr = make_v5_header(&key);
+
+        assert_eq!(read_signature(&hdr).unwrap(), 5);
+        let h = read_header_v5(&hdr, &key).unwrap();
+        assert_eq!(h.index_size, 0x1000);
+        assert_eq!(h.base_offset, 0x18);
+        assert_eq!(h.index_offset, 0x5000);
+        assert_eq!(h.file_table_offset, 0x00);
+        assert_eq!(h.dir_table_offset, 0x40);
     }
 }
