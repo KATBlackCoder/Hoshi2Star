@@ -196,6 +196,108 @@ pub fn read_signature(data: &[u8]) -> Result<u8, DecryptorError> {
 }
 
 // ---------------------------------------------------------------------------
+// Step 5 — DXA v6/v8 header (64-bit fields) + CodePage
+// ---------------------------------------------------------------------------
+
+use crate::engines::detector::WolfVersion;
+
+#[allow(dead_code)] // index_size not exposed by read_header; other fields consumed there
+struct DxHeaderV6 {
+    index_size: u32,
+    base_offset: i64,
+    index_offset: i64,
+    file_table_offset: i64,
+    dir_table_offset: i64,
+    code_page: u32,
+}
+
+/// Read and decrypt a DXA v6 or v8 header from raw archive bytes.
+///
+/// The encrypted body occupies `file[0x04..0x2C]` (40 bytes).
+/// v6 and v8 share the same structure — CodePage is at body[0x24] = file[0x28].
+fn read_header_v6(data: &[u8], key: &[u8; 12]) -> Result<DxHeaderV6, DecryptorError> {
+    if data.len() < 0x2C {
+        return Err(DecryptorError::HeaderTooShort);
+    }
+    let mut buf = data[0x04..0x2C].to_vec();
+    key_conv(&mut buf, 4, key);
+
+    let u32_at =
+        |off: usize| u32::from_le_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]]);
+    let i64_at = |off: usize| {
+        i64::from_le_bytes([
+            buf[off],
+            buf[off + 1],
+            buf[off + 2],
+            buf[off + 3],
+            buf[off + 4],
+            buf[off + 5],
+            buf[off + 6],
+            buf[off + 7],
+        ])
+    };
+
+    Ok(DxHeaderV6 {
+        index_size: u32_at(0x00),        // buf[0x00..0x04]
+        base_offset: i64_at(0x04),       // buf[0x04..0x0C]
+        index_offset: i64_at(0x0C),      // buf[0x0C..0x14]
+        file_table_offset: i64_at(0x14), // buf[0x14..0x1C]
+        dir_table_offset: i64_at(0x1C),  // buf[0x1C..0x24]
+        code_page: u32_at(0x24),         // buf[0x24..0x28]  (file[0x28])
+    })
+}
+
+/// Map a DXA CodePage value to a `WolfVersion`.
+///
+/// - `65001` (UTF-8) → v3+ (`major = 3`)
+/// - `932` (Shift-JIS) or `0` (auto/legacy) → v2 (`major = 2`)
+#[allow(dead_code)] // called by detector::guess_wolf_version_from_structure (Step 5 update)
+pub(crate) fn code_page_to_wolf_version(code_page: u32) -> WolfVersion {
+    if code_page == 65001 {
+        WolfVersion { major: 3, minor: 0 }
+    } else {
+        WolfVersion { major: 2, minor: 0 }
+    }
+}
+
+/// Unified header reader — dispatches on version.
+///
+/// Returns `(version, base_offset, index_offset, file_table, dir_table, code_page)`.
+/// `code_page` is `None` for v5 (no CodePage field in 32-bit headers).
+#[allow(clippy::type_complexity)]
+pub fn read_header(
+    data: &[u8],
+    key: &[u8; 12],
+) -> Result<(u8, u64, u64, u64, u64, Option<u32>), DecryptorError> {
+    let version = read_signature(data)?;
+    match version {
+        5 => {
+            let h = read_header_v5(data, key)?;
+            Ok((
+                5,
+                h.base_offset as u64,
+                h.index_offset as u64,
+                h.file_table_offset as u64,
+                h.dir_table_offset as u64,
+                None,
+            ))
+        }
+        6 | 8 => {
+            let h = read_header_v6(data, key)?;
+            Ok((
+                version,
+                h.base_offset as u64,
+                h.index_offset as u64,
+                h.file_table_offset as u64,
+                h.dir_table_offset as u64,
+                Some(h.code_page),
+            ))
+        }
+        _ => unreachable!("read_signature already validated version"),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -309,5 +411,54 @@ mod tests {
         assert_eq!(h.index_offset, 0x5000);
         assert_eq!(h.file_table_offset, 0x00);
         assert_eq!(h.dir_table_offset, 0x40);
+    }
+
+    // --- Step 5: read_header_v6 + CodePage → WolfVersion ---
+
+    fn make_v6_header(key: &[u8; 12], code_page: u32) -> Vec<u8> {
+        let index_size: u32 = 0x2000;
+        let base_offset: i64 = 0x2C;
+        let index_offset: i64 = 0x8000;
+        let file_table: i64 = 0x00;
+        let dir_table: i64 = 0x80;
+
+        let mut body = Vec::with_capacity(40);
+        body.extend_from_slice(&index_size.to_le_bytes()); // 0x00..0x04
+        body.extend_from_slice(&base_offset.to_le_bytes()); // 0x04..0x0C
+        body.extend_from_slice(&index_offset.to_le_bytes()); // 0x0C..0x14
+        body.extend_from_slice(&file_table.to_le_bytes()); // 0x14..0x1C
+        body.extend_from_slice(&dir_table.to_le_bytes()); // 0x1C..0x24
+        body.extend_from_slice(&code_page.to_le_bytes()); // 0x24..0x28
+        key_conv(&mut body, 4, key);
+
+        let mut hdr = vec![b'D', b'X', 6u8, 0u8];
+        hdr.extend_from_slice(&body);
+        hdr
+    }
+
+    #[test]
+    fn test_read_header_v6_synthetic() {
+        let key = [
+            0x38u8, 0x50, 0x40, 0x28, 0x72, 0x4F, 0x21, 0x70, 0x3B, 0x73, 0x35, 0x38,
+        ];
+        let hdr = make_v6_header(&key, 932);
+
+        assert_eq!(read_signature(&hdr).unwrap(), 6);
+        let h = read_header_v6(&hdr, &key).unwrap();
+        assert_eq!(h.base_offset, 0x2C);
+        assert_eq!(h.index_offset, 0x8000);
+        assert_eq!(h.file_table_offset, 0x00);
+        assert_eq!(h.dir_table_offset, 0x80);
+        assert_eq!(h.code_page, 932);
+    }
+
+    #[test]
+    fn test_code_page_932_is_shiftjis() {
+        assert!(!code_page_to_wolf_version(932).is_utf8());
+    }
+
+    #[test]
+    fn test_code_page_65001_is_utf8() {
+        assert!(code_page_to_wolf_version(65001).is_utf8());
     }
 }
