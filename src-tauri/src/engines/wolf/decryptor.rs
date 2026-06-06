@@ -298,6 +298,89 @@ pub fn read_header(
 }
 
 // ---------------------------------------------------------------------------
+// Step 7 — TOC parsing
+// ---------------------------------------------------------------------------
+
+/// Decrypt and parse the DXA index (TOC) block into a list of file entries.
+///
+/// `index_data` is decrypted in place. Entries with the directory attribute
+/// (`attributes & 0x10`) are filtered out — only file entries are returned.
+///
+/// Entry layout (all little-endian):
+/// - v5 (0x2C bytes): u32 name\_offset, u32 attributes, 24 B timestamps,
+///   u32 data\_offset, u32 unpacked\_size, i32 packed\_size
+/// - v6/v8 (0x40 bytes): i64 name\_offset, u64 attributes, 24 B timestamps,
+///   i64 data\_offset, i64 unpacked\_size, i64 packed\_size
+///
+/// `file_table` and `dir_table` are offsets *within the TOC* (not absolute file offsets).
+#[allow(dead_code)] // consumed by extract_all (Step 8)
+pub(crate) fn parse_index(
+    index_data: &mut [u8],
+    key: &[u8; 12],
+    version: u8,
+    index_offset: u64,
+    file_table: u64,
+    dir_table: u64,
+) -> Result<Vec<DxFileEntry>, DecryptorError> {
+    // TOC decryption offset: v5 uses position in archive; v6+ always starts at 0
+    let toc_key_offset = if version <= 5 { index_offset % 12 } else { 0 };
+    key_conv(index_data, toc_key_offset, key);
+
+    let entry_size: usize = if version <= 5 { 0x2C } else { 0x40 };
+    let ft = file_table as usize;
+    let dt = dir_table as usize;
+
+    if dt <= ft || dt > index_data.len() {
+        return Ok(vec![]);
+    }
+    let n_entries = (dt - ft) / entry_size;
+    let mut entries = Vec::with_capacity(n_entries);
+
+    for i in 0..n_entries {
+        let base = ft + i * entry_size;
+        if base + entry_size > index_data.len() {
+            break;
+        }
+
+        let entry = if version <= 5 {
+            let u32_at = |off: usize| -> u32 {
+                u32::from_le_bytes(index_data[base + off..base + off + 4].try_into().unwrap())
+            };
+            let i32_at = |off: usize| -> i32 {
+                i32::from_le_bytes(index_data[base + off..base + off + 4].try_into().unwrap())
+            };
+            DxFileEntry {
+                name_offset: u32_at(0x00) as u64,
+                attributes: u32_at(0x04),
+                data_offset: u32_at(0x20) as u64,
+                unpacked_size: u32_at(0x24) as u64,
+                packed_size: i32_at(0x28) as i64,
+            }
+        } else {
+            let u64_at = |off: usize| -> u64 {
+                u64::from_le_bytes(index_data[base + off..base + off + 8].try_into().unwrap())
+            };
+            let i64_at = |off: usize| -> i64 {
+                i64::from_le_bytes(index_data[base + off..base + off + 8].try_into().unwrap())
+            };
+            DxFileEntry {
+                name_offset: u64_at(0x00),
+                attributes: (u64_at(0x08) & 0xFFFF_FFFF) as u32,
+                data_offset: i64_at(0x28) as u64,
+                unpacked_size: i64_at(0x30) as u64,
+                packed_size: i64_at(0x38),
+            }
+        };
+
+        if !entry.is_dir() {
+            entries.push(entry);
+        }
+    }
+
+    Ok(entries)
+}
+
+// ---------------------------------------------------------------------------
 // Step 6 — GuessKeyV6 (known-plaintext attack on null high bytes)
 // ---------------------------------------------------------------------------
 
@@ -562,5 +645,92 @@ mod tests {
         // 32 bytes < 0x30 — length guard returns None immediately
         let short = vec![0xABu8; 32];
         assert!(guess_key_v6(&short).is_none());
+    }
+
+    // --- Step 7: parse_index ---
+
+    #[test]
+    fn test_parse_index_v5_synthetic() {
+        let key = [0u8; 12]; // zero key → XOR no-op → no encryption
+        let version = 5u8;
+        let index_offset: u64 = 0x5000; // chosen so index_offset % 12 = 0 with this zero key
+
+        // Name table: two null-terminated ASCII names
+        let name_table: Vec<u8> = b"file1.dat\0file2.dat\0".to_vec(); // offsets 0 and 10
+        let file_table = name_table.len() as u64; // 20
+
+        // Two v5 file entries (0x2C bytes each)
+        let mut entries = vec![0u8; 2 * 0x2C];
+        // Entry 0: name=0, attrs=0, data_offset=0, unpacked=100, packed=-1
+        entries[0x00..0x04].copy_from_slice(&0u32.to_le_bytes());
+        entries[0x04..0x08].copy_from_slice(&0u32.to_le_bytes());
+        // timestamps [0x08..0x20] = zeros already
+        entries[0x20..0x24].copy_from_slice(&0u32.to_le_bytes());
+        entries[0x24..0x28].copy_from_slice(&100u32.to_le_bytes());
+        entries[0x28..0x2C].copy_from_slice(&(-1i32).to_le_bytes());
+        // Entry 1: name=10, attrs=0, data_offset=100, unpacked=200, packed=-1
+        let e = 0x2C;
+        entries[e + 0x00..e + 0x04].copy_from_slice(&10u32.to_le_bytes());
+        entries[e + 0x04..e + 0x08].copy_from_slice(&0u32.to_le_bytes());
+        entries[e + 0x20..e + 0x24].copy_from_slice(&100u32.to_le_bytes());
+        entries[e + 0x24..e + 0x28].copy_from_slice(&200u32.to_le_bytes());
+        entries[e + 0x28..e + 0x2C].copy_from_slice(&(-1i32).to_le_bytes());
+
+        let dir_table = file_table + entries.len() as u64;
+        let mut toc = name_table;
+        toc.extend_from_slice(&entries);
+
+        let result =
+            parse_index(&mut toc, &key, version, index_offset, file_table, dir_table).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].name_offset, 0);
+        assert_eq!(result[0].unpacked_size, 100);
+        assert_eq!(result[0].packed_size, -1);
+        assert_eq!(result[1].name_offset, 10);
+        assert_eq!(result[1].data_offset, 100);
+        assert_eq!(result[1].unpacked_size, 200);
+    }
+
+    #[test]
+    fn test_parse_index_v6_synthetic() {
+        let key = [0u8; 12]; // zero key → XOR no-op
+        let version = 6u8;
+        let index_offset: u64 = 0; // v6 offset is always 0 for key_conv
+
+        let name_table: Vec<u8> = b"alpha.dat\0beta.bin\0".to_vec(); // offsets 0 and 10
+        let file_table = name_table.len() as u64; // 19
+
+        // Two v6/v8 file entries (0x40 bytes each)
+        let mut entries = vec![0u8; 2 * 0x40];
+        // Entry 0: name=0, attrs=0, data_offset=0, unpacked=500, packed=-1
+        entries[0x00..0x08].copy_from_slice(&0i64.to_le_bytes()); // name_offset
+        entries[0x08..0x10].copy_from_slice(&0u64.to_le_bytes()); // attributes
+                                                                  // timestamps [0x10..0x28] = zeros
+        entries[0x28..0x30].copy_from_slice(&0i64.to_le_bytes()); // data_offset
+        entries[0x30..0x38].copy_from_slice(&500i64.to_le_bytes()); // unpacked_size
+        entries[0x38..0x40].copy_from_slice(&(-1i64).to_le_bytes()); // packed_size
+                                                                     // Entry 1: name=10, attrs=0, data_offset=500, unpacked=1000, packed=-1
+        let e = 0x40;
+        entries[e + 0x00..e + 0x08].copy_from_slice(&10i64.to_le_bytes());
+        entries[e + 0x08..e + 0x10].copy_from_slice(&0u64.to_le_bytes());
+        entries[e + 0x28..e + 0x30].copy_from_slice(&500i64.to_le_bytes());
+        entries[e + 0x30..e + 0x38].copy_from_slice(&1000i64.to_le_bytes());
+        entries[e + 0x38..e + 0x40].copy_from_slice(&(-1i64).to_le_bytes());
+
+        let dir_table = file_table + entries.len() as u64;
+        let mut toc = name_table;
+        toc.extend_from_slice(&entries);
+
+        let result =
+            parse_index(&mut toc, &key, version, index_offset, file_table, dir_table).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].name_offset, 0);
+        assert_eq!(result[0].unpacked_size, 500);
+        assert_eq!(result[0].packed_size, -1);
+        assert_eq!(result[1].name_offset, 10);
+        assert_eq!(result[1].data_offset, 500);
+        assert_eq!(result[1].unpacked_size, 1000);
     }
 }
