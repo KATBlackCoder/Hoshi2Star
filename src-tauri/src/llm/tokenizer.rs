@@ -42,6 +42,48 @@ static RE_MVMZ: LazyLock<Regex> = LazyLock::new(|| {
     .expect("RE_MVMZ regex must compile")
 });
 
+/// Wolf RPG placeholder patterns — ordered by specificity (longest prefix first).
+///
+/// Priority order (must not be changed):
+///   1. `\r[Base,Ruby]`       — ruby annotation (opaque, contains comma)
+///   2. DB refs `\udb/cdb/sdb[\d+:\d+:\d+]` — before simple codes
+///   3. `\sysS[n]`            — before `\sys[n]` (longer prefix)
+///   4. `\cself[n]`           — before `\self[n]` (longer prefix)
+///   5. `\self[n]`, `\sys[n]` — event/system variables
+///   6. `\space[n]`           — before `\sp[n]` (longer prefix)
+///   7. `\v?[n]`              — reserve variable (? is literal in Wolf)
+///   8. `\sp/mx/my/ax/ay[n]`, `\-[n]`, `\font[n]` — multi-char codes
+///   9. `\v/c/s/f/i[n]` (maj+min) — standard codes
+///  10. `\m[n]`               — max line (m excluded from group 9 to avoid duplication with \f)
+///  11. `<L>/<C>/<R>`         — alignment tags
+///  12. `\A+`, `\A-`          — anti-aliasing
+///  13. `\E \N \\ \! \. \^ \> \<` — no-arg display control codes
+///  14. `\n`                  — literal newline
+static RE_WOLF: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?x)
+          \\r\[[^\[\],]+,[^\[\]]*\]           # \r[Base,Ruby] — ruby opaque (PREMIER)
+        | \\(?:udb|cdb|sdb)\[\d+:\d+:\d+\]   # DB refs 3 params (avant codes simples)
+        | \\sysS\[\d+\]                        # system string (avant \sys)
+        | \\cself\[\d{1,2}\]                   # common-event self (avant \self)
+        | \\self\[\d\]                         # self variable événement
+        | \\sys\[\d+\]                         # system variable
+        | \\space\[\d+\]                       # line height (avant \sp)
+        | \\v\?\[\d+\]                         # reserve variable \v?[n]
+        | \\(?:sp|mx|my|ax|ay)\[\d+\]          # speed/offset codes
+        | \\-\[\d+\]                           # pixel spacing
+        | \\font\[\d\]                         # sub-font
+        | \\[vcsfiVCSFI]\[\d+\]                # standard codes v/c/s/f/i (maj+min)
+        | \\m\[\d+\]                           # max line (\m[n])
+        | <[LCR]>                              # alignment tags
+        | \\A[+\-]                             # anti-aliasing on/off
+        | \\[EN\\!.^><]                        # no-arg codes: \E \N \\ \! \. \^ \> \<
+        | \n                                   # literal newline
+        ",
+    )
+    .expect("RE_WOLF regex must compile")
+});
+
 /// MZ-only: Groupe C (before A!) + Groupe A + Groupe B + Groupe D (MZ bare `%n` form) + Groupe E.
 /// Groupe C MUST come before Groupe A to prevent `\P` from consuming `\PX`/`\PY`/`\FS`.
 static RE_MZONLY: LazyLock<Regex> = LazyLock::new(|| {
@@ -66,12 +108,15 @@ static RE_MZONLY: LazyLock<Regex> = LazyLock::new(|| {
 ///
 /// - `MvMz`   — Patterns A + B + D(`[%n]`). Use for MV games and MZ dialogue.
 /// - `MzOnly` — Patterns C + A + B + D(`%n`). Use for MZ `System.json > terms` only.
+/// - `Wolf`   — Wolf RPG specific patterns (ruby, DB refs, sys vars, alignment).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Engine {
     /// RPG Maker MV *or* MZ dialogue files — patterns A, B, D[%n]
     MvMz,
     /// MZ `System.json > terms` — patterns C, A, B, D[%n bare]
     MzOnly,
+    /// Wolf RPG — ruby, DB refs, sys/self vars, alignment, display control
+    Wolf,
 }
 
 /// Map from token (`⟦ph_0⟧`) to original placeholder (`\V[12]`).
@@ -109,6 +154,7 @@ impl Tokenizer {
         let re = match engine {
             Engine::MvMz => &*RE_MVMZ,
             Engine::MzOnly => &*RE_MZONLY,
+            Engine::Wolf => &*RE_WOLF,
         };
 
         let mut map = PlaceholderMap::new();
