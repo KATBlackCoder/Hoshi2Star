@@ -123,12 +123,66 @@ pub fn find_wolf_data_dir(game_dir: &Path) -> Option<std::path::PathBuf> {
     candidates.into_iter().find(|p| p.is_dir())
 }
 
-/// Guess the Wolf RPG version from the game directory structure.
+/// Detect the Wolf RPG version by reading the CodePage field from the first `.wolf` archive.
 ///
-/// Returns a conservative default of v2.0 (Shift-JIS encoding).
-/// TODO(F4-02): read exact version from DXA header CodePage field.
-pub fn guess_wolf_version_from_structure(_game_dir: &Path) -> WolfVersion {
-    WolfVersion { major: 2, minor: 0 }
+/// Tries plaintext headers first (e.g. Honoka), then cycles through known XOR keys.
+/// Falls back to v2.0 (Shift-JIS) on any failure.
+pub fn guess_wolf_version_from_structure(game_dir: &Path) -> WolfVersion {
+    try_detect_wolf_version_from_dxa(game_dir).unwrap_or(WolfVersion { major: 2, minor: 0 })
+}
+
+fn find_first_wolf_file(game_dir: &Path) -> Option<std::path::PathBuf> {
+    // Fully-packed single-archive distribution (e.g. Honoka Data.wolf at root)
+    let root_wolf = game_dir.join("Data.wolf");
+    if root_wolf.exists() {
+        return Some(root_wolf);
+    }
+    // Multi-archive layout: Data/*.wolf
+    let data_dir = find_wolf_data_dir(game_dir)?;
+    std::fs::read_dir(&data_dir).ok()?.find_map(|e| {
+        let path = e.ok()?.path();
+        if path.extension()?.to_str()? == "wolf" {
+            Some(path)
+        } else {
+            None
+        }
+    })
+}
+
+fn try_detect_wolf_version_from_dxa(game_dir: &Path) -> Option<WolfVersion> {
+    use crate::engines::wolf::decryptor::{
+        code_page_to_wolf_version, read_header, read_signature, WOLF_KEYS,
+    };
+
+    let path = find_first_wolf_file(game_dir)?;
+    let data = std::fs::read(&path).ok()?;
+
+    // Check signature; v5 has no CodePage field — fall through to default v2.
+    let version = read_signature(&data).ok()?;
+    if version < 6 {
+        return None;
+    }
+
+    if data.len() < 0x2C {
+        return None;
+    }
+
+    // Step A: try reading code_page directly (plaintext header, e.g. Honoka)
+    let cp_raw = u32::from_le_bytes([data[0x28], data[0x29], data[0x2A], data[0x2B]]);
+    if matches!(cp_raw, 0 | 932 | 65001) {
+        return Some(code_page_to_wolf_version(cp_raw));
+    }
+
+    // Step B: try each known XOR key
+    for &(_, key) in WOLF_KEYS {
+        if let Ok((_, _, _, _, _, Some(cp))) = read_header(&data, &key) {
+            if matches!(cp, 0 | 932 | 65001) {
+                return Some(code_page_to_wolf_version(cp));
+            }
+        }
+    }
+
+    None
 }
 
 /// Returns `true` if the directory looks like a Wolf RPG game root.
