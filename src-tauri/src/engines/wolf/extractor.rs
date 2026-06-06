@@ -1,4 +1,9 @@
 // Wolf RPG text extractor — F4-03 implementation.
+// helpers load_wolf_archive / find_wolf_file / load_mps_files become used in Step 4+
+#![allow(dead_code)]
+
+use super::decryptor::{extract_all, WolfFile};
+use std::path::Path;
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -53,4 +58,57 @@ pub enum WolfSegmentKind {
         entry_idx: usize,
         field_name: String,
     },
+}
+
+// ---------------------------------------------------------------------------
+// File access helpers
+// ---------------------------------------------------------------------------
+
+/// Decrypt a `.wolf` DXA archive and return its file entries.
+pub(crate) fn load_wolf_archive(archive_path: &Path) -> Result<Vec<WolfFile>, ExtractorError> {
+    let data = std::fs::read(archive_path)?;
+    let archive = extract_all(&data)?;
+    Ok(archive.files)
+}
+
+/// Find a file in a decrypted archive by name (case-insensitive).
+pub(crate) fn find_wolf_file<'a>(files: &'a [WolfFile], name: &str) -> Option<&'a WolfFile> {
+    let lower = name.to_lowercase();
+    files.iter().find(|f| f.name.to_lowercase() == lower)
+}
+
+/// Collect `.mps` files from `Data/MapData/` (unencrypted layout).
+///
+/// Returns `Vec<(stem_name, raw_bytes)>`. If no `.mps` files are found in the
+/// directory the function returns `Err` — encrypted Wolf archives are handled
+/// by F4-05 integration.
+pub(crate) fn load_mps_files(
+    game_dir: &Path,
+    _version: &crate::engines::detector::WolfVersion,
+) -> Result<Vec<(String, Vec<u8>)>, ExtractorError> {
+    let map_dir = game_dir.join("Data").join("MapData");
+    if map_dir.exists() {
+        let mut result = Vec::new();
+        for entry in std::fs::read_dir(&map_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("mps") {
+                let name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let bytes = std::fs::read(&path)?;
+                result.push((name, bytes));
+            }
+        }
+        if !result.is_empty() {
+            return Ok(result);
+        }
+    }
+    // Encrypted .wolf archives: deferred to F4-05 integration.
+    Err(ExtractorError::Io(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        "No .mps files found in Data/MapData/ — encrypted Wolf archives not yet supported in F4-03",
+    )))
 }
