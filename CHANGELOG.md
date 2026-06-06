@@ -6,6 +6,12 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 ## [Unreleased]
 
 ### Added
+- Add Wolf RPG DXA decryptor `extract_all()` — complete archive extraction pipeline (v5/v6/v8): key discovery via WOLF_KEYS table or GuessKeyV6, header decrypt, TOC parse, per-file XOR decrypt; returns `WolfArchive` with decoded filenames
+- Add `guess_key_v6()` — automatic XOR key recovery from null high bytes of 64-bit header fields (known-plaintext attack); validates via dual cross-check + index_size plausibility
+- Add `parse_index()` — DXA TOC parser for v5 (32-bit, 0x2C entries) and v6/v8 (64-bit, 0x40 entries); decrypts in place, filters directory entries
+- Add Wolf RPG XOR-12 key table — hardcoded keys for v2.01, v2.10, v2.20, v2.255 (Honoka), and `no_key` constant
+- Add `key_conv()` — symmetric XOR-12 decryption/encryption; handles Wolf RPG offset bug (file data uses `unpacked_size` as key offset)
+- Add Wolf RPG DXA v5/v6/v8 header parsing — `read_header()` unified reader; CodePage detection maps 932→Shift-JIS (v2), 65001→UTF-8 (v3+)
 - Add Wolf RPG engine detection (`Engine::Wolf`) — detects `Game.exe`/`Game.ini` + `BasicData/` or `Data/*.wolf` or `Data/MapData/*.mps`
 - Add `WolfVersion` struct with `is_utf8()` — v2=Shift-JIS, v3+=UTF-8; `guess_wolf_version_from_structure()` defaults to v2.0 (TODO F4-02: read DXA CodePage)
 - Add `find_wolf_data_dir()` — tries `Data/` (Windows) then `data/` (Linux fallback)

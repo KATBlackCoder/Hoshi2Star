@@ -240,7 +240,7 @@
 ### Engine Layer — Wolf RPG v1/v2
 - [-] Intégration `rewolf-trans` (TypeScript) via sidecar Tauri ou bindings WASM — rejeté, approche Rust natif retenue
 - [x] F4-01 : Engine::Wolf détection + WolfVersion + RE_WOLF tokenizer + engines/wolf/ scaffold
-- [ ] F4-02 `src-tauri/src/engines/wolf/decryptor.rs` — décryptage `.wolf` (DXA XOR v5/v6/v8)
+- [x] F4-02 `src-tauri/src/engines/wolf/decryptor.rs` — décryptage `.wolf` (DXA XOR v5/v6/v8)
 - [ ] F4-03 `src-tauri/src/engines/wolf/extractor.rs` — lecture `.mps` + `.dat`
 - [ ] F4-04 `src-tauri/src/engines/wolf/injector.rs` — réécriture + repack `.wolf`
 - [ ] Tests round-trip Wolf v1/v2
