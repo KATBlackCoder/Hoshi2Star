@@ -46,7 +46,12 @@ pub fn detect_engine(game_dir: &Path) -> Result<Engine, DetectionError> {
         }
     }
 
-    // 2. VX Ace détection désactivée temporairement —
+    // 2. Wolf RPG — Game.exe/Game.ini + BasicData/ or .wolf/.mps files
+    if is_wolf_game_dir(game_dir) {
+        return Ok(Engine::Wolf);
+    }
+
+    // 3. VX Ace détection désactivée temporairement —
     //    code conservé dans engines/vx_ace/ pour réactivation future.
     //    Priorité actuelle : Wolf RPG (F4).
     //    Réactiver en décommentant ce bloc quand VX Ace sera
@@ -281,5 +286,75 @@ mod tests {
 
         let result = detect_engine(dir.path());
         assert!(matches!(result, Err(DetectionError::UnknownEngine)));
+    }
+
+    // --- Wolf RPG detection ---
+
+    #[test]
+    fn test_detect_wolf_with_game_exe_and_basic_data() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Game.exe"), b"mock").unwrap();
+        std::fs::create_dir(dir.path().join("BasicData")).unwrap();
+
+        let engine = detect_engine(dir.path()).unwrap();
+        assert_eq!(engine, Engine::Wolf);
+    }
+
+    #[test]
+    fn test_detect_wolf_with_game_exe_and_wolf_archives() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Game.exe"), b"mock").unwrap();
+        let data_dir = dir.path().join("Data");
+        std::fs::create_dir(&data_dir).unwrap();
+        std::fs::write(data_dir.join("BasicData.wolf"), b"mock").unwrap();
+
+        let engine = detect_engine(dir.path()).unwrap();
+        assert_eq!(engine, Engine::Wolf);
+    }
+
+    #[test]
+    fn test_detect_wolf_with_game_ini() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Game.ini"), b"[Config]\nTitle=Test").unwrap();
+        std::fs::create_dir(dir.path().join("BasicData")).unwrap();
+
+        let engine = detect_engine(dir.path()).unwrap();
+        assert_eq!(engine, Engine::Wolf);
+    }
+
+    #[test]
+    fn test_detect_wolf_no_launcher() {
+        // BasicData/ alone without Game.exe → UnknownEngine
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("BasicData")).unwrap();
+
+        let result = detect_engine(dir.path());
+        assert!(matches!(result, Err(DetectionError::UnknownEngine)));
+    }
+
+    #[test]
+    fn test_detect_mv_not_confused_with_wolf() {
+        // data/System.json with gameTitle → MvMz even if Game.exe + BasicData present
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        std::fs::write(data_dir.join("System.json"), r#"{"gameTitle": "MV Game"}"#).unwrap();
+        std::fs::write(dir.path().join("Game.exe"), b"mock").unwrap();
+        std::fs::create_dir(dir.path().join("BasicData")).unwrap();
+
+        // MV/MZ is checked first — must win
+        let engine = detect_engine(dir.path()).unwrap();
+        assert_eq!(engine, Engine::MvMz);
+    }
+
+    #[test]
+    fn test_detect_wolf_not_confused_with_mv() {
+        // Game.exe + BasicData/ but NO data/System.json → Wolf
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Game.exe"), b"mock").unwrap();
+        std::fs::create_dir(dir.path().join("BasicData")).unwrap();
+
+        let engine = detect_engine(dir.path()).unwrap();
+        assert_eq!(engine, Engine::Wolf);
     }
 }
