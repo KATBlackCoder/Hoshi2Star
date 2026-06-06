@@ -135,13 +135,20 @@ pub fn guess_wolf_version_from_structure(_game_dir: &Path) -> WolfVersion {
 ///
 /// Criteria:
 ///   - `Game.exe` OR `Game.ini` present at root
-///   - AND (`BasicData/` directory OR `Data/*.wolf` OR `Data/MapData/*.mps`)
+///   - AND one of:
+///     - `BasicData/` directory (unpacked, old layout)
+///     - `Data.wolf` file at root (fully-packed single-archive distribution)
+///     - `Data/*.wolf` files (unpacked multi-archive layout)
+///     - `Data/MapData/*.mps` files (unpacked map data)
 pub fn is_wolf_game_dir(game_dir: &Path) -> bool {
     let has_launcher = game_dir.join("Game.exe").exists() || game_dir.join("Game.ini").exists();
     if !has_launcher {
         return false;
     }
-    game_dir.join("BasicData").is_dir() || has_wolf_archives(game_dir) || has_mps_files(game_dir)
+    game_dir.join("BasicData").is_dir()
+        || game_dir.join("Data.wolf").exists()
+        || has_wolf_archives(game_dir)
+        || has_mps_files(game_dir)
 }
 
 fn has_wolf_archives(game_dir: &Path) -> bool {
@@ -340,6 +347,17 @@ mod tests {
         let data_dir = dir.path().join("Data");
         std::fs::create_dir(&data_dir).unwrap();
         std::fs::write(data_dir.join("BasicData.wolf"), b"mock").unwrap();
+
+        let engine = detect_engine(dir.path()).unwrap();
+        assert_eq!(engine, Engine::Wolf);
+    }
+
+    #[test]
+    fn test_detect_wolf_with_root_data_wolf_archive() {
+        // Fully-packed distribution: single Data.wolf at root (no Data/ subdirectory)
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Game.exe"), b"mock").unwrap();
+        std::fs::write(dir.path().join("Data.wolf"), b"mock").unwrap();
 
         let engine = detect_engine(dir.path()).unwrap();
         assert_eq!(engine, Engine::Wolf);
