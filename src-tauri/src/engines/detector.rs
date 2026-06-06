@@ -98,6 +98,39 @@ pub fn is_vx_ace_data_dir(dir: &Path) -> bool {
     dir.join("System.rvdata2").exists()
 }
 
+/// Wolf RPG engine version.
+///
+/// Determines the text encoding used during extraction and injection.
+/// v2 and below use Shift-JIS (cp932); v3+ use UTF-8.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WolfVersion {
+    pub major: u8,
+    pub minor: u8,
+}
+
+impl WolfVersion {
+    pub fn is_utf8(&self) -> bool {
+        self.major >= 3
+    }
+}
+
+/// Find the Wolf RPG `Data/` directory in a game folder.
+///
+/// Wolf RPG uses `Data/` (capital D, Windows convention).
+/// Tries `Data/` first, then `data/` as a Linux case-insensitive fallback.
+pub fn find_wolf_data_dir(game_dir: &Path) -> Option<std::path::PathBuf> {
+    let candidates = [game_dir.join("Data"), game_dir.join("data")];
+    candidates.into_iter().find(|p| p.is_dir())
+}
+
+/// Guess the Wolf RPG version from the game directory structure.
+///
+/// Returns a conservative default of v2.0 (Shift-JIS encoding).
+/// TODO(F4-02): read exact version from DXA header CodePage field.
+pub fn guess_wolf_version_from_structure(_game_dir: &Path) -> WolfVersion {
+    WolfVersion { major: 2, minor: 0 }
+}
+
 /// Returns `true` if the directory looks like a Wolf RPG game root.
 ///
 /// Criteria:
@@ -356,5 +389,37 @@ mod tests {
 
         let engine = detect_engine(dir.path()).unwrap();
         assert_eq!(engine, Engine::Wolf);
+    }
+
+    // --- WolfVersion ---
+
+    #[test]
+    fn test_wolf_version_is_utf8() {
+        assert!(WolfVersion { major: 3, minor: 0 }.is_utf8());
+        assert!(WolfVersion { major: 4, minor: 0 }.is_utf8());
+    }
+
+    #[test]
+    fn test_wolf_version_is_shiftjis() {
+        assert!(!WolfVersion { major: 2, minor: 0 }.is_utf8());
+        assert!(!WolfVersion { major: 1, minor: 0 }.is_utf8());
+    }
+
+    #[test]
+    fn test_find_wolf_data_dir_capital_d() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("Data")).unwrap();
+
+        let result = find_wolf_data_dir(dir.path()).unwrap();
+        assert_eq!(result, dir.path().join("Data"));
+    }
+
+    #[test]
+    fn test_find_wolf_data_dir_lowercase_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("data")).unwrap();
+
+        let result = find_wolf_data_dir(dir.path()).unwrap();
+        assert_eq!(result, dir.path().join("data"));
     }
 }
