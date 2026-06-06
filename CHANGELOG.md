@@ -3,6 +3,16 @@
 All notable changes to Hoshi2Star will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Added
+- Add Wolf RPG engine detection (`Engine::Wolf`) — detects `Game.exe`/`Game.ini` + `BasicData/` or `Data/*.wolf` or `Data/MapData/*.mps`
+- Add `WolfVersion` struct with `is_utf8()` — v2=Shift-JIS, v3+=UTF-8; `guess_wolf_version_from_structure()` defaults to v2.0 (TODO F4-02: read DXA CodePage)
+- Add `find_wolf_data_dir()` — tries `Data/` (Windows) then `data/` (Linux fallback)
+- Add `Engine::Wolf` tokenizer mode with Wolf RPG placeholder patterns: `\r[Base,Ruby]` ruby, DB refs `\udb/\cdb/\sdb`, `\sysS/\sys/\self/\cself`, `\space/\v?[n]`, multi-char codes, standard `\v/c/s/f/i`, `\m[n]`, alignment `<L>/<C>/<R>`, `\A+/\A-`, no-arg display control codes — 11 unit tests
+- Add `engines/wolf/` module scaffold with empty stubs for `decryptor.rs`, `extractor.rs`, `injector.rs`
+- Add `encoding_rs = "0.8"` and `wolfrpg-map-parser = "0.6"` to Cargo dependencies
+
 ## [0.3.2] - 2026-06-05
 
 ### Added
