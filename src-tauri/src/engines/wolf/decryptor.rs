@@ -19,6 +19,8 @@ pub enum DecryptorError {
     HeaderTooShort,
     #[error("cannot guess key (header fields not null)")]
     CannotGuessKey,
+    #[error("LZSS compressed entries are not supported in F4 (packed_size > 0)")]
+    UnsupportedCompression,
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -45,7 +47,6 @@ pub struct WolfArchive {
 
 /// Parsed DXA file entry (one file inside the archive).
 /// Fields vary between v5 (32-bit) and v6/v8 (64-bit).
-#[allow(dead_code)] // instantiated in Step 7 (parse_index)
 #[derive(Debug, Clone)]
 pub(crate) struct DxFileEntry {
     pub name_offset: u64,
@@ -55,7 +56,6 @@ pub(crate) struct DxFileEntry {
     pub packed_size: i64, // -1 = uncompressed
 }
 
-#[allow(dead_code)] // used in Step 7/8 (parse_index, extract_all)
 impl DxFileEntry {
     pub fn is_dir(&self) -> bool {
         self.attributes & 0x10 != 0
@@ -130,7 +130,6 @@ pub fn known_key(version_hint: Option<&str>) -> Option<[u8; 12]> {
 /// Symmetric: applying twice restores the original. Used for both encrypt and decrypt.
 ///
 /// `offset` = position of `data[0]` in the DXA archive (determines the key start position).
-#[allow(dead_code)] // called by read_header_v5/v6 (Step 4/5) and extract_all (Step 8)
 pub(crate) fn key_conv(data: &mut [u8], offset: u64, key: &[u8; 12]) {
     // Wolf RPG bug: file data decryption offset = unpacked_size % 12
     // NOT the file position in the archive.
@@ -149,7 +148,6 @@ pub(crate) fn key_conv(data: &mut [u8], offset: u64, key: &[u8; 12]) {
 // Step 4 — DXA v5 header (32-bit fields)
 // ---------------------------------------------------------------------------
 
-#[allow(dead_code)] // consumed by read_header (Step 5)
 struct DxHeaderV5 {
     index_size: u32,
     base_offset: u32,
@@ -161,7 +159,6 @@ struct DxHeaderV5 {
 /// Read and decrypt a DXA v5 header from raw archive bytes.
 ///
 /// The encrypted body occupies `file[0x04..0x18]` (20 bytes, five u32 fields).
-#[allow(dead_code)] // called by read_header (Step 5)
 fn read_header_v5(data: &[u8], key: &[u8; 12]) -> Result<DxHeaderV5, DecryptorError> {
     if data.len() < 0x18 {
         return Err(DecryptorError::HeaderTooShort);
@@ -201,7 +198,6 @@ pub fn read_signature(data: &[u8]) -> Result<u8, DecryptorError> {
 
 use crate::engines::detector::WolfVersion;
 
-#[allow(dead_code)] // index_size not exposed by read_header; other fields consumed there
 struct DxHeaderV6 {
     index_size: u32,
     base_offset: i64,
@@ -251,7 +247,6 @@ fn read_header_v6(data: &[u8], key: &[u8; 12]) -> Result<DxHeaderV6, DecryptorEr
 ///
 /// - `65001` (UTF-8) → v3+ (`major = 3`)
 /// - `932` (Shift-JIS) or `0` (auto/legacy) → v2 (`major = 2`)
-#[allow(dead_code)] // called by detector::guess_wolf_version_from_structure (Step 5 update)
 pub(crate) fn code_page_to_wolf_version(code_page: u32) -> WolfVersion {
     if code_page == 65001 {
         WolfVersion { major: 3, minor: 0 }
@@ -313,7 +308,6 @@ pub fn read_header(
 ///   i64 data\_offset, i64 unpacked\_size, i64 packed\_size
 ///
 /// `file_table` and `dir_table` are offsets *within the TOC* (not absolute file offsets).
-#[allow(dead_code)] // consumed by extract_all (Step 8)
 pub(crate) fn parse_index(
     index_data: &mut [u8],
     key: &[u8; 12],
@@ -434,6 +428,150 @@ pub fn guess_key_v6(raw_header: &[u8]) -> Option<[u8; 12]> {
     }
 
     Some(key)
+}
+
+// ---------------------------------------------------------------------------
+// Step 8 — extract_all helpers
+// ---------------------------------------------------------------------------
+
+/// Check whether a candidate key produces a plausible decrypted header.
+fn is_valid_key(data: &[u8], version: u8, key: &[u8; 12]) -> bool {
+    if version <= 5 {
+        if data.len() < 0x18 {
+            return false;
+        }
+        let mut buf = data[0x04..0x18].to_vec();
+        key_conv(&mut buf, 4, key);
+        let index_size = u32::from_le_bytes(buf[0..4].try_into().unwrap());
+        index_size < 0x0100_0000
+    } else {
+        if data.len() < 0x2C {
+            return false;
+        }
+        let mut buf = data[0x04..0x2C].to_vec();
+        key_conv(&mut buf, 4, key);
+        let index_size = u32::from_le_bytes(buf[0..4].try_into().unwrap());
+        let code_page = u32::from_le_bytes(buf[0x24..0x28].try_into().unwrap());
+        index_size < 0x0100_0000 && (code_page == 0 || code_page == 932 || code_page == 65001)
+    }
+}
+
+/// Try each known Wolf key then GuessKeyV6; return first that validates.
+fn find_key(data: &[u8], version: u8) -> Result<[u8; 12], DecryptorError> {
+    for &(_, key) in WOLF_KEYS {
+        if is_valid_key(data, version, &key) {
+            return Ok(key);
+        }
+    }
+    if let Some(key) = guess_key_v6(data) {
+        return Ok(key);
+    }
+    Err(DecryptorError::CannotGuessKey)
+}
+
+/// Read only the `index_size` field from the decrypted header (without returning all fields).
+fn read_index_size(data: &[u8], key: &[u8; 12]) -> Result<u64, DecryptorError> {
+    let version = read_signature(data)?;
+    if version <= 5 {
+        Ok(read_header_v5(data, key)?.index_size as u64)
+    } else {
+        Ok(read_header_v6(data, key)?.index_size as u64)
+    }
+}
+
+/// Decode a null-terminated byte slice from the TOC name table into a UTF-8 `String`.
+fn decode_name(raw: &[u8], code_page: u32) -> String {
+    if code_page == 65001 {
+        String::from_utf8_lossy(raw).into_owned()
+    } else {
+        let (decoded, _, _) = encoding_rs::SHIFT_JIS.decode(raw);
+        decoded.into_owned()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Step 8 — extract_all (complete DXA extraction pipeline)
+// ---------------------------------------------------------------------------
+
+/// Extract all files from a raw DXA archive (`.wolf` file bytes).
+///
+/// Sequence:
+/// 1. Verify `"DX"` signature and supported version.
+/// 2. Discover the XOR key: try `WOLF_KEYS` table, then `guess_key_v6`.
+/// 3. Decrypt and read the archive header.
+/// 4. Decrypt and parse the TOC (file/directory tables).
+/// 5. For each non-directory entry: decrypt file bytes and decode the filename.
+///
+/// Returns `Err(UnsupportedCompression)` if any entry has `packed_size > 0`
+/// (LZSS compressed). LZSS support is deferred to a post-F4 phase.
+pub fn extract_all(data: &[u8]) -> Result<WolfArchive, DecryptorError> {
+    // Step 1 — signature check
+    let version = read_signature(data)?;
+
+    // Step 2 — key discovery
+    let key = find_key(data, version)?;
+
+    // Step 3 — read header (offsets, code_page)
+    let (_, base_offset, index_offset, file_table, dir_table, code_page) = read_header(data, &key)?;
+    let index_size = read_index_size(data, &key)?;
+
+    // Step 4 — extract and decrypt TOC
+    let toc_start = index_offset as usize;
+    let toc_end = toc_start + index_size as usize;
+    if toc_end > data.len() {
+        return Err(DecryptorError::HeaderTooShort);
+    }
+    let mut toc_data = data[toc_start..toc_end].to_vec();
+
+    // parse_index decrypts toc_data in place; toc_data is readable after the call
+    let entries = parse_index(
+        &mut toc_data,
+        &key,
+        version,
+        index_offset,
+        file_table,
+        dir_table,
+    )?;
+
+    // Step 5 — extract and decrypt each file
+    let code_page_val = code_page.unwrap_or(932);
+    let mut files = Vec::with_capacity(entries.len());
+
+    for entry in &entries {
+        if entry.is_compressed() {
+            // LZSS not implemented in F4 — none of the targeted test archives use it
+            return Err(DecryptorError::UnsupportedCompression);
+        }
+
+        let start = base_offset as usize + entry.data_offset as usize;
+        let len = entry.unpacked_size as usize;
+        if start.saturating_add(len) > data.len() {
+            return Err(DecryptorError::HeaderTooShort);
+        }
+        let mut file_data = data[start..start + len].to_vec();
+        // Wolf RPG bug: decryption offset = unpacked_size, not archive position
+        key_conv(&mut file_data, entry.unpacked_size, &key);
+
+        // Decode filename: null-terminated at toc_data[name_offset..]
+        let ns = entry.name_offset as usize;
+        let name_len = toc_data[ns..]
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(toc_data.len().saturating_sub(ns));
+        let name = decode_name(&toc_data[ns..ns + name_len], code_page_val);
+
+        files.push(WolfFile {
+            name,
+            data: file_data,
+            unpacked_size: entry.unpacked_size,
+        });
+    }
+
+    Ok(WolfArchive {
+        version,
+        code_page,
+        files,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -732,5 +870,186 @@ mod tests {
         assert_eq!(result[1].name_offset, 10);
         assert_eq!(result[1].data_offset, 500);
         assert_eq!(result[1].unpacked_size, 1000);
+    }
+
+    // --- Step 8: extract_all ---
+
+    /// Build a minimal DXA v5 archive with a single uncompressed file.
+    ///
+    /// Layout: header (0x18 B) | encrypted file data | encrypted TOC
+    fn make_v5_archive(key: &[u8; 12], file_name: &str, content: &[u8]) -> Vec<u8> {
+        let unpacked_size = content.len() as u32;
+
+        // Name table: file_name + null terminator
+        let mut name_table = file_name.as_bytes().to_vec();
+        name_table.push(0);
+        let file_table: u32 = name_table.len() as u32;
+
+        // v5 file entry (0x2C bytes)
+        let mut entry = vec![0u8; 0x2C];
+        entry[0x00..0x04].copy_from_slice(&0u32.to_le_bytes()); // name_offset = 0
+        entry[0x04..0x08].copy_from_slice(&0u32.to_le_bytes()); // attributes = 0
+                                                                // timestamps [0x08..0x20] = zeros
+        entry[0x20..0x24].copy_from_slice(&0u32.to_le_bytes()); // data_offset = 0
+        entry[0x24..0x28].copy_from_slice(&unpacked_size.to_le_bytes());
+        entry[0x28..0x2C].copy_from_slice(&(-1i32).to_le_bytes()); // packed_size = -1
+
+        let dir_table: u32 = file_table + 0x2C;
+
+        // Build plaintext TOC
+        let mut toc = name_table;
+        toc.extend_from_slice(&entry);
+        let index_size: u32 = toc.len() as u32;
+
+        // Archive layout offsets
+        let base_offset: u32 = 0x18; // v5 header = 4 sig + 20 body
+        let index_offset: u32 = base_offset + content.len() as u32;
+
+        // Encrypt header body (file[0x04..0x18])
+        let mut hdr_body = vec![0u8; 20];
+        hdr_body[0x00..0x04].copy_from_slice(&index_size.to_le_bytes());
+        hdr_body[0x04..0x08].copy_from_slice(&base_offset.to_le_bytes());
+        hdr_body[0x08..0x0C].copy_from_slice(&index_offset.to_le_bytes());
+        hdr_body[0x0C..0x10].copy_from_slice(&file_table.to_le_bytes());
+        hdr_body[0x10..0x14].copy_from_slice(&dir_table.to_le_bytes());
+        key_conv(&mut hdr_body, 4, key);
+
+        // Encrypt file data (Wolf bug: offset = unpacked_size)
+        let mut file_data = content.to_vec();
+        key_conv(&mut file_data, unpacked_size as u64, key);
+
+        // Encrypt TOC (v5: key offset = index_offset % 12)
+        key_conv(&mut toc, index_offset as u64 % 12, key);
+
+        let mut archive = vec![b'D', b'X', 5u8, 0u8];
+        archive.extend_from_slice(&hdr_body);
+        archive.extend_from_slice(&file_data);
+        archive.extend_from_slice(&toc);
+        archive
+    }
+
+    /// Build a minimal DXA v6 archive with a single uncompressed file.
+    ///
+    /// Layout: header (0x2C B) | encrypted file data | encrypted TOC
+    fn make_v6_archive(key: &[u8; 12], file_name: &str, content: &[u8], code_page: u32) -> Vec<u8> {
+        let unpacked_size = content.len() as i64;
+
+        let mut name_table = file_name.as_bytes().to_vec();
+        name_table.push(0);
+        let file_table: i64 = name_table.len() as i64;
+
+        // v6 file entry (0x40 bytes)
+        let mut entry = vec![0u8; 0x40];
+        entry[0x00..0x08].copy_from_slice(&0i64.to_le_bytes()); // name_offset = 0
+        entry[0x08..0x10].copy_from_slice(&0u64.to_le_bytes()); // attributes = 0
+                                                                // timestamps [0x10..0x28] = zeros
+        entry[0x28..0x30].copy_from_slice(&0i64.to_le_bytes()); // data_offset = 0
+        entry[0x30..0x38].copy_from_slice(&unpacked_size.to_le_bytes());
+        entry[0x38..0x40].copy_from_slice(&(-1i64).to_le_bytes());
+
+        let dir_table: i64 = file_table + 0x40;
+
+        let mut toc = name_table;
+        toc.extend_from_slice(&entry);
+        let index_size: u32 = toc.len() as u32;
+
+        let base_offset: i64 = 0x2C; // v6 header size
+        let index_offset: i64 = base_offset + content.len() as i64;
+
+        // Encrypt header body (file[0x04..0x2C] = 40 bytes)
+        let mut hdr_body = vec![0u8; 40];
+        hdr_body[0x00..0x04].copy_from_slice(&index_size.to_le_bytes());
+        hdr_body[0x04..0x0C].copy_from_slice(&base_offset.to_le_bytes());
+        hdr_body[0x0C..0x14].copy_from_slice(&index_offset.to_le_bytes());
+        hdr_body[0x14..0x1C].copy_from_slice(&file_table.to_le_bytes());
+        hdr_body[0x1C..0x24].copy_from_slice(&dir_table.to_le_bytes());
+        hdr_body[0x24..0x28].copy_from_slice(&code_page.to_le_bytes());
+        key_conv(&mut hdr_body, 4, key);
+
+        let mut file_data = content.to_vec();
+        key_conv(&mut file_data, unpacked_size as u64, key);
+
+        // Encrypt TOC (v6: key offset = 0)
+        key_conv(&mut toc, 0, key);
+
+        let mut archive = vec![b'D', b'X', 6u8, 0u8];
+        archive.extend_from_slice(&hdr_body);
+        archive.extend_from_slice(&file_data);
+        archive.extend_from_slice(&toc);
+        archive
+    }
+
+    #[test]
+    fn test_extract_all_synthetic_v5() {
+        let key = WOLF_KEYS
+            .iter()
+            .find(|(n, _)| *n == "v2.20")
+            .map(|(_, k)| *k)
+            .unwrap();
+        let content = b"Hello, Wolf RPG!";
+        let archive = make_v5_archive(&key, "game.dat", content);
+
+        let result = extract_all(&archive).unwrap();
+        assert_eq!(result.version, 5);
+        assert_eq!(result.files.len(), 1);
+        assert_eq!(result.files[0].name, "game.dat");
+        assert_eq!(result.files[0].data.as_slice(), content.as_slice());
+    }
+
+    #[test]
+    fn test_extract_all_synthetic_v6() {
+        let key = WOLF_KEYS
+            .iter()
+            .find(|(n, _)| *n == "v2.20")
+            .map(|(_, k)| *k)
+            .unwrap();
+        let content = b"Wolf RPG v6 content";
+        let archive = make_v6_archive(&key, "data.bin", content, 932);
+
+        let result = extract_all(&archive).unwrap();
+        assert_eq!(result.version, 6);
+        assert_eq!(result.code_page, Some(932));
+        assert_eq!(result.files.len(), 1);
+        assert_eq!(result.files[0].name, "data.bin");
+        assert_eq!(result.files[0].data.as_slice(), content.as_slice());
+    }
+
+    #[test]
+    fn test_extract_all_round_trip() {
+        // Use v2.10 key to exercise a different code path than the v2.20 tests
+        let key = WOLF_KEYS
+            .iter()
+            .find(|(n, _)| *n == "v2.10")
+            .map(|(_, k)| *k)
+            .unwrap();
+        let original: &[u8] = b"Round-trip binary payload \xAB\xCD\xEF";
+        let archive = make_v5_archive(&key, "payload.bin", original);
+
+        let result = extract_all(&archive).unwrap();
+        assert_eq!(result.files[0].data.as_slice(), original);
+    }
+
+    #[test]
+    fn test_extract_all_no_key() {
+        let key = WOLF_KEYS
+            .iter()
+            .find(|(n, _)| *n == "no_key")
+            .map(|(_, k)| *k)
+            .unwrap();
+        let content = b"constant-key archive content";
+        let archive = make_v5_archive(&key, "nokey.dat", content);
+
+        let result = extract_all(&archive).unwrap();
+        assert_eq!(result.files.len(), 1);
+        assert_eq!(result.files[0].data.as_slice(), content.as_slice());
+    }
+
+    #[test]
+    fn test_extract_all_bad_signature() {
+        let data = vec![0xABu8, 0xCD, 0xEF, 0x00, 0x11, 0x22, 0x33, 0x44];
+        assert!(matches!(
+            extract_all(&data).unwrap_err(),
+            DecryptorError::InvalidSignature
+        ));
     }
 }
