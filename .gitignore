@@ -13,6 +13,7 @@ dist-ssr
 *.local
 
 .agents
+docs/games/*
 
 # Editor directories and files
 .vscode/*
