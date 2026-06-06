@@ -20,6 +20,7 @@ use std::path::Path;
 pub enum Engine {
     MvMz,
     VxAce,
+    Wolf,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -45,7 +46,12 @@ pub fn detect_engine(game_dir: &Path) -> Result<Engine, DetectionError> {
         }
     }
 
-    // 2. VX Ace détection désactivée temporairement —
+    // 2. Wolf RPG — Game.exe/Game.ini + BasicData/ or .wolf/.mps files
+    if is_wolf_game_dir(game_dir) {
+        return Ok(Engine::Wolf);
+    }
+
+    // 3. VX Ace détection désactivée temporairement —
     //    code conservé dans engines/vx_ace/ pour réactivation future.
     //    Priorité actuelle : Wolf RPG (F4).
     //    Réactiver en décommentant ce bloc quand VX Ace sera
@@ -90,6 +96,82 @@ pub fn find_vx_ace_data_dir(game_dir: &Path) -> Option<std::path::PathBuf> {
 /// Criterion: `System.rvdata2` exists in the directory.
 pub fn is_vx_ace_data_dir(dir: &Path) -> bool {
     dir.join("System.rvdata2").exists()
+}
+
+/// Wolf RPG engine version.
+///
+/// Determines the text encoding used during extraction and injection.
+/// v2 and below use Shift-JIS (cp932); v3+ use UTF-8.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WolfVersion {
+    pub major: u8,
+    pub minor: u8,
+}
+
+impl WolfVersion {
+    pub fn is_utf8(&self) -> bool {
+        self.major >= 3
+    }
+}
+
+/// Find the Wolf RPG `Data/` directory in a game folder.
+///
+/// Wolf RPG uses `Data/` (capital D, Windows convention).
+/// Tries `Data/` first, then `data/` as a Linux case-insensitive fallback.
+pub fn find_wolf_data_dir(game_dir: &Path) -> Option<std::path::PathBuf> {
+    let candidates = [game_dir.join("Data"), game_dir.join("data")];
+    candidates.into_iter().find(|p| p.is_dir())
+}
+
+/// Guess the Wolf RPG version from the game directory structure.
+///
+/// Returns a conservative default of v2.0 (Shift-JIS encoding).
+/// TODO(F4-02): read exact version from DXA header CodePage field.
+pub fn guess_wolf_version_from_structure(_game_dir: &Path) -> WolfVersion {
+    WolfVersion { major: 2, minor: 0 }
+}
+
+/// Returns `true` if the directory looks like a Wolf RPG game root.
+///
+/// Criteria:
+///   - `Game.exe` OR `Game.ini` present at root
+///   - AND (`BasicData/` directory OR `Data/*.wolf` OR `Data/MapData/*.mps`)
+pub fn is_wolf_game_dir(game_dir: &Path) -> bool {
+    let has_launcher = game_dir.join("Game.exe").exists() || game_dir.join("Game.ini").exists();
+    if !has_launcher {
+        return false;
+    }
+    game_dir.join("BasicData").is_dir() || has_wolf_archives(game_dir) || has_mps_files(game_dir)
+}
+
+fn has_wolf_archives(game_dir: &Path) -> bool {
+    let data_dir = game_dir.join("Data");
+    if !data_dir.is_dir() {
+        return false;
+    }
+    std::fs::read_dir(&data_dir)
+        .ok()
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("wolf"))
+        })
+        .unwrap_or(false)
+}
+
+fn has_mps_files(game_dir: &Path) -> bool {
+    let map_dir = game_dir.join("Data").join("MapData");
+    if map_dir.is_dir() {
+        return std::fs::read_dir(&map_dir)
+            .ok()
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("mps"))
+            })
+            .unwrap_or(false);
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -237,5 +319,107 @@ mod tests {
 
         let result = detect_engine(dir.path());
         assert!(matches!(result, Err(DetectionError::UnknownEngine)));
+    }
+
+    // --- Wolf RPG detection ---
+
+    #[test]
+    fn test_detect_wolf_with_game_exe_and_basic_data() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Game.exe"), b"mock").unwrap();
+        std::fs::create_dir(dir.path().join("BasicData")).unwrap();
+
+        let engine = detect_engine(dir.path()).unwrap();
+        assert_eq!(engine, Engine::Wolf);
+    }
+
+    #[test]
+    fn test_detect_wolf_with_game_exe_and_wolf_archives() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Game.exe"), b"mock").unwrap();
+        let data_dir = dir.path().join("Data");
+        std::fs::create_dir(&data_dir).unwrap();
+        std::fs::write(data_dir.join("BasicData.wolf"), b"mock").unwrap();
+
+        let engine = detect_engine(dir.path()).unwrap();
+        assert_eq!(engine, Engine::Wolf);
+    }
+
+    #[test]
+    fn test_detect_wolf_with_game_ini() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Game.ini"), b"[Config]\nTitle=Test").unwrap();
+        std::fs::create_dir(dir.path().join("BasicData")).unwrap();
+
+        let engine = detect_engine(dir.path()).unwrap();
+        assert_eq!(engine, Engine::Wolf);
+    }
+
+    #[test]
+    fn test_detect_wolf_no_launcher() {
+        // BasicData/ alone without Game.exe → UnknownEngine
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("BasicData")).unwrap();
+
+        let result = detect_engine(dir.path());
+        assert!(matches!(result, Err(DetectionError::UnknownEngine)));
+    }
+
+    #[test]
+    fn test_detect_mv_not_confused_with_wolf() {
+        // data/System.json with gameTitle → MvMz even if Game.exe + BasicData present
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        std::fs::write(data_dir.join("System.json"), r#"{"gameTitle": "MV Game"}"#).unwrap();
+        std::fs::write(dir.path().join("Game.exe"), b"mock").unwrap();
+        std::fs::create_dir(dir.path().join("BasicData")).unwrap();
+
+        // MV/MZ is checked first — must win
+        let engine = detect_engine(dir.path()).unwrap();
+        assert_eq!(engine, Engine::MvMz);
+    }
+
+    #[test]
+    fn test_detect_wolf_not_confused_with_mv() {
+        // Game.exe + BasicData/ but NO data/System.json → Wolf
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Game.exe"), b"mock").unwrap();
+        std::fs::create_dir(dir.path().join("BasicData")).unwrap();
+
+        let engine = detect_engine(dir.path()).unwrap();
+        assert_eq!(engine, Engine::Wolf);
+    }
+
+    // --- WolfVersion ---
+
+    #[test]
+    fn test_wolf_version_is_utf8() {
+        assert!(WolfVersion { major: 3, minor: 0 }.is_utf8());
+        assert!(WolfVersion { major: 4, minor: 0 }.is_utf8());
+    }
+
+    #[test]
+    fn test_wolf_version_is_shiftjis() {
+        assert!(!WolfVersion { major: 2, minor: 0 }.is_utf8());
+        assert!(!WolfVersion { major: 1, minor: 0 }.is_utf8());
+    }
+
+    #[test]
+    fn test_find_wolf_data_dir_capital_d() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("Data")).unwrap();
+
+        let result = find_wolf_data_dir(dir.path()).unwrap();
+        assert_eq!(result, dir.path().join("Data"));
+    }
+
+    #[test]
+    fn test_find_wolf_data_dir_lowercase_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("data")).unwrap();
+
+        let result = find_wolf_data_dir(dir.path()).unwrap();
+        assert_eq!(result, dir.path().join("data"));
     }
 }
