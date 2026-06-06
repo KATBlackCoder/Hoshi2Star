@@ -20,6 +20,7 @@ use std::path::Path;
 pub enum Engine {
     MvMz,
     VxAce,
+    Wolf,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -90,6 +91,49 @@ pub fn find_vx_ace_data_dir(game_dir: &Path) -> Option<std::path::PathBuf> {
 /// Criterion: `System.rvdata2` exists in the directory.
 pub fn is_vx_ace_data_dir(dir: &Path) -> bool {
     dir.join("System.rvdata2").exists()
+}
+
+/// Returns `true` if the directory looks like a Wolf RPG game root.
+///
+/// Criteria:
+///   - `Game.exe` OR `Game.ini` present at root
+///   - AND (`BasicData/` directory OR `Data/*.wolf` OR `Data/MapData/*.mps`)
+pub fn is_wolf_game_dir(game_dir: &Path) -> bool {
+    let has_launcher = game_dir.join("Game.exe").exists() || game_dir.join("Game.ini").exists();
+    if !has_launcher {
+        return false;
+    }
+    game_dir.join("BasicData").is_dir() || has_wolf_archives(game_dir) || has_mps_files(game_dir)
+}
+
+fn has_wolf_archives(game_dir: &Path) -> bool {
+    let data_dir = game_dir.join("Data");
+    if !data_dir.is_dir() {
+        return false;
+    }
+    std::fs::read_dir(&data_dir)
+        .ok()
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("wolf"))
+        })
+        .unwrap_or(false)
+}
+
+fn has_mps_files(game_dir: &Path) -> bool {
+    let map_dir = game_dir.join("Data").join("MapData");
+    if map_dir.is_dir() {
+        return std::fs::read_dir(&map_dir)
+            .ok()
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("mps"))
+            })
+            .unwrap_or(false);
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------

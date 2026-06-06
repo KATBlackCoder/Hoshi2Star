@@ -75,6 +75,7 @@ pub async fn open_project(
     let engine_str = match engine {
         Engine::MvMz => "mv_mz",
         Engine::VxAce => "vx_ace",
+        Engine::Wolf => "wolf",
     };
 
     // 2. Locate data directory (MV/MZ: data/ or www/data/ — VX Ace: Data/ or data/)
@@ -83,12 +84,16 @@ pub async fn open_project(
             .ok_or_else(|| "Cannot find Data/ directory in VX Ace game folder".to_string())?,
         Engine::MvMz => find_data_dir(game_dir)
             .ok_or_else(|| "Cannot find data directory in game folder".to_string())?,
+        Engine::Wolf => {
+            return Err("Wolf RPG extraction not yet implemented (F4-03)".to_string());
+        }
     };
 
     // 3. Read game title (MV/MZ: System.json gameTitle — VX Ace: System.rvdata2 game_title)
     let game_title = match engine {
         Engine::MvMz => read_game_title(&data_dir.join("System.json")),
         Engine::VxAce => read_vx_ace_game_title(&data_dir.join("System.rvdata2")),
+        Engine::Wolf => unreachable!("Wolf returns early in data_dir match above"),
     }
     .unwrap_or_else(|| {
         game_dir
@@ -187,6 +192,7 @@ pub async fn open_project(
                 }
             }
         }
+        Engine::Wolf => unreachable!("Wolf returns early in data_dir match above"),
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
