@@ -298,6 +298,62 @@ pub fn read_header(
 }
 
 // ---------------------------------------------------------------------------
+// Step 6 — GuessKeyV6 (known-plaintext attack on null high bytes)
+// ---------------------------------------------------------------------------
+
+/// Recover the XOR key from a raw (encrypted) DXA v6/v8 header.
+///
+/// DXA v6 fields are 64-bit values whose upper 4 bytes are zero in plaintext
+/// (practical archive sizes stay well under 4 GB). XOR with zero reveals the key bytes.
+///
+/// Three non-overlapping field pairs map to the 12-byte key:
+/// - `file[0x0C..0x10]` (base_offset high)  → `key[0..4]`
+/// - `file[0x1C..0x20]` (file_table high)   → `key[4..8]`
+/// - `file[0x14..0x18]` (index_offset high) → `key[8..12]`
+///
+/// Two cross-checks validate the hypothesis:
+/// - `file[0x24..0x28]` (dir_table high)    must equal `key[0..4]`
+/// - `file[0x2C..0x30]` (post-header zeros) must equal `key[8..12]`
+///
+/// Returns `None` if the header is too short, validations fail, or the derived
+/// key does not produce a plausible header (valid version + small index_size).
+pub fn guess_key_v6(raw_header: &[u8]) -> Option<[u8; 12]> {
+    if raw_header.len() < 0x30 {
+        return None;
+    }
+    let read4 = |pos: usize| -> [u8; 4] { raw_header[pos..pos + 4].try_into().unwrap() };
+
+    let high_base = read4(0x0C); // → key[0..4]
+    let high_idx = read4(0x14); // → key[8..12]
+    let high_ftbl = read4(0x1C); // → key[4..8]
+    let high_dtbl = read4(0x24); // must == high_base  (validation 1)
+    let post_hdr = read4(0x2C); // must == high_idx   (validation 2)
+
+    if high_base != high_dtbl || high_idx != post_hdr {
+        return None;
+    }
+
+    let mut key = [0u8; 12];
+    key[0..4].copy_from_slice(&high_base);
+    key[4..8].copy_from_slice(&high_ftbl);
+    key[8..12].copy_from_slice(&high_idx);
+
+    // Validate: version byte in {5, 6, 8} and index_size < 16 MB
+    let version = raw_header[0x02];
+    if version != 5 && version != 6 && version != 8 {
+        return None;
+    }
+    let mut body = raw_header[0x04..0x2C].to_vec();
+    key_conv(&mut body, 4, &key);
+    let index_size = u32::from_le_bytes(body[0..4].try_into().unwrap());
+    if index_size >= 0x0100_0000 {
+        return None;
+    }
+
+    Some(key)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -460,5 +516,51 @@ mod tests {
     #[test]
     fn test_code_page_65001_is_utf8() {
         assert!(code_page_to_wolf_version(65001).is_utf8());
+    }
+
+    // --- Step 6: guess_key_v6 ---
+
+    /// Build a 48-byte buffer (file[0x00..0x30]) that simulates an encrypted DXA v6 header,
+    /// including the 4 post-header zero bytes that guess_key_v6 uses for validation.
+    fn make_v6_header_for_guess(key: &[u8; 12]) -> Vec<u8> {
+        let index_size: u32 = 0x2000;
+        let base_offset: i64 = 0x2C;
+        let index_offset: i64 = 0x8000;
+        let file_table: i64 = 0x00;
+        let dir_table: i64 = 0x80;
+        let code_page: u32 = 932;
+
+        // Build plaintext for file[0x04..0x30] = 44 bytes
+        // (40 bytes formal header + 4 post-header zeros)
+        let mut body = Vec::with_capacity(44);
+        body.extend_from_slice(&index_size.to_le_bytes()); // body[0x00..0x04]
+        body.extend_from_slice(&base_offset.to_le_bytes()); // body[0x04..0x0C]
+        body.extend_from_slice(&index_offset.to_le_bytes()); // body[0x0C..0x14]
+        body.extend_from_slice(&file_table.to_le_bytes()); // body[0x14..0x1C]
+        body.extend_from_slice(&dir_table.to_le_bytes()); // body[0x1C..0x24]
+        body.extend_from_slice(&code_page.to_le_bytes()); // body[0x24..0x28]
+        body.extend_from_slice(&[0u8; 4]); // body[0x28..0x2C] → post-header zeros at file[0x2C..0x30]
+        key_conv(&mut body, 4, key);
+
+        let mut hdr = vec![b'D', b'X', 6u8, 0u8];
+        hdr.extend_from_slice(&body);
+        hdr // 4 + 44 = 48 bytes = file[0x00..0x30]
+    }
+
+    #[test]
+    fn test_guess_key_v6_synthetic() {
+        let key = [
+            0x38u8, 0x50, 0x40, 0x28, 0x72, 0x4F, 0x21, 0x70, 0x3B, 0x73, 0x35, 0x38,
+        ];
+        let hdr = make_v6_header_for_guess(&key);
+        let found = guess_key_v6(&hdr).expect("should recover key from null high bytes");
+        assert_eq!(found, key);
+    }
+
+    #[test]
+    fn test_guess_key_v6_random_data() {
+        // 32 bytes < 0x30 — length guard returns None immediately
+        let short = vec![0xABu8; 32];
+        assert!(guess_key_v6(&short).is_none());
     }
 }
