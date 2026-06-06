@@ -67,6 +67,62 @@ impl DxFileEntry {
 }
 
 // ---------------------------------------------------------------------------
+// Step 3 — Known key table
+// ---------------------------------------------------------------------------
+
+/// Known Wolf RPG XOR keys, indexed by game version string.
+/// Sources: WolfDec DECRYPT_MODES table, GARbro, game-specific community docs.
+// Wolf v3.10 / v3.173: NOT included — see ⚠️ in docs/plans/f4-02-wolf-decryptor.md §Step3
+pub(crate) const WOLF_KEYS: &[(&str, [u8; 12])] = &[
+    // Wolf v2.20 — most widespread (source: WolfDec DECRYPT_MODES)
+    (
+        "v2.20",
+        [
+            0x38, 0x50, 0x40, 0x28, 0x72, 0x4F, 0x21, 0x70, 0x3B, 0x73, 0x35, 0x38,
+        ],
+    ),
+    // Wolf v2.01
+    (
+        "v2.01",
+        [
+            0x0F, 0x53, 0xE1, 0x3E, 0x04, 0x37, 0x12, 0x17, 0x60, 0x0F, 0x53, 0xE1,
+        ],
+    ),
+    // Wolf v2.10
+    (
+        "v2.10",
+        [
+            0x4C, 0xD9, 0x2A, 0xB7, 0x28, 0x9B, 0xAC, 0x07, 0x3E, 0x77, 0xEC, 0x4C,
+        ],
+    ),
+    // Wolf v2.255 — 月咲流ホノカ: key stored in plaintext at file[BaseOffset..BaseOffset+12]
+    (
+        "v2.255",
+        [
+            0xB8, 0x58, 0x8C, 0x7B, 0xCA, 0x3D, 0x6F, 0x3D, 0x8C, 0x34, 0xF8, 0x1A,
+        ],
+    ),
+    // DXA_FLAG_NO_KEY: DxLib constant key (memset 0xAA → keyCreate → constant XOR)
+    // TODO(F4-02): DXA_FLAG_NO_KEY value unknown — skip flag check for now
+    (
+        "no_key",
+        [
+            0x55, 0xAA, 0x20, 0x55, 0x55, 0x06, 0x55, 0xAA, 0x55, 0xD5, 0x7C, 0x66,
+        ],
+    ),
+];
+
+/// Look up a known Wolf RPG XOR key by version hint string.
+/// Returns `None` for unknown versions — caller should then try GuessKeyV6 (Step 6).
+pub fn known_key(version_hint: Option<&str>) -> Option<[u8; 12]> {
+    let hint = version_hint?;
+    WOLF_KEYS
+        .iter()
+        .find(|(name, _)| *name == hint)
+        .map(|(_, key)| *key)
+}
+
+// ---------------------------------------------------------------------------
 // Step 2 — KeyConv XOR-12
 // ---------------------------------------------------------------------------
 
@@ -150,5 +206,20 @@ mod tests {
         assert_ne!(data, original);
         key_conv(&mut data, unpacked_size, &key);
         assert_eq!(data, original);
+    }
+
+    // --- Step 3: known_key ---
+
+    #[test]
+    fn test_known_key_v220() {
+        let key = known_key(Some("v2.20")).unwrap();
+        assert_eq!(key[0], 0x38);
+        assert_eq!(key[1], 0x50);
+        assert_eq!(key[11], 0x38);
+    }
+
+    #[test]
+    fn test_known_key_unknown() {
+        assert!(known_key(Some("v9.99")).is_none());
     }
 }
