@@ -6,6 +6,11 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 ## [Unreleased]
 
 ### Added
+- Add Wolf RPG binary injector `inject_map()` — sequential scan+splice (Approach B); wolfrpg-map-parser exposes no byte offsets in public structs; replaces ShowMessage/ShowChoice ReadString payloads in order
+- Add Wolf RPG Database injector `inject_dat()` — two-file format (.project schema read-only, .dat values rewritten); full re-serialization via `serialize_dat()`; returns only new .dat bytes, never modifies .project
+- Add `encode_for_wolf()` — Shift-JIS guard for Wolf v2 (rejects accented/emoji chars with `InjectorError::Encoding`); UTF-8 pass-through for v3+
+- Add `inject_all()` — Option A export strategy: writes decrypted .mps/.dat directly to `Data/MapData/` and `Data/BasicData/`; Wolf RPG reads `Data/` with priority over .wolf archives; Option B (DXA re-pack) deferred to F5
+- Add round-trip tests: extract→inject identity (.mps + .dat), extract→translate→inject→re-parse (.mps + .dat), inject_all creates files, inject_all does not overwrite .wolf archives (15 new tests, 247 total)
 - Add Wolf RPG Database parser `parse_database()` — reads `.project` (schema: type names, field names, `indexInfo`) + `.dat` (int/string values) binary pairs; reverse-engineered from WolfTL (Sinflower, MIT); supports Shift-JIS and UTF-8 magic, rejects LZ4 compression (`0xC4`) with `Unsupported` error
 - Add `extract_database_segments()` — converts parsed `DatFile` to `WolfSegment` list; filters by known translatable field names (`name`, `description`, `note`, `message`, `text`) or Japanese character presence (hiragana/katakana/CJK); key format `Database/{db_name}/{type_idx}/{entry_idx}/{field_name}`
 - Add `extract_common_events()` — stub returning `Ok(vec![])` pending F4-05; CommonEvents format (0x8E/0x8F/0x91/0x92 sections + 100 fixed strings per event) is too complex to implement safely without a real test fixture

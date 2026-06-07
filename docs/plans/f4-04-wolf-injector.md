@@ -1,5 +1,14 @@
 # Plan F4-04 — Wolf RPG : Injecteur binaire
 
+> **Note post-F4-03 : format Database = .project + .dat**
+> F4-03 a révélé que le format Database Wolf RPG utilise DEUX fichiers séparés :
+> - `.project` — schéma (type names, field names, indexInfo) — **lecture seule à l'injection**
+> - `.dat` — données (int arrays + string arrays) — **seul fichier modifié**
+>
+> Le `.project` n'est pas réécrit lors de l'injection (les noms de champs restent en japonais).
+> `inject_dat` prend les deux fichiers en entrée mais ne retourne que les nouveaux bytes du `.dat`.
+> `inject_all` doit charger les paires `.project`/`.dat` par stem avant d'appeler `inject_dat`.
+
 ## Objectif
 
 Réécrire les fichiers binaires Wolf RPG (`.mps` et `.dat`) avec les traductions.
@@ -10,12 +19,12 @@ Stratégie d'export pour F4 : **Option A — fichiers déchiffrés dans Data/**
 (le moteur Wolf RPG lit `Data/` en priorité sur les archives `.wolf`).
 Pas de re-chiffrement DXA en F4 — Option B reportée en F5.
 
-## Statut : [ ] À faire
+## Statut : [x] Complété (2026-06-07, 247 tests)
 
 ## Prérequis
 
-- F4-03 complet (extracteur + clés de segments) — `[ ]` À faire
-- F4-02 complet (décrypteur, pour comprendre la structure binaire) — `[ ]` À faire
+- F4-03 complet (extracteur + clés de segments) — `[x]` Mergé main (2026-06-07, 232 tests)
+- F4-02 complet (décrypteur, pour comprendre la structure binaire) — `[x]` Mergé main (2026-06-06)
 - `src-tauri/src/engines/wolf/injector.rs` stub créé (F4-01 Step 2) ✅
 - `wolf/encoding.rs` avec `encode_shiftjis` disponible (F4-03 Step 2) ✅
 
@@ -192,33 +201,45 @@ Commit message : `feat(wolf/injector): encode_for_wolf — Shift-JIS guard for v
 ### Step 4 — ⚠️ Injecteur .dat (réécriture database)
 
 **Objectif :** Réécrire les fichiers `.dat` databases avec les traductions. Mirror de
-`dat_parser.rs` — lire la structure, remplacer les valeurs texte, réécrire le binaire.
+`dat_parser.rs` — lire la structure en s'appuyant sur le `.project` pour le schéma,
+remplacer les valeurs texte dans le `.dat`, réécrire le binaire.
 
 **Fichiers touchés :**
 - `src-tauri/src/engines/wolf/injector.rs`
-- `src-tauri/src/engines/wolf/dat_parser.rs` ← peut nécessiter d'exposer des offsets
 
-**Dépend de :** Step 1, Step 3, F4-03 Step 6
+**Dépend de :** Step 1, Step 3, F4-03 (dat_parser.rs disponible)
 
-**⚠️ Complexité des longueurs de champs :**
-Les strings dans les `.dat` Wolf peuvent avoir :
-- Longueur préfixée `u32` : un champ plus long → modifier le préfixe ET décaler tout ce qui suit
-- Null-terminated : plus simple, mais moins courant dans Wolf
-⚠️ Vérifier dans WolfTL source quel format est utilisé avant d'implémenter.
-Si longueur préfixée : l'injection nécessite une re-sérialisation complète du fichier.
+**Note format deux fichiers :**
+Le `.project` fournit le schéma (field names, indexInfo) ; le `.dat` contient les valeurs.
+`inject_dat` reçoit les deux en entrée mais ne réécrit que le `.dat` — le `.project` n'est
+jamais modifié (les noms de champs restent dans la langue source).
+
+**⚠️ Format ReadString confirmé depuis F4-03 :**
+Strings Wolf : `u32_le size` (inclut le null) + `size` bytes. Champ plus long → re-sérialisation
+complète (pas d'injection in-place). La re-sérialisation complète est l'approche correcte.
 
 Tâches :
-- [ ] Implémenter `pub fn inject_dat(bytes: &[u8], translations: &[WolfTranslation], version: &WolfVersion) -> Result<(Vec<u8>, InjectionResult), InjectorError>` :
-  1. Parser le .dat avec `dat_parser::parse_dat_file()`
-  2. Pour chaque traduction : trouver le champ par clé, remplacer la valeur texte
-  3. Re-sérialiser tout le `.dat` (re-écrire complètement — plus simple que modification in-place)
-  4. Re-encoder chaque string (Shift-JIS ou UTF-8 selon version)
+- [ ] Implémenter avec la signature deux-fichiers :
+  ```rust
+  pub fn inject_dat(
+      project_bytes: &[u8],              // .project — lecture seule (schéma)
+      dat_bytes: &[u8],                  // .dat — source des valeurs à modifier
+      translations: &[WolfTranslation],
+      version: &WolfVersion,
+  ) -> Result<(Vec<u8>, InjectionResult), InjectorError>
+  ```
+  1. Parser avec `dat_parser::parse_database(project_bytes, dat_bytes)`
+  2. Pour chaque traduction : trouver le champ par clé (`Database/{db_name}/{type_idx}/{entry_idx}/{field_name}`), remplacer la valeur texte dans `DatEntry::string_values`
+  3. Re-sérialiser tout le `.dat` — re-écriture complète (voir `serialize_dat`)
+  4. Re-encoder chaque string via `encode_for_wolf` (Shift-JIS ou UTF-8 selon version)
+  5. Retourner les bytes du nouveau `.dat` uniquement — le `.project` n'est pas modifié
 - [ ] Implémenter `fn serialize_dat(dat: &DatFile, version: &WolfVersion) -> Result<Vec<u8>, InjectorError>` :
-  - Sérialiser en binaire dans le même format que l'original
+  - Réécrire header (indicator + magic + version), type_count, puis pour chaque type :
+    separator + unknown1 + fields_size + indexInfo × fields_size + data_count + entries
   - Doit produire un fichier identique à l'original si aucune traduction n'est changée
 - [ ] Tests :
-  - `test_inject_dat_identity` : parse → serialize sans traduction → bytes identiques (round-trip)
-  - `test_inject_dat_name` : modifier un champ "name" → nouveau binaire parseable
+  - `test_inject_dat_identity` : `parse_database(project, dat)` → `inject_dat(project, dat, [])` → bytes identiques (round-trip avec paire synthétique)
+  - `test_inject_dat_name` : modifier un champ "name" → nouveau binaire re-parseable via `parse_database`
   - `test_inject_dat_wrong_key` : clé inexistante → `Err(KeyNotFound)`
 
 **Test de validation :**
@@ -253,7 +274,12 @@ Tâches :
 - [ ] Implémenter `pub async fn inject_all(game_dir: &Path, translations_by_file: &HashMap<String, Vec<WolfTranslation>>, version: &WolfVersion) -> Result<Vec<InjectionResult>, InjectorError>` :
   1. Pour chaque fichier dans `translations_by_file` :
      - Si `.mps` : charger les bytes originaux, appeler `inject_map()`, écrire dans `Data/MapData/`
-     - Si `.dat` : charger, `inject_dat()`, écrire dans `Data/BasicData/`
+     - Si `.dat` (format Database deux fichiers) :
+       - Déterminer le stem (ex: `"Actors"` depuis la clé `"Database/Actors/…"`)
+       - Charger `BasicData/{stem}.project` (schéma) ET `BasicData/{stem}.dat` (données)
+       - Appeler `inject_dat(project_bytes, dat_bytes, translations, version)`
+       - Écrire **uniquement** les nouveaux bytes `.dat` dans `Data/BasicData/{stem}.dat`
+       - ⚠️ Ne jamais modifier le `.project` — les noms de champs restent dans la langue source
   2. Créer les répertoires `Data/MapData/` et `Data/BasicData/` si inexistants
   3. ⚠️ Ne jamais écraser les `.wolf` originaux — écrire uniquement les `.mps`/`.dat` déchiffrés
   4. Retourner la liste des résultats d'injection
@@ -292,16 +318,22 @@ Tâches :
   5. Re-parser avec `wolfrpg-map-parser` → même texte → OK
   6. Bytes identiques si aucun changement de longueur
 - [ ] Test `test_round_trip_dat_identity` :
-  1. Créer un `.dat` synthétique
-  2. `parse_dat_file()` → extraire segments
-  3. `inject_dat()` avec textes originaux → bytes identiques
+  1. Créer une paire synthétique `.project` + `.dat` (utiliser les helpers `make_minimal_project` + `make_minimal_dat` de `dat_parser::tests`)
+  2. `extract_database_segments(db_name, project_bytes, dat_bytes, version)` → segments
+  3. `inject_dat(project_bytes, dat_bytes, &[] /* pas de traductions */, version)` → bytes identiques
 - [ ] Test `test_round_trip_mps_translation` :
   1. `.mps` synthétique avec texte japonais
   2. Extraire, traduire en anglais (chaîne de même longueur ou différente)
   3. Injecter, re-parser → texte anglais présent
+- [ ] Test `test_round_trip_dat_translation` :
+  1. Paire synthétique `.project` + `.dat` avec un champ "名前" = "テスト"
+  2. `extract_database_segments` → key `Database/{db_name}/0/0/名前`
+  3. `inject_dat(project_bytes, dat_bytes, &[WolfTranslation { key, text: "Test".into() }], version)`
+  4. Re-parser le `.dat` résultant via `parse_database(project_bytes, new_dat_bytes)` → champ = `"Test"`
 - [ ] Documentation dans le fichier des limitations connues :
   - Texte plus long que l'original : re-sérialisation complète (pas d'injection in-place)
   - Wolf v2 : seuls les caractères Shift-JIS sont supportés dans la traduction
+  - Le `.project` n'est jamais modifié — les noms de champs restent dans la langue source
 
 **Test de validation :**
 ```bash
