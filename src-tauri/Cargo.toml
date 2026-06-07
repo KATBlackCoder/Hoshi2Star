@@ -43,5 +43,5 @@ tempfile = "3"
 httpmock = "0.7"
 
 [patch.crates-io]
-wolfrpg-map-parser = { path = "vendor/wolfrpg-map-parser" }
+wolfrpg-map-parser = { git = "https://github.com/KATBlackCoder/wolfrpg-map-parser", rev = "efc3b4d" }
 
