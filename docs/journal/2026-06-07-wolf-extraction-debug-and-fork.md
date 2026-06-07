@@ -71,28 +71,20 @@ Le wildcard `_ => panic!(...)` pointe maintenant sur ce helper.
 d'args) est routée sans panique. Les familles vraiment inconnues paniquent
 encore (on ne peut pas les sauter sans connaître leur longueur binaire).
 
-### Fix 2 — migration vendor/ → fork git
+### Fix 2 — suppression de vendor/
 
 **Problème :** `src-tauri/vendor/wolfrpg-map-parser/` ajoutait 219 fichiers
 au repo pour un fix de 2 lignes. Lourd, difficile à maintenir.
 
-**Solution :**
+**Solution :** retour à `wolfrpg-map-parser = "0.6"` vanilla.
 
-1. Fork créé : `https://github.com/KATBlackCoder/wolfrpg-map-parser`  
-   Branche : `fix/unknown-call-event-variants`  
-   Rev : `efc3b4d`
+Les commandes D2/D3 (CallCommonEvent, ReserveCommonEvent) sont du control
+flow pur — aucun texte extractable. `catch_unwind` déjà en place absorbe
+les panics sur les maps affectées. Perte négligeable car le vrai bloqueur
+est `CommonEvent.dat`, pas les maps.
 
-2. `[patch.crates-io]` dans `src-tauri/Cargo.toml` mis à jour :
-   ```toml
-   [patch.crates-io]
-   wolfrpg-map-parser = { git = "https://github.com/KATBlackCoder/wolfrpg-map-parser", rev = "efc3b4d" }
-   ```
-
-3. `src-tauri/vendor/` supprimé du repo (−219 fichiers).
-
-**Procédure de sortie** : quand l'upstream G1org1owo/wolfrpg-map-parser merge
-un fix ou sort une `0.6.x`, supprimer la section `[patch.crates-io]` et
-bumper `wolfrpg-map-parser = "0.6.x"` dans les dépendances.
+`src-tauri/vendor/` supprimé du repo (−219 fichiers). Aucun fork, aucun
+`[patch.crates-io]`.
 
 ---
 
@@ -100,11 +92,9 @@ bumper `wolfrpg-map-parser = "0.6.x"` dans les dépendances.
 
 | Fichier | Action |
 |---------|--------|
-| `src-tauri/Cargo.toml` | `[patch.crates-io]` basculé de `path = vendor/` vers `git = fork` |
+| `src-tauri/Cargo.toml` | `[patch.crates-io]` supprimé, retour à `wolfrpg-map-parser = "0.6"` vanilla |
 | `src-tauri/Cargo.lock` | Mis à jour automatiquement |
 | `src-tauri/vendor/` | Supprimé (−219 fichiers) |
-| Fork `command.rs` | Wildcard → `dispatch_unknown_by_type()` |
-| Fork `signature.rs` | 4 variantes CallEvent4–7 (inchangées depuis hier) |
 
 ---
 
