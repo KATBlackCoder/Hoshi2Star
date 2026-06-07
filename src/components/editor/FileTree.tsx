@@ -17,6 +17,7 @@ import {
   List,
   Settings,
   MessageSquare,
+  Database,
 } from "lucide-react";
 
 function fileIcon(fileType: string) {
@@ -69,6 +70,11 @@ function fileIcon(fileType: string) {
     case "vx_states":
     case "vx_troops":
       return <Settings className="h-3.5 w-3.5 shrink-0 text-amber-400" />;
+    // --- Wolf RPG file types (.mps/.dat, violet colour scheme) ---
+    case "wolf_map":
+      return <Map className="h-3.5 w-3.5 shrink-0 text-violet-500" />;
+    case "wolf_database":
+      return <Database className="h-3.5 w-3.5 shrink-0 text-violet-400" />;
     default:
       return (
         <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
