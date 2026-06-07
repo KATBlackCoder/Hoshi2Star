@@ -1,1 +1,765 @@
-// Wolf RPG text extractor — implementation in F4-03
+// Wolf RPG text extractor — F4-03 implementation.
+
+use super::dat_parser;
+use super::decryptor::{extract_all, WolfFile};
+use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
+use std::path::Path;
+use wolfrpg_map_parser::{command::Command, Map};
+
+// ---------------------------------------------------------------------------
+// Error type
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, thiserror::Error)]
+pub enum ExtractorError {
+    #[error("decryptor error: {0}")]
+    Decryptor(#[from] super::decryptor::DecryptorError),
+    #[error("map parser error: {0}")]
+    MapParser(String),
+    #[error("dat parse error in {file}: {reason}")]
+    DatParse { file: String, reason: String },
+    #[error("encoding error: {0}")]
+    Encoding(String),
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("unsupported Wolf RPG version: {0}.{1}")]
+    UnsupportedVersion(u8, u8),
+}
+
+// ---------------------------------------------------------------------------
+// Public output types
+// ---------------------------------------------------------------------------
+
+/// A single translatable text unit extracted from a Wolf RPG game.
+///
+/// `key` uniquely addresses this segment for re-injection by the injector (F4-04).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WolfSegment {
+    /// Unique key, e.g. "MapData/Map001/events/0/pages/0/42"
+    /// or "Database/Actors/0/name"
+    pub key: String,
+    /// Source text in UTF-8 (decoded from Shift-JIS if the file was v2).
+    pub source_text: String,
+    /// Segment kind — carries context for the injector and CAT UI.
+    pub kind: WolfSegmentKind,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WolfSegmentKind {
+    /// Dialogue / in-game displayed text (from .mps map files).
+    MapMessage {
+        map_name: String,
+        event_idx: usize,
+        page_idx: usize,
+        cmd_idx: usize,
+    },
+    /// Database field (from .dat database files).
+    DatabaseField {
+        db_name: String,
+        type_idx: usize,
+        entry_idx: usize,
+        field_name: String,
+    },
+}
+
+// ---------------------------------------------------------------------------
+// File access helpers
+// ---------------------------------------------------------------------------
+
+/// Decrypt a `.wolf` DXA archive and return its file entries.
+// F4-05: used when loading encrypted Wolf archives.
+#[allow(dead_code)]
+pub(crate) fn load_wolf_archive(archive_path: &Path) -> Result<Vec<WolfFile>, ExtractorError> {
+    let data = std::fs::read(archive_path)?;
+    let archive = extract_all(&data)?;
+    Ok(archive.files)
+}
+
+/// Find a file in a decrypted archive by name (case-insensitive).
+// F4-05: used alongside load_wolf_archive.
+#[allow(dead_code)]
+pub(crate) fn find_wolf_file<'a>(files: &'a [WolfFile], name: &str) -> Option<&'a WolfFile> {
+    let lower = name.to_lowercase();
+    files.iter().find(|f| f.name.to_lowercase() == lower)
+}
+
+/// Collect `.mps` files from `Data/MapData/` (unencrypted layout).
+///
+/// Returns `Vec<(stem_name, raw_bytes)>`. If no `.mps` files are found in the
+/// directory the function returns `Err` — encrypted Wolf archives are handled
+/// by F4-05 integration.
+pub(crate) fn load_mps_files(
+    game_dir: &Path,
+    _version: &crate::engines::detector::WolfVersion,
+) -> Result<Vec<(String, Vec<u8>)>, ExtractorError> {
+    let map_dir = game_dir.join("Data").join("MapData");
+    if map_dir.exists() {
+        let mut result = Vec::new();
+        for entry in std::fs::read_dir(&map_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("mps") {
+                let name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let bytes = std::fs::read(&path)?;
+                result.push((name, bytes));
+            }
+        }
+        if !result.is_empty() {
+            return Ok(result);
+        }
+    }
+    // Encrypted .wolf archives: deferred to F4-05 integration.
+    Err(ExtractorError::Io(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        "No .mps files found in Data/MapData/ — encrypted Wolf archives not yet supported in F4-03",
+    )))
+}
+
+// ---------------------------------------------------------------------------
+// .mps extraction
+// ---------------------------------------------------------------------------
+
+/// Extract translatable segments from a `.mps` map file.
+///
+/// `map_name` is the file stem (e.g. `"Map001"`). `bytes` is the raw file
+/// content — the crate handles Shift-JIS decoding internally.
+/// `_version` is reserved for future per-version branching.
+///
+/// `Map::parse` panics on invalid bytes; we capture that with `catch_unwind`
+/// and convert it to `ExtractorError::MapParser`.
+pub fn extract_map_segments(
+    map_name: &str,
+    bytes: &[u8],
+    _version: &crate::engines::detector::WolfVersion,
+) -> Result<Vec<WolfSegment>, ExtractorError> {
+    // Wrap the panicking parser in catch_unwind.
+    let bytes_owned = bytes.to_vec();
+    let map = std::panic::catch_unwind(move || Map::parse(&bytes_owned)).map_err(|e| {
+        let msg = e
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| e.downcast_ref::<String>().map(|s| s.as_str()))
+            .unwrap_or("unknown panic");
+        ExtractorError::MapParser(format!("{map_name}: {msg}"))
+    })?;
+
+    let mut segments = Vec::new();
+
+    for (event_idx, event) in map.events().iter().enumerate() {
+        for (page_idx, page) in event.pages().iter().enumerate() {
+            for (cmd_idx, command) in page.commands().iter().enumerate() {
+                match command {
+                    Command::ShowMessage(cmd) => {
+                        let text = cmd.text();
+                        if is_translatable(text) {
+                            segments.push(WolfSegment {
+                                key: format!(
+                                    "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}"
+                                ),
+                                source_text: text.to_owned(),
+                                kind: WolfSegmentKind::MapMessage {
+                                    map_name: map_name.to_owned(),
+                                    event_idx,
+                                    page_idx,
+                                    cmd_idx,
+                                },
+                            });
+                        }
+                    }
+                    Command::ShowChoice(cmd) => {
+                        for (choice_idx, choice) in cmd.choices().iter().enumerate() {
+                            if is_translatable(choice) {
+                                segments.push(WolfSegment {
+                                    key: format!(
+                                        "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}/choices/{choice_idx}"
+                                    ),
+                                    source_text: choice.clone(),
+                                    kind: WolfSegmentKind::MapMessage {
+                                        map_name: map_name.to_owned(),
+                                        event_idx,
+                                        page_idx,
+                                        cmd_idx,
+                                    },
+                                });
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    Ok(segments)
+}
+
+fn is_translatable(text: &str) -> bool {
+    !text.trim().is_empty() && !is_wolf_placeholder_only(text)
+}
+
+fn is_wolf_placeholder_only(text: &str) -> bool {
+    let tok = Tokenizer::tokenize(text, TokEngine::Wolf);
+    if tok.map.is_empty() {
+        return false;
+    }
+    // Strip every ⟦ph_N⟧ token and check whether any real text remains.
+    let bare = tok
+        .map
+        .keys()
+        .fold(tok.text.clone(), |s, k| s.replace(k.as_str(), ""));
+    bare.trim().is_empty()
+}
+
+/// Returns true if `text` contains at least one Japanese character
+/// (hiragana, katakana, or CJK unified ideograph).
+fn contains_japanese(text: &str) -> bool {
+    text.chars().any(|c| {
+        matches!(c,
+            '\u{3041}'..='\u{3096}'   // hiragana
+            | '\u{30A0}'..='\u{30FF}' // katakana
+            | '\u{4E00}'..='\u{9FFF}' // CJK unified ideographs
+        )
+    })
+}
+
+/// Returns true if the field name is in the set of known translatable field names.
+fn is_known_translatable_field(name: &str) -> bool {
+    matches!(
+        name,
+        "name" | "名前" | "description" | "説明" | "note" | "備考" | "message" | "text"
+    )
+}
+
+// ---------------------------------------------------------------------------
+// .dat Database extraction
+// ---------------------------------------------------------------------------
+
+/// Collect `.dat` / `.project` pairs from `Data/BasicData/` (unencrypted layout).
+///
+/// Returns `Vec<(stem_name, project_bytes, dat_bytes)>`.  If the directory does
+/// not exist or contains no recognised pairs the function returns `Ok(vec![])`.
+#[allow(clippy::type_complexity)]
+pub(crate) fn load_dat_files(
+    game_dir: &Path,
+) -> Result<Vec<(String, Vec<u8>, Vec<u8>)>, ExtractorError> {
+    let basic_data_dir = game_dir.join("Data").join("BasicData");
+    if !basic_data_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut result = Vec::new();
+    for entry in std::fs::read_dir(&basic_data_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("project") {
+            continue;
+        }
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+        // WolfTL skips SysDataBaseBasic — it only contains engine internals.
+        if stem == "SysDataBaseBasic" {
+            continue;
+        }
+        let dat_path = path.with_extension("dat");
+        if !dat_path.exists() {
+            continue;
+        }
+        let project_bytes = std::fs::read(&path)?;
+        let dat_bytes = std::fs::read(&dat_path)?;
+        result.push((stem, project_bytes, dat_bytes));
+    }
+    Ok(result)
+}
+
+/// Extract translatable string segments from a Wolf RPG Database file pair.
+///
+/// Only fields that are of String type (indexInfo ≥ 0x07D0) are considered.
+/// A value is extracted if the field name is a known translatable name OR if the
+/// value contains Japanese characters.  Empty and placeholder-only values are
+/// skipped.
+pub fn extract_database_segments(
+    db_name: &str,
+    project_bytes: &[u8],
+    dat_bytes: &[u8],
+    _version: &crate::engines::detector::WolfVersion,
+) -> Result<Vec<WolfSegment>, ExtractorError> {
+    let db = dat_parser::parse_database(project_bytes, dat_bytes).map_err(|e| {
+        ExtractorError::DatParse {
+            file: db_name.to_owned(),
+            reason: e.to_string(),
+        }
+    })?;
+
+    let mut segments = Vec::new();
+
+    for (type_idx, dat_type) in db.types.iter().enumerate() {
+        for (entry_idx, entry) in dat_type.entries.iter().enumerate() {
+            // Walk string fields in declaration order; string_values are stored in
+            // the same sequential order — one value per string-typed active field.
+            let mut str_pos = 0usize;
+            for field in &dat_type.fields {
+                if !field.is_valid() {
+                    continue;
+                }
+                if !field.is_string() {
+                    continue;
+                }
+                let Some(value) = entry.string_values.get(str_pos) else {
+                    str_pos += 1;
+                    continue;
+                };
+                str_pos += 1;
+
+                if value.trim().is_empty() {
+                    continue;
+                }
+                if is_wolf_placeholder_only(value) {
+                    continue;
+                }
+                if !is_known_translatable_field(&field.name) && !contains_japanese(value) {
+                    continue;
+                }
+
+                segments.push(WolfSegment {
+                    key: format!("Database/{db_name}/{type_idx}/{entry_idx}/{}", field.name),
+                    source_text: value.clone(),
+                    kind: WolfSegmentKind::DatabaseField {
+                        db_name: db_name.to_owned(),
+                        type_idx,
+                        entry_idx,
+                        field_name: field.name.clone(),
+                    },
+                });
+            }
+        }
+    }
+
+    Ok(segments)
+}
+
+// ---------------------------------------------------------------------------
+// CommonEvents extraction
+// ---------------------------------------------------------------------------
+
+/// Extract translatable segments from `CommonEvent.dat`.
+///
+/// TODO(F4-05): The CommonEvent binary format is complex (per-event: indicator
+/// 0x8E, 7 unknown bytes, commands identical to .mps, then 100 fixed strings,
+/// plus 0x8F/0x91/0x92 sections).  Without a real fixture this cannot be
+/// validated.  Returns Ok(vec![]) until F4-05 integration.
+pub fn extract_common_events(
+    _bytes: &[u8],
+    _version: &crate::engines::detector::WolfVersion,
+) -> Result<Vec<WolfSegment>, ExtractorError> {
+    Ok(vec![])
+}
+
+// ---------------------------------------------------------------------------
+// Project-level orchestrator
+// ---------------------------------------------------------------------------
+
+/// Extract ALL translatable segments from a Wolf RPG game directory.
+///
+/// Scans `game_dir/Data/` for unencrypted files:
+///   - `MapData/*.mps`        → `extract_map_segments`
+///   - `BasicData/*.dat`      → `extract_database_segments` (pairs with `.project`)
+///   - `BasicData/CommonEvent.dat` → `extract_common_events` (stub in F4-03)
+///
+/// Encrypted `.wolf` archives are deferred to F4-05.  Individual file parse
+/// errors are logged as warnings and do not abort the overall extraction.
+pub fn extract_wolf_project(
+    game_dir: &Path,
+    version: &crate::engines::detector::WolfVersion,
+) -> Result<Vec<WolfSegment>, ExtractorError> {
+    let mut segments = Vec::new();
+
+    // --- Maps ---
+    // Err = no .mps files found (encrypted layout deferred to F4-05).
+    if let Ok(mps_files) = load_mps_files(game_dir, version) {
+        for (name, bytes) in mps_files {
+            match extract_map_segments(&name, &bytes, version) {
+                Ok(segs) => segments.extend(segs),
+                Err(e) => eprintln!("warn: skipping {name}.mps — {e}"),
+            }
+        }
+    }
+
+    // --- Databases ---
+    match load_dat_files(game_dir) {
+        Ok(dat_files) => {
+            for (name, project_bytes, dat_bytes) in dat_files {
+                match extract_database_segments(&name, &project_bytes, &dat_bytes, version) {
+                    Ok(segs) => segments.extend(segs),
+                    Err(e) => eprintln!("warn: skipping {name}.dat — {e}"),
+                }
+            }
+        }
+        Err(e) => eprintln!("warn: could not load .dat files — {e}"),
+    }
+
+    // --- Common Events ---
+    let ce_path = game_dir
+        .join("Data")
+        .join("BasicData")
+        .join("CommonEvent.dat");
+    if ce_path.exists() {
+        match std::fs::read(&ce_path) {
+            Ok(bytes) => match extract_common_events(&bytes, version) {
+                Ok(segs) => segments.extend(segs),
+                Err(e) => eprintln!("warn: skipping CommonEvent.dat — {e}"),
+            },
+            Err(e) => eprintln!("warn: could not read CommonEvent.dat — {e}"),
+        }
+    }
+
+    Ok(segments)
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engines::detector::WolfVersion;
+
+    /// Build a minimal valid .mps with zero events.
+    fn make_empty_mps() -> Vec<u8> {
+        let mut b = Vec::new();
+        // MAP_SIGNATURE (20 bytes)
+        b.extend_from_slice(
+            b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x57\x4F\x4C\x46\x4D\x00\x00\x00\x00\x00",
+        );
+        b.extend_from_slice(&[0x00; 5]); // unknown
+        b.extend_from_slice(&0u32.to_le_bytes()); // skippable = 0
+        b.extend_from_slice(&1u32.to_le_bytes()); // tileset
+        b.extend_from_slice(&1u32.to_le_bytes()); // width = 1
+        b.extend_from_slice(&1u32.to_le_bytes()); // height = 1
+        b.extend_from_slice(&0u32.to_le_bytes()); // event_count = 0
+        b.extend_from_slice(&[0x00; 4]); // layer1 (1×1×4)
+        b.extend_from_slice(&[0x00; 4]); // layer2
+        b.extend_from_slice(&[0x00; 4]); // layer3
+        b.push(0x66); // map end
+        b
+    }
+
+    /// Encode a string as the length-prefixed SJIS format used by wolfrpg-map-parser.
+    /// Format: u32_le(len) + sjis_bytes + 0x00 null, where len = sjis_bytes.len() + 1.
+    fn encode_mps_string(text: &str) -> Vec<u8> {
+        use encoding_rs::SHIFT_JIS;
+        let (encoded, _, _) = SHIFT_JIS.encode(text);
+        let sjis: &[u8] = &encoded;
+        let len = sjis.len() + 1; // +1 for null terminator
+        let mut out = Vec::new();
+        out.extend_from_slice(&(len as u32).to_le_bytes());
+        out.extend_from_slice(sjis);
+        out.push(0x00); // null terminator
+        out
+    }
+
+    /// Build ShowMessage command bytes (the full Command wrapper).
+    fn make_show_message_cmd(text: &str) -> Vec<u8> {
+        let mut b = Vec::new();
+        // Command header: signature BE + 1 padding byte
+        b.extend_from_slice(&0x01650000u32.to_be_bytes()); // ShowMessage
+        b.push(0x00); // padding
+                      // ShowTextCommand body: 2 unknown bytes + string + 1 end byte
+        b.push(0x00);
+        b.push(0x00);
+        b.extend(encode_mps_string(text));
+        b.push(0x00); // command end byte
+        b
+    }
+
+    /// Build a page with a given set of pre-encoded command bytes.
+    fn make_page(commands_bytes: &[u8], command_count: u32) -> Vec<u8> {
+        let mut b = Vec::new();
+        b.extend_from_slice(b"\x79\xff\xff\xff\xff"); // PAGE_SIGNATURE
+        b.extend(encode_mps_string("")); // icon = ""
+        b.push(0x02); // icon_row raw (→ 0 after (>>1)-1)
+        b.push(0x00); // icon_column
+        b.push(0x00); // icon_opacity
+        b.push(0x00); // icon_blend
+        b.push(0x00); // event_trigger
+        b.extend_from_slice(&[0x00; 36]); // conditions
+        b.extend_from_slice(&[0x00; 6]); // animation+move fields
+        b.extend_from_slice(&0u32.to_le_bytes()); // move_count = 0
+        b.extend_from_slice(&command_count.to_le_bytes()); // command_count
+        b.extend_from_slice(commands_bytes);
+        b.extend_from_slice(&0u32.to_le_bytes()); // unknown2
+        b.push(0x00); // shadow_graphic
+        b.push(0x00); // range_extension_x
+        b.push(0x00); // range_extension_y
+        b.push(0x7a); // page end
+        b
+    }
+
+    /// Build an event with a single page.
+    fn make_event(page_bytes: &[u8]) -> Vec<u8> {
+        let mut b = Vec::new();
+        b.extend_from_slice(&0x6f393000u32.to_be_bytes()); // EVENT_SIGNATURE
+        b.push(0x00); // padding
+        b.extend_from_slice(&1u32.to_le_bytes()); // id
+        b.extend(encode_mps_string("E")); // name
+        b.extend_from_slice(&0u32.to_le_bytes()); // position_x
+        b.extend_from_slice(&0u32.to_le_bytes()); // position_y
+        b.extend_from_slice(&1u32.to_le_bytes()); // page_count = 1
+        b.extend_from_slice(&0u32.to_le_bytes()); // unknown1
+        b.extend_from_slice(page_bytes);
+        b.push(0x70); // event end
+        b
+    }
+
+    /// Build a full .mps wrapping the given event bytes.
+    fn make_mps_with_event(event_bytes: &[u8]) -> Vec<u8> {
+        let mut b = Vec::new();
+        b.extend_from_slice(
+            b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x57\x4F\x4C\x46\x4D\x00\x00\x00\x00\x00",
+        );
+        b.extend_from_slice(&[0x00; 5]); // unknown
+        b.extend_from_slice(&0u32.to_le_bytes()); // skippable = 0
+        b.extend_from_slice(&1u32.to_le_bytes()); // tileset
+        b.extend_from_slice(&1u32.to_le_bytes()); // width = 1
+        b.extend_from_slice(&1u32.to_le_bytes()); // height = 1
+        b.extend_from_slice(&1u32.to_le_bytes()); // event_count = 1
+        b.extend_from_slice(&[0x00; 4]); // layer1
+        b.extend_from_slice(&[0x00; 4]); // layer2
+        b.extend_from_slice(&[0x00; 4]); // layer3
+        b.extend_from_slice(event_bytes);
+        b.push(0x66); // map end
+        b
+    }
+
+    fn v2() -> WolfVersion {
+        WolfVersion { major: 2, minor: 0 }
+    }
+
+    #[test]
+    fn test_extract_map_empty() {
+        let bytes = make_empty_mps();
+        let segments = extract_map_segments("TestMap", &bytes, &v2()).unwrap();
+        assert!(segments.is_empty());
+    }
+
+    #[test]
+    fn test_extract_map_single_message() {
+        let cmd = make_show_message_cmd("テスト");
+        let page = make_page(&cmd, 1);
+        let event = make_event(&page);
+        let mps = make_mps_with_event(&event);
+
+        let segments = extract_map_segments("Map001", &mps, &v2()).unwrap();
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].source_text, "テスト");
+        assert_eq!(segments[0].key, "MapData/Map001/events/0/pages/0/0");
+    }
+
+    #[test]
+    fn test_extract_map_placeholder_only() {
+        // \v[1] is a Wolf placeholder — should be filtered out
+        let cmd = make_show_message_cmd("\\v[1]");
+        let page = make_page(&cmd, 1);
+        let event = make_event(&page);
+        let mps = make_mps_with_event(&event);
+
+        let segments = extract_map_segments("Map001", &mps, &v2()).unwrap();
+        assert!(
+            segments.is_empty(),
+            "placeholder-only segment must be filtered"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Database extraction tests (Step 6)
+    // -----------------------------------------------------------------------
+
+    /// Encode `text` as a Wolf length-prefixed SJIS string (for test helpers).
+    fn sjis_string(text: &str) -> Vec<u8> {
+        use encoding_rs::SHIFT_JIS;
+        let (enc, _, _) = SHIFT_JIS.encode(text);
+        let len = (enc.len() + 1) as u32;
+        let mut out = len.to_le_bytes().to_vec();
+        out.extend_from_slice(&enc);
+        out.push(0x00);
+        out
+    }
+
+    /// Empty Wolf string (1-byte null only).
+    fn empty_wolf_string() -> Vec<u8> {
+        let mut v = 1u32.to_le_bytes().to_vec();
+        v.push(0x00);
+        v
+    }
+
+    /// Build a minimal unencrypted SJIS .project with one type, one string field,
+    /// and one data entry.
+    fn make_db_project(type_name: &str, field_name: &str) -> Vec<u8> {
+        let mut b = Vec::new();
+        b.extend_from_slice(&1u32.to_le_bytes()); // type_count = 1
+        b.extend(sjis_string(type_name));
+        b.extend_from_slice(&1u32.to_le_bytes()); // field_count = 1
+        b.extend(sjis_string(field_name));
+        b.extend_from_slice(&1u32.to_le_bytes()); // data_count = 1
+        b.extend(empty_wolf_string()); // entry name = ""
+        b.extend(empty_wolf_string()); // description = ""
+                                       // field_type_list_size = 1, type byte = 0
+        b.extend_from_slice(&1u32.to_le_bytes());
+        b.push(0x00);
+        // unknown1/2/3/4 each: count=1, then zero items (counts only, no data)
+        b.extend_from_slice(&1u32.to_le_bytes());
+        b.extend(empty_wolf_string()); // unknown1 string for field
+        b.extend_from_slice(&1u32.to_le_bytes());
+        b.extend_from_slice(&0u32.to_le_bytes()); // unknown2 args = 0
+        b.extend_from_slice(&1u32.to_le_bytes());
+        b.extend_from_slice(&0u32.to_le_bytes()); // unknown3 args = 0
+        b.extend_from_slice(&1u32.to_le_bytes());
+        b.extend_from_slice(&0u32.to_le_bytes()); // unknown4 default = 0
+        b
+    }
+
+    /// Build a minimal unencrypted SJIS .dat with one type, one string field
+    /// (indexInfo = STRING_FIELD_START), one entry.
+    fn make_db_dat_string(value: &str) -> Vec<u8> {
+        use crate::engines::wolf::dat_parser::{DAT_TYPE_SEPARATOR, DB_MAGIC_SJIS};
+        let ver: u8 = 0xC1;
+        let mut b = Vec::new();
+        b.push(0x00); // indicator
+        b.extend_from_slice(&DB_MAGIC_SJIS);
+        b.push(ver);
+        b.extend_from_slice(&1u32.to_le_bytes()); // type_count
+        b.extend_from_slice(&DAT_TYPE_SEPARATOR);
+        b.extend_from_slice(&0u32.to_le_bytes()); // unknown1
+        b.extend_from_slice(&1u32.to_le_bytes()); // fields_size = 1
+        b.extend_from_slice(&0x07D0u32.to_le_bytes()); // indexInfo = STRING_FIELD_START
+        b.extend_from_slice(&1u32.to_le_bytes()); // data_count = 1
+        b.extend(sjis_string(value));
+        b.push(ver); // terminator
+        b
+    }
+
+    /// Build a .dat with one int field (indexInfo = VALID_FIELD_START = 0x03E8).
+    fn make_db_dat_int(int_value: u32) -> Vec<u8> {
+        use crate::engines::wolf::dat_parser::{DAT_TYPE_SEPARATOR, DB_MAGIC_SJIS};
+        let ver: u8 = 0xC1;
+        let mut b = Vec::new();
+        b.push(0x00);
+        b.extend_from_slice(&DB_MAGIC_SJIS);
+        b.push(ver);
+        b.extend_from_slice(&1u32.to_le_bytes());
+        b.extend_from_slice(&DAT_TYPE_SEPARATOR);
+        b.extend_from_slice(&0u32.to_le_bytes());
+        b.extend_from_slice(&1u32.to_le_bytes());
+        b.extend_from_slice(&0x03E8u32.to_le_bytes()); // int field
+        b.extend_from_slice(&1u32.to_le_bytes());
+        b.extend_from_slice(&int_value.to_le_bytes());
+        b.push(ver);
+        b
+    }
+
+    #[test]
+    fn test_extract_database_name_field_japanese() {
+        let project = make_db_project("Items", "name");
+        let dat = make_db_dat_string("テスト"); // Japanese value → always extracted
+        let segs = extract_database_segments("UserDB", &project, &dat, &v2()).unwrap();
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].source_text, "テスト");
+        assert!(segs[0].key.starts_with("Database/UserDB/"));
+        assert!(segs[0].key.ends_with("/name"));
+    }
+
+    #[test]
+    fn test_extract_database_known_field_ascii_extracted() {
+        // Field named "name" is a known translatable field even without Japanese.
+        let project = make_db_project("Items", "name");
+        let dat = make_db_dat_string("Hero");
+        let segs = extract_database_segments("UserDB", &project, &dat, &v2()).unwrap();
+        assert_eq!(
+            segs.len(),
+            1,
+            "known translatable field name must be extracted"
+        );
+    }
+
+    #[test]
+    fn test_extract_database_skips_int_field() {
+        let project = make_db_project("Vars", "hp");
+        let dat = make_db_dat_int(100);
+        let segs = extract_database_segments("UserDB", &project, &dat, &v2()).unwrap();
+        assert!(segs.is_empty(), "integer fields must be skipped");
+    }
+
+    #[test]
+    fn test_extract_database_skips_empty_value() {
+        // An empty string value should not produce a segment.
+        let project = make_db_project("Items", "name");
+        let dat = make_db_dat_string(""); // empty → skip
+        let segs = extract_database_segments("UserDB", &project, &dat, &v2()).unwrap();
+        assert!(segs.is_empty(), "empty string must be skipped");
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 9 — key uniqueness + format validation
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_key_uniqueness_single_mps() {
+        // Two distinct messages in the same map must produce distinct keys.
+        let cmd1 = make_show_message_cmd("こんにちは");
+        let cmd2 = make_show_message_cmd("さようなら");
+        let mut cmds = cmd1;
+        cmds.extend(cmd2);
+        let page = make_page(&cmds, 2);
+        let event = make_event(&page);
+        let mps = make_mps_with_event(&event);
+
+        let segs = extract_map_segments("Map001", &mps, &v2()).unwrap();
+        assert_eq!(segs.len(), 2);
+        let key0 = &segs[0].key;
+        let key1 = &segs[1].key;
+        assert_ne!(key0, key1, "two distinct commands must have distinct keys");
+    }
+
+    #[test]
+    fn test_key_format_mps() {
+        let cmd = make_show_message_cmd("テスト");
+        let page = make_page(&cmd, 1);
+        let event = make_event(&page);
+        let mps = make_mps_with_event(&event);
+        let segs = extract_map_segments("TitleMap", &mps, &v2()).unwrap();
+        assert_eq!(segs.len(), 1);
+        assert!(
+            segs[0].key.starts_with("MapData/TitleMap/events/"),
+            "key must follow MapData/{{map}}/events/... format"
+        );
+    }
+
+    #[test]
+    fn test_key_format_dat() {
+        let project = make_db_project("Chars", "名前");
+        let dat = make_db_dat_string("テスト");
+        let segs = extract_database_segments("CDB", &project, &dat, &v2()).unwrap();
+        assert_eq!(segs.len(), 1);
+        assert!(
+            segs[0].key.starts_with("Database/CDB/"),
+            "key must follow Database/{{db}}/... format"
+        );
+    }
+
+    #[test]
+    fn test_extract_wolf_project_empty_dir() {
+        // A directory with no Data/ subdirectory → Ok(vec![]).
+        let dir = std::path::Path::new("/tmp/hoshi2star_nonexistent_game_dir");
+        let segs = extract_wolf_project(dir, &v2()).unwrap();
+        assert!(segs.is_empty(), "empty game dir must yield no segments");
+    }
+}
