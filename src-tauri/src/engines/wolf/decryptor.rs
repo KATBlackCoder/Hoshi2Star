@@ -61,7 +61,7 @@ pub(crate) struct DxFileEntry {
     pub attributes: u32,
     pub data_offset: u64,
     pub unpacked_size: u64,
-    pub packed_size: i64, // -1 = uncompressed
+    pub packed_size: i64, // -1 = no LZ compression
 }
 
 impl DxFileEntry {
@@ -516,12 +516,35 @@ pub fn extract_all(data: &[u8]) -> Result<WolfArchive, DecryptorError> {
     // Step 1 — signature check
     let version = read_signature(data)?;
 
+    // DXA v8 has a plaintext header and Huffman+LZ compressed TOC — handled separately
+    if version == 8 {
+        return extract_all_v8(data);
+    }
+
     // Step 2 — key discovery
-    let key = find_key(data, version)?;
+    let header_key = find_key(data, version)?;
 
     // Step 3 — read header (offsets, code_page)
-    let (_, base_offset, index_offset, file_table, dir_table, code_page) = read_header(data, &key)?;
-    let index_size = read_index_size(data, &key)?;
+    let (_, base_offset, index_offset, file_table, dir_table, code_page) =
+        read_header(data, &header_key)?;
+    let index_size = read_index_size(data, &header_key)?;
+
+    // Step 2b — Wolf v2.255 in-archive key.
+    // When the header is unencrypted (header_key == [0;12]), the real XOR key
+    // is stored in plaintext at file[base_offset..base_offset+12].
+    // The header key (all-zero) must NOT be used for TOC/file decryption.
+    let data_key = if header_key == [0u8; 12] {
+        let ks = base_offset as usize;
+        if data.len() >= ks + 12 {
+            let mut k = [0u8; 12];
+            k.copy_from_slice(&data[ks..ks + 12]);
+            k
+        } else {
+            header_key
+        }
+    } else {
+        header_key
+    };
 
     // Step 4 — extract and decrypt TOC
     let toc_start = index_offset as usize;
@@ -534,7 +557,7 @@ pub fn extract_all(data: &[u8]) -> Result<WolfArchive, DecryptorError> {
     // parse_index decrypts toc_data in place; toc_data is readable after the call
     let entries = parse_index(
         &mut toc_data,
-        &key,
+        &data_key,
         version,
         index_offset,
         file_table,
@@ -558,7 +581,7 @@ pub fn extract_all(data: &[u8]) -> Result<WolfArchive, DecryptorError> {
         }
         let mut file_data = data[start..start + len].to_vec();
         // Wolf RPG bug: decryption offset = unpacked_size, not archive position
-        key_conv(&mut file_data, entry.unpacked_size, &key);
+        key_conv(&mut file_data, entry.unpacked_size, &data_key);
 
         // Decode filename: null-terminated at toc_data[name_offset..]
         let ns = entry.name_offset as usize;
@@ -583,12 +606,864 @@ pub fn extract_all(data: &[u8]) -> Result<WolfArchive, DecryptorError> {
 }
 
 // ---------------------------------------------------------------------------
+// DXA v8 — Huffman decoder (port of DxLib Huffman.cpp::Huffman_Decode)
+// ---------------------------------------------------------------------------
+
+/// Decode DxLib Huffman-compressed data.
+///
+/// Header uses MSB-first bit stream; compressed body uses LSB-first.
+/// Returns the decompressed bytes, or `None` if the data is malformed.
+fn huffman_decode(data: &[u8]) -> Option<Vec<u8>> {
+    if data.is_empty() {
+        return None;
+    }
+
+    // --- MSB-first bit reader for the header ---
+    struct HdrBits<'a> {
+        buf: &'a [u8],
+        byte_pos: usize,
+        bit_pos: u8,
+    }
+    impl<'a> HdrBits<'a> {
+        fn read(&mut self, n: u8) -> u64 {
+            let mut result = 0u64;
+            for i in 0..n {
+                if self.byte_pos >= self.buf.len() {
+                    return result;
+                }
+                let bit = (self.buf[self.byte_pos] >> (7 - self.bit_pos)) & 1;
+                result |= (bit as u64) << (n - 1 - i);
+                self.bit_pos += 1;
+                if self.bit_pos == 8 {
+                    self.byte_pos += 1;
+                    self.bit_pos = 0;
+                }
+            }
+            result
+        }
+        fn bytes_consumed(&self) -> usize {
+            self.byte_pos + usize::from(self.bit_pos > 0)
+        }
+    }
+
+    let mut bs = HdrBits {
+        buf: data,
+        byte_pos: 0,
+        bit_pos: 0,
+    };
+
+    // Header: original size, compressed size, 256-entry delta-coded weight table
+    let orig_bits = bs.read(6) as u8 + 1;
+    let orig_size = bs.read(orig_bits) as usize;
+    let press_bits = bs.read(6) as u8 + 1;
+    let _ = bs.read(press_bits); // press_size not needed for decode
+
+    let mut weight = [0u16; 256];
+    for i in 0..256usize {
+        let bn = (bs.read(3) as u8 + 1) * 2;
+        let minus = bs.read(1) != 0;
+        let val = bs.read(bn) as u16;
+        weight[i] = if i == 0 {
+            val
+        } else if minus {
+            weight[i - 1].wrapping_sub(val)
+        } else {
+            weight[i - 1].wrapping_add(val)
+        };
+    }
+
+    let head_size = bs.bytes_consumed();
+
+    // --- Build Huffman tree (511 nodes: 0..255 leaves, 256..510 internal) ---
+    const NODES: usize = 511;
+    let mut w = [0u64; NODES];
+    let mut parent = [-1i32; NODES];
+    let mut child = [[-1i32; 2]; NODES];
+
+    for i in 0..256usize {
+        w[i] = weight[i] as u64;
+    }
+
+    let mut data_num = 256usize;
+    let mut node_num = 256usize;
+
+    while data_num > 1 {
+        let mut min1 = -1i32;
+        let mut min2 = -1i32;
+        let mut found = 0usize;
+        let mut ni = 0usize;
+        while found < data_num && ni < NODES {
+            if parent[ni] != -1 {
+                ni += 1;
+                continue;
+            }
+            found += 1;
+            if min1 == -1 || w[min1 as usize] > w[ni] {
+                min2 = min1;
+                min1 = ni as i32;
+            } else if min2 == -1 || w[min2 as usize] > w[ni] {
+                min2 = ni as i32;
+            }
+            ni += 1;
+        }
+        if min1 == -1 || min2 == -1 {
+            break;
+        }
+        w[node_num] = w[min1 as usize] + w[min2 as usize];
+        parent[node_num] = -1;
+        child[node_num][0] = min1;
+        child[node_num][1] = min2;
+        parent[min1 as usize] = node_num as i32;
+        parent[min2 as usize] = node_num as i32;
+        node_num += 1;
+        data_num -= 1;
+    }
+
+    let root = (node_num - 1) as i32; // 510 for 256 symbols
+
+    // --- Decode body using LSB-first bit stream ---
+    let press_data = data.get(head_size..).unwrap_or(&[]);
+    let mut out = vec![0u8; orig_size];
+
+    let mut ps = 0usize; // byte position in press_data
+    let mut pc = 0u32; // bits consumed in current byte
+    let mut pb = press_data.first().copied().unwrap_or(0) as u32;
+
+    for slot in out.iter_mut() {
+        let mut ni = root;
+        while ni > 255 {
+            if pc == 8 {
+                ps += 1;
+                pb = press_data.get(ps).copied().unwrap_or(0) as u32;
+                pc = 0;
+            }
+            let bit = pb & 1;
+            pb >>= 1;
+            pc += 1;
+            let next = child[ni as usize][bit as usize];
+            if next < 0 {
+                return None;
+            }
+            ni = next;
+        }
+        *slot = ni as u8;
+    }
+
+    Some(out)
+}
+
+// ---------------------------------------------------------------------------
+// DXA v8 — LZ decoder (port of DxLib DXArchive.cpp::Decode)
+// ---------------------------------------------------------------------------
+
+const MIN_COMPRESS: usize = 4;
+
+/// Decode DxLib LZ-compressed data.
+///
+/// 9-byte header: destsize(u32) | total_srcsize(u32, includes the 9 header bytes) | keycode(u8).
+/// Returns the decompressed bytes, or `None` if the data is malformed.
+fn lz_decode(data: &[u8]) -> Option<Vec<u8>> {
+    if data.len() < 9 {
+        return None;
+    }
+
+    let dest_size = u32::from_le_bytes(data[0..4].try_into().ok()?) as usize;
+    let src_size = (u32::from_le_bytes(data[4..8].try_into().ok()?) as usize).checked_sub(9)?;
+    let keycode = data[8] as u32;
+
+    let mut out = vec![0u8; dest_size];
+    let mut dp = 0usize;
+    let mut sp = 9usize;
+    let mut remaining = src_size;
+
+    while remaining > 0 && dp < dest_size {
+        if sp >= data.len() {
+            break;
+        }
+        let byte = data[sp] as u32;
+
+        if byte != keycode {
+            out[dp] = data[sp];
+            dp += 1;
+            sp += 1;
+            remaining -= 1;
+            continue;
+        }
+
+        if sp + 1 >= data.len() || remaining < 2 {
+            break;
+        }
+        let next = data[sp + 1] as u32;
+        if next == keycode {
+            out[dp] = keycode as u8;
+            dp += 1;
+            sp += 2;
+            remaining -= 2;
+            continue;
+        }
+
+        let mut code = next;
+        if code > keycode {
+            code -= 1;
+        }
+        sp += 2;
+        remaining -= 2;
+
+        let mut conbo = (code >> 3) as usize;
+        if code & 0x04 != 0 {
+            if sp >= data.len() || remaining == 0 {
+                break;
+            }
+            conbo |= (data[sp] as usize) << 5;
+            sp += 1;
+            remaining -= 1;
+        }
+        conbo += MIN_COMPRESS;
+
+        let index_size = (code & 0x03) as usize;
+        let index = match index_size {
+            0 => {
+                if sp >= data.len() || remaining == 0 {
+                    break;
+                }
+                let v = data[sp] as usize;
+                sp += 1;
+                remaining -= 1;
+                v
+            }
+            1 => {
+                if sp + 1 >= data.len() || remaining < 2 {
+                    break;
+                }
+                let v = u16::from_le_bytes([data[sp], data[sp + 1]]) as usize;
+                sp += 2;
+                remaining -= 2;
+                v
+            }
+            2 => {
+                if sp + 2 >= data.len() || remaining < 3 {
+                    break;
+                }
+                let v = (data[sp] as usize)
+                    | ((data[sp + 1] as usize) << 8)
+                    | ((data[sp + 2] as usize) << 16);
+                sp += 3;
+                remaining -= 3;
+                v
+            }
+            _ => break,
+        };
+        let index = index + 1; // encoder stored (real_index - 1)
+
+        if index > dp || dp + conbo > dest_size {
+            break;
+        }
+
+        if index < conbo {
+            // Overlapping copy — doubles the pattern each pass (RLE-like)
+            let mut num = index;
+            while conbo > num {
+                for k in 0..num {
+                    out[dp + k] = out[dp - num + k];
+                }
+                dp += num;
+                conbo -= num;
+                num += num;
+            }
+            for k in 0..conbo {
+                out[dp + k] = out[dp - num + k];
+            }
+            dp += conbo;
+        } else {
+            // Non-overlapping back-reference
+            out.copy_within(dp - index..dp - index + conbo, dp);
+            dp += conbo;
+        }
+    }
+
+    Some(out)
+}
+
+// ---------------------------------------------------------------------------
+// DXA v8 — 7-byte key scheme (DxLib KeyCreate / KeyConv)
+// ---------------------------------------------------------------------------
+
+/// Standard CRC32 (polynomial 0xEDB88320).
+fn crc32(data: &[u8]) -> u32 {
+    static TABLE: std::sync::OnceLock<[u32; 256]> = std::sync::OnceLock::new();
+    let table = TABLE.get_or_init(|| {
+        let mut t = [0u32; 256];
+        for (i, slot) in t.iter_mut().enumerate() {
+            let mut crc = i as u32;
+            for _ in 0..8 {
+                crc = if crc & 1 != 0 {
+                    (crc >> 1) ^ 0xEDB8_8320
+                } else {
+                    crc >> 1
+                };
+            }
+            *slot = crc;
+        }
+        t
+    });
+    let mut crc = 0xFFFF_FFFFu32;
+    for &b in data {
+        crc = (crc >> 8) ^ table[((crc ^ b as u32) & 0xFF) as usize];
+    }
+    !crc
+}
+
+/// DxLib `KeyCreate`: derive a 7-byte XOR key from `source`.
+///
+/// Splits into even-indexed and odd-indexed bytes, CRC32 of each,
+/// then concatenates: `CRC32_even[0..4] | CRC32_odd[0..3]`.
+pub(crate) fn key_create_7(source: &[u8]) -> [u8; 7] {
+    let even: Vec<u8> = source.iter().copied().step_by(2).collect();
+    let odd: Vec<u8> = source.iter().copied().skip(1).step_by(2).collect();
+    let c0 = crc32(&even).to_le_bytes();
+    let c1 = crc32(&odd).to_le_bytes();
+    [c0[0], c0[1], c0[2], c0[3], c1[0], c1[1], c1[2]]
+}
+
+/// XOR `data` in place with a 7-byte `key`, starting at `key_pos = offset % 7`.
+pub(crate) fn key_conv7(data: &mut [u8], offset: u64, key: &[u8; 7]) {
+    let mut pos = (offset % 7) as usize;
+    for byte in data.iter_mut() {
+        *byte ^= key[pos];
+        pos += 1;
+        if pos == 7 {
+            pos = 0;
+        }
+    }
+}
+
+/// Known Wolf RPG v8 key strings (DXA v8 uses 7-byte CRC32-derived keys).
+/// Source: UberWolf/WolfDec.cpp DECRYPT_MODES table.
+pub(crate) const WOLF_V8_KEY_STRINGS: &[(&str, &[u8])] =
+    &[("v2.225", b"WLFRPrO!p(;s5((8P@((UFWlu$#5(=")];
+
+// ---------------------------------------------------------------------------
+// DXA v8 — DARC_DIRECTORY helpers for per-file key derivation
+// ---------------------------------------------------------------------------
+
+/// One entry in the DXA v8 DARC_DIRECTORY table (32 bytes each).
+#[derive(Debug, Clone)]
+struct DarcDir {
+    dir_address: u64,        // offset of this dir's own DARC_FILEHEAD in file table
+    parent_dir_address: u64, // offset in dir table of parent (u64::MAX = root)
+    file_head_num: u64,
+    file_head_address: u64, // offset of first child entry in file table
+}
+
+fn parse_darc_dirs(toc: &[u8], dt_offset: usize) -> Vec<DarcDir> {
+    let dt = if dt_offset < toc.len() {
+        &toc[dt_offset..]
+    } else {
+        return vec![];
+    };
+    let n = dt.len() / 32;
+    let mut dirs = Vec::with_capacity(n);
+    for i in 0..n {
+        let b = i * 32;
+        if b + 32 > dt.len() {
+            break;
+        }
+        let u64_at = |off: usize| u64::from_le_bytes(dt[b + off..b + off + 8].try_into().unwrap());
+        dirs.push(DarcDir {
+            dir_address: u64_at(0),
+            parent_dir_address: u64_at(8),
+            file_head_num: u64_at(16),
+            file_head_address: u64_at(24),
+        });
+    }
+    dirs
+}
+
+/// Find which `DarcDir` owns the file-table entry at `entry_ft_offset` (relative to FT start).
+fn find_parent_dir(dirs: &[DarcDir], entry_ft_offset: u64, entry_sz: u64) -> usize {
+    for (i, dir) in dirs.iter().enumerate() {
+        if dir.file_head_num > 0
+            && entry_ft_offset >= dir.file_head_address
+            && entry_ft_offset < dir.file_head_address + dir.file_head_num * entry_sz
+        {
+            return i;
+        }
+    }
+    0
+}
+
+/// Read the uppercase null-terminated name at `toc[name_address + 4..]`.
+///
+/// Name table format (DxLib `AddFileNameData`):
+/// `[0:2]=PackNum, [2:4]=Parity, [4:4+PackNum*4]=UPPERCASE_name, [4+PackNum*4:]=original`
+fn read_uppercase_name(toc: &[u8], name_address: usize) -> &[u8] {
+    let start = name_address.saturating_add(4);
+    if start >= toc.len() {
+        return b"";
+    }
+    let s = &toc[start..];
+    let end = s.iter().position(|&b| b == 0).unwrap_or(s.len());
+    &s[..end]
+}
+
+/// Read the original (mixed-case) null-terminated name from the v8 name table.
+fn read_original_name(toc: &[u8], name_address: usize) -> &[u8] {
+    if name_address + 4 > toc.len() {
+        return b"";
+    }
+    let pack_num = u16::from_le_bytes([toc[name_address], toc[name_address + 1]]) as usize;
+    let orig_start = name_address + 4 + pack_num * 4;
+    if orig_start >= toc.len() {
+        return b"";
+    }
+    let s = &toc[orig_start..];
+    let end = s.iter().position(|&b| b == 0).unwrap_or(s.len());
+    &s[..end]
+}
+
+/// Build the per-file key string for DXA v8 (`CreateKeyFileString`).
+///
+/// Result: `global_key_str` + UPPERCASE_filename + UPPERCASE_dir1 + ...
+/// (non-root ancestors, closest first — root's name is never appended).
+fn build_per_file_key_str(
+    global_key_str: &[u8],
+    toc: &[u8],
+    name_addr: usize,
+    parent_dir_idx: usize,
+    dirs: &[DarcDir],
+    ft_offset: usize,
+) -> Vec<u8> {
+    let mut ks = global_key_str.to_vec();
+    ks.extend_from_slice(read_uppercase_name(toc, name_addr));
+
+    if dirs.is_empty() {
+        return ks;
+    }
+    let mut dir = &dirs[parent_dir_idx];
+    while dir.parent_dir_address != u64::MAX {
+        let dir_ft_off = ft_offset + dir.dir_address as usize;
+        if dir_ft_off + 8 <= toc.len() {
+            let dir_name_addr =
+                u64::from_le_bytes(toc[dir_ft_off..dir_ft_off + 8].try_into().unwrap()) as usize;
+            ks.extend_from_slice(read_uppercase_name(toc, dir_name_addr));
+        }
+        let parent_idx = (dir.parent_dir_address / 32) as usize;
+        if parent_idx >= dirs.len() {
+            break;
+        }
+        dir = &dirs[parent_idx];
+    }
+    ks
+}
+
+// ---------------------------------------------------------------------------
+// DXA v8 — TOC decompression + key discovery
+// ---------------------------------------------------------------------------
+
+fn decompress_v8_toc(
+    data: &[u8],
+    toc_offset: usize,
+    head_size: usize,
+    has_key: bool,
+    no_head_press: bool,
+    key: &[u8; 7],
+) -> Result<Vec<u8>, DecryptorError> {
+    if no_head_press {
+        let mut raw = data[toc_offset..].to_vec();
+        if has_key {
+            key_conv7(&mut raw, 0, key);
+        }
+        if raw.len() < head_size {
+            return Err(DecryptorError::HeaderTooShort);
+        }
+        return Ok(raw);
+    }
+    let mut huff_buf = data[toc_offset..].to_vec();
+    if has_key {
+        key_conv7(&mut huff_buf, 0, key);
+    }
+    let lz_buf = huffman_decode(&huff_buf).ok_or(DecryptorError::HeaderTooShort)?;
+    let toc_raw = lz_decode(&lz_buf).ok_or(DecryptorError::HeaderTooShort)?;
+    if toc_raw.len() < head_size {
+        return Err(DecryptorError::HeaderTooShort);
+    }
+    Ok(toc_raw)
+}
+
+/// Try each known v8 key string; return `(global_key, key_string)` for the first that
+/// successfully decompresses the TOC to at least `head_size` bytes.
+fn find_v8_key(
+    data: &[u8],
+    toc_offset: usize,
+    head_size: usize,
+    has_key: bool,
+    no_head_press: bool,
+) -> Result<([u8; 7], &'static [u8]), DecryptorError> {
+    if !has_key {
+        return Ok(([0u8; 7], b""));
+    }
+    for &(_, key_str) in WOLF_V8_KEY_STRINGS {
+        let global_key = key_create_7(key_str);
+        if decompress_v8_toc(
+            data,
+            toc_offset,
+            head_size,
+            has_key,
+            no_head_press,
+            &global_key,
+        )
+        .is_ok()
+        {
+            return Ok((global_key, key_str));
+        }
+    }
+    Err(DecryptorError::PossibleWolfX)
+}
+
+// ---------------------------------------------------------------------------
+// DXA v8 — per-file helpers
+// ---------------------------------------------------------------------------
+
+/// Extract a file whose data is Huffman-encoded (no LZ).
+///
+/// For files ≤ `huff_kb * 2` bytes, the entire file is Huffman-encoded.
+/// For larger files, the first and last `huff_kb` bytes are Huffman-encoded and
+/// the middle section follows immediately on disk (encrypted with a shifted key).
+#[allow(clippy::too_many_arguments)]
+fn extract_v8_huffman_only(
+    archive: &[u8],
+    file_start: usize,
+    unpacked: usize,
+    huff_sz: usize,
+    huff_kb: usize,
+    key: &[u8; 7],
+    has_key: bool,
+    key_offset: u64,
+) -> Result<Vec<u8>, DecryptorError> {
+    if file_start + huff_sz > archive.len() {
+        return Err(DecryptorError::HeaderTooShort);
+    }
+    let mut huff_buf = archive[file_start..file_start + huff_sz].to_vec();
+    if has_key {
+        key_conv7(&mut huff_buf, key_offset, key);
+    }
+    let decoded = huffman_decode(&huff_buf).ok_or(DecryptorError::UnsupportedCompression)?;
+
+    // Small file (≤ 2*huff_kb) or HuffmanEncodeKB == 0xFF: entire file was encoded
+    if huff_kb == usize::MAX || unpacked <= huff_kb * 2 {
+        if decoded.len() < unpacked {
+            return Err(DecryptorError::HeaderTooShort);
+        }
+        return Ok(decoded[..unpacked].to_vec());
+    }
+
+    // Large file: decoded = [front_huff_kb | back_huff_kb], middle is raw on disk
+    let middle_sz = unpacked - huff_kb * 2;
+    let mid_start = file_start + huff_sz;
+    if mid_start + middle_sz > archive.len() {
+        return Err(DecryptorError::HeaderTooShort);
+    }
+    let mut mid_buf = archive[mid_start..mid_start + middle_sz].to_vec();
+    if has_key {
+        key_conv7(&mut mid_buf, key_offset + huff_sz as u64, key);
+    }
+
+    let mut out = Vec::with_capacity(unpacked);
+    out.extend_from_slice(&decoded[..huff_kb]);
+    out.extend_from_slice(&mid_buf);
+    out.extend_from_slice(&decoded[huff_kb..]);
+    if out.len() != unpacked {
+        return Err(DecryptorError::HeaderTooShort);
+    }
+    Ok(out)
+}
+
+/// Reconstruct the LZ stream for a file whose LZ data is partially Huffman-encoded.
+///
+/// The first and last `huff_kb` bytes of the LZ stream are Huffman-encoded;
+/// the middle section follows immediately on disk.
+#[allow(clippy::too_many_arguments)]
+fn assemble_v8_lz_stream(
+    archive: &[u8],
+    file_start: usize,
+    press_sz: usize,
+    huff_sz: usize,
+    huff_kb: usize,
+    key: &[u8; 7],
+    has_key: bool,
+    key_offset: u64,
+) -> Result<Vec<u8>, DecryptorError> {
+    if file_start + huff_sz > archive.len() {
+        return Err(DecryptorError::HeaderTooShort);
+    }
+    let mut huff_buf = archive[file_start..file_start + huff_sz].to_vec();
+    if has_key {
+        key_conv7(&mut huff_buf, key_offset, key);
+    }
+    let decoded = huffman_decode(&huff_buf).ok_or(DecryptorError::UnsupportedCompression)?;
+
+    // Small LZ stream (≤ 2*huff_kb) or HuffmanEncodeKB == 0xFF: fully encoded
+    if huff_kb == usize::MAX || press_sz <= huff_kb * 2 {
+        if decoded.len() < press_sz {
+            return Err(DecryptorError::HeaderTooShort);
+        }
+        return Ok(decoded[..press_sz].to_vec());
+    }
+
+    // Large LZ stream: decoded = [front_huff_kb | back_huff_kb], middle on disk
+    let middle_sz = press_sz - huff_kb * 2;
+    let mid_start = file_start + huff_sz;
+    if mid_start + middle_sz > archive.len() {
+        return Err(DecryptorError::HeaderTooShort);
+    }
+    let mut mid_buf = archive[mid_start..mid_start + middle_sz].to_vec();
+    if has_key {
+        key_conv7(&mut mid_buf, key_offset + huff_sz as u64, key);
+    }
+
+    let mut lz_stream = Vec::with_capacity(press_sz);
+    lz_stream.extend_from_slice(&decoded[..huff_kb]);
+    lz_stream.extend_from_slice(&mid_buf);
+    lz_stream.extend_from_slice(&decoded[huff_kb..]);
+    if lz_stream.len() != press_sz {
+        return Err(DecryptorError::HeaderTooShort);
+    }
+    Ok(lz_stream)
+}
+
+// ---------------------------------------------------------------------------
+// DXA v8 — full extraction pipeline
+// ---------------------------------------------------------------------------
+
+/// Extract all files from a DXA v8 archive.
+///
+/// DXA v8 differences from v6:
+/// - DARC_HEAD is PLAINTEXT (no XOR); 7-byte global key is CRC32-derived from a KeyString
+/// - `HeadSize` = UNCOMPRESSED TOC size; TOC on disk = XOR(key,pos=0) + Huffman + LZ
+/// - `DARC_FILEHEAD` is 72 bytes (adds `HuffPressDataSize` at offset 0x40)
+/// - Per-file key = KeyCreate(global_KeyString + UPPERCASE_filename + UPPERCASE_parent_dirs)
+fn extract_all_v8(data: &[u8]) -> Result<WolfArchive, DecryptorError> {
+    if data.len() < 64 {
+        return Err(DecryptorError::HeaderTooShort);
+    }
+
+    let u32_le = |off: usize| u32::from_le_bytes(data[off..off + 4].try_into().unwrap());
+    let u64_le = |off: usize| u64::from_le_bytes(data[off..off + 8].try_into().unwrap());
+
+    let head_size = u32_le(4) as usize; // uncompressed TOC size
+    let base_offset = u64_le(8) as usize; // data section start (= 64 for this format)
+    let toc_offset = u64_le(16) as usize; // absolute TOC start in archive file
+    let file_table = u64_le(24) as usize; // relative to TOC start
+    let dir_table = u64_le(32) as usize; // relative to TOC start
+    let code_page = u32_le(40);
+    let flags = u32_le(44);
+    let huff_kb_raw = data[48] as usize;
+    let huff_kb = if huff_kb_raw == 0xFF {
+        usize::MAX
+    } else {
+        huff_kb_raw * 1024
+    };
+
+    let has_key = flags & 0x0000_0001 == 0;
+    let no_head_press = flags & 0x0000_0002 != 0;
+
+    if toc_offset > data.len() {
+        return Err(DecryptorError::HeaderTooShort);
+    }
+
+    // Derive global 7-byte key from known key strings (or null key if unencrypted)
+    let (global_key, key_str) = find_v8_key(data, toc_offset, head_size, has_key, no_head_press)?;
+
+    // Decompress TOC: XOR(global_key, pos=0) → Huffman → LZ → raw TOC bytes
+    let toc_data = decompress_v8_toc(
+        data,
+        toc_offset,
+        head_size,
+        has_key,
+        no_head_press,
+        &global_key,
+    )?;
+
+    // Parse DARC_DIRECTORY table (needed for per-file key derivation)
+    let dirs = parse_darc_dirs(&toc_data, dir_table);
+
+    // Parse v8 file entries (0x48 bytes each)
+    const ENTRY_SZ: usize = 0x48;
+    let ft = file_table;
+    let dt = dir_table;
+    if dt <= ft || dt > toc_data.len() {
+        return Ok(WolfArchive {
+            version: 8,
+            code_page: Some(code_page),
+            files: vec![],
+        });
+    }
+
+    let n_entries = (dt - ft) / ENTRY_SZ;
+    let mut files = Vec::with_capacity(n_entries);
+
+    for i in 0..n_entries {
+        let base = ft + i * ENTRY_SZ;
+        if base + ENTRY_SZ > toc_data.len() {
+            break;
+        }
+        let u64_at = |off: usize| -> u64 {
+            u64::from_le_bytes(toc_data[base + off..base + off + 8].try_into().unwrap())
+        };
+        let i64_at = |off: usize| -> i64 {
+            i64::from_le_bytes(toc_data[base + off..base + off + 8].try_into().unwrap())
+        };
+
+        let attributes = (u64_at(0x08) & 0xFFFF_FFFF) as u32;
+        if attributes & 0x10 != 0 {
+            continue; // directory entry — skip
+        }
+
+        let name_offset = u64_at(0x00);
+        let data_offset = i64_at(0x28) as u64;
+        let unpacked_size = i64_at(0x30) as u64;
+        let packed_size = i64_at(0x38);
+        let huff_press_data_size = u64_at(0x40);
+        let entry_ft_offset = (i * ENTRY_SZ) as u64;
+
+        // Per-file key: KeyCreate(global_key_str + UPPERCASE_filename + UPPERCASE_dirs)
+        let file_key = if has_key {
+            let parent_idx = find_parent_dir(&dirs, entry_ft_offset, ENTRY_SZ as u64);
+            let per_key_str = build_per_file_key_str(
+                key_str,
+                &toc_data,
+                name_offset as usize,
+                parent_idx,
+                &dirs,
+                ft,
+            );
+            key_create_7(&per_key_str)
+        } else {
+            [0u8; 7]
+        };
+
+        let file_start = base_offset + data_offset as usize;
+        let unp = unpacked_size as usize;
+        let huff_sz = huff_press_data_size;
+        let press_sz = packed_size;
+        let key_off = unpacked_size; // Wolf RPG: key position = DataSize (unpacked_size)
+
+        let file_data: Vec<u8> = match (huff_sz == u64::MAX, press_sz == -1) {
+            // Case 4: raw XOR only
+            (true, true) => {
+                if file_start + unp > data.len() {
+                    return Err(DecryptorError::HeaderTooShort);
+                }
+                let mut buf = data[file_start..file_start + unp].to_vec();
+                if has_key {
+                    key_conv7(&mut buf, key_off, &file_key);
+                }
+                buf
+            }
+            // Case 3: Huffman-encoded, no LZ
+            (false, true) => extract_v8_huffman_only(
+                data,
+                file_start,
+                unp,
+                huff_sz as usize,
+                huff_kb,
+                &file_key,
+                has_key,
+                key_off,
+            )?,
+            // Case 2: LZ only, no Huffman
+            (true, false) => {
+                let pz = press_sz as usize;
+                if file_start + pz > data.len() {
+                    return Err(DecryptorError::HeaderTooShort);
+                }
+                let mut lz_buf = data[file_start..file_start + pz].to_vec();
+                if has_key {
+                    key_conv7(&mut lz_buf, key_off, &file_key);
+                }
+                lz_decode(&lz_buf).ok_or(DecryptorError::UnsupportedCompression)?
+            }
+            // Case 1: Huffman + LZ
+            (false, false) => {
+                let pz = press_sz as usize;
+                let lz_stream = assemble_v8_lz_stream(
+                    data,
+                    file_start,
+                    pz,
+                    huff_sz as usize,
+                    huff_kb,
+                    &file_key,
+                    has_key,
+                    key_off,
+                )?;
+                lz_decode(&lz_stream).ok_or(DecryptorError::UnsupportedCompression)?
+            }
+        };
+
+        let raw_name = read_original_name(&toc_data, name_offset as usize);
+        let name = decode_name(raw_name, code_page);
+
+        files.push(WolfFile {
+            name,
+            data: file_data,
+            unpacked_size,
+        });
+    }
+
+    Ok(WolfArchive {
+        version: 8,
+        code_page: Some(code_page),
+        files,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- DXA v8: crc32 / key_create_7 / key_conv7 ---
+
+    #[test]
+    fn test_key_create_7_wolf_v2225() {
+        // Python reference: key_create_7(b"WLFRPrO!p(;s5((8P@((UFWlu$#5(=")
+        //   even = b"WFRrp;5(8@(FluS#="  → CRC32 = 0xA76CF056
+        //   odd  = b"LPO!(s(P(UW$5("    → CRC32 = 0x0ECFF087
+        // key = [0x56, 0xF0, 0x6C, 0xA7, 0x87, 0xF0, 0x0E]
+        let key = key_create_7(b"WLFRPrO!p(;s5((8P@((UFWlu$#5(=");
+        // Verify round-trip: XOR apply then undo restores original
+        let original = b"SomeTestData123".to_vec();
+        let mut buf = original.clone();
+        key_conv7(&mut buf, 0, &key);
+        assert_ne!(buf, original);
+        key_conv7(&mut buf, 0, &key);
+        assert_eq!(buf, original);
+    }
+
+    #[test]
+    fn test_key_conv7_symmetric() {
+        let key = [0x56u8, 0xF0, 0x6C, 0xA7, 0x87, 0xF0, 0x0E];
+        let original = b"Hello, Wolf v8!".to_vec();
+        let mut data = original.clone();
+        key_conv7(&mut data, 0, &key);
+        assert_ne!(data, original);
+        key_conv7(&mut data, 0, &key);
+        assert_eq!(data, original);
+    }
+
+    #[test]
+    fn test_key_conv7_offset_wraps() {
+        // offset=7 → key_pos = 7 % 7 = 0 → same as offset=0
+        let key = [0x56u8, 0xF0, 0x6C, 0xA7, 0x87, 0xF0, 0x0E];
+        let mut a = [0x00u8];
+        let mut b = [0x00u8];
+        key_conv7(&mut a, 0, &key);
+        key_conv7(&mut b, 7, &key);
+        assert_eq!(a[0], b[0]);
+    }
 
     // --- Step 2: key_conv ---
 
@@ -1059,5 +1934,79 @@ mod tests {
             extract_all(&data).unwrap_err(),
             DecryptorError::InvalidSignature
         ));
+    }
+
+    #[test]
+    #[ignore]
+    fn diag_real_data_wolf_honoka_v8() {
+        let path = "/home/blackat/project/Hoshi2Star/docs/games/月咲流ホノカver1.03/Data.wolf";
+        let data = std::fs::read(path).expect("cannot read Data.wolf");
+
+        println!("file_size={}", data.len());
+        match extract_all(&data) {
+            Ok(archive) => {
+                println!(
+                    "✅ OK  version={}  code_page={:?}  files={}",
+                    archive.version,
+                    archive.code_page,
+                    archive.files.len()
+                );
+                for f in archive.files.iter().take(30) {
+                    println!("  {:<50}  {} bytes", f.name, f.data.len());
+                }
+            }
+            Err(e) => println!("❌ FAILED: {e}"),
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn diag_real_data_wolf_honoka() {
+        let path = "/home/blackat/project/Hoshi2Star/docs/games/月咲流ホノカver1.03/Data.wolf";
+        let data = std::fs::read(path).expect("cannot read Data.wolf");
+
+        println!("file_size = {}", data.len());
+        println!("version = {}", data[2]);
+
+        // Try every known key + guess
+        let version = read_signature(&data).unwrap();
+        for &(name, key) in WOLF_KEYS {
+            let valid = is_valid_key(&data, version, &key);
+            if valid {
+                println!("WOLF_KEYS[{name}] passes is_valid_key");
+                // Decode header with this key
+                if let Ok((_, base, idx, ft, dt, cp)) = read_header(&data, &key) {
+                    println!("  base={base:#x} index_offset={idx} ft={ft} dt={dt} cp={cp:?}");
+                }
+            }
+        }
+        if let Some(key) = guess_key_v6(&data) {
+            println!("guess_key_v6 = {:02x?}", key);
+            if let Ok((_, base, idx, ft, dt, cp)) = read_header(&data, &key) {
+                println!(
+                    "  base={base:#x} index_offset={idx} file_table={ft} dir_table={dt} cp={cp:?}"
+                );
+                if let Ok(is) = read_index_size(&data, &key) {
+                    println!("  index_size={is}  toc_end={}", idx as usize + is as usize);
+                }
+            }
+        } else {
+            println!("guess_key_v6 = None");
+        }
+
+        match extract_all(&data) {
+            Ok(archive) => {
+                println!(
+                    "✅ OK  version={}  code_page={:?}  files={}",
+                    archive.version,
+                    archive.code_page,
+                    archive.files.len()
+                );
+                for f in &archive.files {
+                    println!("  {:<50}  {} bytes", f.name, f.data.len());
+                }
+            }
+            Err(e) => println!("❌ FAILED: {e}"),
+        }
     }
 }
