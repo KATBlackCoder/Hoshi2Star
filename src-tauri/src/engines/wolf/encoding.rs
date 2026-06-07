@@ -1,6 +1,4 @@
 // Wolf RPG — Shift-JIS ↔ UTF-8 conversion layer.
-// Functions become used in Step 3 (extractor) and Step 4 (mps parser).
-#![allow(dead_code)]
 //
 // Wolf RPG v1/v2 files use Shift-JIS (code page 932).
 // Wolf RPG v3+ files use UTF-8.
@@ -23,6 +21,8 @@ pub(crate) fn decode_shiftjis(bytes: &[u8]) -> Result<String, String> {
 /// Returns `Err` if any character cannot be represented in Shift-JIS (e.g. emoji,
 /// Latin letters with diacritics beyond the limited SJIS range). Used by F4-04
 /// injector as a guard — Wolf RPG v2 will crash if UTF-8 bytes are written back.
+// Used by the injector (F4-04); unused in F4-03 extractor.
+#[allow(dead_code)]
 pub(crate) fn encode_shiftjis(text: &str) -> Result<Vec<u8>, String> {
     let (encoded, _, had_errors) = SHIFT_JIS.encode(text);
     if had_errors {
@@ -39,6 +39,8 @@ pub(crate) fn encode_shiftjis(text: &str) -> Result<Vec<u8>, String> {
 ///
 /// - v3+ → UTF-8 (native)
 /// - v1/v2 → Shift-JIS decode via `encoding_rs`
+// Used by higher-level parsers in F4-04/05; direct SJIS decode used in F4-03.
+#[allow(dead_code)]
 pub(crate) fn decode_wolf_text(
     bytes: &[u8],
     version: &crate::engines::detector::WolfVersion,
