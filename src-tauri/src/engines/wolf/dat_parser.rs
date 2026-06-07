@@ -38,6 +38,8 @@ const VALID_FIELD_START: u32 = 0x03E8;
 
 // Signals that an extra string follows in the type data header
 const STRING_INDICATOR: u32 = 0x0001_D4C0;
+/// Public re-export for the injector (F4-04).
+pub(crate) const STRING_INDICATOR_PUB: u32 = STRING_INDICATOR;
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -88,8 +90,7 @@ pub struct DatEntry {
     /// Row name from the .project schema (used by injector F4-04).
     #[allow(dead_code)]
     pub name: String,
-    /// Integer field values (used by injector F4-04).
-    #[allow(dead_code)]
+    /// Integer field values (preserved verbatim during injection).
     pub int_values: Vec<u32>,
     pub string_values: Vec<String>,
 }
@@ -107,8 +108,7 @@ pub struct DatType {
 #[derive(Debug, Clone)]
 pub struct DatFile {
     pub types: Vec<DatType>,
-    /// Encoding flag — injector (F4-04) needs this to write back in the correct encoding.
-    #[allow(dead_code)]
+    /// Encoding flag — used by the injector to write back the correct magic bytes.
     pub is_utf8: bool,
 }
 
@@ -386,6 +386,84 @@ pub fn parse_database(project_bytes: &[u8], dat_bytes: &[u8]) -> Result<DatFile,
     let types = parse_dat_types(dat_bytes, &project_types, is_utf8)?;
 
     Ok(DatFile { types, is_utf8 })
+}
+
+// ---------------------------------------------------------------------------
+// Test helpers (pub(crate) so injector tests can reuse them)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+fn sjis_string_inner(text: &str) -> Vec<u8> {
+    use encoding_rs::SHIFT_JIS;
+    let (encoded, _, _) = SHIFT_JIS.encode(text);
+    let sjis: &[u8] = &encoded;
+    let len = (sjis.len() + 1) as u32;
+    let mut out = len.to_le_bytes().to_vec();
+    out.extend_from_slice(sjis);
+    out.push(0x00);
+    out
+}
+
+/// Build a minimal .project with one type, one field, one data entry.
+/// Available to all test modules via `dat_parser::make_minimal_project_pub`.
+#[cfg(test)]
+pub(crate) fn make_minimal_project_pub(
+    type_name: &str,
+    field_name: &str,
+    entry_name: &str,
+) -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend_from_slice(&1u32.to_le_bytes()); // type_count = 1
+    b.extend(sjis_string_inner(type_name));
+    b.extend_from_slice(&1u32.to_le_bytes()); // field_count = 1
+    b.extend(sjis_string_inner(field_name));
+    b.extend_from_slice(&1u32.to_le_bytes()); // data_count = 1
+    if entry_name.is_empty() {
+        b.extend_from_slice(&1u32.to_le_bytes());
+        b.push(0x00);
+    } else {
+        b.extend(sjis_string_inner(entry_name));
+    }
+    // description: empty
+    b.extend_from_slice(&1u32.to_le_bytes());
+    b.push(0x00);
+    // field_type_list_size = 1, one type byte = 0
+    b.extend_from_slice(&1u32.to_le_bytes());
+    b.push(0x00);
+    // unknown1: 1 entry, 1 empty string
+    b.extend_from_slice(&1u32.to_le_bytes());
+    b.extend_from_slice(&1u32.to_le_bytes());
+    b.push(0x00);
+    // unknown2: 1 entry, 0 string args
+    b.extend_from_slice(&1u32.to_le_bytes());
+    b.extend_from_slice(&0u32.to_le_bytes());
+    // unknown3: 1 entry, 0 int args
+    b.extend_from_slice(&1u32.to_le_bytes());
+    b.extend_from_slice(&0u32.to_le_bytes());
+    // unknown4: 1 entry, default value = 0
+    b.extend_from_slice(&1u32.to_le_bytes());
+    b.extend_from_slice(&0u32.to_le_bytes());
+    b
+}
+
+/// Build a minimal unencrypted SJIS .dat with one type, one string field, one entry.
+/// Available to all test modules via `dat_parser::make_minimal_dat_pub`.
+#[cfg(test)]
+pub(crate) fn make_minimal_dat_pub(string_value: &str) -> Vec<u8> {
+    let version: u8 = 0xC1;
+    let mut b = Vec::new();
+    b.push(0x00); // indicator = unencrypted
+    b.extend_from_slice(&DB_MAGIC_SJIS);
+    b.push(version);
+    b.extend_from_slice(&1u32.to_le_bytes()); // type_count = 1
+    b.extend_from_slice(&DAT_TYPE_SEPARATOR);
+    b.extend_from_slice(&0u32.to_le_bytes()); // unknown1
+    b.extend_from_slice(&1u32.to_le_bytes()); // fields_size = 1
+    b.extend_from_slice(&STRING_FIELD_START.to_le_bytes()); // string field
+    b.extend_from_slice(&1u32.to_le_bytes()); // data_count = 1
+    b.extend(sjis_string_inner(string_value));
+    b.push(version); // terminator
+    b
 }
 
 // ---------------------------------------------------------------------------
