@@ -108,11 +108,16 @@ Couche métier pure — pas de `tauri::State`, pas d'`AppHandle`, testable sans 
 
 | Fichier / Dossier | Rôle |
 |-------------------|------|
-| `detector.rs` | Détection automatique du moteur à partir du dossier jeu. Ordre de test : MV/MZ (`data/*.json` présents) avant VX Ace (`data/*.rvdata2` ou `Data/*.rvdata2`). Retourne `Engine` enum + chemin du dossier `Data/`. |
+| `detector.rs` | Détection automatique du moteur à partir du dossier jeu. Ordre de test : MV/MZ (`data/*.json`) → VX Ace (`data/*.rvdata2`) → Wolf RPG (`Game.exe` + `Data/`). Retourne `Engine` enum + chemin du dossier `Data/`. |
 | `mv_mz/extractor.rs` | Lit les fichiers JSON de `data/` (Actors, Armors, Weapons, Skills, Items, Enemies, Classes, CommonEvents, MapInfos, Maps, System). Décrypte `.rpgmvp`/`.rpgmvo` si nécessaire. Retourne des `Vec<(json_key, source_text)>`. |
 | `mv_mz/injector.rs` | Réécrit les fichiers JSON avec les traductions. Conserve la structure JSON d'origine — only `value` fields modifiés. |
 | `mv_mz/decryptor.rs` | Décryptage XOR des assets chiffrés RPG Maker MV/MZ. Clé lue depuis `System.json`. |
 | `vx_ace/` | Extractor + injector RPG Maker VX Ace via marshal-rs (Ruby Marshal binary). **Code disponible mais désactivé** dans `engines/detector.rs` — réactivation prévue post-Wolf RPG stable. |
+| `wolf/extractor.rs` | Lit les `.mps` (cartes) et `.dat`/`.project` (base de données) depuis `Data/MapData/` et `Data/BasicData/`. Fallback transparent vers les archives `.wolf` (DXA chiffrées) via `wolf/decryptor.rs`. Exporte `extract_all_wolf()` → `Vec<(file_name, file_type, Vec<WolfSegment>)>`. |
+| `wolf/injector.rs` | Réinjecte les traductions dans `.mps` et `.dat` via `wolfrpg-map-parser`. Écrit dans `Data/MapData/` et `Data/BasicData/` (Option A — priorité sur les archives). Charge les bytes sources via `load_mps_for_stem`/`load_dat_for_stem` (archive-aware). |
+| `wolf/decryptor.rs` | Décryptage XOR des archives `.wolf` (DXA v2/v3). Détecte la clé par heuristique. Émet `PossibleWolfX` si toutes les clés échouent (WolfX v3.5+ non supporté). |
+| `wolf/encoding.rs` | Conversion Shift-JIS ↔ UTF-8 pour les fichiers Wolf v2/v3. |
+| `wolf/dat_parser.rs` | Parseur binaire des fichiers `.dat` + `.project` Wolf RPG (format WolfTL). |
 
 ### `utils/`
 
@@ -259,7 +264,7 @@ Clic sur un projet dans ProjectList
 ## Ce qui n'est PAS dans cette version
 
 - **RPG Maker VX Ace** — code complet dans `engines/vx_ace/` mais désactivé dans `detector.rs`. Réactivation prévue post-Wolf RPG stable.
-- **Wolf RPG** — priorité absolue F4, pas encore commencé. Fichiers `.dat`/`.mps` + décryptage `.wolf` (DXA/WolfDec).
+- **Wolf RPG WolfX** — chiffrement WolfX (v3.5+, `WOLF_RPG_Editor_EX`) non supporté. Décrypter manuellement avec UberWolf, puis ouvrir le dossier `Data/` directement. Support planifié v0.5.0.
 - **RPG Developer Bakin** — F5, dépend de l'adoption DLC.
 - **Passe LLM review / tone** — pipeline multi-passes prévu mais passe 1 (translate) seulement implémentée.
 - **OpenAI / DeepSeek providers** — `OllamaProvider` seulement. Trait `LlmProvider` prêt pour d'autres implémentations.
