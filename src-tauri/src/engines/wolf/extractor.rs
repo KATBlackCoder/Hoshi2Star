@@ -1,8 +1,9 @@
-// Wolf RPG text extractor — F4-03 implementation.
+// Wolf RPG text extractor — F4-03/F4-05 implementation.
 
 use super::dat_parser;
-use super::decryptor::{extract_all, WolfFile};
+use super::decryptor::extract_all;
 use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
+use std::collections::HashMap;
 use std::path::Path;
 use wolfrpg_map_parser::{command::Command, Map};
 
@@ -68,32 +69,15 @@ pub enum WolfSegmentKind {
 // File access helpers
 // ---------------------------------------------------------------------------
 
-/// Decrypt a `.wolf` DXA archive and return its file entries.
-// F4-05: used when loading encrypted Wolf archives.
-#[allow(dead_code)]
-pub(crate) fn load_wolf_archive(archive_path: &Path) -> Result<Vec<WolfFile>, ExtractorError> {
-    let data = std::fs::read(archive_path)?;
-    let archive = extract_all(&data)?;
-    Ok(archive.files)
-}
-
-/// Find a file in a decrypted archive by name (case-insensitive).
-// F4-05: used alongside load_wolf_archive.
-#[allow(dead_code)]
-pub(crate) fn find_wolf_file<'a>(files: &'a [WolfFile], name: &str) -> Option<&'a WolfFile> {
-    let lower = name.to_lowercase();
-    files.iter().find(|f| f.name.to_lowercase() == lower)
-}
-
-/// Collect `.mps` files from `Data/MapData/` (unencrypted layout).
+/// Collect `.mps` files from `Data/MapData/` (unencrypted layout first),
+/// falling back to decrypting `.wolf` archives when the directory is absent or empty.
 ///
-/// Returns `Vec<(stem_name, raw_bytes)>`. If no `.mps` files are found in the
-/// directory the function returns `Err` — encrypted Wolf archives are handled
-/// by F4-05 integration.
+/// Returns `Vec<(stem_name, raw_bytes)>`. Returns `Ok(vec![])` if no files are found.
 pub(crate) fn load_mps_files(
     game_dir: &Path,
     _version: &crate::engines::detector::WolfVersion,
 ) -> Result<Vec<(String, Vec<u8>)>, ExtractorError> {
+    // 1. Unencrypted layout: Data/MapData/*.mps (Option A — written by inject_all)
     let map_dir = game_dir.join("Data").join("MapData");
     if map_dir.exists() {
         let mut result = Vec::new();
@@ -114,11 +98,239 @@ pub(crate) fn load_mps_files(
             return Ok(result);
         }
     }
-    // Encrypted .wolf archives: deferred to F4-05 integration.
-    Err(ExtractorError::Io(std::io::Error::new(
-        std::io::ErrorKind::NotFound,
-        "No .mps files found in Data/MapData/ — encrypted Wolf archives not yet supported in F4-03",
-    )))
+
+    // 2. Encrypted archives: Data/*.wolf and root Data.wolf
+    Ok(extract_files_from_archives(game_dir, "mps"))
+}
+
+// ---------------------------------------------------------------------------
+// Archive extraction helpers (F4-05)
+// ---------------------------------------------------------------------------
+
+/// Walk all `.wolf` archives in `Data/` (and root `Data.wolf`) and collect
+/// files whose extension matches `ext` (lowercase, no dot).
+/// Returns `Vec<(stem, bytes)>`.
+fn extract_files_from_archives(game_dir: &Path, ext: &str) -> Vec<(String, Vec<u8>)> {
+    let mut results = Vec::new();
+
+    let archive_paths = collect_wolf_archive_paths(game_dir);
+    for archive_path in archive_paths {
+        let Ok(data) = std::fs::read(&archive_path) else {
+            continue;
+        };
+        let Ok(archive) = extract_all(&data) else {
+            continue;
+        };
+        for file in archive.files {
+            let lower = file.name.to_lowercase();
+            // Strip optional directory prefix (e.g. "MapData/Map001.mps" → "Map001.mps")
+            let base = lower.rsplit('/').next().unwrap_or(&lower);
+            if base.ends_with(&format!(".{ext}")) {
+                let stem = Path::new(base)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                results.push((stem, file.data));
+            }
+        }
+    }
+
+    results
+}
+
+/// Walk all `.wolf` archives and pair `.project` + `.dat` files by stem.
+/// Returns `Vec<(stem, project_bytes, dat_bytes)>`.
+#[allow(clippy::type_complexity)]
+fn extract_dat_pairs_from_archives(game_dir: &Path) -> Vec<(String, Vec<u8>, Vec<u8>)> {
+    let mut project_map: HashMap<String, Vec<u8>> = HashMap::new();
+    let mut dat_map: HashMap<String, Vec<u8>> = HashMap::new();
+
+    let archive_paths = collect_wolf_archive_paths(game_dir);
+    for archive_path in archive_paths {
+        let Ok(data) = std::fs::read(&archive_path) else {
+            continue;
+        };
+        let Ok(archive) = extract_all(&data) else {
+            continue;
+        };
+        for file in archive.files {
+            let lower = file.name.to_lowercase();
+            let base = lower.rsplit('/').next().unwrap_or(&lower);
+            let path = Path::new(base);
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let stem = stem.to_string();
+            if stem == "SysDataBaseBasic" {
+                continue;
+            }
+            match path.extension().and_then(|e| e.to_str()) {
+                Some("project") => {
+                    project_map.insert(stem, file.data);
+                }
+                Some("dat") => {
+                    dat_map.insert(stem, file.data);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    project_map
+        .into_iter()
+        .filter_map(|(stem, project_bytes)| {
+            dat_map
+                .remove(&stem)
+                .map(|dat_bytes| (stem, project_bytes, dat_bytes))
+        })
+        .collect()
+}
+
+/// Collect paths of all `.wolf` archives: `Data/*.wolf` + root `Data.wolf`.
+fn collect_wolf_archive_paths(game_dir: &Path) -> Vec<std::path::PathBuf> {
+    let mut paths = Vec::new();
+
+    // Multi-archive layout: Data/*.wolf
+    let data_dir = game_dir.join("Data");
+    if let Ok(entries) = std::fs::read_dir(&data_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("wolf") {
+                paths.push(path);
+            }
+        }
+    }
+
+    // Single monolithic archive at root: Data.wolf
+    let root_wolf = game_dir.join("Data.wolf");
+    if root_wolf.exists() {
+        paths.push(root_wolf);
+    }
+
+    paths
+}
+
+/// Load raw bytes for a single `.mps` file by stem.
+///
+/// Tries `Data/MapData/{stem}.mps` first, then falls back to decrypting archives.
+pub(crate) fn load_mps_for_stem(game_dir: &Path, stem: &str) -> Option<Vec<u8>> {
+    let unencrypted = game_dir
+        .join("Data")
+        .join("MapData")
+        .join(format!("{stem}.mps"));
+    if unencrypted.exists() {
+        return std::fs::read(&unencrypted).ok();
+    }
+    let target = format!("{}.mps", stem.to_lowercase());
+    for ap in collect_wolf_archive_paths(game_dir) {
+        let Ok(data) = std::fs::read(&ap) else {
+            continue;
+        };
+        let Ok(archive) = extract_all(&data) else {
+            continue;
+        };
+        for file in archive.files {
+            let lower = file.name.to_lowercase();
+            let base = lower.rsplit('/').next().unwrap_or(&lower);
+            if base == target {
+                return Some(file.data);
+            }
+        }
+    }
+    None
+}
+
+/// Load `.project` + `.dat` bytes for a single database stem.
+///
+/// Tries `Data/BasicData/{stem}.project` + `.dat` first, then archives.
+pub(crate) fn load_dat_for_stem(game_dir: &Path, stem: &str) -> Option<(Vec<u8>, Vec<u8>)> {
+    let proj = game_dir
+        .join("Data")
+        .join("BasicData")
+        .join(format!("{stem}.project"));
+    let dat = game_dir
+        .join("Data")
+        .join("BasicData")
+        .join(format!("{stem}.dat"));
+    if proj.exists() && dat.exists() {
+        if let (Ok(pb), Ok(db)) = (std::fs::read(&proj), std::fs::read(&dat)) {
+            return Some((pb, db));
+        }
+    }
+    // Fallback: scan archives for both files
+    let proj_target = format!("{}.project", stem.to_lowercase());
+    let dat_target = format!("{}.dat", stem.to_lowercase());
+    let mut project_bytes: Option<Vec<u8>> = None;
+    let mut dat_bytes: Option<Vec<u8>> = None;
+    for ap in collect_wolf_archive_paths(game_dir) {
+        let Ok(data) = std::fs::read(&ap) else {
+            continue;
+        };
+        let Ok(archive) = extract_all(&data) else {
+            continue;
+        };
+        for file in archive.files {
+            let lower = file.name.to_lowercase();
+            let base = lower.rsplit('/').next().unwrap_or(&lower);
+            if base == proj_target {
+                project_bytes = Some(file.data);
+            } else if base == dat_target {
+                dat_bytes = Some(file.data);
+            }
+        }
+        if project_bytes.is_some() && dat_bytes.is_some() {
+            break;
+        }
+    }
+    project_bytes.zip(dat_bytes)
+}
+
+// ---------------------------------------------------------------------------
+// Project-level extractor with file grouping (F4-05)
+// ---------------------------------------------------------------------------
+
+/// Extract ALL translatable segments grouped by source file.
+///
+/// Returns `Vec<(file_name, file_type, segments)>` where:
+///  - `file_name` is e.g. `"Map001.mps"` or `"Actors.dat"` (display name)
+///  - `file_type` is `"wolf_map"` or `"wolf_database"`
+pub fn extract_all_wolf(
+    game_dir: &Path,
+    version: &crate::engines::detector::WolfVersion,
+) -> Result<Vec<(String, String, Vec<WolfSegment>)>, ExtractorError> {
+    let mut entries: Vec<(String, String, Vec<WolfSegment>)> = Vec::new();
+
+    // Maps
+    if let Ok(mps_files) = load_mps_files(game_dir, version) {
+        for (name, bytes) in mps_files {
+            match extract_map_segments(&name, &bytes, version) {
+                Ok(segs) if !segs.is_empty() => {
+                    entries.push((format!("{name}.mps"), "wolf_map".to_string(), segs));
+                }
+                Ok(_) => {}
+                Err(e) => eprintln!("warn: skipping {name}.mps — {e}"),
+            }
+        }
+    }
+
+    // Databases
+    match load_dat_files(game_dir) {
+        Ok(dat_files) => {
+            for (name, project_bytes, dat_bytes) in dat_files {
+                match extract_database_segments(&name, &project_bytes, &dat_bytes, version) {
+                    Ok(segs) if !segs.is_empty() => {
+                        entries.push((format!("{name}.dat"), "wolf_database".to_string(), segs));
+                    }
+                    Ok(_) => {}
+                    Err(e) => eprintln!("warn: skipping {name}.dat — {e}"),
+                }
+            }
+        }
+        Err(e) => eprintln!("warn: could not load .dat files — {e}"),
+    }
+
+    Ok(entries)
 }
 
 // ---------------------------------------------------------------------------
@@ -240,44 +452,48 @@ fn is_known_translatable_field(name: &str) -> bool {
 // .dat Database extraction
 // ---------------------------------------------------------------------------
 
-/// Collect `.dat` / `.project` pairs from `Data/BasicData/` (unencrypted layout).
+/// Collect `.dat` / `.project` pairs from `Data/BasicData/` (unencrypted layout first),
+/// falling back to decrypting `.wolf` archives when the directory is absent or empty.
 ///
-/// Returns `Vec<(stem_name, project_bytes, dat_bytes)>`.  If the directory does
-/// not exist or contains no recognised pairs the function returns `Ok(vec![])`.
+/// Returns `Vec<(stem_name, project_bytes, dat_bytes)>`.
 #[allow(clippy::type_complexity)]
 pub(crate) fn load_dat_files(
     game_dir: &Path,
 ) -> Result<Vec<(String, Vec<u8>, Vec<u8>)>, ExtractorError> {
     let basic_data_dir = game_dir.join("Data").join("BasicData");
-    if !basic_data_dir.exists() {
-        return Ok(vec![]);
+
+    if basic_data_dir.exists() {
+        let mut result = Vec::new();
+        for entry in std::fs::read_dir(&basic_data_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("project") {
+                continue;
+            }
+            let stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
+            // WolfTL skips SysDataBaseBasic — it only contains engine internals.
+            if stem == "SysDataBaseBasic" {
+                continue;
+            }
+            let dat_path = path.with_extension("dat");
+            if !dat_path.exists() {
+                continue;
+            }
+            let project_bytes = std::fs::read(&path)?;
+            let dat_bytes = std::fs::read(&dat_path)?;
+            result.push((stem, project_bytes, dat_bytes));
+        }
+        if !result.is_empty() {
+            return Ok(result);
+        }
     }
 
-    let mut result = Vec::new();
-    for entry in std::fs::read_dir(&basic_data_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("project") {
-            continue;
-        }
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_string();
-        // WolfTL skips SysDataBaseBasic — it only contains engine internals.
-        if stem == "SysDataBaseBasic" {
-            continue;
-        }
-        let dat_path = path.with_extension("dat");
-        if !dat_path.exists() {
-            continue;
-        }
-        let project_bytes = std::fs::read(&path)?;
-        let dat_bytes = std::fs::read(&dat_path)?;
-        result.push((stem, project_bytes, dat_bytes));
-    }
-    Ok(result)
+    // 2. Encrypted archives: extract .project + .dat pairs by stem
+    Ok(extract_dat_pairs_from_archives(game_dir))
 }
 
 /// Extract translatable string segments from a Wolf RPG Database file pair.
