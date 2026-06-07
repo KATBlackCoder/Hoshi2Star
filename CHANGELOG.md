@@ -5,6 +5,9 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+### Fixed
+- Fix Wolf RPG map extraction panic on unknown command `0x09D20000` (CallCommonEvent with 8 integer arguments) — vendor `wolfrpg-map-parser 0.6.0` under `src-tauri/vendor/` and add 4 missing `0xD2` signatures (`CallEvent4–7`: 3, 7, 8, 9 int-arg variants) via `[patch.crates-io]`; all 24 `.mps` files from 月咲流ホノカver1.03 now parse correctly with zero text loss (CommonEvent is pure control flow)
+
 ### Added
 - Add Wolf RPG full integration (F4-05): `open_project` and `export_project` commands now support Wolf RPG — engine detection, segment extraction from `.dat`/`.mps` files, and export back to `Data/MapData/` + `Data/BasicData/`
 - Add transparent DXA archive fallback in Wolf extractor/injector — tries unencrypted `Data/MapData/` and `Data/BasicData/` first, then decrypts `.wolf` archives; `load_mps_for_stem` and `load_dat_for_stem` expose this for the injector
