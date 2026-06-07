@@ -42,3 +42,6 @@ wolfrpg-map-parser = "0.6"
 tempfile = "3"
 httpmock = "0.7"
 
+[patch.crates-io]
+wolfrpg-map-parser = { path = "vendor/wolfrpg-map-parser" }
+
