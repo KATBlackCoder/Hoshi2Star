@@ -5,7 +5,7 @@ use super::decryptor::extract_all;
 use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
 use std::collections::HashMap;
 use std::path::Path;
-use wolfrpg_map_parser::{command::Command, Map};
+use wolfrpg_map_parser::{command::Command, common_events_parser, Map};
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -62,6 +62,12 @@ pub enum WolfSegmentKind {
         type_idx: usize,
         entry_idx: usize,
         field_name: String,
+    },
+    /// Dialogue text from CommonEvent.dat.
+    CommonEventMessage {
+        event_name: String,
+        event_idx: usize,
+        cmd_idx: usize,
     },
 }
 
@@ -330,6 +336,21 @@ pub fn extract_all_wolf(
         Err(e) => eprintln!("warn: could not load .dat files — {e}"),
     }
 
+    // Common Events
+    if let Some(bytes) = load_common_event_bytes(game_dir) {
+        match extract_common_events(&bytes, version) {
+            Ok(segs) if !segs.is_empty() => {
+                entries.push((
+                    "CommonEvent.dat".to_string(),
+                    "wolf_common_events".to_string(),
+                    segs,
+                ));
+            }
+            Ok(_) => {}
+            Err(e) => log::warn!("[h2s] CommonEvent extraction failed: {e}"),
+        }
+    }
+
     Ok(entries)
 }
 
@@ -566,17 +587,97 @@ pub fn extract_database_segments(
 // CommonEvents extraction
 // ---------------------------------------------------------------------------
 
-/// Extract translatable segments from `CommonEvent.dat`.
+/// Load raw bytes for `CommonEvent.dat`.
 ///
-/// TODO(F4-05): The CommonEvent binary format is complex (per-event: indicator
-/// 0x8E, 7 unknown bytes, commands identical to .mps, then 100 fixed strings,
-/// plus 0x8F/0x91/0x92 sections).  Without a real fixture this cannot be
-/// validated.  Returns Ok(vec![]) until F4-05 integration.
+/// Tries `Data/BasicData/CommonEvent.dat` first, then scans `.wolf` archives.
+pub(crate) fn load_common_event_bytes(game_dir: &Path) -> Option<Vec<u8>> {
+    let unencrypted = game_dir
+        .join("Data")
+        .join("BasicData")
+        .join("CommonEvent.dat");
+    if unencrypted.exists() {
+        return std::fs::read(&unencrypted).ok();
+    }
+    for ap in collect_wolf_archive_paths(game_dir) {
+        let Ok(data) = std::fs::read(&ap) else {
+            continue;
+        };
+        let Ok(archive) = extract_all(&data) else {
+            continue;
+        };
+        for file in archive.files {
+            let lower = file.name.to_lowercase();
+            let base = lower.rsplit('/').next().unwrap_or(&lower);
+            if base == "commonevent.dat" {
+                return Some(file.data);
+            }
+        }
+    }
+    None
+}
+
+/// Extract translatable segments from `CommonEvent.dat` bytes.
+///
+/// Uses `wolfrpg_map_parser::common_events_parser::parse_bytes` wrapped in
+/// `catch_unwind` — the parser panics on malformed files, same as `Map::parse`.
 pub fn extract_common_events(
-    _bytes: &[u8],
+    bytes: &[u8],
     _version: &crate::engines::detector::WolfVersion,
 ) -> Result<Vec<WolfSegment>, ExtractorError> {
-    Ok(vec![])
+    let bytes_owned = bytes.to_vec();
+    let events = std::panic::catch_unwind(move || common_events_parser::parse_bytes(&bytes_owned))
+        .map_err(|e| {
+            let msg = e
+                .downcast_ref::<&str>()
+                .copied()
+                .or_else(|| e.downcast_ref::<String>().map(|s| s.as_str()))
+                .unwrap_or("unknown panic");
+            ExtractorError::MapParser(format!("CommonEvent.dat: {msg}"))
+        })?;
+
+    let mut segments = Vec::new();
+
+    for (event_idx, event) in events.iter().enumerate() {
+        let event_name = event.event_name();
+        for (cmd_idx, command) in event.commands().iter().enumerate() {
+            match command {
+                Command::ShowMessage(cmd) => {
+                    let text = cmd.text();
+                    if is_translatable(text) {
+                        segments.push(WolfSegment {
+                            key: format!("CommonEvents/{event_name}/{event_idx}/{cmd_idx}"),
+                            source_text: text.to_owned(),
+                            kind: WolfSegmentKind::CommonEventMessage {
+                                event_name: event_name.to_owned(),
+                                event_idx,
+                                cmd_idx,
+                            },
+                        });
+                    }
+                }
+                Command::ShowChoice(cmd) => {
+                    for (choice_idx, choice) in cmd.choices().iter().enumerate() {
+                        if is_translatable(choice) {
+                            segments.push(WolfSegment {
+                                key: format!(
+                                    "CommonEvents/{event_name}/{event_idx}/{cmd_idx}/choices/{choice_idx}"
+                                ),
+                                source_text: choice.clone(),
+                                kind: WolfSegmentKind::CommonEventMessage {
+                                    event_name: event_name.to_owned(),
+                                    event_idx,
+                                    cmd_idx,
+                                },
+                            });
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Ok(segments)
 }
 
 // ---------------------------------------------------------------------------
@@ -623,17 +724,10 @@ pub fn extract_wolf_project(
     }
 
     // --- Common Events ---
-    let ce_path = game_dir
-        .join("Data")
-        .join("BasicData")
-        .join("CommonEvent.dat");
-    if ce_path.exists() {
-        match std::fs::read(&ce_path) {
-            Ok(bytes) => match extract_common_events(&bytes, version) {
-                Ok(segs) => segments.extend(segs),
-                Err(e) => eprintln!("warn: skipping CommonEvent.dat — {e}"),
-            },
-            Err(e) => eprintln!("warn: could not read CommonEvent.dat — {e}"),
+    if let Some(bytes) = load_common_event_bytes(game_dir) {
+        match extract_common_events(&bytes, version) {
+            Ok(segs) => segments.extend(segs),
+            Err(e) => log::warn!("[h2s] CommonEvent extraction failed: {e}"),
         }
     }
 
@@ -977,5 +1071,33 @@ mod tests {
         let dir = std::path::Path::new("/tmp/hoshi2star_nonexistent_game_dir");
         let segs = extract_wolf_project(dir, &v2()).unwrap();
         assert!(segs.is_empty(), "empty game dir must yield no segments");
+    }
+
+    // -----------------------------------------------------------------------
+    // CommonEvents extraction tests
+    // -----------------------------------------------------------------------
+
+    /// Build a minimal valid CommonEvent.dat with zero events.
+    fn make_empty_common_event_dat() -> Vec<u8> {
+        // Magic = b"\x00\x57\x00\x00\x4F\x4C\x00\x46\x43\x00\x8F" (11 bytes)
+        let mut b = Vec::new();
+        b.extend_from_slice(b"\x00\x57\x00\x00\x4F\x4C\x00\x46\x43\x00\x8F");
+        b.extend_from_slice(&0u32.to_le_bytes()); // event_count = 0
+        b
+    }
+
+    #[test]
+    fn test_extract_common_events_empty() {
+        let bytes = make_empty_common_event_dat();
+        let segs = extract_common_events(&bytes, &v2()).unwrap();
+        assert!(segs.is_empty(), "zero events must yield no segments");
+    }
+
+    #[test]
+    fn test_extract_common_events_invalid_magic_no_panic() {
+        // Invalid magic → parser panics → caught → ExtractorError, not a process panic.
+        let bytes = b"garbage data that is definitely not a common event file".to_vec();
+        let result = extract_common_events(&bytes, &v2());
+        assert!(result.is_err(), "invalid magic must return Err, not panic");
     }
 }
