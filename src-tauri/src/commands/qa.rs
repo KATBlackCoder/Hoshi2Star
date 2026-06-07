@@ -23,11 +23,20 @@ pub async fn get_tm_suggestions(
 
 /// Run QA checks on a (source, target) pair and return the result.
 ///
-/// Does not touch the database — useful for live checking in the UI
-/// before the user saves.
+/// `engine` is optional; defaults to `"mv_mz"` when absent.
+/// Does not touch the database — useful for live checking in the UI.
 #[tauri::command]
-pub fn qa_check_segment(source_text: String, target_text: String) -> qa::QaResult {
-    qa::check(&source_text, &target_text, &[])
+pub fn qa_check_segment(
+    source_text: String,
+    target_text: String,
+    engine: Option<String>,
+) -> qa::QaResult {
+    qa::check(
+        &source_text,
+        &target_text,
+        &[],
+        engine.as_deref().unwrap_or("mv_mz"),
+    )
 }
 
 /// Return a QA summary for all segments in a project.
