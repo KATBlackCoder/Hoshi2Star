@@ -6,6 +6,16 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 ## [Unreleased]
 
 ### Added
+- Add Wolf RPG full integration (F4-05): `open_project` and `export_project` commands now support Wolf RPG — engine detection, segment extraction from `.dat`/`.mps` files, and export back to `Data/MapData/` + `Data/BasicData/`
+- Add transparent DXA archive fallback in Wolf extractor/injector — tries unencrypted `Data/MapData/` and `Data/BasicData/` first, then decrypts `.wolf` archives; `load_mps_for_stem` and `load_dat_for_stem` expose this for the injector
+- Add `extract_all_wolf()` — groups extracted segments by source file, returning `Vec<(file_name, file_type, Vec<WolfSegment>)>`
+- Add Wolf RPG game title detection from `Game.ini` (`GameTitle=` line, Shift-JIS/UTF-8 decode)
+- Add `PossibleWolfX` error variant in Wolf decryptor — emitted when all XOR keys fail; instructs users to pre-decrypt with UberWolf before opening
+- Add engine parameter to `qa::check()` — Wolf uses a 520 px text box vs 720 px for MV/MZ; `LineWidthConfig::wolf_default()` added
+- Add `wolf_map` and `wolf_database` icons in `FileTree` — violet `Map` icon for `.mps` files, violet `Database` icon for `.dat` files
+- Add Wolf RPG engine layer documentation in `docs/architecture.md` — extractor, injector, decryptor, encoding, dat_parser modules; WolfX limitation noted
+
+### Added
 - Add Wolf RPG binary injector `inject_map()` — sequential scan+splice (Approach B); wolfrpg-map-parser exposes no byte offsets in public structs; replaces ShowMessage/ShowChoice ReadString payloads in order
 - Add Wolf RPG Database injector `inject_dat()` — two-file format (.project schema read-only, .dat values rewritten); full re-serialization via `serialize_dat()`; returns only new .dat bytes, never modifies .project
 - Add `encode_for_wolf()` — Shift-JIS guard for Wolf v2 (rejects accented/emoji chars with `InjectorError::Encoding`); UTF-8 pass-through for v3+
