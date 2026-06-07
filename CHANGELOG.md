@@ -6,6 +6,11 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 ## [Unreleased]
 
 ### Added
+- Add Wolf RPG Database parser `parse_database()` — reads `.project` (schema: type names, field names, `indexInfo`) + `.dat` (int/string values) binary pairs; reverse-engineered from WolfTL (Sinflower, MIT); supports Shift-JIS and UTF-8 magic, rejects LZ4 compression (`0xC4`) with `Unsupported` error
+- Add `extract_database_segments()` — converts parsed `DatFile` to `WolfSegment` list; filters by known translatable field names (`name`, `description`, `note`, `message`, `text`) or Japanese character presence (hiragana/katakana/CJK); key format `Database/{db_name}/{type_idx}/{entry_idx}/{field_name}`
+- Add `extract_common_events()` — stub returning `Ok(vec![])` pending F4-05; CommonEvents format (0x8E/0x8F/0x91/0x92 sections + 100 fixed strings per event) is too complex to implement safely without a real test fixture
+- Add `extract_wolf_project()` — orchestrator combining `.mps` map extraction, `.project`+`.dat` database pairs, and CommonEvents stub; per-file errors are logged and skipped without aborting
+- Add `load_dat_files()` — walks `BasicData/` directory for `.project`/`.dat` file pairs by stem matching
 - Add Wolf RPG DXA decryptor `extract_all()` — complete archive extraction pipeline (v5/v6/v8): key discovery via WOLF_KEYS table or GuessKeyV6, header decrypt, TOC parse, per-file XOR decrypt; returns `WolfArchive` with decoded filenames
 - Add `guess_key_v6()` — automatic XOR key recovery from null high bytes of 64-bit header fields (known-plaintext attack); validates via dual cross-check + index_size plausibility
 - Add `parse_index()` — DXA TOC parser for v5 (32-bit, 0x2C entries) and v6/v8 (64-bit, 0x40 entries); decrypts in place, filters directory entries
