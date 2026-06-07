@@ -11,7 +11,7 @@ icônes FileTree, documentation architecture. Puis valider sur les deux jeux de 
 C'est l'étape de soudure — le moteur Wolf est techniquement complet (F4-01 à 04),
 ici on l'expose via l'IPC et on valide que l'app fonctionne de bout en bout.
 
-## Statut : [ ] À faire
+## Statut : [x] COMPLET — 2026-06-07
 
 ## Prérequis
 

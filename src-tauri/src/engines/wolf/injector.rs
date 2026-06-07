@@ -424,14 +424,10 @@ pub async fn inject_all(
 
         match parts[0] {
             "MapData" => {
-                let src = game_dir
-                    .join("Data")
-                    .join("MapData")
-                    .join(format!("{stem}.mps"));
-                if !src.exists() {
+                // Load source bytes: Data/MapData/ first, then .wolf archives.
+                let Some(bytes) = super::extractor::load_mps_for_stem(game_dir, stem) else {
                     continue;
-                }
-                let bytes = std::fs::read(&src)?;
+                };
                 let (new_bytes, mut result) = inject_map(stem, &bytes, translations, version)?;
                 let out = map_dir.join(format!("{stem}.mps"));
                 result.file_path = out.clone();
@@ -439,22 +435,12 @@ pub async fn inject_all(
                 results.push(result);
             }
             "Database" => {
-                let project_path = game_dir
-                    .join("Data")
-                    .join("BasicData")
-                    .join(format!("{stem}.project"));
-                let dat_path = game_dir
-                    .join("Data")
-                    .join("BasicData")
-                    .join(format!("{stem}.dat"));
-                if !project_path.exists() {
+                // Load source bytes: Data/BasicData/ first, then .wolf archives.
+                let Some((project_bytes, dat_bytes)) =
+                    super::extractor::load_dat_for_stem(game_dir, stem)
+                else {
                     return Err(InjectorError::MissingProject(stem.to_string()));
-                }
-                if !dat_path.exists() {
-                    continue;
-                }
-                let project_bytes = std::fs::read(&project_path)?;
-                let dat_bytes = std::fs::read(&dat_path)?;
+                };
                 let (new_bytes, mut result) =
                     inject_dat(&project_bytes, &dat_bytes, translations, version)?;
                 let out = db_dir.join(format!("{stem}.dat"));

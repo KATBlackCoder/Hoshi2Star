@@ -9,9 +9,13 @@ use crate::{
     core::{manifest, qa, tm},
     domain::types::*,
     engines::{
-        detector::{detect_engine, find_data_dir, find_vx_ace_data_dir, Engine},
+        detector::{
+            detect_engine, find_data_dir, find_vx_ace_data_dir, guess_wolf_version_from_structure,
+            Engine,
+        },
         mv_mz::extractor,
         vx_ace::extractor as vx_extractor,
+        wolf::extractor as wolf_extractor,
     },
     state::AppState,
 };
@@ -79,21 +83,20 @@ pub async fn open_project(
     };
 
     // 2. Locate data directory (MV/MZ: data/ or www/data/ — VX Ace: Data/ or data/)
+    //    Wolf uses game_dir directly (extract_all_wolf does its own data/ walk).
     let data_dir = match engine {
         Engine::VxAce => find_vx_ace_data_dir(game_dir)
             .ok_or_else(|| "Cannot find Data/ directory in VX Ace game folder".to_string())?,
         Engine::MvMz => find_data_dir(game_dir)
             .ok_or_else(|| "Cannot find data directory in game folder".to_string())?,
-        Engine::Wolf => {
-            return Err("Wolf RPG extraction not yet implemented (F4-03)".to_string());
-        }
+        Engine::Wolf => game_dir.to_path_buf(),
     };
 
-    // 3. Read game title (MV/MZ: System.json gameTitle — VX Ace: System.rvdata2 game_title)
+    // 3. Read game title (MV/MZ: System.json — VX Ace: System.rvdata2 — Wolf: Game.ini)
     let game_title = match engine {
         Engine::MvMz => read_game_title(&data_dir.join("System.json")),
         Engine::VxAce => read_vx_ace_game_title(&data_dir.join("System.rvdata2")),
-        Engine::Wolf => unreachable!("Wolf returns early in data_dir match above"),
+        Engine::Wolf => read_wolf_game_title(game_dir),
     }
     .unwrap_or_else(|| {
         game_dir
@@ -192,7 +195,56 @@ pub async fn open_project(
                 }
             }
         }
-        Engine::Wolf => unreachable!("Wolf returns early in data_dir match above"),
+        Engine::Wolf => {
+            let wolf_version = guess_wolf_version_from_structure(game_dir);
+            let entries = wolf_extractor::extract_all_wolf(game_dir, &wolf_version)
+                .map_err(|e| e.to_string())?;
+            for (file_name, file_type, segments) in &entries {
+                let file_id = uuid::Uuid::new_v4().to_string();
+                let sub_dir = if file_type == "wolf_map" {
+                    "MapData"
+                } else {
+                    "BasicData"
+                };
+                let file_path = game_dir
+                    .join("Data")
+                    .join(sub_dir)
+                    .join(file_name)
+                    .to_string_lossy()
+                    .to_string();
+                sqlx::query(
+                    "INSERT INTO source_files \
+                     (id, project_id, file_name, file_path, file_type) \
+                     VALUES (?, ?, ?, ?, ?)",
+                )
+                .bind(&file_id)
+                .bind(&project_id)
+                .bind(file_name)
+                .bind(&file_path)
+                .bind(file_type)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+                file_count += 1;
+
+                for seg in segments {
+                    let seg_id = uuid::Uuid::new_v4().to_string();
+                    sqlx::query(
+                        "INSERT INTO segments \
+                         (id, source_file_id, json_key, source_text) \
+                         VALUES (?, ?, ?, ?)",
+                    )
+                    .bind(&seg_id)
+                    .bind(&file_id)
+                    .bind(&seg.key)
+                    .bind(&seg.source_text)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                    segment_count += 1;
+                }
+            }
+        }
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
@@ -324,8 +376,8 @@ pub async fn update_segment(
     .await
     .map_err(|e| e.to_string())?;
 
-    // QA check
-    let qa_result = qa::check(&source_text, &target_text, &[]);
+    // QA check — use the project's engine for correct placeholder patterns.
+    let qa_result = qa::check(&source_text, &target_text, &[], &engine);
     let qa_score = qa_result.score as i64;
 
     // Update DB with new translation + QA score
@@ -464,6 +516,39 @@ pub async fn delete_project(
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
+
+/// Read `GameTitle` from `Game.ini` in a Wolf RPG game directory.
+///
+/// `Game.ini` uses Shift-JIS encoding for v2 games. We read as bytes and
+/// attempt Shift-JIS decoding; falls back to UTF-8 then lossy on failure.
+/// Returns `None` if the file is absent or the key is not found.
+fn read_wolf_game_title(game_dir: &Path) -> Option<String> {
+    let ini_path = game_dir.join("Game.ini");
+    let bytes = std::fs::read(&ini_path).ok()?;
+
+    // Try Shift-JIS first (most Wolf v2 games), then UTF-8, then lossy.
+    let content = {
+        use encoding_rs::SHIFT_JIS;
+        let (decoded, _, had_errors) = SHIFT_JIS.decode(&bytes);
+        if !had_errors {
+            decoded.into_owned()
+        } else {
+            String::from_utf8(bytes.clone())
+                .unwrap_or_else(|_| String::from_utf8_lossy(&bytes).into_owned())
+        }
+    };
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("GameTitle=") {
+            let title = rest.trim().to_string();
+            if !title.is_empty() {
+                return Some(title);
+            }
+        }
+    }
+    None
+}
 
 /// Read `gameTitle` from a `System.json` path (MV/MZ).
 fn read_game_title(system_json_path: &Path) -> Option<String> {

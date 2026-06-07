@@ -66,6 +66,19 @@ impl LineWidthConfig {
     pub fn max_halfwidth_units(&self) -> f32 {
         self.box_width_px / self.halfwidth_char_px
     }
+
+    /// Conservative defaults for Wolf RPG message boxes.
+    ///
+    /// Wolf v2 default window: ~520 px usable, 26 px full-width, 13 px half-width.
+    /// ⚠️ This is an estimate — the actual box width is configurable in the Wolf editor.
+    pub fn wolf_default() -> Self {
+        Self {
+            box_width_px: 520.0,
+            fullwidth_char_px: 26.0,
+            halfwidth_char_px: 13.0,
+            max_lines: 4,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -193,9 +206,23 @@ fn check_line_length(text: &str, config: &LineWidthConfig) -> Vec<QaError> {
 /// `source` is the original Japanese text; `target` is the translation.
 /// `glossary_terms` is a slice of `(source_term, expected_target)` pairs —
 /// pass `&[]` when no glossary is available.
+/// `engine` selects placeholder patterns and line-width config:
+///   `"wolf"` → Wolf RPG placeholders + 520 px box
+///   any other value → MV/MZ placeholders + 720 px box
 /// Returns a `QaResult` containing the score and the list of errors found.
-pub fn check(source: &str, target: &str, glossary_terms: &[(String, String)]) -> QaResult {
+pub fn check(
+    source: &str,
+    target: &str,
+    glossary_terms: &[(String, String)],
+    engine: &str,
+) -> QaResult {
     let mut errors: Vec<QaError> = Vec::new();
+
+    let (tok_engine, line_config) = if engine == "wolf" {
+        (TokEngine::Wolf, LineWidthConfig::wolf_default())
+    } else {
+        (TokEngine::MvMz, LineWidthConfig::default())
+    };
 
     // 1. BOM check (cheapest — do first)
     if target.starts_with('\u{FEFF}') {
@@ -205,7 +232,7 @@ pub fn check(source: &str, target: &str, glossary_terms: &[(String, String)]) ->
     // 2. Placeholder check
     //    Tokenise the source to enumerate unique original placeholders,
     //    then verify each one is present in the (raw) target text.
-    let tokenized = Tokenizer::tokenize(source, TokEngine::MvMz);
+    let tokenized = Tokenizer::tokenize(source, tok_engine);
     let mut seen: HashSet<&str> = HashSet::new();
     for original in tokenized.map.values() {
         if seen.insert(original.as_str()) && !target.contains(original.as_str()) {
@@ -216,7 +243,7 @@ pub fn check(source: &str, target: &str, glossary_terms: &[(String, String)]) ->
     }
 
     // 3. Line width check
-    errors.extend(check_line_length(target, &LineWidthConfig::default()));
+    errors.extend(check_line_length(target, &line_config));
 
     // 4. Glossary mismatch check
     if !glossary_terms.is_empty() {
@@ -411,14 +438,14 @@ mod tests {
 
     #[test]
     fn test_clean_segment_score_100() {
-        let result = check(r"\V[12] pièces", r"\V[12] coins", &[]);
+        let result = check(r"\V[12] pièces", r"\V[12] coins", &[], "mv_mz");
         assert_eq!(result.score, 100);
         assert!(result.errors.is_empty());
     }
 
     #[test]
     fn test_missing_placeholder() {
-        let result = check(r"\V[12] pièces", "coins", &[]);
+        let result = check(r"\V[12] pièces", "coins", &[], "mv_mz");
         assert_eq!(result.errors.len(), 1);
         assert!(matches!(
             &result.errors[0],
@@ -429,7 +456,7 @@ mod tests {
 
     #[test]
     fn test_multiple_missing_placeholders() {
-        let result = check(r"\V[12] et \N[1]", "coins", &[]);
+        let result = check(r"\V[12] et \N[1]", "coins", &[], "mv_mz");
         assert_eq!(result.errors.len(), 2);
         assert_eq!(result.score, 50); // 100 - 25 - 25
     }
@@ -438,7 +465,7 @@ mod tests {
     fn test_line_too_long() {
         // 56 ASCII chars = 56.0 units > 55.38 max
         let long_line = "A".repeat(56);
-        let result = check("hello", &long_line, &[]);
+        let result = check("hello", &long_line, &[], "mv_mz");
         assert_eq!(result.errors.len(), 1);
         match &result.errors[0] {
             QaError::LineTooLong {
@@ -458,7 +485,7 @@ mod tests {
 
     #[test]
     fn test_bom_detected() {
-        let result = check("hello", "\u{FEFF}hello", &[]);
+        let result = check("hello", "\u{FEFF}hello", &[], "mv_mz");
         assert_eq!(result.errors.len(), 1);
         assert!(matches!(&result.errors[0], QaError::BomDetected));
         assert_eq!(result.score, 85); // 100 - 15
@@ -469,7 +496,7 @@ mod tests {
         // BOM + missing placeholder + long line = -15 -25 -10 = 50
         // '\u{FEFF}' (1 unit) + 56 × 'A' (56 units) = 57.0 > 55.38 → LineTooLong
         let long_line = format!("\u{FEFF}{}", "A".repeat(56));
-        let result = check(r"\V[12]", &long_line, &[]);
+        let result = check(r"\V[12]", &long_line, &[], "mv_mz");
         assert_eq!(result.score, 50);
         assert_eq!(result.errors.len(), 3);
     }
@@ -477,13 +504,18 @@ mod tests {
     #[test]
     fn test_score_floor_zero() {
         // 4 missing placeholders = -100 → floor to 0
-        let result = check(r"\V[1]\V[2]\V[3]\V[4]", "no placeholders here", &[]);
+        let result = check(
+            r"\V[1]\V[2]\V[3]\V[4]",
+            "no placeholders here",
+            &[],
+            "mv_mz",
+        );
         assert_eq!(result.score, 0);
     }
 
     #[test]
     fn test_no_source_placeholders_passes() {
-        let result = check("こんにちは", "Hello", &[]);
+        let result = check("こんにちは", "Hello", &[], "mv_mz");
         assert_eq!(result.score, 100);
         assert!(result.errors.is_empty());
     }
@@ -493,7 +525,7 @@ mod tests {
         // 5 lines of 56 'A' — only first 4 are checked (max_lines = 4)
         let lines: Vec<String> = (0..5).map(|_| "A".repeat(56)).collect();
         let text = lines.join("\n");
-        let result = check("hello", &text, &[]);
+        let result = check("hello", &text, &[], "mv_mz");
         let long_errors: Vec<_> = result
             .errors
             .iter()
@@ -515,7 +547,7 @@ mod tests {
     fn test_glossary_mismatch_detected() {
         // "魔法使い" appears in source, "Mage" absent from target → GlossaryMismatch
         let t = terms(&[("魔法使い", "Mage")]);
-        let result = check("魔法使い が現れた！", "A sorcerer appeared!", &t);
+        let result = check("魔法使い が現れた！", "A sorcerer appeared!", &t, "mv_mz");
         assert_eq!(result.errors.len(), 1);
         assert!(matches!(
             &result.errors[0],
@@ -529,7 +561,7 @@ mod tests {
     fn test_glossary_term_present_no_error() {
         // "Mage" IS in target (case-insensitive) → no error
         let t = terms(&[("魔法使い", "Mage")]);
-        let result = check("魔法使い が現れた！", "A mage appeared!", &t);
+        let result = check("魔法使い が現れた！", "A mage appeared!", &t, "mv_mz");
         assert!(result.errors.is_empty());
         assert_eq!(result.score, 100);
     }
@@ -538,7 +570,7 @@ mod tests {
     fn test_glossary_no_source_term_no_error() {
         // "魔法使い" not in source → glossary check is skipped
         let t = terms(&[("魔法使い", "Mage")]);
-        let result = check("戦士 が現れた！", "A warrior appeared!", &t);
+        let result = check("戦士 が現れた！", "A warrior appeared!", &t, "mv_mz");
         assert!(result.errors.is_empty());
         assert_eq!(result.score, 100);
     }
@@ -546,7 +578,7 @@ mod tests {
     #[test]
     fn test_glossary_empty_terms_no_error() {
         // Empty glossary → no GlossaryMismatch regardless of target
-        let result = check("魔法使い", "something else", &[]);
+        let result = check("魔法使い", "something else", &[], "mv_mz");
         assert!(result.errors.is_empty());
         assert_eq!(result.score, 100);
     }
@@ -564,7 +596,7 @@ mod tests {
             ("term7", "T7"),
         ]);
         let source = "term1 term2 term3 term4 term5 term6 term7";
-        let result = check(source, "wrong translation", &t);
+        let result = check(source, "wrong translation", &t, "mv_mz");
         assert_eq!(result.score, 0);
     }
 }

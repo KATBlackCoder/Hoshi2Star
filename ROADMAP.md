@@ -244,6 +244,7 @@
 - [x] F4-03 `src-tauri/src/engines/wolf/extractor.rs` — lecture `.mps` + `.dat`
 - [x] F4-04 `src-tauri/src/engines/wolf/injector.rs` — réécriture + repack `.wolf`
 - [x] Tests round-trip Wolf v1/v2
+- [x] F4-05 Intégration complète — `open_project` Wolf + `export_project` Wolf + QA engine param + FileTree icons violet + archive fallback (DXA → `Data/`)
 
 ### Core Layer — Diff-aware merge
 - [ ] `src-tauri/src/core/diff.rs` — comparaison `old_project` vs `new_project` (hash par segment)

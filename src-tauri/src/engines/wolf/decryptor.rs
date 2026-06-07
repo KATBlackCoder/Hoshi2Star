@@ -21,6 +21,14 @@ pub enum DecryptorError {
     CannotGuessKey,
     #[error("LZSS compressed entries are not supported in F4 (packed_size > 0)")]
     UnsupportedCompression,
+    /// All known XOR keys failed and GuessKeyV6 found no solution.
+    /// This archive likely uses WolfX/v3.5+ ChaCha20 encryption, not yet supported.
+    #[error(
+        "archive may use WolfX encryption (v3.5+) which is not supported. \
+         Use UberWolf to decrypt your game files first, \
+         then open the Data/ folder directly (planned support: v0.5.0)"
+    )]
+    PossibleWolfX,
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -466,7 +474,7 @@ fn find_key(data: &[u8], version: u8) -> Result<[u8; 12], DecryptorError> {
     if let Some(key) = guess_key_v6(data) {
         return Ok(key);
     }
-    Err(DecryptorError::CannotGuessKey)
+    Err(DecryptorError::PossibleWolfX)
 }
 
 /// Read only the `index_size` field from the decrypted header (without returning all fields).

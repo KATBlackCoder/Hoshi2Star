@@ -43,6 +43,7 @@ pub async fn collect_qa_details(
         seg_num: i64,
         source_text: String,
         target_text: String,
+        engine: String,
     }
 
     let rows = sqlx::query_as::<_, Row>(
@@ -51,9 +52,11 @@ pub async fn collect_qa_details(
             sf.file_name,
             ROW_NUMBER() OVER (PARTITION BY s.source_file_id ORDER BY s.rowid) AS seg_num,
             s.source_text,
-            s.target_text
+            s.target_text,
+            p.engine
          FROM segments s
          JOIN source_files sf ON s.source_file_id = sf.id
+         JOIN projects p ON sf.project_id = p.id
          WHERE sf.project_id = ?
            AND s.status IN ('translated', 'reviewed', 'needs_review')
            AND s.target_text != ''
@@ -65,7 +68,7 @@ pub async fn collect_qa_details(
 
     let mut details = Vec::new();
     for row in rows {
-        let result = qa::check(&row.source_text, &row.target_text, &[]);
+        let result = qa::check(&row.source_text, &row.target_text, &[], &row.engine);
         if result.score < 100 {
             details.push(QaSegmentDetail {
                 segment_id: row.segment_id,
