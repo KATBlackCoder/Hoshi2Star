@@ -5,8 +5,14 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+### Added
+- Add `extract_common_events()` — parses `CommonEvent.dat` via `wolfrpg_map_parser::common_events_parser::parse_bytes` (SJIS-decoded internally); wrapped in `catch_unwind` for panic safety; adds `CommonEventMessage` variant to `WolfSegmentKind`; wired into `extract_all_wolf` and `extract_wolf_project` with unencrypted + `.wolf` archive fallback via `load_common_event_bytes()`
+
+### Changed
+- Remove `[patch.crates-io]` fork of `wolfrpg-map-parser` and `src-tauri/vendor/` (−219 files) — revert to 0.6.0 vanilla; D2/D3 commands (CallCommonEvent/ReserveCommonEvent) are pure control flow with no text content; `catch_unwind` already handles any remaining unknown-command panics gracefully at the map level
+
 ### Fixed
-- Fix Wolf RPG map extraction panic on unknown command `0x09D20000` (CallCommonEvent with 8 integer arguments) — vendor `wolfrpg-map-parser 0.6.0` under `src-tauri/vendor/` and add 4 missing `0xD2` signatures (`CallEvent4–7`: 3, 7, 8, 9 int-arg variants) via `[patch.crates-io]`; all 24 `.mps` files from 月咲流ホノカver1.03 now parse correctly with zero text loss (CommonEvent is pure control flow)
+- Fix Wolf RPG map extraction panic on unknown command `0x09D20000` (CallCommonEvent with 8 integer arguments) — `catch_unwind` absorbs the panic and skips the affected map file; no text loss since D2/D3 commands carry no translatable content
 
 ### Added
 - Add Wolf RPG full integration (F4-05): `open_project` and `export_project` commands now support Wolf RPG — engine detection, segment extraction from `.dat`/`.mps` files, and export back to `Data/MapData/` + `Data/BasicData/`
