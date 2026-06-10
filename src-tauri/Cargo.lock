@@ -6903,10 +6903,10 @@ dependencies = [
 [[package]]
 name = "wolfrpg-map-parser"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f7f9bd9df4a322b61be8e6efaf6c685dda48349c24f8b9f7e83a9772514e8e4"
+source = "git+https://github.com/KATBlackCoder/wolfrpg-map-parser?branch=fix%2Fwolf-v3-format#21f4f76eb4efcac881584f0c30239a6ecd1a1d55"
 dependencies = [
  "encoding_rs",
+ "lz4_flex",
 ]
 
 [[package]]

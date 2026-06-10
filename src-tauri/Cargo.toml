@@ -39,6 +39,9 @@ encoding_rs = "0.8"
 wolfrpg-map-parser = "0.6"
 lz4_flex = "0.11"
 
+[patch.crates-io]
+wolfrpg-map-parser = { git = "https://github.com/KATBlackCoder/wolfrpg-map-parser", branch = "fix/wolf-v3-format" }
+
 [dev-dependencies]
 tempfile = "3"
 httpmock = "0.7"
