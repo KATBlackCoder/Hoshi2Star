@@ -1153,27 +1153,27 @@ mod tests {
             .join("test")
     }
 
-    // CommonEvent.dat — known crate limitations:
-    //   Honoka v2.225: panics on 0x04D20000/0x09D20000 (missing signatures in crate).
-    //                  Byte-level normalization is UNSAFE: 09 D2 00 00 also appears as
-    //                  [arg_count=0x09][options=0xD2,0x00,0x00] inside existing commands,
-    //                  corrupting argument counts → structural misalignment.
-    //                  Fix requires adding signatures to the crate (PR or fork).
-    //   Inko v2.292:   Different magic header (byte6=0x55/0x93 vs 0x00/0x8F for v2.225).
-    //                  Crate hard-codes v2.225 magic → incompatible without crate update.
+    // CommonEvent.dat:
+    //   Honoka v2.225: fixed via forked wolfrpg-map-parser (fix/wolf-v3-format), which
+    //                  adds the 0x04D20000/0x09D20000 CallCommonEvent signatures.
+    //   Inko v2.292:   header (byte6=0x55/0x93) and v3.x payload (LZ4-compressed,
+    //                  UTF-8 strings, same 0x8E per-event signature as v2.x) now
+    //                  decode correctly via the same fork — but command parsing still
+    //                  panics on v3.x-only opcodes. See test below.
     #[test]
-    fn test_real_honoka_common_events_known_failure() {
+    fn test_real_honoka_common_events() {
         let path = test_dir().join("月咲流ホノカver1.03/Data/BasicData/CommonEvent.dat");
         if !path.exists() {
             return;
         }
         let bytes = std::fs::read(&path).unwrap();
-        let result = extract_common_events(&bytes, &v2());
-        eprintln!(
-            "Honoka CommonEvent.dat (known failure — needs crate fix): {:?}",
-            result.as_ref().map(|s| s.len()).map_err(|e| e.to_string())
+        let segs = extract_common_events(&bytes, &v2())
+            .unwrap_or_else(|e| panic!("Honoka CommonEvent.dat must parse: {e:?}"));
+        eprintln!("Honoka CommonEvent.dat → {} segments", segs.len());
+        assert!(
+            !segs.is_empty(),
+            "Honoka CommonEvent.dat must yield segments"
         );
-        // Will be Err until crate adds 0x04D20000 / 0x09D20000 signatures.
     }
 
     #[test]
@@ -1185,10 +1185,14 @@ mod tests {
         let bytes = std::fs::read(&path).unwrap();
         let result = extract_common_events(&bytes, &v2());
         eprintln!(
-            "Inko CommonEvent.dat (known failure — v2.292 magic unsupported): {:?}",
+            "Inko CommonEvent.dat (known failure — v3.x command set has unrecognized opcodes): {:?}",
             result.as_ref().map(|s| s.len()).map_err(|e| e.to_string())
         );
-        // Will be Err until crate adds Wolf RPG v2.292 magic constant.
+        // The v3.x header (LZ4-wrapped, UTF-8 strings) now decodes correctly, but
+        // command parsing panics on opcodes the crate doesn't recognize (e.g.
+        // 0x062c0100 / CallEventByName1, observed misread as 0x00062c01 due to a
+        // v3.x-specific extra byte after empty-string ShowText/Comment commands).
+        // Requires further reverse-engineering of the v3.x command byte layout.
     }
 
     // Maps (.mps) — known crate limitations:
@@ -1238,11 +1242,11 @@ mod tests {
                 }
             }
         }
-        // v2.292 is structurally incompatible beyond the signature byte:
+        // v2.292 .mps maps are structurally incompatible beyond the signature byte:
         //   - map event signature byte 3: 0x22 vs 0x00
         //   - tile layer field offsets misaligned (skippable has different semantics)
-        //   - CommonEvent per-event signature: 0xE4 vs 0x8E
-        //   Requires full v2.292 support in the crate or a custom parser.
+        //   Requires full v2.292 .mps support in the crate or a custom parser.
+        //   (CommonEvent.dat v2.292 is handled separately — see test above.)
         eprintln!(
             "Inko maps (known failure — v2.292 structurally incompatible): {total} segs, {errors} errors"
         );

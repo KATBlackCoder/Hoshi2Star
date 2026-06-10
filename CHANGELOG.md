@@ -5,6 +5,10 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+### Added
+- Add Wolf RPG v3.x `CommonEvent.dat` extraction (Inko's header/UTF-8 layer): fork of `wolfrpg-map-parser` (`KATBlackCoder/wolfrpg-map-parser`, branch `fix/wolf-v3-format`) adds `check_common_events_magic()` (validates v2.x `0x00/0x8F` and v3.x `0x55/0x93` headers), a thread-local `UTF8_MODE` for UTF-8-vs-Shift-JIS string decoding, and LZ4 decompression of the v3.x event table (bytes 11..15 = decompressed size, bytes 19..EOF = LZ4 block); `[patch.crates-io]` re-introduced to point at this fork
+- Same fork fixes Honoka's (v2.x) `CommonEvent.dat`, which previously panicked on missing `0x04D20000`/`0x09D20000` CallCommonEvent signatures — now extracts 2195 segments (`test_real_honoka_common_events`)
+
 ### Fixed
 - Fix Wolf RPG v3.x (LZ4-compressed `.dat` databases): `dat_parser::parse_database` now decompresses the LZ4 block (version byte `0xC4`) before parsing — `DataBase.dat`/`CDataBase.dat`/`SysDatabase.dat` extract correctly for Inko (438 segments); `.mps` maps and `CommonEvent.dat` v3.x format incompatibilities remain open (see `docs/references/wolfrpg-format-compatibility.md`)
 
