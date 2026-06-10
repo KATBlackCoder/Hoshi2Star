@@ -5,6 +5,9 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+### Fixed
+- Fix Wolf RPG v3.x (LZ4-compressed `.dat` databases): `dat_parser::parse_database` now decompresses the LZ4 block (version byte `0xC4`) before parsing — `DataBase.dat`/`CDataBase.dat`/`SysDatabase.dat` extract correctly for Inko (438 segments); `.mps` maps and `CommonEvent.dat` v3.x format incompatibilities remain open (see `docs/references/wolfrpg-format-compatibility.md`)
+
 ### Added
 - Add `extract_common_events()` — parses `CommonEvent.dat` via `wolfrpg_map_parser::common_events_parser::parse_bytes` (SJIS-decoded internally); wrapped in `catch_unwind` for panic safety; adds `CommonEventMessage` variant to `WolfSegmentKind`; wired into `extract_all_wolf` and `extract_wolf_project` with unencrypted + `.wolf` archive fallback via `load_common_event_bytes()`
 
