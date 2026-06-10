@@ -10,7 +10,7 @@
 // Layout of an unencrypted .dat file:
 //   byte  0      : indicator (0x00 = unencrypted)
 //   bytes 1–9    : 9-byte magic (see DB_MAGIC_SJIS / DB_MAGIC_UTF8)
-//   byte  10     : version (0xC4 = LZ4-compressed — not supported here)
+//   byte  10     : version
 //   bytes 11–14  : u32_le type_count
 //   for each type:
 //     4 bytes    : DAT_TYPE_SEPARATOR [0xFE, 0xFF, 0xFF, 0xFF]
@@ -21,6 +21,16 @@
 //     4 bytes    : u32 data_count
 //     for each entry: int_cnt × u32, then str_cnt × ReadString
 //   1 byte       : terminator (== version)
+//
+// Layout of an LZ4-compressed .dat file (version byte == 0xC4, Wolf RPG v3.x):
+//   byte  0      : indicator (0x00 = unencrypted)
+//   bytes 1–9    : 9-byte magic
+//   byte  10     : version (0xC4)
+//   bytes 11–14  : u32_le decompressed_size
+//   bytes 15–18  : u32_le compressed_size
+//   bytes 19..   : LZ4 block (raw block format, no frame header), `compressed_size` bytes.
+//                  Decompressing yields bytes identical to "bytes 11.." of the
+//                  uncompressed layout above (type_count + per-type sections + terminator).
 
 use super::encoding;
 use std::io::{Cursor, Read};
@@ -28,6 +38,10 @@ use std::io::{Cursor, Read};
 // .dat magic — byte 5 = 0x00 (SJIS) or 0x55 (UTF-8)
 pub const DB_MAGIC_SJIS: [u8; 9] = [0x57, 0x00, 0x00, 0x4F, 0x4C, 0x00, 0x46, 0x4D, 0x00];
 pub const DB_MAGIC_UTF8: [u8; 9] = [0x57, 0x00, 0x00, 0x4F, 0x4C, 0x55, 0x46, 0x4D, 0x00];
+
+// .dat version byte 10 == 0xC4 means the rest of the file is an LZ4 block
+// (Wolf RPG v3.x), preceded by 4-byte decompressed_size + 4-byte compressed_size.
+const DAT_VERSION_LZ4: u8 = 0xC4;
 
 // 4-byte separator that precedes each type's data section in the .dat
 pub const DAT_TYPE_SEPARATOR: [u8; 4] = [0xFE, 0xFF, 0xFF, 0xFF];
@@ -55,6 +69,8 @@ pub enum DatParseError {
     InvalidMagic,
     #[error("unsupported format: {0}")]
     Unsupported(String),
+    #[error("LZ4 decompression failed: {0}")]
+    Lz4Decompress(String),
     #[error("type count mismatch: project={project}, dat={dat}")]
     TypeCountMismatch { project: usize, dat: usize },
     #[error("type separator mismatch at type index {0}")]
@@ -348,7 +364,8 @@ fn parse_dat_types(
 /// `dat_bytes`     — contents of the `.dat` data file (indicator + magic + version + data).
 ///
 /// Encoding (SJIS vs UTF-8) is detected automatically from the `.dat` magic.
-/// Only unencrypted, non-LZ4 databases are supported in F4-03.
+/// LZ4-compressed databases (version byte 0xC4, Wolf RPG v3.x) are decompressed
+/// transparently. Only unencrypted databases are supported.
 pub fn parse_database(project_bytes: &[u8], dat_bytes: &[u8]) -> Result<DatFile, DatParseError> {
     if dat_bytes.len() < 11 {
         return Err(DatParseError::Io(std::io::Error::new(
@@ -374,18 +391,49 @@ pub fn parse_database(project_bytes: &[u8], dat_bytes: &[u8]) -> Result<DatFile,
         return Err(DatParseError::InvalidMagic);
     };
 
-    // Byte 10: version. 0xC4 means LZ4-compressed (not supported here).
-    let version = dat_bytes[10];
-    if version == 0xC4 {
-        return Err(DatParseError::Unsupported(
-            "LZ4-compressed database (v3.5) not supported in F4-03 (deferred to F4-05)".into(),
-        ));
-    }
-
     let project_types = parse_project(project_bytes, is_utf8)?;
-    let types = parse_dat_types(dat_bytes, &project_types, is_utf8)?;
+
+    // Byte 10: version. 0xC4 means the type/entry data is LZ4-compressed (Wolf RPG v3.x).
+    let version = dat_bytes[10];
+    let types = if version == DAT_VERSION_LZ4 {
+        let payload = decompress_lz4_dat(dat_bytes)?;
+        // Reassemble a buffer with the original 11-byte header (skipped by
+        // parse_dat_types) followed by the decompressed type/entry data.
+        let mut full = Vec::with_capacity(11 + payload.len());
+        full.extend_from_slice(&dat_bytes[0..11]);
+        full.extend_from_slice(&payload);
+        parse_dat_types(&full, &project_types, is_utf8)?
+    } else {
+        parse_dat_types(dat_bytes, &project_types, is_utf8)?
+    };
 
     Ok(DatFile { types, is_utf8 })
+}
+
+/// Decompress the LZ4 block following the `.dat` header (bytes 11..).
+///
+/// Bytes 11–14 = u32_le decompressed_size, bytes 15–18 = u32_le compressed_size,
+/// bytes 19.. = the LZ4 raw block, exactly `compressed_size` bytes long.
+fn decompress_lz4_dat(dat_bytes: &[u8]) -> Result<Vec<u8>, DatParseError> {
+    if dat_bytes.len() < 19 {
+        return Err(DatParseError::Io(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "LZ4 .dat file is too short for size header",
+        )));
+    }
+    let decompressed_size = u32::from_le_bytes(dat_bytes[11..15].try_into().unwrap()) as usize;
+    let compressed_size = u32::from_le_bytes(dat_bytes[15..19].try_into().unwrap()) as usize;
+    let block_end = 19usize
+        .checked_add(compressed_size)
+        .ok_or_else(|| DatParseError::Lz4Decompress("compressed_size overflow".into()))?;
+    if dat_bytes.len() < block_end {
+        return Err(DatParseError::Io(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "LZ4 .dat file is shorter than compressed_size",
+        )));
+    }
+    lz4_flex::block::decompress(&dat_bytes[19..block_end], decompressed_size)
+        .map_err(|e| DatParseError::Lz4Decompress(e.to_string()))
 }
 
 // ---------------------------------------------------------------------------
@@ -595,13 +643,51 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_database_rejects_lz4() {
+    fn test_parse_database_lz4_roundtrip() {
+        let project = make_minimal_project("キャラ", "名前", "");
+        let plain_dat = make_minimal_dat("テスト");
+        // Payload = everything after the 11-byte header (type_count.. terminator).
+        let payload = &plain_dat[11..];
+        let compressed = lz4_flex::block::compress(payload);
+
+        let mut lz4_dat = vec![0x00]; // indicator = unencrypted
+        lz4_dat.extend_from_slice(&DB_MAGIC_SJIS);
+        lz4_dat.push(0xC4); // version = LZ4
+        lz4_dat.extend_from_slice(&(payload.len() as u32).to_le_bytes()); // decompressed_size
+        lz4_dat.extend_from_slice(&(compressed.len() as u32).to_le_bytes()); // compressed_size
+        lz4_dat.extend_from_slice(&compressed);
+
+        let db_plain = parse_database(&project, &plain_dat).unwrap();
+        let db_lz4 = parse_database(&project, &lz4_dat).unwrap();
+
+        assert_eq!(db_lz4.types.len(), db_plain.types.len());
+        assert_eq!(
+            db_lz4.types[0].entries[0].string_values,
+            db_plain.types[0].entries[0].string_values
+        );
+        assert_eq!(db_lz4.types[0].entries[0].string_values, ["テスト"]);
+    }
+
+    #[test]
+    fn test_parse_database_lz4_header_too_short() {
+        let mut dat = vec![0x00];
+        dat.extend_from_slice(&DB_MAGIC_SJIS);
+        dat.push(0xC4); // LZ4 version, but no size header follows
+        let project = make_minimal_project("T", "F", "");
+        let err = parse_database(&project, &dat).unwrap_err();
+        assert!(matches!(err, DatParseError::Io(_)));
+    }
+
+    #[test]
+    fn test_parse_database_lz4_truncated_block() {
         let mut dat = vec![0x00];
         dat.extend_from_slice(&DB_MAGIC_SJIS);
         dat.push(0xC4); // LZ4 version
+        dat.extend_from_slice(&100u32.to_le_bytes()); // decompressed_size
+        dat.extend_from_slice(&50u32.to_le_bytes()); // compressed_size = 50, but no bytes follow
         let project = make_minimal_project("T", "F", "");
         let err = parse_database(&project, &dat).unwrap_err();
-        assert!(matches!(err, DatParseError::Unsupported(_)));
+        assert!(matches!(err, DatParseError::Io(_)));
     }
 
     #[test]
