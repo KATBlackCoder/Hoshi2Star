@@ -113,9 +113,10 @@ Couche métier pure — pas de `tauri::State`, pas d'`AppHandle`, testable sans 
 | `mv_mz/injector.rs` | Réécrit les fichiers JSON avec les traductions. Conserve la structure JSON d'origine — only `value` fields modifiés. |
 | `mv_mz/decryptor.rs` | Décryptage XOR des assets chiffrés RPG Maker MV/MZ. Clé lue depuis `System.json`. |
 | `vx_ace/` | Extractor + injector RPG Maker VX Ace via marshal-rs (Ruby Marshal binary). **Code disponible mais désactivé** dans `engines/detector.rs` — réactivation prévue post-Wolf RPG stable. |
-| `wolf/extractor.rs` | Lit les `.mps` (cartes) et `.dat`/`.project` (base de données) depuis `Data/MapData/` et `Data/BasicData/`. Fallback transparent vers les archives `.wolf` (DXA chiffrées) via `wolf/decryptor.rs`. Exporte `extract_all_wolf()` → `Vec<(file_name, file_type, Vec<WolfSegment>)>`. |
+| `wolf/extractor.rs` | Lit les `.mps` (cartes) et `.dat`/`.project` (base de données) depuis `Data/MapData/` et `Data/BasicData/`. Fallback transparent vers les archives `.wolf` (DXA chiffrées) via `wolf/decrypt/legacy_xor.rs`. Exporte `extract_all_wolf()` → `Vec<(file_name, file_type, Vec<WolfSegment>)>`. |
 | `wolf/injector.rs` | Réinjecte les traductions dans `.mps` et `.dat` via `wolfrpg-map-parser`. Écrit dans `Data/MapData/` et `Data/BasicData/` (Option A — priorité sur les archives). Charge les bytes sources via `load_mps_for_stem`/`load_dat_for_stem` (archive-aware). |
-| `wolf/decryptor.rs` | Décryptage XOR des archives `.wolf` (DXA v2/v3). Détecte la clé par heuristique. Émet `PossibleWolfX` si toutes les clés échouent (WolfX v3.5+ non supporté). |
+| `wolf/decrypt/legacy_xor.rs` | Décryptage XOR des archives `.wolf` (DXA v2/v3 jusqu'à v3.31). Détecte la clé par heuristique. Émet `PossibleWolfX` si toutes les clés échouent (WolfX v3.5+). |
+| `wolf/decrypt/wolfx.rs` | Couture WolfX (Wolf v3.5+ Pro, ChaCha20) — **non implémenté par décision** : pré-étape manuelle UberWolf, puis ouvrir le dossier `Data/` déchiffré. Renvoie une erreur de guidage. |
 | `wolf/encoding.rs` | Conversion Shift-JIS ↔ UTF-8 pour les fichiers Wolf v2/v3. |
 | `wolf/dat_parser.rs` | Parseur binaire des fichiers `.dat` + `.project` Wolf RPG (format WolfTL). |
 

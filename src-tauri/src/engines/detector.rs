@@ -150,7 +150,7 @@ fn find_first_wolf_file(game_dir: &Path) -> Option<std::path::PathBuf> {
 }
 
 fn try_detect_wolf_version_from_dxa(game_dir: &Path) -> Option<WolfVersion> {
-    use crate::engines::wolf::decryptor::{
+    use crate::engines::wolf::decrypt::legacy_xor::{
         code_page_to_wolf_version, read_header, read_signature, WOLF_KEYS,
     };
 

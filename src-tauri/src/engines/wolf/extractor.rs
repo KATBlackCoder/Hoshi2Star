@@ -1,7 +1,7 @@
 // Wolf RPG text extractor — F4-03/F4-05 implementation.
 
 use super::dat_parser;
-use super::decryptor::extract_all;
+use super::decrypt::legacy_xor::extract_all;
 use super::v3_format;
 use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
 use std::collections::HashMap;
@@ -53,7 +53,7 @@ fn normalize_wolf_command_signatures(bytes: &mut [u8]) {
 #[derive(Debug, thiserror::Error)]
 pub enum ExtractorError {
     #[error("decryptor error: {0}")]
-    Decryptor(#[from] super::decryptor::DecryptorError),
+    Decryptor(#[from] super::decrypt::legacy_xor::DecryptorError),
     #[error("map parser error: {0}")]
     MapParser(String),
     #[error("dat parse error in {file}: {reason}")]
