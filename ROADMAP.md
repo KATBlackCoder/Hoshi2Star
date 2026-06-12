@@ -241,6 +241,7 @@
 - [-] Intégration `rewolf-trans` (TypeScript) via sidecar Tauri ou bindings WASM — rejeté, approche Rust natif retenue
 - [x] F4-01 : Engine::Wolf détection + WolfVersion + RE_WOLF tokenizer + engines/wolf/ scaffold
 - [x] F4-02 `src-tauri/src/engines/wolf/decryptor.rs` — décryptage `.wolf` (DXA XOR v5/v6/v8)
+      *(déplacé vers `wolf/decrypt/legacy_xor.rs` le 2026-06-12)*
 - [x] F4-03 `src-tauri/src/engines/wolf/extractor.rs` — lecture `.mps` + `.dat`
 - [x] F4-04 `src-tauri/src/engines/wolf/injector.rs` — réécriture + repack `.wolf`
 - [x] Tests round-trip Wolf v1/v2
@@ -276,8 +277,15 @@
       4 maps + le `CommonEvent.dat` réels d'Inko (v2.0). Remplace l'approche fork
       `wolfrpg-map-parser` pour le v3.x — v2.x (Honoka) reste sur `wolfrpg_map_parser`.
 - [x] Tests sur jeux Wolf v3.x réels (Inko v2.0 : maps + CommonEvent.dat)
-- [ ] `src-tauri/src/engines/wolf/decryptor_v3.rs` — support WolfX (hash-based, UberWolf v3.5+)
-- [ ] Documentation format WolfX dans `docs/engines.md`
+- [x] F5-02 Décision WolfX (2026-06-12) : **pas de déchiffrement natif ni de sidecar
+      UberWolfCli** (ChaCha20 + clé en hash = rétro-ingénierie disproportionnée ;
+      licence UberWolf non confirmée = non bundlable ; binaire Windows-only vs
+      `targets: "all"`). Workflow officiel : pré-étape manuelle UberWolf → ouvrir
+      le dossier `Data/` déchiffré. Couture posée : `wolf/decrypt/wolfx.rs` (stub
+      de guidage) + `decryptor.rs` → `wolf/decrypt/legacy_xor.rs` (commit 69fa25c).
+      Remplace l'ancien plan `decryptor_v3.rs`.
+- [ ] Documentation workflow WolfX (pré-étape UberWolf) dans `docs/engines.md` +
+      message de guidage visible côté UI quand `PossibleWolfX` est détecté
 
 ### Engine Layer — RPG Developer Bakin
 - [ ] Évaluer adoption DLC Localization Toolkit (SmileBoom) — si > 200 jeux traduits : go

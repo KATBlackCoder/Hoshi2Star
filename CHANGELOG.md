@@ -5,6 +5,16 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+### Added
+- Add `h2s://llm/segments-updated` event emitted after each persisted batch — `SegmentGrid` merges `targetText`/`status` in place, so rows turn "Translated" batch by batch during long runs (no DB refetch, keeps sort/selection/scroll)
+- Add `engines/wolf/decrypt/wolfx.rs` seam for WolfX archives (Wolf v3.5+ Pro, ChaCha20) — returns a guidance error by design: decrypt with UberWolf first, then open the plain `Data/` directory (no native ChaCha20, no bundled sidecar: unconfirmed UberWolf license, Windows-only binary)
+
+### Changed
+- Move `engines/wolf/decryptor.rs` to `engines/wolf/decrypt/legacy_xor.rs` (XOR DXA v5/v6/v8 logic unchanged) — decryption variants now live under `wolf/decrypt/`, one submodule per encryption scheme
+
+### Fixed
+- Fix "Translate All" progress bar hitting 100% after each file — `pipeline::run` now threads a global `(done_offset, global_total)` so `h2s://llm/progress` reports one continuous percentage across all files
+
 ### Changed
 - `llm::pipeline::run_inner`/`run` now persist each batch's `target_text`/`status` to the DB immediately (`persist_batch_results`) instead of after the whole pipeline finishes — a crash mid-translation only loses the in-flight batch
 - Automatic cooldown ("Translate All") moved from a per-file check (`last_cooldown_at` in `translate_all_segments`) to a per-batch check inside `pipeline::run_inner` via the new `CooldownState`/`maybe_rest` — large files (e.g. Wolf `CommonEvent.dat`, ~80 batches) now actually pause mid-file once the threshold elapses; added `CoolingPayload` (`remainingSecs`) to `progress.rs`. No frontend changes (`h2s://llm/*` event shapes unchanged)
