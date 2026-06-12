@@ -14,7 +14,7 @@ dist-ssr
 
 .agents
 docs/games/*
-
+test/*
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

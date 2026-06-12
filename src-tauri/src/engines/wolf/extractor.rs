@@ -2,6 +2,7 @@
 
 use super::dat_parser;
 use super::decryptor::extract_all;
+use super::v3_format;
 use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
 use std::collections::HashMap;
 use std::path::Path;
@@ -409,6 +410,10 @@ pub fn extract_map_segments(
     bytes: &[u8],
     _version: &crate::engines::detector::WolfVersion,
 ) -> Result<Vec<WolfSegment>, ExtractorError> {
+    if v3_format::compression::is_lz4_v3(bytes) {
+        return extract_map_segments_v3(map_name, bytes);
+    }
+
     // Wrap the panicking parser in catch_unwind.
     let mut bytes_owned = bytes.to_vec();
     normalize_wolf_command_signatures(&mut bytes_owned);
@@ -471,8 +476,85 @@ pub fn extract_map_segments(
     Ok(segments)
 }
 
+/// Extract translatable segments from a v3.x (LZ4-compressed) `.mps` map,
+/// using the in-house [`v3_format`] parser. Same `key`/`kind` shape as the
+/// v2.x path, so the injector and CAT UI don't need to branch on version.
+fn extract_map_segments_v3(
+    map_name: &str,
+    bytes: &[u8],
+) -> Result<Vec<WolfSegment>, ExtractorError> {
+    let decompressed = v3_format::compression::decompress_v3(bytes)
+        .map_err(|e| ExtractorError::MapParser(format!("{map_name}: {e}")))?;
+    let map = v3_format::map::MapV3::parse(&decompressed)
+        .map_err(|e| ExtractorError::MapParser(format!("{map_name}: {e}")))?;
+
+    let mut segments = Vec::new();
+
+    for (event_idx, event) in map.events.iter().enumerate() {
+        for (page_idx, page) in event.pages.iter().enumerate() {
+            for (cmd_idx, command) in page.commands.iter().enumerate() {
+                match command.cid {
+                    v3_format::command::CID_MESSAGE => {
+                        if let Some(text) = command.string_args.first() {
+                            if is_translatable(text) {
+                                segments.push(WolfSegment {
+                                    key: format!(
+                                        "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}"
+                                    ),
+                                    source_text: text.clone(),
+                                    kind: WolfSegmentKind::MapMessage {
+                                        map_name: map_name.to_owned(),
+                                        event_idx,
+                                        page_idx,
+                                        cmd_idx,
+                                    },
+                                });
+                            }
+                        }
+                    }
+                    v3_format::command::CID_CHOICES => {
+                        for (choice_idx, choice) in command.string_args.iter().enumerate() {
+                            if is_translatable(choice) {
+                                segments.push(WolfSegment {
+                                    key: format!(
+                                        "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}/choices/{choice_idx}"
+                                    ),
+                                    source_text: choice.clone(),
+                                    kind: WolfSegmentKind::MapMessage {
+                                        map_name: map_name.to_owned(),
+                                        event_idx,
+                                        page_idx,
+                                        cmd_idx,
+                                    },
+                                });
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    Ok(segments)
+}
+
 fn is_translatable(text: &str) -> bool {
-    !text.trim().is_empty() && !is_wolf_placeholder_only(text)
+    let trimmed = text.trim();
+    !trimmed.is_empty() && !is_wolf_placeholder_only(text) && !is_resource_path(trimmed)
+}
+
+/// Matches a trailing resource file extension (images, audio, video, fonts)
+/// commonly used in Wolf RPG database/event fields for graphic, BGM/SE, and
+/// font references — these are file paths, not translatable text.
+static RE_RESOURCE_EXTENSION: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"(?i)\.(png|jpe?g|bmp|gif|ogg|wav|mp3|mid|midi|ttf|otf|avi|webm|mp4)$")
+        .unwrap()
+});
+
+/// Returns true if `text` ends with a known resource file extension.
+fn is_resource_path(text: &str) -> bool {
+    RE_RESOURCE_EXTENSION.is_match(text)
 }
 
 fn is_wolf_placeholder_only(text: &str) -> bool {
@@ -601,6 +683,9 @@ pub fn extract_database_segments(
                 if is_wolf_placeholder_only(value) {
                     continue;
                 }
+                if is_resource_path(value.trim()) {
+                    continue;
+                }
                 if !is_known_translatable_field(&field.name) && !contains_japanese(value) {
                     continue;
                 }
@@ -663,6 +748,10 @@ pub fn extract_common_events(
     bytes: &[u8],
     _version: &crate::engines::detector::WolfVersion,
 ) -> Result<Vec<WolfSegment>, ExtractorError> {
+    if v3_format::common_events::is_lz4_v3(bytes) {
+        return extract_common_events_v3(bytes);
+    }
+
     let bytes_owned = bytes.to_vec();
     let events = std::panic::catch_unwind(move || common_events_parser::parse_bytes(&bytes_owned))
         .map_err(|e| {
@@ -704,6 +793,61 @@ pub fn extract_common_events(
                                 source_text: choice.clone(),
                                 kind: WolfSegmentKind::CommonEventMessage {
                                     event_name: event_name.to_owned(),
+                                    event_idx,
+                                    cmd_idx,
+                                },
+                            });
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Ok(segments)
+}
+
+/// Extracts translatable segments from a v3.5 (Inko) `CommonEvent.dat`, via
+/// [`v3_format::common_events`]. Each event's commands are a flat list (no
+/// pages, unlike `.mps` events).
+fn extract_common_events_v3(bytes: &[u8]) -> Result<Vec<WolfSegment>, ExtractorError> {
+    let decompressed = v3_format::common_events::decompress(bytes)
+        .map_err(|e| ExtractorError::MapParser(format!("CommonEvent.dat: {e}")))?;
+    let common_events = v3_format::common_events::CommonEventsV3::parse(&decompressed)
+        .map_err(|e| ExtractorError::MapParser(format!("CommonEvent.dat: {e}")))?;
+
+    let mut segments = Vec::new();
+
+    for (event_idx, event) in common_events.events.iter().enumerate() {
+        let event_name = &event.name;
+        for (cmd_idx, command) in event.commands.iter().enumerate() {
+            match command.cid {
+                v3_format::command::CID_MESSAGE => {
+                    if let Some(text) = command.string_args.first() {
+                        if is_translatable(text) {
+                            segments.push(WolfSegment {
+                                key: format!("CommonEvents/{event_name}/{event_idx}/{cmd_idx}"),
+                                source_text: text.clone(),
+                                kind: WolfSegmentKind::CommonEventMessage {
+                                    event_name: event_name.clone(),
+                                    event_idx,
+                                    cmd_idx,
+                                },
+                            });
+                        }
+                    }
+                }
+                v3_format::command::CID_CHOICES => {
+                    for (choice_idx, choice) in command.string_args.iter().enumerate() {
+                        if is_translatable(choice) {
+                            segments.push(WolfSegment {
+                                key: format!(
+                                    "CommonEvents/{event_name}/{event_idx}/{cmd_idx}/choices/{choice_idx}"
+                                ),
+                                source_text: choice.clone(),
+                                kind: WolfSegmentKind::CommonEventMessage {
+                                    event_name: event_name.clone(),
                                     event_idx,
                                     cmd_idx,
                                 },
@@ -891,6 +1035,10 @@ mod tests {
 
     fn v2() -> WolfVersion {
         WolfVersion { major: 2, minor: 0 }
+    }
+
+    fn v3() -> WolfVersion {
+        WolfVersion { major: 3, minor: 0 }
     }
 
     #[test]
@@ -1133,6 +1281,35 @@ mod tests {
     }
 
     #[test]
+    fn test_is_resource_path() {
+        for path in [
+            "Picture/title.png",
+            "title.PNG",
+            "se001.ogg",
+            "bgm.mp3",
+            "voice.WAV",
+            "MS Gothic.ttf",
+            "movie.webm",
+        ] {
+            assert!(is_resource_path(path), "{path:?} should be a resource path");
+        }
+
+        for text in ["こんにちは", "Hello, world!", "Lv.5", "Mr. Smith"] {
+            assert!(
+                !is_resource_path(text),
+                "{text:?} should not be a resource path"
+            );
+        }
+    }
+
+    #[test]
+    fn test_is_translatable_skips_resource_paths() {
+        assert!(!is_translatable("Picture/title.png"));
+        assert!(!is_translatable("se001.ogg"));
+        assert!(is_translatable("こんにちは"));
+    }
+
+    #[test]
     fn test_extract_common_events_invalid_magic_no_panic() {
         // Invalid magic → parser panics → caught → ExtractorError, not a process panic.
         let bytes = b"garbage data that is definitely not a common event file".to_vec();
@@ -1177,22 +1354,21 @@ mod tests {
     }
 
     #[test]
-    fn test_real_inko_common_events_known_failure() {
-        let path = test_dir().join("Densyanai Inko ver2.0/Data/BasicData/CommonEvent.dat");
+    fn test_real_inko_common_events_v3() {
+        let path = test_dir().join("Densyanai_Inko_ver2.0/Data/BasicData/CommonEvent.dat");
         if !path.exists() {
             return;
         }
         let bytes = std::fs::read(&path).unwrap();
-        let result = extract_common_events(&bytes, &v2());
-        eprintln!(
-            "Inko CommonEvent.dat (known failure — v3.x command set has unrecognized opcodes): {:?}",
-            result.as_ref().map(|s| s.len()).map_err(|e| e.to_string())
+        let segs = extract_common_events(&bytes, &v3())
+            .unwrap_or_else(|e| panic!("Inko CommonEvent.dat must parse: {e:?}"));
+        eprintln!("Inko CommonEvent.dat → {} segments", segs.len());
+        assert!(!segs.is_empty(), "Inko CommonEvent.dat must yield segments");
+        assert!(
+            segs.iter()
+                .any(|s| !s.source_text.trim().is_empty() && !s.source_text.contains('\u{FFFD}')),
+            "Inko CommonEvent.dat should yield at least one readable, non-empty segment"
         );
-        // The v3.x header (LZ4-wrapped, UTF-8 strings) now decodes correctly, but
-        // command parsing panics on opcodes the crate doesn't recognize (e.g.
-        // 0x062c0100 / CallEventByName1, observed misread as 0x00062c01 due to a
-        // v3.x-specific extra byte after empty-string ShowText/Comment commands).
-        // Requires further reverse-engineering of the v3.x command byte layout.
     }
 
     // Maps (.mps) — known crate limitations:
@@ -1224,8 +1400,8 @@ mod tests {
     }
 
     #[test]
-    fn test_real_inko_maps_known_failure() {
-        let map_dir = test_dir().join("Densyanai Inko ver2.0/Data/MapData");
+    fn test_real_inko_maps_v3() {
+        let map_dir = test_dir().join("Densyanai_Inko_ver2.0/Data/MapData");
         if !map_dir.exists() {
             return;
         }
@@ -1238,17 +1414,26 @@ mod tests {
                 let name = p.file_name().unwrap().to_string_lossy().into_owned();
                 match extract_map_segments(&name, &bytes, &v2()) {
                     Ok(segs) => total += segs.len(),
-                    Err(_) => errors += 1,
+                    Err(e) => {
+                        eprintln!("{name}: {e}");
+                        errors += 1;
+                    }
                 }
             }
         }
-        // v2.292 .mps maps are structurally incompatible beyond the signature byte:
-        //   - map event signature byte 3: 0x22 vs 0x00
-        //   - tile layer field offsets misaligned (skippable has different semantics)
-        //   Requires full v2.292 .mps support in the crate or a custom parser.
-        //   (CommonEvent.dat v2.292 is handled separately — see test above.)
-        eprintln!(
-            "Inko maps (known failure — v2.292 structurally incompatible): {total} segs, {errors} errors"
+        eprintln!("Inko v3.x maps → {total} segments, {errors} files errored");
+        assert_eq!(errors, 0, "all Inko v3.x .mps files must parse");
+        assert!(total > 0, "Inko v3.x maps must yield segments");
+
+        // Spot-check: at least one segment must be readable, non-empty Japanese
+        // text (not mojibake / replacement characters).
+        let title_map = std::fs::read(map_dir.join("TitleMap.mps")).unwrap();
+        let segments = extract_map_segments("TitleMap", &title_map, &v2()).unwrap();
+        assert!(
+            segments
+                .iter()
+                .any(|s| !s.source_text.trim().is_empty() && !s.source_text.contains('\u{FFFD}')),
+            "TitleMap should yield at least one readable, non-empty segment"
         );
     }
 
@@ -1258,7 +1443,7 @@ mod tests {
     /// them parse like any uncompressed database.
     #[test]
     fn test_real_inko_database_segments() {
-        let basic_data_dir = test_dir().join("Densyanai Inko ver2.0/Data/BasicData");
+        let basic_data_dir = test_dir().join("Densyanai_Inko_ver2.0/Data/BasicData");
         if !basic_data_dir.exists() {
             return;
         }

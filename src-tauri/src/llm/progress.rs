@@ -19,3 +19,11 @@ pub struct ProgressPayload {
 pub struct PlaceholderWarningPayload {
     pub segment_id: String,
 }
+
+/// Emitted as `h2s://llm/cooling` once per second while the pipeline is
+/// pausing between batches (automatic cooldown).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoolingPayload {
+    pub remaining_secs: u64,
+}

@@ -267,12 +267,16 @@
 ---
 
 ## F5 — Wolf v3/WolfX + Bakin + consolidation
-**Statut : [ ] À démarrer**
+**Statut : [~] En cours**
 **Critère de sortie : Couverture moteurs complète, 500 utilisateurs cible.**
 
 ### Engine Layer — Wolf RPG v3/WolfX
+- [x] F5-01 `src-tauri/src/engines/wolf/v3_format/` — parser maison `.mps`/`CommonEvent.dat` v3.x
+      (LZ4 + modèle plat `Command::Init` façon WolfTL), round-trip byte-exact validé sur les
+      4 maps + le `CommonEvent.dat` réels d'Inko (v2.0). Remplace l'approche fork
+      `wolfrpg-map-parser` pour le v3.x — v2.x (Honoka) reste sur `wolfrpg_map_parser`.
+- [x] Tests sur jeux Wolf v3.x réels (Inko v2.0 : maps + CommonEvent.dat)
 - [ ] `src-tauri/src/engines/wolf/decryptor_v3.rs` — support WolfX (hash-based, UberWolf v3.5+)
-- [ ] Tests sur jeux Wolf v3.x réels
 - [ ] Documentation format WolfX dans `docs/engines.md`
 
 ### Engine Layer — RPG Developer Bakin

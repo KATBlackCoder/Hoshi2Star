@@ -16,6 +16,7 @@
 use super::dat_parser::{self, DatFile, DatType, STRING_INDICATOR_PUB};
 use super::dat_parser::{DAT_TYPE_SEPARATOR, DB_MAGIC_SJIS, DB_MAGIC_UTF8};
 use super::encoding;
+use super::v3_format::{self, V3FormatError};
 use crate::engines::detector::WolfVersion;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -37,6 +38,8 @@ pub enum InjectorError {
     DatParse(String),
     #[error("missing .project file for stem: {0}")]
     MissingProject(String),
+    #[error("v3.x map format error: {0}")]
+    V3Format(#[from] V3FormatError),
 }
 
 // ---------------------------------------------------------------------------
@@ -88,6 +91,18 @@ pub fn inject_map(
         .iter()
         .map(|t| (t.key.as_str(), t.text.as_str()))
         .collect();
+
+    if v3_format::compression::is_lz4_v3(bytes) {
+        let mut updated = 0usize;
+        let patched = inject_map_v3(map_name, bytes, &translation_map, &mut updated)?;
+        return Ok((
+            patched,
+            InjectionResult {
+                file_path: PathBuf::from(format!("{map_name}.mps")),
+                updated_count: updated,
+            },
+        ));
+    }
 
     let bytes_owned = bytes.to_vec();
     let map = std::panic::catch_unwind(move || Map::parse(&bytes_owned)).map_err(|_| {
@@ -209,6 +224,67 @@ fn patch_mps_strings(
     }
 
     Ok(out)
+}
+
+/// Inject translations into a v3.x (LZ4-compressed) `.mps` map using the
+/// in-house [`v3_format`] parser: parse to AST, replace `string_args` for
+/// `ShowMessage`/`ShowChoice` commands by key, dump, recompress.
+///
+/// Same `key` format as [`super::extractor::extract_map_segments`]'s v3 path:
+/// `MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}[/choices/{choice_idx}]`.
+fn inject_map_v3(
+    map_name: &str,
+    bytes: &[u8],
+    translations: &HashMap<&str, &str>,
+    updated: &mut usize,
+) -> Result<Vec<u8>, InjectorError> {
+    let decompressed = v3_format::compression::decompress_v3(bytes)?;
+    let mut map = v3_format::map::MapV3::parse(&decompressed)?;
+
+    for (event_idx, event) in map.events.iter_mut().enumerate() {
+        for (page_idx, page) in event.pages.iter_mut().enumerate() {
+            for (cmd_idx, command) in page.commands.iter_mut().enumerate() {
+                match command.cid {
+                    v3_format::command::CID_MESSAGE => {
+                        if let Some(text) = command.string_args.first_mut() {
+                            if text.trim().is_empty() {
+                                continue;
+                            }
+                            let key = format!(
+                                "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}"
+                            );
+                            if let Some(&t) = translations.get(key.as_str()) {
+                                if t != text.as_str() {
+                                    *updated += 1;
+                                    *text = t.to_owned();
+                                }
+                            }
+                        }
+                    }
+                    v3_format::command::CID_CHOICES => {
+                        for (choice_idx, choice) in command.string_args.iter_mut().enumerate() {
+                            if choice.trim().is_empty() {
+                                continue;
+                            }
+                            let key = format!(
+                                "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}/choices/{choice_idx}"
+                            );
+                            if let Some(&t) = translations.get(key.as_str()) {
+                                if t != choice.as_str() {
+                                    *updated += 1;
+                                    *choice = t.to_owned();
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    let dumped = map.dump()?;
+    Ok(v3_format::compression::recompress_v3(&dumped)?)
 }
 
 // ---------------------------------------------------------------------------
@@ -865,5 +941,51 @@ mod tests {
 
         let content = std::fs::read(&wolf_path).unwrap();
         assert_eq!(content, b"fake wolf archive", ".wolf must not be modified");
+    }
+
+    fn test_dir() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("test")
+    }
+
+    /// Round-trip injection on a real Inko (v3.x LZ4) `.mps` map: extract
+    /// segments, inject a translation, decompress the result, and verify the
+    /// translated text appears via re-parsing — and that LZ4 recompression
+    /// stays self-consistent (`is_lz4_v3` + `decompress_v3` succeed).
+    #[test]
+    fn test_round_trip_mps_v3_translation() {
+        let path = test_dir().join("Densyanai_Inko_ver2.0/Data/MapData/TitleMap.mps");
+        if !path.exists() {
+            return;
+        }
+        let bytes = std::fs::read(&path).unwrap();
+
+        let segs = crate::engines::wolf::extractor::extract_map_segments("TitleMap", &bytes, &v3())
+            .unwrap();
+        assert!(!segs.is_empty());
+
+        // Translate just the first segment.
+        let translations = vec![WolfTranslation {
+            key: segs[0].key.clone(),
+            text: "Hello, world!".to_owned(),
+        }];
+
+        let (new_bytes, result) = inject_map("TitleMap", &bytes, &translations, &v3()).unwrap();
+        assert_eq!(result.updated_count, 1);
+
+        assert!(v3_format::compression::is_lz4_v3(&new_bytes));
+        let decompressed = v3_format::compression::decompress_v3(&new_bytes).unwrap();
+        let map = v3_format::map::MapV3::parse(&decompressed).unwrap();
+
+        let new_segs =
+            crate::engines::wolf::extractor::extract_map_segments("TitleMap", &new_bytes, &v3())
+                .unwrap();
+        assert_eq!(new_segs[0].source_text, "Hello, world!");
+
+        // Round-trip: re-parsing must still satisfy parse(dump(x)) == x.
+        let redumped = map.dump().unwrap();
+        assert_eq!(redumped, decompressed);
     }
 }

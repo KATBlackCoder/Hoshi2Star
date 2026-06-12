@@ -76,10 +76,12 @@ pub async fn translate_segments(
         // and later update the manifest stats.
         let lang_pair = "ja-en";
         let mut resolved_project_id: Option<String> = None;
+        let mut project_engine = "mv_mz".to_string();
         let glossary_terms: Vec<(String, String)> = if let Some((first_id, _)) = pairs.first() {
-            let pid: Option<String> = sqlx::query_scalar(
-                "SELECT sf.project_id FROM segments s \
+            let row = sqlx::query_as::<_, (String, String)>(
+                "SELECT sf.project_id, p.engine FROM segments s \
                  JOIN source_files sf ON s.source_file_id = sf.id \
+                 JOIN projects p ON p.id = sf.project_id \
                  WHERE s.id = ? LIMIT 1",
             )
             .bind(first_id)
@@ -87,9 +89,10 @@ pub async fn translate_segments(
             .await
             .ok()
             .flatten();
-            match pid {
-                Some(project_id) => {
+            match row {
+                Some((project_id, engine)) => {
                     resolved_project_id = Some(project_id.clone());
+                    project_engine = engine;
                     let all_terms = glossary::list_for_project(&db, &project_id, lang_pair)
                         .await
                         .unwrap_or_default();
@@ -125,28 +128,11 @@ pub async fn translate_segments(
             source_lang: "ja".to_string(),
             target_lang: "en".to_string(),
             glossary_terms,
+            engine: project_engine,
         };
 
-        match pipeline::run(pairs, &provider, context, &db, &handle).await {
-            Ok(results) => {
-                for r in results {
-                    let status = if r.needs_review {
-                        "needs_review"
-                    } else {
-                        "translated"
-                    };
-                    let _ = sqlx::query(
-                        "UPDATE segments \
-                         SET target_text = ?, status = ?, \
-                             updated_at = datetime('now') \
-                         WHERE id = ?",
-                    )
-                    .bind(&r.translated_text)
-                    .bind(status)
-                    .bind(&r.id)
-                    .execute(&db)
-                    .await;
-                }
+        match pipeline::run(pairs, &provider, context, &db, &handle, None).await {
+            Ok(_) => {
                 // Update manifest stats once at end of batch (not per-segment)
                 if let Some(ref pid) = resolved_project_id {
                     let stats_row = sqlx::query_as::<_, (String, i64, i64, i64, i64)>(
@@ -258,7 +244,16 @@ pub async fn translate_all_segments(
         );
 
         let lang_pair = "ja-en";
-        let mut last_cooldown_at = std::time::Instant::now();
+        let mut cooldown =
+            pipeline::CooldownState::new(cooldown_threshold_secs, cooldown_duration_secs);
+
+        let project_engine: String = sqlx::query_scalar("SELECT engine FROM projects WHERE id = ?")
+            .bind(&project_id)
+            .fetch_optional(&db)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "mv_mz".to_string());
 
         for file in &files {
             let pairs: Vec<(String, String)> = match sqlx::query_as::<_, (String, String)>(
@@ -308,30 +303,14 @@ pub async fn translate_all_segments(
                 source_lang: "ja".to_string(),
                 target_lang: "en".to_string(),
                 glossary_terms,
+                engine: project_engine.clone(),
             };
 
             let translation_start = std::time::Instant::now();
 
-            match pipeline::run(pairs, &provider, context, &db, &handle).await {
-                Ok(results) => {
-                    for r in results {
-                        let status = if r.needs_review {
-                            "needs_review"
-                        } else {
-                            "translated"
-                        };
-                        let _ = sqlx::query(
-                            "UPDATE segments \
-                             SET target_text = ?, status = ?, \
-                                 updated_at = datetime('now') \
-                             WHERE id = ?",
-                        )
-                        .bind(&r.translated_text)
-                        .bind(status)
-                        .bind(&r.id)
-                        .execute(&db)
-                        .await;
-                    }
+            match pipeline::run(pairs, &provider, context, &db, &handle, Some(&mut cooldown)).await
+            {
+                Ok(_) => {
                     // Update per-file translation duration
                     let elapsed = translation_start.elapsed().as_secs() as i64;
                     let _ =
@@ -348,29 +327,6 @@ pub async fn translate_all_segments(
                     );
                     return;
                 }
-            }
-
-            // Cooldown: trigger after threshold elapsed since last rest
-            let threshold = if cooldown_threshold_secs == 0 {
-                1
-            } else {
-                cooldown_threshold_secs
-            };
-            if last_cooldown_at.elapsed().as_secs() >= threshold && cooldown_duration_secs > 0 {
-                let mut remaining = cooldown_duration_secs;
-                while remaining > 0 {
-                    let _ = handle.emit(
-                        "h2s://llm/cooling",
-                        serde_json::json!({ "remainingSecs": remaining }),
-                    );
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    remaining -= 1;
-                }
-                let _ = handle.emit(
-                    "h2s://llm/cooling",
-                    serde_json::json!({ "remainingSecs": 0 }),
-                );
-                last_cooldown_at = std::time::Instant::now();
             }
         }
 

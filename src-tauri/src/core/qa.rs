@@ -218,10 +218,11 @@ pub fn check(
 ) -> QaResult {
     let mut errors: Vec<QaError> = Vec::new();
 
-    let (tok_engine, line_config) = if engine == "wolf" {
-        (TokEngine::Wolf, LineWidthConfig::wolf_default())
+    let tok_engine = TokEngine::from_project_engine(engine);
+    let line_config = if engine == "wolf" {
+        LineWidthConfig::wolf_default()
     } else {
-        (TokEngine::MvMz, LineWidthConfig::default())
+        LineWidthConfig::default()
     };
 
     // 1. BOM check (cheapest — do first)

@@ -6,8 +6,12 @@
 //! 3. Tokenize remaining segments (ADR-002: placeholders → ⟦ph_N⟧)
 //! 4. Send tokenized batch to the provider via `split::llm_translate_with_split`
 //! 5. Validate + restore placeholders; retry up to `MAX_RETRIES` times if invalid
-//! 6. Spread translations back to all original positions
-//! 7. Call `on_progress(done, total)` after each batch
+//! 6. Persist the batch's `target_text`/`status` to the DB immediately
+//!    (incremental persistence — a crash mid-run only loses the in-flight batch)
+//! 7. Emit `h2s://llm/progress` / `h2s://llm/placeholder-warning` (if an
+//!    `AppHandle` was provided) and call `on_progress(done, total)`
+//! 8. If a `CooldownState` was provided, possibly `.await` a rest period
+//!    before starting the next batch (fine-grained automatic cooldown)
 //!
 //! The pipeline is generic over `P: LlmProvider` so it can be tested with a
 //! mock provider without needing dynamic dispatch.
@@ -17,12 +21,13 @@
 
 use crate::core::tm;
 use crate::llm::batch;
-use crate::llm::progress::{PlaceholderWarningPayload, ProgressPayload};
+use crate::llm::progress::{CoolingPayload, PlaceholderWarningPayload, ProgressPayload};
 use crate::llm::provider::{LlmError, LlmProvider, TranslationContext};
 use crate::llm::split::llm_translate_with_split;
 use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
 use serde::Serialize;
 use sqlx::SqlitePool;
+use std::time::{Duration, Instant};
 use tauri::Emitter;
 use thiserror::Error;
 
@@ -61,22 +66,104 @@ impl From<LlmError> for PipelineError {
     }
 }
 
+/// Tracks the automatic "cooldown" rest period for "Translate All".
+///
+/// Checked once per batch (not just once per file) so large files don't run
+/// past the configured threshold without ever pausing.
+pub struct CooldownState {
+    threshold: Duration,
+    duration: Duration,
+    last_rest: Instant,
+}
+
+impl CooldownState {
+    /// `threshold_secs` is clamped to at least 1s (matches the previous
+    /// `translate_all_segments` behavior where 0 meant "check every batch").
+    pub fn new(threshold_secs: u64, duration_secs: u64) -> Self {
+        Self {
+            threshold: Duration::from_secs(threshold_secs.max(1)),
+            duration: Duration::from_secs(duration_secs),
+            last_rest: Instant::now(),
+        }
+    }
+
+    /// If enough time has elapsed since the last rest, sleep for `duration`,
+    /// emitting `h2s://llm/cooling { remainingSecs }` once per second so the
+    /// frontend can display a countdown. No-op if `duration` is zero or the
+    /// threshold hasn't elapsed yet.
+    async fn maybe_rest(&mut self, handle: &tauri::AppHandle) {
+        if self.duration.is_zero() || self.last_rest.elapsed() < self.threshold {
+            return;
+        }
+
+        let mut remaining = self.duration.as_secs();
+        while remaining > 0 {
+            let _ = handle.emit(
+                "h2s://llm/cooling",
+                CoolingPayload {
+                    remaining_secs: remaining,
+                },
+            );
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            remaining -= 1;
+        }
+        let _ = handle.emit("h2s://llm/cooling", CoolingPayload { remaining_secs: 0 });
+
+        self.last_rest = Instant::now();
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
+/// Persist a batch's `target_text`/`status` immediately so a crash mid-run
+/// only loses the in-flight batch. Errors are logged and non-fatal — mirrors
+/// the previous `let _ =` tolerance for these UPDATEs.
+async fn persist_batch_results(db: &SqlitePool, results: &[TranslationResult]) {
+    for r in results {
+        let status = if r.needs_review {
+            "needs_review"
+        } else {
+            "translated"
+        };
+        if let Err(e) = sqlx::query(
+            "UPDATE segments \
+             SET target_text = ?, status = ?, \
+                 updated_at = datetime('now') \
+             WHERE id = ?",
+        )
+        .bind(&r.translated_text)
+        .bind(status)
+        .bind(&r.id)
+        .execute(db)
+        .await
+        {
+            log::warn!("[h2s] failed to persist segment '{}': {e}", r.id);
+        }
+    }
+}
+
 /// Run the translation pipeline on a batch of segments.
 ///
-/// `segments` is a list of `(id, source_text)` pairs.
-/// `on_progress` is called after each inner batch with `(done, total)`.
+/// `segments` is a list of `(id, source_text)` pairs. After each inner batch:
+/// - `target_text`/`status` are persisted to the DB immediately
+/// - if `app_handle` is `Some`, `h2s://llm/progress` and
+///   `h2s://llm/placeholder-warning` are emitted
+/// - `on_progress(done, total)` is called (used by tests)
+/// - if `cooldown` is `Some` (and `app_handle` is `Some`), the automatic
+///   cooldown may `.await` a rest period before the next batch
 ///
 /// The public `run` function wraps this with a real Tauri `AppHandle` for
-/// event emission.  Tests call `run_inner` directly with a closure.
+/// event emission. Tests call `run_inner` directly with `None, None` and a
+/// closure.
 pub async fn run_inner<P, F>(
     segments: Vec<(String, String)>,
     provider: &P,
     context: TranslationContext,
     db: &SqlitePool,
+    app_handle: Option<&tauri::AppHandle>,
+    mut cooldown: Option<&mut CooldownState>,
     mut on_progress: F,
 ) -> Result<Vec<TranslationResult>, PipelineError>
 where
@@ -111,6 +198,19 @@ where
 
         let batch_results = translate_batch(batch_segs, provider, &context, &lang_pair, db).await?;
 
+        persist_batch_results(db, &batch_results).await;
+
+        if let Some(handle) = app_handle {
+            for r in batch_results.iter().filter(|r| r.needs_review) {
+                let _ = handle.emit(
+                    "h2s://llm/placeholder-warning",
+                    PlaceholderWarningPayload {
+                        segment_id: r.id.clone(),
+                    },
+                );
+            }
+        }
+
         for tr in batch_results {
             if let Some(&orig_idx) = id_to_idx.get(&tr.id) {
                 results[orig_idx] = Some(tr);
@@ -119,6 +219,14 @@ where
 
         done += batch_ids.len();
         on_progress(done, total);
+
+        if let Some(handle) = app_handle {
+            let _ = handle.emit("h2s://llm/progress", ProgressPayload { done, total });
+        }
+
+        if let (Some(cd), Some(handle)) = (cooldown.as_deref_mut(), app_handle) {
+            cd.maybe_rest(handle).await;
+        }
     }
 
     Ok(results.into_iter().flatten().collect())
@@ -128,34 +236,30 @@ where
 // Entry point used by Tauri commands (emits events via AppHandle)
 // ---------------------------------------------------------------------------
 
-/// Tauri-aware wrapper: emits `h2s://llm/progress` after each batch,
-/// and `h2s://llm/placeholder-warning` for each segment that fell back to needs_review.
+/// Tauri-aware wrapper around `run_inner`. Persists each batch to the DB,
+/// emits `h2s://llm/progress` and `h2s://llm/placeholder-warning`, and — if
+/// `cooldown` is provided — applies the automatic cooldown between batches.
 pub async fn run<P>(
     segments: Vec<(String, String)>,
     provider: &P,
     context: TranslationContext,
     db: &SqlitePool,
     app_handle: &tauri::AppHandle,
+    cooldown: Option<&mut CooldownState>,
 ) -> Result<Vec<TranslationResult>, PipelineError>
 where
     P: LlmProvider,
 {
-    let handle = app_handle.clone();
-    let results = run_inner(segments, provider, context, db, move |done, total| {
-        let _ = handle.emit("h2s://llm/progress", ProgressPayload { done, total });
-    })
-    .await?;
-
-    for r in results.iter().filter(|r| r.needs_review) {
-        let _ = app_handle.emit(
-            "h2s://llm/placeholder-warning",
-            PlaceholderWarningPayload {
-                segment_id: r.id.clone(),
-            },
-        );
-    }
-
-    Ok(results)
+    run_inner(
+        segments,
+        provider,
+        context,
+        db,
+        Some(app_handle),
+        cooldown,
+        |_, _| {},
+    )
+    .await
 }
 
 // ---------------------------------------------------------------------------
@@ -197,9 +301,10 @@ where
 
     // Translate remaining segments via LLM with adaptive split on failure
     if !to_translate.is_empty() {
+        let tok_engine = TokEngine::from_project_engine(&context.engine);
         let tokenized: Vec<_> = to_translate
             .iter()
-            .map(|&i| Tokenizer::tokenize(&unique_segs[i].text, TokEngine::MvMz))
+            .map(|&i| Tokenizer::tokenize(&unique_segs[i].text, tok_engine))
             .collect();
 
         let local_indices: Vec<usize> = (0..to_translate.len()).collect();
@@ -313,6 +418,7 @@ mod tests {
             source_lang: "ja".to_string(),
             target_lang: "en".to_string(),
             glossary_terms: vec![],
+            engine: "mv_mz".to_string(),
         }
     }
 
@@ -336,6 +442,8 @@ mod tests {
             &provider,
             ctx(),
             &db,
+            None,
+            None,
             |d, t| progress_calls.push((d, t)),
         )
         .await
@@ -358,6 +466,8 @@ mod tests {
             &provider,
             ctx(),
             &db,
+            None,
+            None,
             |_, _| {},
         )
         .await
@@ -366,6 +476,33 @@ mod tests {
         assert_eq!(provider.calls(), 1);
         assert_eq!(results[0].translated_text, "Hero");
         assert!(!results[0].from_tm);
+    }
+
+    #[tokio::test]
+    async fn test_wolf_engine_preserves_e_code() {
+        let (db, _f) = test_db().await;
+        // \E (Wolf "instant text" code) only exists in RE_WOLF, not RE_MVMZ.
+        // With engine = "wolf", it must be tokenized so the LLM is told to
+        // preserve it, then restored in the final translation.
+        let provider = MockProvider::new(vec![Ok(vec!["⟦ph_0⟧Two months later...".to_string()])]);
+
+        let mut wolf_ctx = ctx();
+        wolf_ctx.engine = "wolf".to_string();
+
+        let results = run_inner(
+            vec![("seg1".to_string(), "\\E二ヶ月後……".to_string())],
+            &provider,
+            wolf_ctx,
+            &db,
+            None,
+            None,
+            |_, _| {},
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(results[0].translated_text, "\\ETwo months later...");
+        assert!(!results[0].needs_review);
     }
 
     #[tokio::test]
@@ -384,6 +521,8 @@ mod tests {
             &provider,
             ctx(),
             &db,
+            None,
+            None,
             |_, _| {},
         )
         .await
@@ -411,6 +550,8 @@ mod tests {
             &provider,
             ctx(),
             &db,
+            None,
+            None,
             |_, _| {},
         )
         .await
@@ -438,6 +579,8 @@ mod tests {
             &provider,
             ctx(),
             &db,
+            None,
+            None,
             |_, _| {},
         )
         .await
@@ -474,6 +617,8 @@ mod tests {
             &provider,
             ctx(),
             &db,
+            None,
+            None,
             |_, _| {},
         )
         .await
@@ -507,6 +652,8 @@ mod tests {
             &provider,
             ctx(),
             &db,
+            None,
+            None,
             |_, _| {},
         )
         .await
@@ -547,6 +694,8 @@ mod tests {
             &provider,
             ctx(),
             &db,
+            None,
+            None,
             |_, _| {},
         )
         .await
@@ -584,6 +733,8 @@ mod tests {
             &provider,
             ctx(),
             &db,
+            None,
+            None,
             |done, total| progress.push((done, total)),
         )
         .await

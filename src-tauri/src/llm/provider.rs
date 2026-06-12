@@ -25,6 +25,9 @@ pub struct TranslationContext {
     pub target_lang: String,
     /// (source_term, target_term) pairs injected into the system prompt.
     pub glossary_terms: Vec<(String, String)>,
+    /// Project engine (`"wolf"`, `"mv_mz"`, `"vx_ace"`, `"bakin"`, …) — selects
+    /// which placeholder patterns `Tokenizer::tokenize` uses (ADR-002).
+    pub engine: String,
 }
 
 #[derive(Debug, Error)]
@@ -385,6 +388,7 @@ mod tests {
             source_lang: "ja".to_string(),
             target_lang: "en".to_string(),
             glossary_terms: vec![],
+            engine: "mv_mz".to_string(),
         }
     }
 

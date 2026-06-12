@@ -5,6 +5,10 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+### Changed
+- `llm::pipeline::run_inner`/`run` now persist each batch's `target_text`/`status` to the DB immediately (`persist_batch_results`) instead of after the whole pipeline finishes — a crash mid-translation only loses the in-flight batch
+- Automatic cooldown ("Translate All") moved from a per-file check (`last_cooldown_at` in `translate_all_segments`) to a per-batch check inside `pipeline::run_inner` via the new `CooldownState`/`maybe_rest` — large files (e.g. Wolf `CommonEvent.dat`, ~80 batches) now actually pause mid-file once the threshold elapses; added `CoolingPayload` (`remainingSecs`) to `progress.rs`. No frontend changes (`h2s://llm/*` event shapes unchanged)
+
 ### Added
 - Add Wolf RPG v3.x `CommonEvent.dat` extraction (Inko's header/UTF-8 layer): fork of `wolfrpg-map-parser` (`KATBlackCoder/wolfrpg-map-parser`, branch `fix/wolf-v3-format`) adds `check_common_events_magic()` (validates v2.x `0x00/0x8F` and v3.x `0x55/0x93` headers), a thread-local `UTF8_MODE` for UTF-8-vs-Shift-JIS string decoding, and LZ4 decompression of the v3.x event table (bytes 11..15 = decompressed size, bytes 19..EOF = LZ4 block); `[patch.crates-io]` re-introduced to point at this fork
 - Same fork fixes Honoka's (v2.x) `CommonEvent.dat`, which previously panicked on missing `0x04D20000`/`0x09D20000` CallCommonEvent signatures — now extracts 2195 segments (`test_real_honoka_common_events`)
