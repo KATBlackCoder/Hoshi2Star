@@ -43,6 +43,14 @@ export interface Segment {
   updatedAt: string;
 }
 
+/// One segment's `target_text`/`status` as just persisted to the DB.
+/// Emitted as part of `h2s://llm/segments-updated` (one event per batch).
+export interface SegmentUpdate {
+  id: string;
+  targetText: string;
+  status: SegmentStatus;
+}
+
 export interface PaginatedSegments {
   items: Segment[];
   total: number;

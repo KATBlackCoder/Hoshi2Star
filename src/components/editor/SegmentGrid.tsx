@@ -24,6 +24,7 @@ import type {
   GlossaryTerm,
   PaginatedSegments,
   Segment,
+  SegmentUpdate,
   SourceFile,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -120,6 +121,28 @@ export function SegmentGrid({
         return segments;
     }
   }, [segments, qaFilter]);
+
+  // Patch translated segments into the in-memory list as each batch is
+  // persisted, so the table updates progressively during long translations
+  // instead of waiting for the whole project to finish.
+  useEffect(() => {
+    const unlisten = listen<SegmentUpdate[]>(
+      "h2s://llm/segments-updated",
+      (event) => {
+        const updates = new Map(event.payload.map((u) => [u.id, u]));
+        if (updates.size === 0) return;
+        setSegments((prev) =>
+          prev.map((s) => {
+            const u = updates.get(s.id);
+            return u ? { ...s, targetText: u.targetText, status: u.status } : s;
+          }),
+        );
+      },
+    );
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
 
   // Re-fetch segments + source files when LLM pipeline completes
   useEffect(() => {

@@ -131,7 +131,7 @@ pub async fn translate_segments(
             engine: project_engine,
         };
 
-        match pipeline::run(pairs, &provider, context, &db, &handle, None).await {
+        match pipeline::run(pairs, &provider, context, &db, &handle, None, None).await {
             Ok(_) => {
                 // Update manifest stats once at end of batch (not per-segment)
                 if let Some(ref pid) = resolved_project_id {
@@ -255,6 +255,9 @@ pub async fn translate_all_segments(
             .flatten()
             .unwrap_or_else(|| "mv_mz".to_string());
 
+        let global_total = total_untranslated as usize;
+        let mut done_offset: usize = 0;
+
         for file in &files {
             let pairs: Vec<(String, String)> = match sqlx::query_as::<_, (String, String)>(
                 "SELECT id, source_text FROM segments \
@@ -307,10 +310,21 @@ pub async fn translate_all_segments(
             };
 
             let translation_start = std::time::Instant::now();
+            let pair_count = pairs.len();
 
-            match pipeline::run(pairs, &provider, context, &db, &handle, Some(&mut cooldown)).await
+            match pipeline::run(
+                pairs,
+                &provider,
+                context,
+                &db,
+                &handle,
+                Some(&mut cooldown),
+                Some((done_offset, global_total)),
+            )
+            .await
             {
                 Ok(_) => {
+                    done_offset += pair_count;
                     // Update per-file translation duration
                     let elapsed = translation_start.elapsed().as_secs() as i64;
                     let _ =

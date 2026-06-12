@@ -8,8 +8,9 @@
 //! 5. Validate + restore placeholders; retry up to `MAX_RETRIES` times if invalid
 //! 6. Persist the batch's `target_text`/`status` to the DB immediately
 //!    (incremental persistence — a crash mid-run only loses the in-flight batch)
-//! 7. Emit `h2s://llm/progress` / `h2s://llm/placeholder-warning` (if an
-//!    `AppHandle` was provided) and call `on_progress(done, total)`
+//! 7. Emit `h2s://llm/segments-updated` (the batch's persisted `target_text`/
+//!    `status`), `h2s://llm/progress`, and `h2s://llm/placeholder-warning`
+//!    (if an `AppHandle` was provided), and call `on_progress(done, total)`
 //! 8. If a `CooldownState` was provided, possibly `.await` a rest period
 //!    before starting the next batch (fine-grained automatic cooldown)
 //!
@@ -21,7 +22,9 @@
 
 use crate::core::tm;
 use crate::llm::batch;
-use crate::llm::progress::{CoolingPayload, PlaceholderWarningPayload, ProgressPayload};
+use crate::llm::progress::{
+    CoolingPayload, PlaceholderWarningPayload, ProgressPayload, SegmentUpdatePayload,
+};
 use crate::llm::provider::{LlmError, LlmProvider, TranslationContext};
 use crate::llm::split::llm_translate_with_split;
 use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
@@ -117,16 +120,21 @@ impl CooldownState {
 // Public API
 // ---------------------------------------------------------------------------
 
+/// The DB `status` value for a translation result.
+fn result_status(r: &TranslationResult) -> &'static str {
+    if r.needs_review {
+        "needs_review"
+    } else {
+        "translated"
+    }
+}
+
 /// Persist a batch's `target_text`/`status` immediately so a crash mid-run
 /// only loses the in-flight batch. Errors are logged and non-fatal — mirrors
 /// the previous `let _ =` tolerance for these UPDATEs.
 async fn persist_batch_results(db: &SqlitePool, results: &[TranslationResult]) {
     for r in results {
-        let status = if r.needs_review {
-            "needs_review"
-        } else {
-            "translated"
-        };
+        let status = result_status(r);
         if let Err(e) = sqlx::query(
             "UPDATE segments \
              SET target_text = ?, status = ?, \
@@ -154,9 +162,15 @@ async fn persist_batch_results(db: &SqlitePool, results: &[TranslationResult]) {
 /// - if `cooldown` is `Some` (and `app_handle` is `Some`), the automatic
 ///   cooldown may `.await` a rest period before the next batch
 ///
+/// `global_progress`, when `Some((done_offset, global_total))`, rewrites the
+/// `done`/`total` reported to `on_progress` and emitted in `ProgressPayload`
+/// as `(done_offset + done, global_total)` — used by "Translate All" so the
+/// progress bar reflects the whole project, not just the current file.
+///
 /// The public `run` function wraps this with a real Tauri `AppHandle` for
-/// event emission. Tests call `run_inner` directly with `None, None` and a
-/// closure.
+/// event emission. Tests call `run_inner` directly with `None, None, None`
+/// and a closure.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_inner<P, F>(
     segments: Vec<(String, String)>,
     provider: &P,
@@ -164,6 +178,7 @@ pub async fn run_inner<P, F>(
     db: &SqlitePool,
     app_handle: Option<&tauri::AppHandle>,
     mut cooldown: Option<&mut CooldownState>,
+    global_progress: Option<(usize, usize)>,
     mut on_progress: F,
 ) -> Result<Vec<TranslationResult>, PipelineError>
 where
@@ -201,6 +216,16 @@ where
         persist_batch_results(db, &batch_results).await;
 
         if let Some(handle) = app_handle {
+            let updates: Vec<SegmentUpdatePayload> = batch_results
+                .iter()
+                .map(|r| SegmentUpdatePayload {
+                    id: r.id.clone(),
+                    target_text: r.translated_text.clone(),
+                    status: result_status(r).to_string(),
+                })
+                .collect();
+            let _ = handle.emit("h2s://llm/segments-updated", updates);
+
             for r in batch_results.iter().filter(|r| r.needs_review) {
                 let _ = handle.emit(
                     "h2s://llm/placeholder-warning",
@@ -218,10 +243,20 @@ where
         }
 
         done += batch_ids.len();
-        on_progress(done, total);
+        let (emit_done, emit_total) = match global_progress {
+            Some((offset, global_total)) => (offset + done, global_total),
+            None => (done, total),
+        };
+        on_progress(emit_done, emit_total);
 
         if let Some(handle) = app_handle {
-            let _ = handle.emit("h2s://llm/progress", ProgressPayload { done, total });
+            let _ = handle.emit(
+                "h2s://llm/progress",
+                ProgressPayload {
+                    done: emit_done,
+                    total: emit_total,
+                },
+            );
         }
 
         if let (Some(cd), Some(handle)) = (cooldown.as_deref_mut(), app_handle) {
@@ -246,6 +281,7 @@ pub async fn run<P>(
     db: &SqlitePool,
     app_handle: &tauri::AppHandle,
     cooldown: Option<&mut CooldownState>,
+    global_progress: Option<(usize, usize)>,
 ) -> Result<Vec<TranslationResult>, PipelineError>
 where
     P: LlmProvider,
@@ -257,6 +293,7 @@ where
         db,
         Some(app_handle),
         cooldown,
+        global_progress,
         |_, _| {},
     )
     .await
@@ -444,6 +481,7 @@ mod tests {
             &db,
             None,
             None,
+            None,
             |d, t| progress_calls.push((d, t)),
         )
         .await
@@ -466,6 +504,7 @@ mod tests {
             &provider,
             ctx(),
             &db,
+            None,
             None,
             None,
             |_, _| {},
@@ -496,6 +535,7 @@ mod tests {
             &db,
             None,
             None,
+            None,
             |_, _| {},
         )
         .await
@@ -521,6 +561,7 @@ mod tests {
             &provider,
             ctx(),
             &db,
+            None,
             None,
             None,
             |_, _| {},
@@ -552,6 +593,7 @@ mod tests {
             &db,
             None,
             None,
+            None,
             |_, _| {},
         )
         .await
@@ -579,6 +621,7 @@ mod tests {
             &provider,
             ctx(),
             &db,
+            None,
             None,
             None,
             |_, _| {},
@@ -619,6 +662,7 @@ mod tests {
             &db,
             None,
             None,
+            None,
             |_, _| {},
         )
         .await
@@ -652,6 +696,7 @@ mod tests {
             &provider,
             ctx(),
             &db,
+            None,
             None,
             None,
             |_, _| {},
@@ -696,6 +741,7 @@ mod tests {
             &db,
             None,
             None,
+            None,
             |_, _| {},
         )
         .await
@@ -735,6 +781,7 @@ mod tests {
             &db,
             None,
             None,
+            None,
             |done, total| progress.push((done, total)),
         )
         .await
@@ -742,5 +789,71 @@ mod tests {
 
         assert!(!progress.is_empty());
         assert_eq!(progress.last().unwrap(), &(3, 3));
+    }
+
+    /// "Translate All" runs `run_inner` once per file with `global_progress`
+    /// carrying the running offset and the project-wide total. The reported
+    /// `done` must accumulate across files and never drop back down when a
+    /// new file starts.
+    #[tokio::test]
+    async fn test_global_progress_offset_accumulates_across_files() {
+        let (db, _f) = test_db().await;
+        let global_total = 10usize;
+
+        // File 1: 3 segments, offset 0 of 10
+        let provider1 = MockProvider::new(vec![Ok(vec!["A".into(), "B".into(), "C".into()])]);
+        let mut progress1 = vec![];
+        run_inner(
+            vec![
+                ("s1".to_string(), "一".to_string()),
+                ("s2".to_string(), "二".to_string()),
+                ("s3".to_string(), "三".to_string()),
+            ],
+            &provider1,
+            ctx(),
+            &db,
+            None,
+            None,
+            Some((0, global_total)),
+            |done, total| progress1.push((done, total)),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(progress1.last().unwrap(), &(3, global_total));
+
+        // File 2: 7 segments, offset 3 of 10 — must continue from 3, not reset
+        let provider2 = MockProvider::new(vec![Ok(vec![
+            "1".into(),
+            "2".into(),
+            "3".into(),
+            "4".into(),
+            "5".into(),
+            "6".into(),
+            "7".into(),
+        ])]);
+        let mut progress2 = vec![];
+        run_inner(
+            vec![
+                ("s4".to_string(), "四".to_string()),
+                ("s5".to_string(), "五".to_string()),
+                ("s6".to_string(), "六".to_string()),
+                ("s7".to_string(), "七".to_string()),
+                ("s8".to_string(), "八".to_string()),
+                ("s9".to_string(), "九".to_string()),
+                ("s10".to_string(), "十".to_string()),
+            ],
+            &provider2,
+            ctx(),
+            &db,
+            None,
+            None,
+            Some((3, global_total)),
+            |done, total| progress2.push((done, total)),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(progress2.last().unwrap(), &(10, global_total));
     }
 }
