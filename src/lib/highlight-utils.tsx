@@ -28,7 +28,7 @@ export function buildHighlightedNodes(
       parts.push(
         <mark
           key={`${keyBase}-ph-${m.index}`}
-          className="rounded bg-blue-500/20 px-0.5 text-blue-400 font-mono"
+          className="rounded border border-cyan-600/30 bg-cyan-500/10 px-1 font-mono text-[0.85em] text-cyan-700 dark:border-cyan-300/25 dark:text-cyan-300"
         >
           {m[0]}
         </mark>,
@@ -61,7 +61,7 @@ export function buildHighlightedNodes(
     nodes.push(
       <mark
         key={`g-${m.index}`}
-        className="rounded-sm bg-green-200 dark:bg-green-900 px-0.5"
+        className="border-b border-dashed border-star bg-transparent text-star"
       >
         {m[0]}
       </mark>,

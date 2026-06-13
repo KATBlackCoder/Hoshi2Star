@@ -6,6 +6,18 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 ## [Unreleased]
 
 ### Added
+- Add Tenmon 天文 design theme (phase 1) — night-indigo palette with violet primary and gold `--star` token (`text-star`/`bg-star` utilities), subtle CSS starfield on dark mode, matching day-sky light variant
+- Add `@fontsource-variable/noto-sans-jp` to the sans font chain for proper CJK rendering
+- Add three design-direction HTML demos in `docs/design/` (Tenmon, Washi, Yoru) with PNG previews in `docs/screenshots/`
+- Add Tenmon phase 2 visuals: gold QA score ring (`QAScoreRing` in `QAPanel`), segment-status recap in the `SegmentGrid` footer (per-status counts with dot styling), and a "constellation" translation progress bar in `AppToolbar` (gradient track, milestone nodes, pulsing comet)
+
+### Changed
+- Restyle `AppToolbar` — gold ★ logo with glow, "Translate" promoted to primary button (action hierarchy), project name + engine as pill chip, progress bar with violet→gold gradient
+- Change segment status badges from plain colored text to dot + label (cyan translated, gold diamond reviewed, amber needs-review, muted untranslated)
+- Restyle placeholder highlights as bordered cyan mono chips and glossary highlights as gold dashed underline (replacing green background)
+- Unify all panel headers (FileTree, TM, QA, Glossary, SegmentGrid) with uppercase letter-spaced style
+
+### Added
 - Add `h2s://llm/segments-updated` event emitted after each persisted batch — `SegmentGrid` merges `targetText`/`status` in place, so rows turn "Translated" batch by batch during long runs (no DB refetch, keeps sort/selection/scroll)
 - Add `engines/wolf/decrypt/wolfx.rs` seam for WolfX archives (Wolf v3.5+ Pro, ChaCha20) — returns a guidance error by design: decrypt with UberWolf first, then open the plain `Data/` directory (no native ChaCha20, no bundled sidecar: unconfirmed UberWolf license, Windows-only binary)
 

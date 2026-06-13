@@ -12,17 +12,39 @@ import { Play } from "lucide-react";
 // Status badge
 // ---------------------------------------------------------------------------
 
-const STATUS_COLORS: Record<SegmentStatus, string> = {
-  untranslated: "text-muted-foreground",
-  translated: "text-blue-400",
-  reviewed: "text-green-400",
-  needs_review: "text-yellow-400",
+export const STATUS_STYLES: Record<
+  SegmentStatus,
+  { label: string; dot: string }
+> = {
+  untranslated: {
+    label: "text-muted-foreground/70",
+    dot: "bg-muted-foreground/50",
+  },
+  translated: {
+    label: "text-cyan-600 dark:text-cyan-300",
+    dot: "bg-cyan-500 dark:bg-cyan-300 shadow-[0_0_5px_currentColor]",
+  },
+  reviewed: {
+    label: "text-star",
+    dot: "rotate-45 rounded-[1px] bg-star shadow-[0_0_5px_var(--star)]",
+  },
+  needs_review: {
+    label: "text-amber-600 dark:text-amber-300",
+    dot: "bg-amber-500 dark:bg-amber-300 shadow-[0_0_5px_currentColor]",
+  },
 };
 
 function StatusBadge({ status }: { status: SegmentStatus }) {
   const { t } = useTranslation();
+  const style = STATUS_STYLES[status];
   return (
-    <span className={cn("text-xs font-medium", STATUS_COLORS[status])}>
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 text-xs font-medium",
+        style.label,
+      )}
+    >
+      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", style.dot)} />
       {t(`segmentGrid.status.${status}`)}
     </span>
   );

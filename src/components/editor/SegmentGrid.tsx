@@ -19,7 +19,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useProjectStore } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { useLlmStore, useIsTranslating } from "@/stores/llm";
-import { createSegmentColumns } from "@/features/editor/columns";
+import { createSegmentColumns, STATUS_STYLES } from "@/features/editor/columns";
 import type {
   GlossaryTerm,
   PaginatedSegments,
@@ -121,6 +121,17 @@ export function SegmentGrid({
         return segments;
     }
   }, [segments, qaFilter]);
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<Segment["status"], number> = {
+      untranslated: 0,
+      translated: 0,
+      reviewed: 0,
+      needs_review: 0,
+    };
+    for (const s of segments) counts[s.status]++;
+    return counts;
+  }, [segments]);
 
   // Patch translated segments into the in-memory list as each batch is
   // persisted, so the table updates progressively during long translations
@@ -329,7 +340,7 @@ export function SegmentGrid({
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex shrink-0 border-b bg-muted/30 text-xs font-medium text-muted-foreground">
+      <div className="flex shrink-0 border-b bg-muted/30 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80">
         {table.getHeaderGroups().map((hg) =>
           hg.headers.map((header) => (
             <div
@@ -479,16 +490,50 @@ export function SegmentGrid({
         </div>
       </div>
 
-      {/* Footer: segment count (filtered / total) */}
-      <div className="shrink-0 border-t px-3 py-1.5 text-xs text-muted-foreground">
-        {qaFilter === "all"
-          ? t("segmentGrid.footer", {
-              count: segments.length.toLocaleString(),
-            })
-          : t("segmentGrid.footerFiltered", {
-              shown: filteredSegments.length.toLocaleString(),
-              total: segments.length.toLocaleString(),
-            })}
+      {/* Footer: segment count (filtered / total) + status recap */}
+      <div className="shrink-0 border-t px-3 py-1.5 flex items-center gap-4 text-xs text-muted-foreground">
+        <span>
+          {qaFilter === "all"
+            ? t("segmentGrid.footer", {
+                count: segments.length.toLocaleString(),
+              })
+            : t("segmentGrid.footerFiltered", {
+                shown: filteredSegments.length.toLocaleString(),
+                total: segments.length.toLocaleString(),
+              })}
+        </span>
+        {segments.length > 0 && (
+          <div className="flex items-center gap-3">
+            {(
+              [
+                "translated",
+                "reviewed",
+                "needs_review",
+                "untranslated",
+              ] as const
+            ).map(
+              (status) =>
+                statusCounts[status] > 0 && (
+                  <span
+                    key={status}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 font-medium",
+                      STATUS_STYLES[status].label,
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "h-1.5 w-1.5 shrink-0 rounded-full",
+                        STATUS_STYLES[status].dot,
+                      )}
+                    />
+                    {statusCounts[status].toLocaleString()}{" "}
+                    {t(`segmentGrid.status.${status}`)}
+                  </span>
+                ),
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hoshi2Star — Démo 3 : YORU NO GAME 夜のゲーム (RPG rétro raffiné)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Geist:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0c0f1d;
+    --bg2: #10142a;
+    --window: #11152b;
+    --win-border: #e8eaf6;
+    --win-border-soft: rgba(232,234,246,.28);
+    --text: #e8eaf6;
+    --muted: #8b93b8;
+    --faint: #525a80;
+    --cyan: #6fd6ff;
+    --gold: #ffd76a;
+    --green: #6fe3a5;
+    --hp-green: #4fd97c;
+    --amber: #ffb24d;
+    --red: #ff7a85;
+    --magenta: #d98aff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: 'Geist', 'Noto Sans JP', sans-serif;
+    background:
+      radial-gradient(1px 1px at 15% 25%, rgba(255,255,255,.5) 50%, transparent 51%),
+      radial-gradient(1px 1px at 55% 10%, rgba(255,255,255,.3) 50%, transparent 51%),
+      radial-gradient(1.5px 1.5px at 80% 30%, rgba(255,215,106,.5) 50%, transparent 51%),
+      radial-gradient(1px 1px at 35% 75%, rgba(255,255,255,.25) 50%, transparent 51%),
+      radial-gradient(1px 1px at 90% 80%, rgba(111,214,255,.4) 50%, transparent 51%),
+      linear-gradient(180deg, #0e1226 0%, var(--bg) 100%);
+    color: var(--text);
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  /* subtle scanlines */
+  body::after {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 999;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,.07) 0 1px, transparent 1px 3px);
+    opacity: .5;
+  }
+  .jp { font-family: 'Noto Sans JP', sans-serif; }
+  .pixel { font-family: 'DotGothic16', monospace; }
+  .mono { font-family: 'Geist Mono', monospace; }
+
+  /* RPG window frame: double border like DQ message windows */
+  .rpg-window {
+    background: var(--window);
+    border: 2px solid var(--win-border);
+    border-radius: 8px;
+    box-shadow:
+      inset 0 0 0 3px var(--window),
+      inset 0 0 0 4px var(--win-border-soft),
+      0 4px 16px rgba(0,0,0,.5);
+  }
+
+  /* ============ TOOLBAR ============ */
+  .toolbar {
+    height: 48px; flex-shrink: 0;
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 14px;
+    background: rgba(13,17,36,.92);
+    border-bottom: 2px solid var(--win-border-soft);
+  }
+  .logo { display: flex; align-items: center; gap: 8px; margin-right: 8px; user-select: none; }
+  .logo .star {
+    color: var(--gold); font-size: 16px;
+    text-shadow: 2px 2px 0 rgba(0,0,0,.6), 0 0 10px rgba(255,215,106,.6);
+  }
+  .logo .name { font-family: 'DotGothic16', monospace; font-size: 15px; letter-spacing: .02em; }
+  .logo .sub { font-family: 'DotGothic16', monospace; font-size: 9px; color: var(--faint); }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 30px; padding: 0 12px; border-radius: 6px;
+    font-size: 12px; font-weight: 500; font-family: 'Geist', sans-serif;
+    background: transparent; color: var(--muted);
+    border: 1px solid transparent; cursor: pointer;
+    transition: all .12s;
+  }
+  .btn:hover { color: var(--text); background: rgba(232,234,246,.06); }
+  .btn.outline { border: 1px solid var(--win-border-soft); color: var(--text); }
+  .btn.primary {
+    font-family: 'DotGothic16', monospace; font-size: 12.5px;
+    background: var(--window); color: var(--gold);
+    border: 2px solid var(--win-border);
+    box-shadow: inset 0 0 0 2px var(--window), inset 0 0 0 3px var(--win-border-soft);
+    position: relative; padding-left: 22px;
+  }
+  .btn.primary::before {
+    content: '▶'; position: absolute; left: 8px; font-size: 9px; color: var(--gold);
+    animation: blink 1s steps(2) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  .btn svg { width: 13px; height: 13px; }
+
+  .project-chip {
+    display: flex; align-items: center; gap: 8px; margin-left: 6px;
+    padding: 4px 11px; border-radius: 6px;
+    border: 1px solid var(--win-border-soft); background: rgba(17,21,43,.7);
+    font-size: 12px;
+  }
+  .engine-tag {
+    font-family: 'DotGothic16', monospace; font-size: 10px;
+    padding: 1px 7px; border-radius: 4px;
+    background: rgba(217,138,255,.12); color: var(--magenta);
+    border: 1px solid rgba(217,138,255,.35);
+  }
+
+  /* HP-bar progress */
+  .progress-wrap { display: flex; align-items: center; gap: 10px; margin-left: auto; margin-right: 6px; }
+  .progress-label { font-family: 'DotGothic16', monospace; font-size: 11px; color: var(--muted); }
+  .hp-bar {
+    width: 170px; height: 14px; border-radius: 4px;
+    border: 2px solid var(--win-border);
+    background: #0a0d18; overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,.8);
+  }
+  .hp-bar .fill {
+    height: 100%; width: 62%;
+    background: linear-gradient(180deg, #7deda8 0%, var(--hp-green) 45%, #2da65a 100%);
+    box-shadow: 0 0 8px rgba(79,217,124,.5);
+  }
+  .icon-btn {
+    width: 30px; height: 30px; border-radius: 6px; border: none;
+    background: transparent; color: var(--muted); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .icon-btn:hover { background: rgba(232,234,246,.07); color: var(--text); }
+
+  /* ============ LAYOUT ============ */
+  .main { flex: 1; display: flex; overflow: hidden; gap: 10px; padding: 10px; }
+  .pane-left { width: 235px; flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .pane-center { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .pane-right { width: 295px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+
+  .pane-header {
+    height: 34px; flex-shrink: 0; display: flex; align-items: center; gap: 8px;
+    padding: 0 13px;
+    font-family: 'DotGothic16', monospace; font-size: 11.5px;
+    color: var(--cyan); user-select: none;
+    border-bottom: 1px solid rgba(232,234,246,.12);
+    text-shadow: 0 0 8px rgba(111,214,255,.4);
+  }
+  .pane-header .count { margin-left: auto; color: var(--faint); text-shadow: none; }
+
+  /* ============ FILE TREE ============ */
+  .filetree { flex: 1; overflow-y: auto; padding: 7px; }
+  .file {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 9px; border-radius: 5px; cursor: pointer;
+    color: var(--muted); font-size: 12px;
+    position: relative;
+  }
+  .file:hover { background: rgba(111,214,255,.07); color: var(--text); }
+  .file.active { background: rgba(111,214,255,.1); color: var(--text); }
+  .file.active::before {
+    content: '▶'; position: absolute; left: -2px; font-size: 8px; color: var(--gold);
+    animation: blink 1s steps(2) infinite;
+  }
+  .file.active .fname { padding-left: 6px; }
+  .file .gem { font-size: 9px; flex-shrink: 0; }
+  .file .gem.done { color: var(--gold); text-shadow: 0 0 6px rgba(255,215,106,.7); }
+  .file .gem.partial { color: var(--cyan); }
+  .file .gem.empty { color: var(--faint); }
+  .file .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file .fmeta { font-family: 'DotGothic16', monospace; font-size: 9.5px; color: var(--faint); }
+
+  /* ============ SEGMENT GRID ============ */
+  .grid-head {
+    display: grid; grid-template-columns: 44px 1fr 1fr 110px;
+    height: 32px; flex-shrink: 0; align-items: center;
+    border-bottom: 1px solid rgba(232,234,246,.12);
+    font-family: 'DotGothic16', monospace; font-size: 10.5px;
+    color: var(--faint); padding-right: 8px;
+  }
+  .grid-head > div { padding: 0 12px; }
+  .grid-body { flex: 1; overflow-y: auto; }
+  .seg {
+    display: grid; grid-template-columns: 44px 1fr 1fr 110px;
+    border-bottom: 1px solid rgba(232,234,246,.05);
+    cursor: pointer; position: relative;
+  }
+  .seg:hover { background: rgba(111,214,255,.04); }
+  .seg > div { padding: 9px 12px; display: flex; align-items: center; }
+  .seg .num { color: var(--faint); font-family: 'DotGothic16', monospace; font-size: 10.5px; justify-content: flex-end; }
+  .seg .src { font-size: 13px; line-height: 1.7; }
+  .seg .tgt { font-size: 12.5px; line-height: 1.6; color: #c2c8e4; }
+
+  /* selected row = message window */
+  .seg.selected {
+    background: var(--bg2);
+    outline: 2px solid var(--win-border);
+    outline-offset: -3px;
+    border-radius: 6px;
+    box-shadow: inset 0 0 0 5px var(--bg2), inset 0 0 0 6px var(--win-border-soft);
+  }
+  .seg.selected .tgt::after {
+    content: '▼'; display: inline-block; margin-left: 6px;
+    color: var(--gold); font-size: 9px;
+    animation: bounce 0.8s ease-in-out infinite;
+  }
+  @keyframes bounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(2px); } }
+
+  .ph {
+    display: inline-block; padding: 0 5px; margin: 0 2px; border-radius: 4px;
+    font-family: 'Geist Mono', monospace; font-size: 10px;
+    background: rgba(111,214,255,.1); color: var(--cyan);
+    border: 1px solid rgba(111,214,255,.3);
+    vertical-align: middle; line-height: 1.7;
+  }
+  .gloss-hl { border-bottom: 1px dashed var(--gold); color: var(--gold); }
+
+  .status { display: inline-flex; align-items: center; gap: 6px; font-family: 'DotGothic16', monospace; font-size: 10.5px; }
+  .status .gem { font-size: 9px; }
+  .status.untranslated { color: var(--faint); }
+  .status.translated { color: var(--cyan); } .status.translated .gem { text-shadow: 0 0 6px rgba(111,214,255,.6); }
+  .status.reviewed { color: var(--gold); } .status.reviewed .gem { text-shadow: 0 0 6px rgba(255,215,106,.7); }
+  .status.needs_review { color: var(--amber); } .status.needs_review .gem { text-shadow: 0 0 6px rgba(255,178,77,.6); }
+
+  .statusbar {
+    height: 28px; flex-shrink: 0; display: flex; align-items: center; gap: 16px;
+    padding: 0 13px; border-top: 1px solid rgba(232,234,246,.12);
+    font-family: 'DotGothic16', monospace; font-size: 10.5px; color: var(--faint);
+  }
+  .statusbar .gold-c { color: var(--gold); }
+  .statusbar .cyan-c { color: var(--cyan); }
+
+  /* ============ RIGHT PANELS ============ */
+  .panel { display: flex; flex-direction: column; overflow: hidden; }
+  .panel.grow { flex: 1; }
+  .panel-body { padding: 10px 12px; overflow-y: auto; flex: 1; }
+
+  .tm-match {
+    border: 1px solid var(--win-border-soft); border-radius: 6px;
+    padding: 10px 12px; margin-bottom: 8px;
+    background: rgba(14,18,38,.8);
+    position: relative; cursor: pointer;
+  }
+  .tm-match:hover { border-color: var(--gold); }
+  .tm-pct {
+    position: absolute; top: 8px; right: 10px;
+    font-family: 'DotGothic16', monospace; font-size: 10.5px;
+    color: var(--gold);
+  }
+  .tm-pct.mid { color: var(--cyan); }
+  .tm-src { font-size: 11.5px; color: var(--muted); margin-bottom: 5px; line-height: 1.6; padding-right: 42px; }
+  .tm-tgt { font-size: 12px; line-height: 1.5; }
+
+  .qa-row { display: flex; align-items: center; gap: 13px; }
+  .qa-badge {
+    width: 56px; height: 56px; flex-shrink: 0;
+    border: 2px solid var(--gold); border-radius: 8px;
+    box-shadow: inset 0 0 0 2px var(--window), inset 0 0 0 3px rgba(255,215,106,.3);
+    background: var(--window);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: var(--gold);
+  }
+  .qa-badge .v { font-family: 'DotGothic16', monospace; font-size: 17px; line-height: 1; text-shadow: 0 0 8px rgba(255,215,106,.5); }
+  .qa-badge .k { font-family: 'DotGothic16', monospace; font-size: 8px; margin-top: 3px; color: var(--muted); }
+  .qa-ok { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--green); }
+
+  .gloss-term {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 0; font-size: 12px;
+    border-bottom: 1px solid rgba(232,234,246,.05);
+  }
+  .gloss-term .arrow { color: var(--faint); font-size: 10px; }
+  .gloss-term .src-t { color: var(--gold); }
+  .gloss-term .tgt-t { color: var(--text); }
+  .gloss-term .domain {
+    margin-left: auto; font-family: 'DotGothic16', monospace; font-size: 8.5px;
+    padding: 1px 6px; border-radius: 4px;
+    background: rgba(217,138,255,.12); color: var(--magenta);
+  }
+</style>
+</head>
+<body>
+
+  <!-- TOOLBAR -->
+  <div class="toolbar">
+    <div class="logo">
+      <span class="star">★</span>
+      <div>
+        <div class="name">Hoshi2Star</div>
+        <div class="sub jp">ほし つー すたー</div>
+      </div>
+    </div>
+
+    <button class="btn outline">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-7L9 4H5a2 2 0 00-2 2z"/></svg>
+      Ouvrir un jeu
+    </button>
+    <button class="btn primary">Traduire</button>
+    <button class="btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6M4 14l6-6 2-3M2 5h12M7 2h1M22 22l-5-10-5 10M14 18h6"/></svg>
+      Tout traduire
+    </button>
+    <button class="btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+      Tout exporter
+    </button>
+
+    <div class="project-chip">
+      <span class="jp">月咲流ホノカ ver1.03</span>
+      <span class="engine-tag">WOLF</span>
+    </div>
+
+    <div class="progress-wrap">
+      <span class="progress-label">TRAD 746/1204</span>
+      <div class="hp-bar"><div class="fill"></div></div>
+      <span class="progress-label" style="color:var(--hp-green)">62%</span>
+    </div>
+
+    <button class="icon-btn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></button>
+    <button class="icon-btn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008.6 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 8.6a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- LEFT: FILES -->
+    <div class="pane-left rpg-window">
+      <div class="pane-header">FICHIERS <span class="count">14</span></div>
+      <div class="filetree">
+        <div class="file"><span class="gem done">★</span><span class="fname">CDataBase.dat</span><span class="fmeta">379</span></div>
+        <div class="file active"><span class="gem partial">◆</span><span class="fname">DataBase.dat</span><span class="fmeta">1204</span></div>
+        <div class="file"><span class="gem partial">◆</span><span class="fname">CommonEvent.dat</span><span class="fmeta">2871</span></div>
+        <div class="file"><span class="gem empty">◇</span><span class="fname">Map001.mps</span><span class="fmeta">96</span></div>
+        <div class="file"><span class="gem empty">◇</span><span class="fname">Map002.mps</span><span class="fmeta">158</span></div>
+        <div class="file"><span class="gem empty">◇</span><span class="fname">Map003.mps</span><span class="fmeta">204</span></div>
+      </div>
+    </div>
+
+    <!-- CENTER: SEGMENTS -->
+    <div class="pane-center rpg-window">
+      <div class="grid-head">
+        <div style="text-align:right">#</div><div>SOURCE</div><div>CIBLE</div><div>STATUT</div>
+      </div>
+      <div class="grid-body">
+        <div class="seg">
+          <div class="num">1</div>
+          <div class="src jp">アカシア村 復興譚</div>
+          <div class="tgt">Acacia Village: A Tale of Revival</div>
+          <div><span class="status reviewed"><span class="gem">★</span>RELU</span></div>
+        </div>
+        <div class="seg selected">
+          <div class="num">2</div>
+          <div class="src jp"><span class="ph">\C[2]</span>ホノカ<span class="ph">\C[0]</span>「<span class="gloss-hl">月咲流</span>の力、見せてあげる！」</div>
+          <div class="tgt"><span class="ph">\C[2]</span>Honoka<span class="ph">\C[0]</span>: "I'll show you the power of the Tsukisaki style!"</div>
+          <div><span class="status translated"><span class="gem">◆</span>TRADUIT</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">3</div>
+          <div class="src jp">レベルが<span class="ph">\V[12]</span>に上がった！</div>
+          <div class="tgt">Level up to <span class="ph">\V[12]</span>!</div>
+          <div><span class="status translated"><span class="gem">◆</span>TRADUIT</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">4</div>
+          <div class="src jp">経験値</div>
+          <div class="tgt">Experience</div>
+          <div><span class="status reviewed"><span class="gem">★</span>RELU</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">5</div>
+          <div class="src jp">「この先、<span class="gloss-hl">星詠みの祠</span>には近づくな……」</div>
+          <div class="tgt">"Stay away from the Stargazer's Shrine up ahead..."</div>
+          <div><span class="status needs_review"><span class="gem">▲</span>À REVOIR</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">6</div>
+          <div class="src jp"><span class="ph">\E</span>逃げる</div>
+          <div class="tgt"></div>
+          <div><span class="status untranslated"><span class="gem">◇</span>—</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">7</div>
+          <div class="src jp">攻撃</div>
+          <div class="tgt">Attack</div>
+          <div><span class="status translated"><span class="gem">◆</span>TRADUIT</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">8</div>
+          <div class="src jp">防御</div>
+          <div class="tgt">Defend</div>
+          <div><span class="status translated"><span class="gem">◆</span>TRADUIT</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">9</div>
+          <div class="src jp"><span class="ph">\cself[10]</span>を手に入れた！</div>
+          <div class="tgt"></div>
+          <div><span class="status untranslated"><span class="gem">◇</span>—</span></div>
+        </div>
+      </div>
+      <div class="statusbar">
+        <span>1204 SEG</span>
+        <span class="cyan-c">◆ 746</span>
+        <span class="gold-c">★ 218</span>
+        <span>◇ 240</span>
+        <span style="margin-left:auto">DataBase.dat · JA→EN</span>
+      </div>
+    </div>
+
+    <!-- RIGHT: TM / QA / GLOSSARY -->
+    <div class="pane-right">
+      <div class="panel grow rpg-window">
+        <div class="pane-header">MÉMOIRE DE TRADUCTION <span class="count">2</span></div>
+        <div class="panel-body">
+          <div class="tm-match">
+            <span class="tm-pct">98%</span>
+            <div class="tm-src jp">\C[2]ホノカ\C[0]「月咲流の力、見せてやる！」</div>
+            <div class="tm-tgt">\C[2]Honoka\C[0]: "I'll show you the power of the Tsukisaki style!"</div>
+          </div>
+          <div class="tm-match">
+            <span class="tm-pct mid">74%</span>
+            <div class="tm-src jp">ホノカ「月咲流奥義、見せてあげる」</div>
+            <div class="tm-tgt">Honoka: "Behold the secret art of the Tsukisaki style."</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel rpg-window" style="flex-shrink:0">
+        <div class="pane-header">CONTRÔLE QUALITÉ</div>
+        <div class="panel-body">
+          <div class="qa-row">
+            <div class="qa-badge"><span class="v">100</span><span class="k">SCORE</span></div>
+            <div>
+              <div class="qa-ok">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+                Placeholders intacts
+              </div>
+              <div class="qa-ok" style="margin-top:5px">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+                Glossaire respecté
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel rpg-window" style="flex-shrink:0">
+        <div class="pane-header">GLOSSAIRE <span class="count">4</span></div>
+        <div class="panel-body">
+          <div class="gloss-term"><span class="src-t jp">月咲流</span><span class="arrow">→</span><span class="tgt-t">Tsukisaki style</span><span class="domain">COMBAT</span></div>
+          <div class="gloss-term"><span class="src-t jp">星詠みの祠</span><span class="arrow">→</span><span class="tgt-t">Stargazer's Shrine</span><span class="domain">LIEU</span></div>
+          <div class="gloss-term"><span class="src-t jp">ホノカ</span><span class="arrow">→</span><span class="tgt-t">Honoka</span><span class="domain">PERSO</span></div>
+          <div class="gloss-term" style="border-bottom:none"><span class="src-t jp">復興譚</span><span class="arrow">→</span><span class="tgt-t">Tale of Revival</span><span class="domain">TITRE</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

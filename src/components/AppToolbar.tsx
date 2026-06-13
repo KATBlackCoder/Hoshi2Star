@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   Clock,
   Download,
@@ -86,6 +87,42 @@ function CooldownBadge() {
 }
 
 // ---------------------------------------------------------------------------
+// Constellation progress
+// ---------------------------------------------------------------------------
+
+const CONSTELLATION_NODES = [8, 26, 45, 78, 94];
+
+function ConstellationProgress({ progress }: { progress: number }) {
+  return (
+    <div className="relative h-[22px] w-[170px]">
+      <div className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-primary/15" />
+      <div
+        className="absolute left-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-gradient-to-r from-primary to-star shadow-[0_0_8px_var(--star)] transition-all duration-300"
+        style={{ width: `${progress}%` }}
+      />
+      {CONSTELLATION_NODES.map((pos) => (
+        <div
+          key={pos}
+          className={cn(
+            "absolute top-1/2 h-[5px] w-[5px] -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-[1px]",
+            pos <= progress
+              ? "bg-star shadow-[0_0_6px_var(--star)]"
+              : "bg-muted-foreground/30",
+          )}
+          style={{ left: `${pos}%` }}
+        />
+      ))}
+      <div
+        className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 animate-pulse text-[13px] text-star [text-shadow:0_0_10px_var(--star)] transition-all duration-300"
+        style={{ left: `${progress}%` }}
+      >
+        ★
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // AppToolbar
 // ---------------------------------------------------------------------------
 
@@ -134,8 +171,12 @@ export function AppToolbar({
 
   return (
     <div className="flex h-10 shrink-0 items-center gap-3 border-b px-3">
-      <span className="text-sm font-semibold tracking-tight select-none">
-        Hoshi2Star ★
+      <span className="flex items-baseline gap-1.5 text-sm font-semibold tracking-tight select-none">
+        <span className="text-star drop-shadow-[0_0_6px_var(--star)]">★</span>
+        Hoshi2Star
+        <span className="text-[9px] font-normal tracking-widest text-muted-foreground/60">
+          星 → ★
+        </span>
       </span>
 
       <Button
@@ -156,8 +197,7 @@ export function AppToolbar({
       {activeProjectId && (
         <Button
           size="sm"
-          variant="outline"
-          className="h-7 gap-1.5 text-xs"
+          className="h-7 gap-1.5 text-xs shadow-[0_0_12px_oklch(0.65_0.18_285/35%)]"
           onClick={onTranslate}
           disabled={isTranslating || isExtractingGlossary}
         >
@@ -205,9 +245,9 @@ export function AppToolbar({
       )}
 
       {activeProjectId && activeProject && (
-        <span className="ml-1 truncate text-xs text-muted-foreground">
-          {activeProject.name}
-          <span className="ml-1.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
+        <span className="ml-1 flex min-w-0 items-center gap-1.5 rounded-full border bg-card/60 px-2.5 py-0.5 text-xs text-muted-foreground">
+          <span className="truncate">{activeProject.name}</span>
+          <span className="shrink-0 rounded-full border border-primary/30 bg-primary/10 px-1.5 font-mono text-[9px] uppercase tracking-wider text-primary">
             {activeProject.engine}
           </span>
         </span>
@@ -215,15 +255,10 @@ export function AppToolbar({
 
       {/* Progress bar + timer + cooldown */}
       {isTranslating && progress >= 0 && (
-        <div className="flex items-center gap-2 mr-2">
+        <div className="ml-auto flex items-center gap-2 mr-2">
           <TranslationTimer />
           <CooldownBadge />
-          <div className="h-1.5 w-32 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-primary transition-all duration-300"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
+          <ConstellationProgress progress={progress} />
         </div>
       )}
 

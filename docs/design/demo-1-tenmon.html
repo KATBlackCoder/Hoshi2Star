@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hoshi2Star — Démo 1 : TENMON 天文 (Observatoire)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0d1c;
+    --bg-deep: #070912;
+    --panel: #0f1326;
+    --panel-glass: rgba(20, 25, 52, 0.55);
+    --border: rgba(130, 145, 255, 0.10);
+    --border-strong: rgba(130, 145, 255, 0.22);
+    --text: #e6e9fa;
+    --muted: #8089b0;
+    --faint: #4d5577;
+    --violet: #8b7cf8;
+    --violet-soft: rgba(139, 124, 248, 0.14);
+    --gold: #f2c14e;
+    --gold-soft: rgba(242, 193, 78, 0.12);
+    --cyan: #6ee7e0;
+    --green: #5dd9a2;
+    --amber: #e8b34b;
+    --red: #f07178;
+    --row-h: 44px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: 'Geist', 'Zen Kaku Gothic New', sans-serif;
+    background:
+      radial-gradient(1px 1px at 12% 28%, rgba(255,255,255,.55) 50%, transparent 51%),
+      radial-gradient(1px 1px at 38% 12%, rgba(255,255,255,.35) 50%, transparent 51%),
+      radial-gradient(1.5px 1.5px at 64% 38%, rgba(242,193,78,.5) 50%, transparent 51%),
+      radial-gradient(1px 1px at 82% 18%, rgba(255,255,255,.4) 50%, transparent 51%),
+      radial-gradient(1px 1px at 27% 68%, rgba(255,255,255,.25) 50%, transparent 51%),
+      radial-gradient(1.5px 1.5px at 91% 71%, rgba(139,124,248,.45) 50%, transparent 51%),
+      radial-gradient(1px 1px at 49% 88%, rgba(255,255,255,.3) 50%, transparent 51%),
+      radial-gradient(1px 1px at 73% 92%, rgba(255,255,255,.2) 50%, transparent 51%),
+      radial-gradient(ellipse 80% 60% at 50% -10%, #141a3a 0%, var(--bg) 55%, var(--bg-deep) 100%);
+    color: var(--text);
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+  }
+  .jp { font-family: 'Zen Kaku Gothic New', sans-serif; }
+  .mono { font-family: 'Geist Mono', monospace; }
+
+  /* ============ TOOLBAR ============ */
+  .toolbar {
+    height: 46px; flex-shrink: 0;
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 14px;
+    background: linear-gradient(180deg, rgba(20,26,58,.85), rgba(13,17,38,.85));
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border-strong);
+  }
+  .logo { display: flex; align-items: baseline; gap: 7px; margin-right: 8px; user-select: none; }
+  .logo .star {
+    color: var(--gold); font-size: 17px;
+    text-shadow: 0 0 12px rgba(242,193,78,.8), 0 0 28px rgba(242,193,78,.35);
+  }
+  .logo .name { font-weight: 700; font-size: 14.5px; letter-spacing: -0.02em; }
+  .logo .kanji { font-size: 10px; color: var(--faint); letter-spacing: .12em; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 30px; padding: 0 12px; border-radius: 8px;
+    font-size: 12px; font-weight: 500; font-family: inherit;
+    background: transparent; color: var(--muted);
+    border: 1px solid transparent; cursor: pointer;
+    transition: all .15s;
+  }
+  .btn:hover { color: var(--text); background: rgba(139,124,248,.08); }
+  .btn.outline { border-color: var(--border-strong); color: var(--text); background: rgba(139,124,248,.05); }
+  .btn.primary {
+    background: linear-gradient(135deg, #8b7cf8, #6d5ce6);
+    color: #fff; border: none; font-weight: 600;
+    box-shadow: 0 0 16px rgba(139,124,248,.45), inset 0 1px 0 rgba(255,255,255,.2);
+  }
+  .btn.primary:hover { box-shadow: 0 0 24px rgba(139,124,248,.7), inset 0 1px 0 rgba(255,255,255,.2); }
+  .btn svg { width: 13px; height: 13px; }
+
+  .project-chip {
+    display: flex; align-items: center; gap: 8px; margin-left: 6px;
+    padding: 4px 10px; border-radius: 999px;
+    background: var(--panel-glass); border: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .engine-tag {
+    font-family: 'Geist Mono', monospace; font-size: 9.5px; letter-spacing: .06em;
+    padding: 2px 7px; border-radius: 999px;
+    background: var(--violet-soft); color: var(--violet);
+    border: 1px solid rgba(139,124,248,.3);
+  }
+
+  /* Constellation progress */
+  .progress-wrap { display: flex; align-items: center; gap: 10px; margin-left: auto; margin-right: 6px; }
+  .progress-label { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .constellation { position: relative; width: 170px; height: 22px; }
+  .constellation .track {
+    position: absolute; top: 50%; left: 0; right: 0; height: 2px;
+    transform: translateY(-50%);
+    background: rgba(130,145,255,.15); border-radius: 2px;
+  }
+  .constellation .fill {
+    position: absolute; top: 50%; left: 0; width: 62%; height: 2px;
+    transform: translateY(-50%);
+    background: linear-gradient(90deg, var(--violet), var(--gold));
+    border-radius: 2px;
+    box-shadow: 0 0 8px rgba(242,193,78,.6);
+  }
+  .constellation .node {
+    position: absolute; top: 50%; width: 5px; height: 5px;
+    transform: translate(-50%, -50%) rotate(45deg);
+    background: var(--gold); border-radius: 1px;
+    box-shadow: 0 0 6px rgba(242,193,78,.8);
+  }
+  .constellation .node.dim { background: #3a4163; box-shadow: none; }
+  .constellation .comet {
+    position: absolute; top: 50%; left: 62%; transform: translate(-50%, -50%);
+    color: var(--gold); font-size: 13px;
+    text-shadow: 0 0 10px rgba(242,193,78,.9);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
+
+  .icon-btn {
+    width: 30px; height: 30px; border-radius: 8px; border: none;
+    background: transparent; color: var(--muted); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .icon-btn:hover { background: rgba(139,124,248,.1); color: var(--text); }
+
+  /* ============ LAYOUT ============ */
+  .main { flex: 1; display: flex; overflow: hidden; }
+  .pane-left { width: 240px; flex-shrink: 0; border-right: 1px solid var(--border); background: rgba(11,14,30,.6); display: flex; flex-direction: column; }
+  .pane-center { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .pane-right { width: 295px; flex-shrink: 0; border-left: 1px solid var(--border); background: rgba(11,14,30,.6); display: flex; flex-direction: column; }
+
+  .pane-header {
+    height: 34px; flex-shrink: 0; display: flex; align-items: center; gap: 7px;
+    padding: 0 12px; border-bottom: 1px solid var(--border);
+    font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--faint); user-select: none;
+  }
+  .pane-header .count { margin-left: auto; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+  /* ============ FILE TREE ============ */
+  .filetree { flex: 1; overflow-y: auto; padding: 6px; }
+  .file {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: 7px; cursor: pointer;
+    color: var(--muted); font-size: 12px;
+    border: 1px solid transparent;
+  }
+  .file:hover { background: rgba(139,124,248,.07); color: var(--text); }
+  .file.active {
+    background: var(--violet-soft); color: var(--text);
+    border-color: rgba(139,124,248,.25);
+  }
+  .file .ring { position: relative; width: 14px; height: 14px; flex-shrink: 0; }
+  .file .ring svg { transform: rotate(-90deg); }
+  .file .ring .bg { stroke: rgba(130,145,255,.15); }
+  .file .ring .fg { stroke: var(--violet); stroke-linecap: round; }
+  .file .ring.done .fg { stroke: var(--gold); }
+  .file .ring .star-done {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: var(--gold); font-size: 8px; text-shadow: 0 0 5px rgba(242,193,78,.8);
+  }
+  .file .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file .fmeta { font-size: 10px; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+  /* ============ SEGMENT GRID ============ */
+  .grid-head {
+    display: grid; grid-template-columns: 44px 1fr 1fr 108px;
+    height: 32px; flex-shrink: 0; align-items: center;
+    border-bottom: 1px solid var(--border);
+    background: rgba(15,19,38,.8);
+    font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--faint); padding-right: 8px;
+  }
+  .grid-head > div { padding: 0 12px; }
+  .grid-body { flex: 1; overflow-y: auto; }
+  .seg {
+    display: grid; grid-template-columns: 44px 1fr 1fr 108px;
+    border-bottom: 1px solid rgba(130,145,255,.05);
+    cursor: pointer; position: relative;
+  }
+  .seg:hover { background: rgba(139,124,248,.04); }
+  .seg > div { padding: 9px 12px; display: flex; align-items: center; }
+  .seg .num { color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; justify-content: flex-end; }
+  .seg .src { font-size: 13px; line-height: 1.65; }
+  .seg .tgt { font-size: 12.5px; line-height: 1.6; color: #c9cee8; }
+  .seg .tgt .placeholder-caret { color: var(--violet); animation: pulse 1.2s infinite; }
+
+  .seg.selected {
+    background: linear-gradient(90deg, rgba(139,124,248,.12), rgba(139,124,248,.03));
+  }
+  .seg.selected::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2.5px;
+    background: linear-gradient(180deg, var(--violet), var(--gold));
+    box-shadow: 0 0 8px rgba(139,124,248,.7);
+  }
+
+  .ph {
+    display: inline-block; padding: 0 5px; margin: 0 2px; border-radius: 5px;
+    font-family: 'Geist Mono', monospace; font-size: 10px;
+    background: rgba(110,231,224,.1); color: var(--cyan);
+    border: 1px solid rgba(110,231,224,.25);
+    vertical-align: middle; line-height: 1.7;
+  }
+  .gloss-hl { border-bottom: 1px dashed var(--gold); color: var(--gold); }
+
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 500; }
+  .status .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .status.untranslated { color: var(--faint); } .status.untranslated .dot { background: var(--faint); }
+  .status.translated { color: var(--cyan); } .status.translated .dot { background: var(--cyan); box-shadow: 0 0 6px rgba(110,231,224,.6); }
+  .status.reviewed { color: var(--gold); } .status.reviewed .dot { background: var(--gold); box-shadow: 0 0 6px rgba(242,193,78,.7); }
+  .status.needs_review { color: var(--amber); } .status.needs_review .dot { background: var(--amber); box-shadow: 0 0 6px rgba(232,179,75,.6); }
+  .status.reviewed .dot { border-radius: 1px; transform: rotate(45deg); }
+
+  /* status bar */
+  .statusbar {
+    height: 26px; flex-shrink: 0; display: flex; align-items: center; gap: 16px;
+    padding: 0 14px; border-top: 1px solid var(--border);
+    background: rgba(13,17,38,.9);
+    font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums;
+  }
+  .statusbar .item { display: flex; align-items: center; gap: 5px; }
+  .statusbar .gold { color: var(--gold); }
+  .statusbar .cyan { color: var(--cyan); }
+
+  /* ============ RIGHT PANELS ============ */
+  .panel-section { display: flex; flex-direction: column; border-bottom: 1px solid var(--border); }
+  .panel-section.grow { flex: 1; overflow: hidden; }
+  .panel-body { padding: 10px 12px; overflow-y: auto; }
+
+  .tm-match {
+    border: 1px solid var(--border-strong); border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 8px;
+    background: var(--panel-glass);
+    position: relative; cursor: pointer;
+    transition: border-color .15s;
+  }
+  .tm-match:hover { border-color: rgba(242,193,78,.4); }
+  .tm-pct {
+    position: absolute; top: 8px; right: 10px;
+    font-family: 'Geist Mono', monospace; font-size: 10.5px; font-weight: 500;
+    color: var(--gold);
+  }
+  .tm-pct.mid { color: var(--cyan); }
+  .tm-src { font-size: 11.5px; color: var(--muted); margin-bottom: 5px; line-height: 1.55; padding-right: 44px; }
+  .tm-tgt { font-size: 12px; line-height: 1.5; }
+
+  .qa-score-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .qa-ring { position: relative; width: 52px; height: 52px; flex-shrink: 0; }
+  .qa-ring svg { transform: rotate(-90deg); }
+  .qa-ring .val {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-family: 'Geist Mono', monospace; font-size: 14px; font-weight: 600; color: var(--gold);
+  }
+  .qa-ok { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--green); }
+
+  .gloss-term {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 0; font-size: 12px;
+    border-bottom: 1px solid rgba(130,145,255,.05);
+  }
+  .gloss-term .arrow { color: var(--faint); font-size: 10px; }
+  .gloss-term .src-t { color: var(--gold); }
+  .gloss-term .tgt-t { color: var(--text); }
+  .gloss-term .domain {
+    margin-left: auto; font-size: 9px; padding: 1px 6px; border-radius: 999px;
+    background: var(--violet-soft); color: var(--violet);
+  }
+</style>
+</head>
+<body>
+
+  <!-- TOOLBAR -->
+  <div class="toolbar">
+    <div class="logo">
+      <span class="star">★</span>
+      <span class="name">Hoshi2Star</span>
+      <span class="kanji jp">星 → ★</span>
+    </div>
+
+    <button class="btn outline">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-7L9 4H5a2 2 0 00-2 2z"/></svg>
+      Ouvrir un jeu
+    </button>
+    <button class="btn primary">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      Traduire
+    </button>
+    <button class="btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6M4 14l6-6 2-3M2 5h12M7 2h1M22 22l-5-10-5 10M14 18h6"/></svg>
+      Tout traduire
+    </button>
+    <button class="btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+      Tout exporter
+    </button>
+
+    <div class="project-chip">
+      <span class="jp">月咲流ホノカ ver1.03</span>
+      <span class="engine-tag">WOLF</span>
+    </div>
+
+    <div class="progress-wrap">
+      <span class="progress-label mono">02:47 · 62%</span>
+      <div class="constellation">
+        <div class="track"></div>
+        <div class="fill"></div>
+        <div class="node" style="left: 8%"></div>
+        <div class="node" style="left: 26%"></div>
+        <div class="node" style="left: 45%"></div>
+        <div class="node dim" style="left: 78%"></div>
+        <div class="node dim" style="left: 94%"></div>
+        <div class="comet">★</div>
+      </div>
+    </div>
+
+    <button class="icon-btn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></button>
+    <button class="icon-btn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008.6 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 8.6a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- LEFT: FILES -->
+    <div class="pane-left">
+      <div class="pane-header">Fichiers <span class="count">14</span></div>
+      <div class="filetree">
+        <div class="file">
+          <span class="ring done"><svg width="14" height="14"><circle class="bg" cx="7" cy="7" r="5.5" fill="none" stroke-width="2"/><circle class="fg" cx="7" cy="7" r="5.5" fill="none" stroke-width="2" stroke-dasharray="34.5 34.5" stroke-dashoffset="0"/></svg><span class="star-done">★</span></span>
+          <span class="fname">CDataBase.dat</span><span class="fmeta">379</span>
+        </div>
+        <div class="file active">
+          <span class="ring"><svg width="14" height="14"><circle class="bg" cx="7" cy="7" r="5.5" fill="none" stroke-width="2"/><circle class="fg" cx="7" cy="7" r="5.5" fill="none" stroke-width="2" stroke-dasharray="34.5 34.5" stroke-dashoffset="13"/></svg></span>
+          <span class="fname">DataBase.dat</span><span class="fmeta">1 204</span>
+        </div>
+        <div class="file">
+          <span class="ring"><svg width="14" height="14"><circle class="bg" cx="7" cy="7" r="5.5" fill="none" stroke-width="2"/><circle class="fg" cx="7" cy="7" r="5.5" fill="none" stroke-width="2" stroke-dasharray="34.5 34.5" stroke-dashoffset="24"/></svg></span>
+          <span class="fname">CommonEvent.dat</span><span class="fmeta">2 871</span>
+        </div>
+        <div class="file">
+          <span class="ring"><svg width="14" height="14"><circle class="bg" cx="7" cy="7" r="5.5" fill="none" stroke-width="2"/><circle class="fg" cx="7" cy="7" r="5.5" fill="none" stroke-width="2" stroke-dasharray="34.5 34.5" stroke-dashoffset="31"/></svg></span>
+          <span class="fname">Map001.mps</span><span class="fmeta">96</span>
+        </div>
+        <div class="file">
+          <span class="ring"><svg width="14" height="14"><circle class="bg" cx="7" cy="7" r="5.5" fill="none" stroke-width="2"/><circle class="fg" cx="7" cy="7" r="5.5" fill="none" stroke-width="2" stroke-dasharray="34.5 34.5" stroke-dashoffset="34.5"/></svg></span>
+          <span class="fname">Map002.mps</span><span class="fmeta">158</span>
+        </div>
+        <div class="file">
+          <span class="ring"><svg width="14" height="14"><circle class="bg" cx="7" cy="7" r="5.5" fill="none" stroke-width="2"/><circle class="fg" cx="7" cy="7" r="5.5" fill="none" stroke-width="2" stroke-dasharray="34.5 34.5" stroke-dashoffset="34.5"/></svg></span>
+          <span class="fname">Map003.mps</span><span class="fmeta">204</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CENTER: SEGMENTS -->
+    <div class="pane-center">
+      <div class="grid-head">
+        <div style="text-align:right">#</div><div>Source</div><div>Cible</div><div>Statut</div>
+      </div>
+      <div class="grid-body">
+        <div class="seg">
+          <div class="num">1</div>
+          <div class="src jp">アカシア村 復興譚</div>
+          <div class="tgt">Acacia Village: A Tale of Revival</div>
+          <div><span class="status reviewed"><span class="dot"></span>Relu</span></div>
+        </div>
+        <div class="seg selected">
+          <div class="num">2</div>
+          <div class="src jp"><span class="ph">\C[2]</span>ホノカ<span class="ph">\C[0]</span>「<span class="gloss-hl">月咲流</span>の力、見せてあげる！」</div>
+          <div class="tgt"><span class="ph">\C[2]</span>Honoka<span class="ph">\C[0]</span>: "I'll show you the power of the Tsukisaki style!<span class="placeholder-caret">▎</span></div>
+          <div><span class="status translated"><span class="dot"></span>Traduit</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">3</div>
+          <div class="src jp">レベルが<span class="ph">\V[12]</span>に上がった！</div>
+          <div class="tgt">Level up to <span class="ph">\V[12]</span>!</div>
+          <div><span class="status translated"><span class="dot"></span>Traduit</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">4</div>
+          <div class="src jp">経験値</div>
+          <div class="tgt">Experience</div>
+          <div><span class="status reviewed"><span class="dot"></span>Relu</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">5</div>
+          <div class="src jp">「この先、<span class="gloss-hl">星詠みの祠</span>には近づくな……」</div>
+          <div class="tgt">"Stay away from the Stargazer's Shrine up ahead..."</div>
+          <div><span class="status needs_review"><span class="dot"></span>À revoir</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">6</div>
+          <div class="src jp"><span class="ph">\E</span>逃げる</div>
+          <div class="tgt"></div>
+          <div><span class="status untranslated"><span class="dot"></span>Non traduit</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">7</div>
+          <div class="src jp">攻撃</div>
+          <div class="tgt">Attack</div>
+          <div><span class="status translated"><span class="dot"></span>Traduit</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">8</div>
+          <div class="src jp">防御</div>
+          <div class="tgt">Defend</div>
+          <div><span class="status translated"><span class="dot"></span>Traduit</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">9</div>
+          <div class="src jp"><span class="ph">\cself[10]</span>を手に入れた！</div>
+          <div class="tgt"></div>
+          <div><span class="status untranslated"><span class="dot"></span>Non traduit</span></div>
+        </div>
+      </div>
+      <div class="statusbar">
+        <span class="item">1 204 segments</span>
+        <span class="item cyan">● 746 traduits</span>
+        <span class="item gold">★ 218 relus</span>
+        <span class="item">○ 240 restants</span>
+        <span class="item" style="margin-left:auto">DataBase.dat · ja → en</span>
+      </div>
+    </div>
+
+    <!-- RIGHT: TM / QA / GLOSSARY -->
+    <div class="pane-right">
+      <div class="panel-section grow">
+        <div class="pane-header">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 006.5 22H20V2H6.5A2.5 2.5 0 004 4.5v15z"/></svg>
+          Mémoire de traduction <span class="count">2</span>
+        </div>
+        <div class="panel-body">
+          <div class="tm-match">
+            <span class="tm-pct">98%</span>
+            <div class="tm-src jp">\C[2]ホノカ\C[0]「月咲流の力、見せてやる！」</div>
+            <div class="tm-tgt">\C[2]Honoka\C[0]: "I'll show you the power of the Tsukisaki style!"</div>
+          </div>
+          <div class="tm-match">
+            <span class="tm-pct mid">74%</span>
+            <div class="tm-src jp">ホノカ「月咲流奥義、見せてあげる」</div>
+            <div class="tm-tgt">Honoka: "Behold the secret art of the Tsukisaki style."</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="pane-header">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+          Contrôle qualité
+        </div>
+        <div class="panel-body">
+          <div class="qa-score-row">
+            <div class="qa-ring">
+              <svg width="52" height="52"><circle cx="26" cy="26" r="22" fill="none" stroke="rgba(130,145,255,.12)" stroke-width="3"/><circle cx="26" cy="26" r="22" fill="none" stroke="#f2c14e" stroke-width="3" stroke-linecap="round" stroke-dasharray="138.2 138.2" stroke-dashoffset="0"/></svg>
+              <span class="val">100</span>
+            </div>
+            <div>
+              <div class="qa-ok">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+                Placeholders intacts
+              </div>
+              <div class="qa-ok" style="margin-top:4px">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+                Glossaire respecté
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-section" style="border-bottom:none">
+        <div class="pane-header">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 6.25v13M5.5 5h13a1 1 0 011 1v12a1 1 0 01-1 1h-13a1 1 0 01-1-1V6a1 1 0 011-1z"/></svg>
+          Glossaire <span class="count">4 termes</span>
+        </div>
+        <div class="panel-body">
+          <div class="gloss-term"><span class="src-t jp">月咲流</span><span class="arrow">→</span><span class="tgt-t">Tsukisaki style</span><span class="domain">combat</span></div>
+          <div class="gloss-term"><span class="src-t jp">星詠みの祠</span><span class="arrow">→</span><span class="tgt-t">Stargazer's Shrine</span><span class="domain">lieu</span></div>
+          <div class="gloss-term"><span class="src-t jp">ホノカ</span><span class="arrow">→</span><span class="tgt-t">Honoka</span><span class="domain">perso</span></div>
+          <div class="gloss-term" style="border-bottom:none"><span class="src-t jp">復興譚</span><span class="arrow">→</span><span class="tgt-t">Tale of Revival</span><span class="domain">titre</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

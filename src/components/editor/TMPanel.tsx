@@ -86,7 +86,7 @@ export function TMPanel({ onApply }: TMPanelProps) {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Header */}
-      <div className="shrink-0 border-b px-3 py-2 text-xs font-medium text-muted-foreground select-none flex items-center gap-1.5">
+      <div className="shrink-0 border-b px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80 select-none flex items-center gap-1.5">
         <BookOpen className="h-3 w-3" />
         <span className="flex-1">{t("tmPanel.title")}</span>
         <button

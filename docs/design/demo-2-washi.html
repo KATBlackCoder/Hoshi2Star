@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hoshi2Star — Démo 2 : WASHI 和紙 (Atelier)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f7f3eb;
+    --paper-deep: #efe9dd;
+    --paper-card: #fdfbf6;
+    --ink: #2b2722;
+    --ink-soft: #5c554b;
+    --ink-faint: #9a9183;
+    --line: #e3dccd;
+    --line-strong: #d0c7b2;
+    --ai: #2e4d7b;          /* 藍 indigo */
+    --ai-deep: #1f3a61;
+    --ai-soft: #e7edf5;
+    --shu: #c43d2b;         /* 朱 vermillon */
+    --shu-soft: #f7e5e1;
+    --matcha: #5e7d4a;      /* 抹茶 vert */
+    --matcha-soft: #e9efe2;
+    --yamabuki: #b8862b;    /* 山吹 ambre */
+    --yamabuki-soft: #f5ecd8;
+    --gold: #ad8a3b;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: 'Inter', 'Noto Sans JP', sans-serif;
+    background-color: var(--paper);
+    background-image:
+      radial-gradient(ellipse 600px 400px at 95% -5%, rgba(46,77,123,.05), transparent 60%),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+    color: var(--ink);
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+  }
+  .jp { font-family: 'Noto Sans JP', sans-serif; }
+  .serif { font-family: 'Shippori Mincho', 'Noto Sans JP', serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  /* ============ TOOLBAR ============ */
+  .toolbar {
+    height: 50px; flex-shrink: 0;
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 16px;
+    background: var(--paper-card);
+    border-bottom: 1px solid var(--line-strong);
+    box-shadow: 0 1px 0 rgba(255,255,255,.7) inset;
+  }
+  .logo { display: flex; align-items: baseline; gap: 8px; margin-right: 10px; user-select: none; }
+  .logo .mark {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--shu); color: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 13px; align-self: center;
+    box-shadow: 0 1px 3px rgba(196,61,43,.4);
+  }
+  .logo .name { font-family: 'Shippori Mincho', serif; font-weight: 700; font-size: 16px; letter-spacing: .01em; }
+  .logo .sub { font-size: 10px; color: var(--ink-faint); letter-spacing: .14em; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 32px; padding: 0 13px; border-radius: 6px;
+    font-size: 12.5px; font-weight: 500; font-family: inherit;
+    background: transparent; color: var(--ink-soft);
+    border: 1px solid transparent; cursor: pointer;
+    transition: all .15s;
+  }
+  .btn:hover { background: var(--paper-deep); color: var(--ink); }
+  .btn.outline { border-color: var(--line-strong); background: var(--paper-card); color: var(--ink); box-shadow: 0 1px 2px rgba(43,39,34,.05); }
+  .btn.primary {
+    background: var(--ai); color: #f7f3eb; border: 1px solid var(--ai-deep);
+    font-weight: 600;
+    box-shadow: 0 2px 4px rgba(46,77,123,.25), 0 1px 0 rgba(255,255,255,.15) inset;
+  }
+  .btn.primary:hover { background: var(--ai-deep); }
+  .btn svg { width: 13px; height: 13px; }
+
+  .project-chip {
+    display: flex; align-items: center; gap: 8px; margin-left: 8px;
+    padding: 5px 12px; border-radius: 6px;
+    background: var(--paper-deep); border: 1px solid var(--line);
+    font-size: 12.5px;
+  }
+  .engine-tag {
+    font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .08em;
+    padding: 2px 7px; border-radius: 4px;
+    background: var(--ai-soft); color: var(--ai);
+    border: 1px solid #c6d4e6;
+  }
+
+  .progress-wrap { display: flex; align-items: center; gap: 10px; margin-left: auto; margin-right: 8px; }
+  .progress-label { font-size: 11px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .brush-track { position: relative; width: 160px; height: 8px; }
+  .brush-track .bg { position: absolute; inset: 0; border-radius: 99px; background: var(--paper-deep); border: 1px solid var(--line); }
+  .brush-track .fill {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 62%;
+    border-radius: 99px 3px 6px 99px;
+    background: linear-gradient(90deg, var(--ai), #46689a 85%, #5a7cae);
+  }
+  .icon-btn {
+    width: 32px; height: 32px; border-radius: 6px; border: none;
+    background: transparent; color: var(--ink-faint); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .icon-btn:hover { background: var(--paper-deep); color: var(--ink); }
+
+  /* ============ LAYOUT ============ */
+  .main { flex: 1; display: flex; overflow: hidden; }
+  .pane-left { width: 250px; flex-shrink: 0; border-right: 1px solid var(--line-strong); background: var(--paper); display: flex; }
+  .spine {
+    width: 30px; flex-shrink: 0; border-right: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+    background: var(--paper-deep);
+  }
+  .spine .vertical {
+    writing-mode: vertical-rl; font-family: 'Shippori Mincho', serif;
+    font-size: 11px; letter-spacing: .35em; color: var(--ink-faint);
+    user-select: none;
+  }
+  .pane-left-inner { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .pane-center { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--paper-card); }
+  .pane-right { width: 300px; flex-shrink: 0; border-left: 1px solid var(--line-strong); background: var(--paper); display: flex; flex-direction: column; }
+
+  .pane-header {
+    height: 38px; flex-shrink: 0; display: flex; align-items: center; gap: 8px;
+    padding: 0 14px; border-bottom: 1px solid var(--line);
+    font-family: 'Shippori Mincho', serif; font-size: 12.5px; font-weight: 600;
+    color: var(--ink); user-select: none;
+  }
+  .pane-header .kanji-key {
+    font-size: 10px; color: var(--shu); border: 1px solid var(--shu);
+    border-radius: 3px; padding: 1px 4px; font-family: 'Noto Sans JP', sans-serif;
+    font-weight: 500;
+  }
+  .pane-header .count { margin-left: auto; font-family: 'Inter', sans-serif; font-weight: 400; font-size: 11px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+
+  /* ============ FILE TREE ============ */
+  .filetree { flex: 1; overflow-y: auto; padding: 8px; }
+  .file {
+    display: flex; align-items: center; gap: 9px;
+    padding: 7px 9px; border-radius: 6px; cursor: pointer;
+    color: var(--ink-soft); font-size: 12.5px;
+    border: 1px solid transparent;
+  }
+  .file:hover { background: var(--paper-deep); color: var(--ink); }
+  .file.active {
+    background: var(--paper-card); color: var(--ink);
+    border-color: var(--line-strong);
+    box-shadow: 0 1px 3px rgba(43,39,34,.06);
+    font-weight: 500;
+  }
+  .file.active::before { content: ''; width: 3px; height: 16px; border-radius: 2px; background: var(--shu); margin-left: -4px; }
+  .file .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file .bar { width: 38px; height: 4px; border-radius: 99px; background: var(--line); overflow: hidden; flex-shrink: 0; }
+  .file .bar i { display: block; height: 100%; background: var(--ai); border-radius: 99px; }
+  .file .bar.done i { background: var(--matcha); }
+  .file .done-mark { color: var(--matcha); font-size: 11px; flex-shrink: 0; }
+
+  /* ============ SEGMENT GRID ============ */
+  .grid-head {
+    display: grid; grid-template-columns: 46px 1fr 1fr 96px;
+    height: 34px; flex-shrink: 0; align-items: center;
+    border-bottom: 2px solid var(--line-strong);
+    font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-faint); padding-right: 8px;
+    background: var(--paper-card);
+  }
+  .grid-head > div { padding: 0 14px; }
+  .grid-body { flex: 1; overflow-y: auto; }
+  .seg {
+    display: grid; grid-template-columns: 46px 1fr 1fr 96px;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer; position: relative;
+    background: var(--paper-card);
+  }
+  .seg:nth-child(even) { background: #faf7f0; }
+  .seg:hover { background: var(--ai-soft); }
+  .seg > div { padding: 10px 14px; display: flex; align-items: center; }
+  .seg .num { color: var(--ink-faint); font-size: 11px; font-variant-numeric: tabular-nums; justify-content: flex-end; }
+  .seg .src { font-size: 13.5px; line-height: 1.75; }
+  .seg .tgt { font-size: 13px; line-height: 1.6; color: var(--ink-soft); }
+
+  .seg.selected { background: #eef2f8; }
+  .seg.selected::before {
+    content: ''; position: absolute; left: 0; top: -1px; bottom: -1px; width: 3px;
+    background: var(--ai);
+  }
+  .seg.selected .tgt { color: var(--ink); }
+
+  .ph {
+    display: inline-block; padding: 0 5px; margin: 0 2px; border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    background: var(--yamabuki-soft); color: var(--yamabuki);
+    border: 1px solid #e2d3ae;
+    vertical-align: middle; line-height: 1.7;
+  }
+  .gloss-hl { border-bottom: 2px solid rgba(196,61,43,.45); }
+
+  /* Hanko stamps */
+  .hanko {
+    width: 26px; height: 26px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-family: 'Noto Sans JP', sans-serif; font-size: 12px; font-weight: 700;
+    border: 1.5px solid; user-select: none;
+    transform: rotate(-4deg);
+  }
+  .hanko.translated { color: var(--ai); border-color: var(--ai); background: var(--ai-soft); }
+  .hanko.reviewed { color: #fff; border-color: var(--shu); background: var(--shu); box-shadow: 0 1px 3px rgba(196,61,43,.35); transform: rotate(3deg); }
+  .hanko.needs_review { color: var(--yamabuki); border-color: var(--yamabuki); background: var(--yamabuki-soft); }
+  .hanko.untranslated { color: var(--ink-faint); border-color: var(--line-strong); background: transparent; border-style: dashed; }
+
+  .statusbar {
+    height: 28px; flex-shrink: 0; display: flex; align-items: center; gap: 16px;
+    padding: 0 16px; border-top: 1px solid var(--line-strong);
+    background: var(--paper);
+    font-size: 11px; color: var(--ink-faint); font-variant-numeric: tabular-nums;
+  }
+  .statusbar .ai-c { color: var(--ai); }
+  .statusbar .shu-c { color: var(--shu); }
+  .statusbar .matcha-c { color: var(--matcha); }
+
+  /* ============ RIGHT PANELS ============ */
+  .panel-section { display: flex; flex-direction: column; border-bottom: 1px solid var(--line-strong); }
+  .panel-section.grow { flex: 1; overflow: hidden; }
+  .panel-body { padding: 12px 14px; overflow-y: auto; }
+
+  .tm-match {
+    border: 1px solid var(--line-strong); border-radius: 8px;
+    padding: 11px 13px; margin-bottom: 9px;
+    background: var(--paper-card);
+    position: relative; cursor: pointer;
+    box-shadow: 0 1px 3px rgba(43,39,34,.05);
+    transition: all .15s;
+  }
+  .tm-match:hover { border-color: var(--ai); box-shadow: 0 2px 6px rgba(46,77,123,.12); }
+  .tm-pct {
+    position: absolute; top: 9px; right: 11px;
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600;
+    color: var(--shu);
+  }
+  .tm-pct.mid { color: var(--yamabuki); }
+  .tm-src { font-size: 12px; color: var(--ink-faint); margin-bottom: 6px; line-height: 1.65; padding-right: 44px; }
+  .tm-tgt { font-size: 12.5px; line-height: 1.55; color: var(--ink); }
+
+  .qa-row { display: flex; align-items: center; gap: 14px; }
+  .qa-stamp {
+    width: 56px; height: 56px; border-radius: 50%; flex-shrink: 0;
+    border: 2px solid var(--matcha);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: var(--matcha); transform: rotate(-5deg);
+    background: var(--matcha-soft);
+  }
+  .qa-stamp .v { font-family: 'JetBrains Mono', monospace; font-size: 15px; font-weight: 700; line-height: 1; }
+  .qa-stamp .k { font-family: 'Noto Sans JP', sans-serif; font-size: 9px; font-weight: 700; margin-top: 2px; }
+  .qa-ok { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-soft); }
+  .qa-ok svg { color: var(--matcha); }
+
+  .gloss-term {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 0; font-size: 12.5px;
+    border-bottom: 1px dashed var(--line);
+  }
+  .gloss-term .arrow { color: var(--ink-faint); font-size: 10px; }
+  .gloss-term .src-t { color: var(--shu); font-weight: 500; }
+  .gloss-term .tgt-t { color: var(--ink); }
+  .gloss-term .domain {
+    margin-left: auto; font-size: 9.5px; padding: 1px 7px; border-radius: 99px;
+    background: var(--ai-soft); color: var(--ai);
+  }
+</style>
+</head>
+<body>
+
+  <!-- TOOLBAR -->
+  <div class="toolbar">
+    <div class="logo">
+      <span class="mark">★</span>
+      <span class="name">Hoshi2Star</span>
+      <span class="sub jp">星を訳す</span>
+    </div>
+
+    <button class="btn outline">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-7L9 4H5a2 2 0 00-2 2z"/></svg>
+      Ouvrir un jeu
+    </button>
+    <button class="btn primary">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      Traduire
+    </button>
+    <button class="btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6M4 14l6-6 2-3M2 5h12M7 2h1M22 22l-5-10-5 10M14 18h6"/></svg>
+      Tout traduire
+    </button>
+    <button class="btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+      Tout exporter
+    </button>
+
+    <div class="project-chip">
+      <span class="jp">月咲流ホノカ ver1.03</span>
+      <span class="engine-tag">WOLF</span>
+    </div>
+
+    <div class="progress-wrap">
+      <span class="progress-label mono">02:47 · 62%</span>
+      <div class="brush-track"><div class="bg"></div><div class="fill"></div></div>
+    </div>
+
+    <button class="icon-btn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></button>
+    <button class="icon-btn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008.6 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 8.6a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- LEFT: FILES -->
+    <div class="pane-left">
+      <div class="spine"><span class="vertical">原文の書庫</span></div>
+      <div class="pane-left-inner">
+        <div class="pane-header"><span class="kanji-key">書</span> Fichiers <span class="count">14</span></div>
+        <div class="filetree">
+          <div class="file"><span class="fname">CDataBase.dat</span><span class="done-mark">✓</span><span class="bar done"><i style="width:100%"></i></span></div>
+          <div class="file active"><span class="fname">DataBase.dat</span><span class="bar"><i style="width:62%"></i></span></div>
+          <div class="file"><span class="fname">CommonEvent.dat</span><span class="bar"><i style="width:31%"></i></span></div>
+          <div class="file"><span class="fname">Map001.mps</span><span class="bar"><i style="width:12%"></i></span></div>
+          <div class="file"><span class="fname">Map002.mps</span><span class="bar"><i style="width:0%"></i></span></div>
+          <div class="file"><span class="fname">Map003.mps</span><span class="bar"><i style="width:0%"></i></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CENTER: SEGMENTS -->
+    <div class="pane-center">
+      <div class="grid-head">
+        <div style="text-align:right">#</div><div>Source 原文</div><div>Cible 訳文</div><div>Statut</div>
+      </div>
+      <div class="grid-body">
+        <div class="seg">
+          <div class="num">1</div>
+          <div class="src jp">アカシア村 復興譚</div>
+          <div class="tgt">Acacia Village: A Tale of Revival</div>
+          <div><span class="hanko reviewed" title="Relu">済</span></div>
+        </div>
+        <div class="seg selected">
+          <div class="num">2</div>
+          <div class="src jp"><span class="ph">\C[2]</span>ホノカ<span class="ph">\C[0]</span>「<span class="gloss-hl">月咲流</span>の力、見せてあげる！」</div>
+          <div class="tgt"><span class="ph">\C[2]</span>Honoka<span class="ph">\C[0]</span>: "I'll show you the power of the Tsukisaki style!"</div>
+          <div><span class="hanko translated" title="Traduit">訳</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">3</div>
+          <div class="src jp">レベルが<span class="ph">\V[12]</span>に上がった！</div>
+          <div class="tgt">Level up to <span class="ph">\V[12]</span>!</div>
+          <div><span class="hanko translated" title="Traduit">訳</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">4</div>
+          <div class="src jp">経験値</div>
+          <div class="tgt">Experience</div>
+          <div><span class="hanko reviewed" title="Relu">済</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">5</div>
+          <div class="src jp">「この先、<span class="gloss-hl">星詠みの祠</span>には近づくな……」</div>
+          <div class="tgt">"Stay away from the Stargazer's Shrine up ahead..."</div>
+          <div><span class="hanko needs_review" title="À revoir">要</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">6</div>
+          <div class="src jp"><span class="ph">\E</span>逃げる</div>
+          <div class="tgt" style="color:var(--ink-faint);font-style:italic">—</div>
+          <div><span class="hanko untranslated" title="Non traduit">未</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">7</div>
+          <div class="src jp">攻撃</div>
+          <div class="tgt">Attack</div>
+          <div><span class="hanko translated" title="Traduit">訳</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">8</div>
+          <div class="src jp">防御</div>
+          <div class="tgt">Defend</div>
+          <div><span class="hanko translated" title="Traduit">訳</span></div>
+        </div>
+        <div class="seg">
+          <div class="num">9</div>
+          <div class="src jp"><span class="ph">\cself[10]</span>を手に入れた！</div>
+          <div class="tgt" style="color:var(--ink-faint);font-style:italic">—</div>
+          <div><span class="hanko untranslated" title="Non traduit">未</span></div>
+        </div>
+      </div>
+      <div class="statusbar">
+        <span>1 204 segments</span>
+        <span class="ai-c">訳 746 traduits</span>
+        <span class="shu-c">済 218 relus</span>
+        <span>未 240 restants</span>
+        <span style="margin-left:auto">DataBase.dat · ja → en</span>
+      </div>
+    </div>
+
+    <!-- RIGHT: TM / QA / GLOSSARY -->
+    <div class="pane-right">
+      <div class="panel-section grow">
+        <div class="pane-header"><span class="kanji-key">憶</span> Mémoire de traduction <span class="count">2</span></div>
+        <div class="panel-body">
+          <div class="tm-match">
+            <span class="tm-pct">98%</span>
+            <div class="tm-src jp">\C[2]ホノカ\C[0]「月咲流の力、見せてやる！」</div>
+            <div class="tm-tgt">\C[2]Honoka\C[0]: "I'll show you the power of the Tsukisaki style!"</div>
+          </div>
+          <div class="tm-match">
+            <span class="tm-pct mid">74%</span>
+            <div class="tm-src jp">ホノカ「月咲流奥義、見せてあげる」</div>
+            <div class="tm-tgt">Honoka: "Behold the secret art of the Tsukisaki style."</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="pane-header"><span class="kanji-key">検</span> Contrôle qualité</div>
+        <div class="panel-body">
+          <div class="qa-row">
+            <div class="qa-stamp"><span class="v">100</span><span class="k">合格</span></div>
+            <div>
+              <div class="qa-ok">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+                Placeholders intacts
+              </div>
+              <div class="qa-ok" style="margin-top:5px">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+                Glossaire respecté
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-section" style="border-bottom:none">
+        <div class="pane-header"><span class="kanji-key">語</span> Glossaire <span class="count">4 termes</span></div>
+        <div class="panel-body">
+          <div class="gloss-term"><span class="src-t jp">月咲流</span><span class="arrow">→</span><span class="tgt-t">Tsukisaki style</span><span class="domain">combat</span></div>
+          <div class="gloss-term"><span class="src-t jp">星詠みの祠</span><span class="arrow">→</span><span class="tgt-t">Stargazer's Shrine</span><span class="domain">lieu</span></div>
+          <div class="gloss-term"><span class="src-t jp">ホノカ</span><span class="arrow">→</span><span class="tgt-t">Honoka</span><span class="domain">perso</span></div>
+          <div class="gloss-term" style="border-bottom:none"><span class="src-t jp">復興譚</span><span class="arrow">→</span><span class="tgt-t">Tale of Revival</span><span class="domain">titre</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

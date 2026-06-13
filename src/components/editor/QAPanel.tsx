@@ -48,23 +48,58 @@ function errorLabel(
 }
 
 // ---------------------------------------------------------------------------
-// Score badge
+// Score ring
 // ---------------------------------------------------------------------------
 
-function ScoreBadge({ score }: { score: number }) {
+const QA_RING_RADIUS = 22;
+const QA_RING_CIRCUMFERENCE = 2 * Math.PI * QA_RING_RADIUS;
+
+function QAScoreRing({ score }: { score: number }) {
+  const offset = QA_RING_CIRCUMFERENCE * (1 - score / 100);
+  const colorClass =
+    score === 100
+      ? "text-star"
+      : score >= 75
+        ? "text-yellow-400"
+        : "text-red-400";
+
   return (
-    <span
-      className={cn(
-        "rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
-        score === 100
-          ? "bg-green-500/20 text-green-400"
-          : score >= 75
-            ? "bg-yellow-500/20 text-yellow-400"
-            : "bg-red-500/20 text-red-400",
-      )}
-    >
-      {score}
-    </span>
+    <div className="relative h-[52px] w-[52px] shrink-0">
+      <svg width="52" height="52" className="-rotate-90">
+        <circle
+          cx="26"
+          cy="26"
+          r={QA_RING_RADIUS}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          className="text-primary/15"
+        />
+        <circle
+          cx="26"
+          cy="26"
+          r={QA_RING_RADIUS}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeDasharray={QA_RING_CIRCUMFERENCE}
+          strokeDashoffset={offset}
+          className={cn(
+            "transition-[stroke-dashoffset] duration-300",
+            colorClass,
+          )}
+        />
+      </svg>
+      <div
+        className={cn(
+          "absolute inset-0 flex items-center justify-center font-mono text-sm font-semibold tabular-nums",
+          colorClass,
+        )}
+      >
+        {score}
+      </div>
+    </div>
   );
 }
 
@@ -129,7 +164,7 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
     <div className="flex h-full flex-col overflow-hidden">
       {/* Header with project QA badge */}
       <div className="shrink-0 border-b px-3 py-2 flex items-center gap-2">
-        <span className="text-xs font-medium text-muted-foreground select-none">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80 select-none">
           {t("qaPanel.title")}
         </span>
         {qaReport && qaReport.totalSegments > 0 && (
@@ -159,23 +194,17 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
         )}
 
         {activeSegmentId && qaResult && (
-          <>
-            {/* Score */}
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">
-                {t("qaPanel.score")}
-              </span>
-              <ScoreBadge score={qaResult.score} />
-            </div>
+          <div className="flex items-center gap-3">
+            <QAScoreRing score={qaResult.score} />
 
             {/* Error list */}
             {qaResult.errors.length === 0 ? (
-              <div className="flex items-center gap-1.5 py-1 text-xs text-green-400">
+              <div className="flex items-center gap-1.5 text-xs text-green-400">
                 <CheckCircle className="h-3 w-3 shrink-0" />
                 <span>{t("qaPanel.ok")}</span>
               </div>
             ) : (
-              <ul className="space-y-1">
+              <ul className="flex-1 space-y-1">
                 {qaResult.errors.map((err, i) => (
                   <li
                     key={i}
@@ -187,7 +216,7 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
                 ))}
               </ul>
             )}
-          </>
+          </div>
         )}
       </div>
     </div>
