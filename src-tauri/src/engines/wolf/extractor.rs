@@ -1,7 +1,7 @@
 // Wolf RPG text extractor — F4-03/F4-05 implementation.
 
 use super::dat_parser;
-use super::decrypt::legacy_xor::extract_all;
+use super::decrypt::legacy_xor::{extract_all, WolfFile};
 use super::v3_format;
 use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
 use std::collections::HashMap;
@@ -184,6 +184,30 @@ fn extract_files_from_archives(game_dir: &Path, ext: &str) -> Vec<(String, Vec<u
     results
 }
 
+/// Returns the filename of `file` if it should be considered a `BasicData`
+/// database/.project entry, or `None` if it should be skipped.
+///
+/// v8 archives carry full reconstructed paths (see
+/// [`super::decrypt::legacy_xor::WolfFile::path`]) — only files directly
+/// under a top-level `BasicData/` directory are accepted. Some games bundle
+/// duplicate copies of the database files inside nested "sample data" folders
+/// (e.g. a bonus "complete initial state" save under `データ集/`), which
+/// would otherwise collide by stem and shadow the real files.
+///
+/// v5/v6 archives have no path reconstruction, so all files are accepted
+/// (dormant: revisit if a collision is found on a v5/v6 game).
+fn basic_data_entry_name(file: &WolfFile, version: u8) -> Option<&str> {
+    if version != 8 {
+        return Some(&file.name);
+    }
+    let (dir, base) = file.path.trim_start_matches('/').split_once('/')?;
+    if dir.eq_ignore_ascii_case("BasicData") && !base.contains('/') {
+        Some(base)
+    } else {
+        None
+    }
+}
+
 /// Walk all `.wolf` archives and pair `.project` + `.dat` files by stem.
 /// Returns `Vec<(stem, project_bytes, dat_bytes)>`.
 #[allow(clippy::type_complexity)]
@@ -199,15 +223,17 @@ fn extract_dat_pairs_from_archives(game_dir: &Path) -> Vec<(String, Vec<u8>, Vec
         let Ok(archive) = extract_all(&data) else {
             continue;
         };
+        let version = archive.version;
         for file in archive.files {
-            let lower = file.name.to_lowercase();
-            let base = lower.rsplit('/').next().unwrap_or(&lower);
-            let path = Path::new(base);
+            let Some(base) = basic_data_entry_name(&file, version).map(str::to_lowercase) else {
+                continue;
+            };
+            let path = Path::new(&base);
             let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
                 continue;
             };
             let stem = stem.to_string();
-            if stem == "SysDataBaseBasic" {
+            if stem.eq_ignore_ascii_case("SysDataBaseBasic") {
                 continue;
             }
             match path.extension().and_then(|e| e.to_str()) {
@@ -1459,5 +1485,42 @@ mod tests {
             total += segs.len();
         }
         assert!(total > 0, "Inko databases must yield segments");
+    }
+
+    /// Honoka's `Data.wolf` (v8) bundles a second, bogus copy of
+    /// `DataBase.dat`/`CDataBase.dat`/`SysDatabase.dat`/`SysDataBaseBasic.dat`
+    /// inside a nested "complete initial state" sample folder
+    /// (`データ集/（完全初期状態データ）/Data/BasicData/`). Before path-based
+    /// filtering, the bogus 257-byte `DataBase.dat` (indicator byte 0xbd)
+    /// would shadow the real 85738-byte one, surfacing as a spurious
+    /// "protected database" error — and `CDataBase.dat`'s bogus copy (also
+    /// 257 bytes, but with a *valid* header) would silently shadow the real
+    /// 90631-byte one.
+    #[test]
+    fn test_real_honoka_archive_database_pairs() {
+        let game_dir = test_dir().join("月咲流ホノカver1.03(.wolf)");
+        if !game_dir.exists() {
+            return;
+        }
+        let pairs = extract_dat_pairs_from_archives(&game_dir);
+        let by_stem: HashMap<&str, &[u8]> = pairs
+            .iter()
+            .map(|(stem, _project, dat)| (stem.as_str(), dat.as_slice()))
+            .collect();
+
+        assert_eq!(
+            by_stem.get("database").map(|d| d.len()),
+            Some(85738),
+            "must pick the real BasicData/DataBase.dat, not the 257-byte sample copy"
+        );
+        assert_eq!(
+            by_stem.get("cdatabase").map(|d| d.len()),
+            Some(90631),
+            "must pick the real BasicData/CDataBase.dat, not the 257-byte sample copy"
+        );
+        assert!(
+            !by_stem.contains_key("sysdatabasebasic"),
+            "SysDataBaseBasic must be skipped (engine-internal, non-translatable)"
+        );
     }
 }

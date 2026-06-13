@@ -5,6 +5,10 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+### Fixed
+- Fix `.wolf` v8 archives bundling a duplicate `BasicData/` (e.g. a bonus "complete initial state" sample folder under `データ集/`) shadowing the real database files — `legacy_xor::WolfFile` now carries the full reconstructed archive path (`path` field, via the existing `DARC_DIRECTORY` parent-chain walk), and `extract_dat_pairs_from_archives` only accepts files directly under a top-level `BasicData/`. Previously the duplicate `DataBase.dat` (257 bytes, non-standard header) shadowed the real one (85738 bytes) and surfaced as a spurious "encrypted database" error, while the duplicate `CDataBase.dat` (also 257 bytes, valid header) silently shadowed the real 90631-byte one. Also fixes `SysDataBaseBasic` never being skipped on the archive path (case-sensitive comparison against an already-lowercased stem)
+- Replace the misleading "encrypted database not supported in F4-03 (deferred to F4-05)" error (F4-05 is complete and never covered this) with a neutral message reporting the unexpected indicator byte
+
 ### Added
 - Add Tenmon 天文 design theme (phase 1) — night-indigo palette with violet primary and gold `--star` token (`text-star`/`bg-star` utilities), subtle CSS starfield on dark mode, matching day-sky light variant
 - Add `@fontsource-variable/noto-sans-jp` to the sans font chain for proper CJK rendering

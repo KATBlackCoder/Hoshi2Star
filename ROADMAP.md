@@ -295,6 +295,15 @@
       Remplace l'ancien plan `decryptor_v3.rs`.
 - [ ] Documentation workflow WolfX (pré-étape UberWolf) dans `docs/engines.md` +
       message de guidage visible côté UI quand `PossibleWolfX` est détecté
+- [x] Fix collision `BasicData/*.dat` dans archives `.wolf` v8 (2026-06-13) :
+      certains jeux embarquent une copie bonus de `Data/BasicData/` dans un
+      sous-dossier (ex. `データ集/（完全初期状態データ）/Data/BasicData/`),
+      qui écrasait les vrais `DataBase.dat`/`CDataBase.dat`/etc. via le mapping
+      par stem seul. `WolfFile.path` (chemin reconstruit via `DARC_DIRECTORY`)
+      + filtre "1 niveau sous `BasicData/`" dans
+      `extract_dat_pairs_from_archives` résolvent le faux "encrypted database"
+      ET la perte silencieuse de segments `CDataBase`. v5/v6 : pas de
+      reconstruction de chemin (dormant, déclencheur = collision constatée).
 
 ### Engine Layer — RPG Developer Bakin
 - [ ] Évaluer adoption DLC Localization Toolkit (SmileBoom) — si > 200 jeux traduits : go

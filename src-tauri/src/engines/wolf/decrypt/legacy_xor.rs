@@ -41,6 +41,9 @@ pub enum DecryptorError {
 #[derive(Debug, Clone)]
 pub struct WolfFile {
     pub name: String,
+    /// Full path from the archive root, starting with `/` (e.g. `/BasicData/DataBase.dat`).
+    /// For v5/v6 archives (no directory-tree reconstruction), this is `/` + `name`.
+    pub path: String,
     pub data: Vec<u8>,
     pub unpacked_size: u64,
 }
@@ -590,9 +593,11 @@ pub fn extract_all(data: &[u8]) -> Result<WolfArchive, DecryptorError> {
             .position(|&b| b == 0)
             .unwrap_or(toc_data.len().saturating_sub(ns));
         let name = decode_name(&toc_data[ns..ns + name_len], code_page_val);
+        let path = format!("/{name}");
 
         files.push(WolfFile {
             name,
+            path,
             data: file_data,
             unpacked_size: entry.unpacked_size,
         });
@@ -1056,6 +1061,43 @@ fn build_per_file_key_str(
     ks
 }
 
+/// Build the full archive-relative path of a v8 file entry by walking the
+/// directory parent chain (root → file), e.g. `/BasicData/DataBase.dat`.
+fn build_file_path(
+    toc: &[u8],
+    file_name: &str,
+    parent_dir_idx: usize,
+    dirs: &[DarcDir],
+    ft_offset: usize,
+    code_page: u32,
+) -> String {
+    let mut components = vec![file_name.to_string()];
+
+    if !dirs.is_empty() {
+        let mut dir = &dirs[parent_dir_idx];
+        // Mirror build_per_file_key_str: a dir whose parent_dir_address ==
+        // MAX is the archive root — its (placeholder) name is never included.
+        while dir.parent_dir_address != u64::MAX {
+            let dir_ft_off = ft_offset + dir.dir_address as usize;
+            if dir_ft_off + 8 <= toc.len() {
+                let dir_name_addr =
+                    u64::from_le_bytes(toc[dir_ft_off..dir_ft_off + 8].try_into().unwrap())
+                        as usize;
+                let dir_name = decode_name(read_original_name(toc, dir_name_addr), code_page);
+                components.push(dir_name);
+            }
+            let parent_idx = (dir.parent_dir_address / 32) as usize;
+            if parent_idx >= dirs.len() {
+                break;
+            }
+            dir = &dirs[parent_idx];
+        }
+    }
+
+    components.reverse();
+    format!("/{}", components.join("/"))
+}
+
 // ---------------------------------------------------------------------------
 // DXA v8 — TOC decompression + key discovery
 // ---------------------------------------------------------------------------
@@ -1325,10 +1367,10 @@ fn extract_all_v8(data: &[u8]) -> Result<WolfArchive, DecryptorError> {
         let packed_size = i64_at(0x38);
         let huff_press_data_size = u64_at(0x40);
         let entry_ft_offset = (i * ENTRY_SZ) as u64;
+        let parent_idx = find_parent_dir(&dirs, entry_ft_offset, ENTRY_SZ as u64);
 
         // Per-file key: KeyCreate(global_key_str + UPPERCASE_filename + UPPERCASE_dirs)
         let file_key = if has_key {
-            let parent_idx = find_parent_dir(&dirs, entry_ft_offset, ENTRY_SZ as u64);
             let per_key_str = build_per_file_key_str(
                 key_str,
                 &toc_data,
@@ -1402,9 +1444,11 @@ fn extract_all_v8(data: &[u8]) -> Result<WolfArchive, DecryptorError> {
 
         let raw_name = read_original_name(&toc_data, name_offset as usize);
         let name = decode_name(raw_name, code_page);
+        let path = build_file_path(&toc_data, &name, parent_idx, &dirs, ft, code_page);
 
         files.push(WolfFile {
             name,
+            path,
             data: file_data,
             unpacked_size,
         });

@@ -374,11 +374,12 @@ pub fn parse_database(project_bytes: &[u8], dat_bytes: &[u8]) -> Result<DatFile,
         )));
     }
 
-    // Byte 0: indicator (0x00 = unencrypted; other values → encrypted, unsupported in F4-03).
+    // Byte 0: indicator (0x00 = unencrypted; other values → DataBase Protect, unsupported).
     if dat_bytes[0] != 0x00 {
-        return Err(DatParseError::Unsupported(
-            "encrypted database not supported in F4-03 (deferred to F4-05)".into(),
-        ));
+        return Err(DatParseError::Unsupported(format!(
+            "protected database not supported (indicator byte {:#04x}, expected 0x00)",
+            dat_bytes[0]
+        )));
     }
 
     // Bytes 1–9: 9-byte magic.
