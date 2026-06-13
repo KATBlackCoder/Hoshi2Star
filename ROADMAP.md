@@ -210,6 +210,15 @@
 ### Polissage UI
 - [x] Settings modal — Ollama URL/modèle, thème, langue, persistence tauri-plugin-store
 - [x] Glossary prompt on project open — AlertDialog après ouverture neuve (`wasRestored: false`), bannière non-bloquante pendant extraction, bouton Traduire désactivé jusqu'à fin extraction
+- [x] Thème **Tenmon 天文** (observatoire nocturne) — palette indigo/violet/or
+      (`--star`), starfield, Noto Sans JP, toolbar restylée (logo ★, bouton
+      Traduire primary, chip projet/engine), statuts à pastilles, chips
+      placeholders cyan (MV/MZ + Wolf via `getPlaceholderRegex`), glossaire
+      surlignage or, en-têtes de panneaux unifiés (commit `a8642e2`) +
+      éléments phase 2 : anneau QA, récap statuts SegmentGrid, progression
+      "constellation" toolbar (commit `34d9ac8`). Démos de référence dans
+      `docs/design/`. Anneaux de progression par fichier (FileTree) différés
+      (tâche dormante `tasks/todo.md`, nécessite extension `get_source_files`).
 
 ### Robustesse LLM
 - [x] **F3-11** — Batch adaptatif : split récursif sur `ResponseFormat` — `llm_translate_with_split` avec `Box::pin`, récursion bornée à `len==1`, 9 tests pipeline (dont Test A et Test C couvrant le split partiel)
