@@ -3,8 +3,9 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Segment, SegmentStatus } from "@/lib/types";
 import { useGlossaryTerms } from "@/stores/editor";
+import { useActiveProject } from "@/stores/project";
 import { cn } from "@/lib/utils";
-import { clonePH_RE } from "@/lib/constants";
+import { getPlaceholderRegex } from "@/lib/constants";
 import { buildHighlightedNodes } from "@/lib/highlight-utils";
 import { Play } from "lucide-react";
 
@@ -141,10 +142,11 @@ function EditableCell({
 
 function SourceCell({ text }: { text: string }) {
   const terms = useGlossaryTerms();
+  const activeProject = useActiveProject();
   const nodes = buildHighlightedNodes(
     text,
     terms.map((t) => t.sourceText),
-    clonePH_RE(),
+    getPlaceholderRegex(activeProject?.engine ?? ""),
   );
   return <p className="text-xs leading-relaxed whitespace-pre-wrap">{nodes}</p>;
 }

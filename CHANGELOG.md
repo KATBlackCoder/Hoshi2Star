@@ -17,6 +17,9 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - Restyle placeholder highlights as bordered cyan mono chips and glossary highlights as gold dashed underline (replacing green background)
 - Unify all panel headers (FileTree, TM, QA, Glossary, SegmentGrid) with uppercase letter-spaced style
 
+### Fixed
+- Fix placeholder highlight chips never appearing on Wolf RPG projects — `SourceCell` now picks an engine-specific regex (`PH_RE_WOLF` mirroring the Rust tokenizer's `RE_WOLF`, vs. `PH_RE_SOURCE` for MV/MZ) via the new `getPlaceholderRegex(engine)` in `lib/constants.ts`
+
 ### Added
 - Add `h2s://llm/segments-updated` event emitted after each persisted batch — `SegmentGrid` merges `targetText`/`status` in place, so rows turn "Translated" batch by batch during long runs (no DB refetch, keeps sort/selection/scroll)
 - Add `engines/wolf/decrypt/wolfx.rs` seam for WolfX archives (Wolf v3.5+ Pro, ChaCha20) — returns a guidance error by design: decrypt with UberWolf first, then open the plain `Data/` directory (no native ChaCha20, no bundled sidecar: unconfirmed UberWolf license, Windows-only binary)
