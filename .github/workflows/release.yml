@@ -7,7 +7,49 @@ on:
       - 'v*'
 
 jobs:
+  # Extract changelog notes once, share across matrix jobs
+  changelog:
+    runs-on: ubuntu-22.04
+    outputs:
+      notes: ${{ steps.extract.outputs.notes }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract changelog for current version
+        id: extract
+        run: |
+          VERSION=$(grep '"version"' src-tauri/tauri.conf.json | sed 's/.*"\([0-9]*\.[0-9]*\.[0-9]*\)".*/\1/')
+          echo "Building release notes for v$VERSION"
+
+          # Extract section between ## [VERSION] and the next ## [
+          NOTES=$(awk "/^## \[$VERSION\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)
+
+          # Prepend header + append footer
+          FULL="## Hoshi2Star v$VERSION — 星 → ★
+
+CAT editor + LLM orchestrator for fan translation of Japanese RPG Maker games.
+Interface available in **English and French** 🇬🇧 🇫🇷
+📖 [README](https://github.com/KATBlackCoder/Hoshi2Star#readme) · [Full Changelog](https://github.com/KATBlackCoder/Hoshi2Star/blob/main/CHANGELOG.md)
+
+$NOTES
+
+### Prerequisites
+- [Ollama](https://ollama.ai) installed locally (or a RunPod HTTPS endpoint)
+- Recommended model: \`ollama pull qwen3:4b-instruct-2507-q8_0\`
+
+### Installation
+- **Linux**: download \`.AppImage\` → \`chmod +x hoshi2star_*.AppImage\` → \`./hoshi2star_*.AppImage\`
+- **Windows**: download and run the \`.msi\`"
+
+          # Write to GITHUB_OUTPUT (multiline safe)
+          {
+            echo "notes<<EOF_NOTES"
+            echo "$FULL"
+            echo "EOF_NOTES"
+          } >> "$GITHUB_OUTPUT"
+
   publish-tauri:
+    needs: changelog
     permissions:
       contents: write
     strategy:
@@ -58,35 +100,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: 'Hoshi2Star v__VERSION__'
-          releaseBody: |
-            ## Hoshi2Star v__VERSION__ — 星 → ★
-
-            CAT editor + LLM orchestrator for fan translation
-            of Japanese RPG Maker MV/MZ games.
-
-            Interface available in **English and French** 🇬🇧 🇫🇷
-
-            📖 See [README.md](https://github.com/KATBlackCoder/Hoshi2Star#readme)
-
-            ### What's new in v0.3.2
-
-            - **Translate All** — whole-project translation with automatic cooldown (configurable work/rest durations)
-            - **Export All** — one-click full project export with completeness check
-            - Settings modal (LLM config, theme, language, persisted across sessions)
-            - Glossary prompt on new project open with auto-extraction
-            - Adaptive batch split — recursive halving on LLM failures (no more blocked batches)
-            - Retry failed segments in one click
-            - Sprint 1–4 refactoring: App.tsx reduced to layout-only (141 lines)
-
-            ### Prerequisites
-            - [Ollama](https://ollama.ai) installed locally
-            - Recommended model: `ollama pull qwen3:4b-instruct-2507-q8_0`
-
-            ### Installation
-            - **Linux**: download `.AppImage` →
-              `chmod +x hoshi2star_*.AppImage` →
-              `./hoshi2star_*.AppImage`
-            - **Windows**: download and run the `.msi`
+          releaseBody: ${{ needs.changelog.outputs.notes }}
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
