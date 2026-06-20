@@ -308,6 +308,39 @@ Utiliser le skill `update-changelog`.
 
 ---
 
+## Release process
+
+### Checklist obligatoire avant de tagger
+
+1. Bumper la version dans **les deux fichiers** — ils doivent toujours être identiques :
+   - `src-tauri/Cargo.toml` → champ `version`
+   - `src-tauri/tauri.conf.json` → champ `version`
+2. Mettre à jour `CHANGELOG.md` : renommer `[Unreleased]` en `[X.Y.Z] — YYYY-MM-DD`
+3. Committer + pusher sur `main`
+4. Créer et pusher le tag : `git tag vX.Y.Z && git push origin vX.Y.Z`
+
+### Ce que fait le workflow automatiquement
+
+Le workflow `.github/workflows/release.yml` se déclenche sur `push: tags: v*` :
+- Extrait la section `## [X.Y.Z]` du `CHANGELOG.md` comme notes de release
+- Build Linux (AppImage, .deb, .rpm) + Windows (.msi, setup.exe)
+- Crée une **release GitHub en DRAFT** avec les binaires attachés
+
+### Après le workflow
+
+- Aller sur GitHub → Releases → vérifier la draft
+- Cliquer **Publish release** (ou `gh release edit vX.Y.Z --draft=false --latest`)
+
+### Erreurs à ne pas répéter
+
+| ❌ Erreur | ✅ Correct |
+|-----------|-----------|
+| Bumper seulement `Cargo.toml` | Bumper aussi `tauri.conf.json` — la `tauri-action` lit ce fichier pour `v__VERSION__` |
+| Créer la release GitHub manuellement avant le workflow | Laisser le workflow créer la release — sinon les binaires ne s'attachent pas |
+| Déclencher le workflow via `workflow_dispatch --ref main` sans tag | Le workflow doit se déclencher sur un tag pour que `tagName: v__VERSION__` pointe au bon endroit |
+
+---
+
 ## Progression du développement
 
 Voir `ROADMAP.md` pour l'état actuel du projet.
