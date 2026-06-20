@@ -5,6 +5,11 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-06-20
+
+### Fixed
+- Fix SIGILL crash on AppImage launch — replace `target-cpu=native` in `.cargo/config.toml` with explicit CPU feature flags (`+aes,+sse2,+sse4.1,+sse4.2,+pclmul`); `native` compiled for the CI runner's exact microarchitecture, producing binaries that crash on any different CPU; the explicit flags satisfy the minimum required by marshal-rs → gxhash (AES-NI + SSE2) while remaining portable across x86-64 v2+ machines
+
 ## [0.4.1] — 2026-06-20
 
 ### Fixed
