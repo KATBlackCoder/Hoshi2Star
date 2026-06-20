@@ -160,7 +160,7 @@ pub async fn extract_glossary_terms(
         } else {
             &provider_config.model
         };
-        let provider = OllamaProvider::new(url, model, Duration::from_secs(120));
+        let provider = OllamaProvider::new(url, model, Duration::from_secs(180));
 
         if let Err(e) = provider.health_check().await {
             let msg = format!("Ollama inaccessible ({url}) — vérifiez qu'il est démarré : {e}");

@@ -123,6 +123,7 @@
       "modelManual": "Saisir le nom du modèle manuellement",
       "modelError": "Impossible de contacter Ollama — vérifier l'URL",
       "testButton": "Tester",
+      "testSuccess": "Ollama connecté — {{count}} modèle(s) disponible(s)",
       "batchSizeLabel": "Taille de lot (segments par appel)",
       "batchSizeHint": "Plus grand = moins d'appels mais un échec de validation coûte plus cher à corriger. Plus petit = retours de progression plus fins."
     },

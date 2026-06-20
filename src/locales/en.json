@@ -123,6 +123,7 @@
       "modelManual": "Enter model name manually",
       "modelError": "Cannot reach Ollama — check the URL",
       "testButton": "Test",
+      "testSuccess": "Ollama connected — {{count}} model(s) available",
       "batchSizeLabel": "Batch size (segments per call)",
       "batchSizeHint": "Larger = fewer calls but a validation failure costs more to fix. Smaller = finer progress updates."
     },

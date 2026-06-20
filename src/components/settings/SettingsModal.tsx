@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { Moon, Sun, X } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -48,7 +49,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  async function fetchModels(url: string) {
+  async function fetchModels(url: string, { silent = false } = {}) {
     setModelsLoading(true);
     setModelsError(null);
     try {
@@ -57,9 +58,15 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       if (list.length > 0 && !list.includes(draft.ollamaModel)) {
         setDraft((d) => ({ ...d, ollamaModel: list[0] }));
       }
+      if (!silent) {
+        toast.success(t("settings.llm.testSuccess", { count: list.length }));
+      }
     } catch {
       setModelsError(t("settings.llm.modelError"));
       setModels([]);
+      if (!silent) {
+        toast.error(t("settings.llm.modelError"));
+      }
     } finally {
       setModelsLoading(false);
     }
@@ -67,7 +74,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   useEffect(() => {
     if (open) {
-      void fetchModels(draft.ollamaUrl);
+      void fetchModels(draft.ollamaUrl, { silent: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -120,7 +127,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                   onChange={(e) =>
                     setDraft((d) => ({ ...d, ollamaUrl: e.target.value }))
                   }
-                  onBlur={() => void fetchModels(draft.ollamaUrl)}
+                  onBlur={() =>
+                    void fetchModels(draft.ollamaUrl, { silent: true })
+                  }
                 />
                 <Button
                   size="sm"

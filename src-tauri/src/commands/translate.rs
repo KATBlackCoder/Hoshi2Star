@@ -69,7 +69,7 @@ pub async fn translate_segments(
         let provider = OllamaProvider::new(
             &provider_config.url,
             &provider_config.model,
-            std::time::Duration::from_secs(120),
+            std::time::Duration::from_secs(180),
         );
 
         if let Err(e) = provider.health_check().await {
@@ -250,7 +250,7 @@ pub async fn translate_all_segments(
         let provider = OllamaProvider::new(
             &provider_config.url,
             &provider_config.model,
-            std::time::Duration::from_secs(120),
+            std::time::Duration::from_secs(180),
         );
 
         if let Err(e) = provider.health_check().await {
