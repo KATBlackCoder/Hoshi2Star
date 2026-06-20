@@ -183,7 +183,7 @@ pub async fn extract_terms_from_project(
          JOIN source_files sf ON s.source_file_id = sf.id \
          WHERE sf.project_id = ? \
            AND sf.file_type IN ('actors', 'skills', 'items', 'states') \
-           AND s.json_key LIKE '%/name' \
+           AND (s.json_key LIKE '%/name' OR s.json_key LIKE '%/nickname') \
          LIMIT 200",
     )
     .bind(project_id)

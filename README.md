@@ -71,6 +71,41 @@
 
 ---
 
+## Cloud LLM with RunPod (optional)
+
+Instead of running Ollama locally, you can use a cloud GPU on [RunPod](https://runpod.io) for faster translation with larger models.
+
+### Setup
+
+1. Create a pod on RunPod (recommended: RTX 4090 or A40)
+2. Set these **Environment Variables**:
+   ```
+   OLLAMA_HOST   = 0.0.0.0
+   OLLAMA_MODELS = /workspace/ollama-models
+   ```
+3. Expose HTTP port `11434`
+4. Set this **Start Command** (replace `qwen3:14b` with your preferred model):
+   ```bash
+   bash -c "mkdir -p /workspace/ollama-models && apt-get update && apt-get install -y zstd && curl -fsSL https://ollama.com/install.sh | sh && ollama serve & sleep 5 && ollama pull qwen3:14b && wait"
+   ```
+5. Once the pod is running, copy the proxy URL from RunPod → Connect:
+   ```
+   https://[POD_ID]-11434.proxy.runpod.net
+   ```
+6. Paste this URL in Hoshi2Star **Settings → Ollama URL** and click **Test**
+
+### Recommended batch sizes
+
+| GPU | VRAM | Batch size |
+|---|---|---|
+| RTX 4090 | 24 GB | 30–40 |
+| A40 | 48 GB | 40–50 |
+| A100 | 80 GB | 50–60 |
+
+> **Remember to stop your pod** after translation — RunPod charges per minute. Models stored in `/workspace` persist across restarts (Volume disk), so you only download them once.
+
+---
+
 ## Installation
 
 **Linux:**
