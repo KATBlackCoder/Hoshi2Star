@@ -2,7 +2,7 @@
 
 # Hoshi2Star ★
 
-![Version](https://img.shields.io/badge/version-0.3.0-blue)
+![Version](https://img.shields.io/badge/version-0.4.0-blue)
 ![Licence](https://img.shields.io/badge/licence-MIT-green)
 ![Plateformes](https://img.shields.io/badge/plateformes-Linux%20%7C%20Windows-lightgrey)
 
@@ -54,7 +54,7 @@
 | RPG Maker MV | ✅ Supporté | .json, .rpgmvp |
 | RPG Maker MZ | ✅ Supporté | .json, .rpgmvp |
 | RPG Maker VX Ace | 🔜 F3 | .rvdata2 |
-| Wolf RPG | 🔜 F4 | .dat, .wolf |
+| Wolf RPG | ⚠️ Partiel | .dat |
 | RPG Developer Bakin | 🔜 F5 | .rbpack |
 
 ---

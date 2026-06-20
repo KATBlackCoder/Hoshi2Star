@@ -5,6 +5,8 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-06-20
+
 ### Added
 - Add `engines/filter.rs` — shared filter module for all engine extractors: `is_pure_number()`, `is_pure_symbol()`, `needs_translation(text, engine)`. Single gate replacing per-extractor ad-hoc checks; engine-specific placeholder tokenization via `TokEngine` parameter
 - Add `needs_translation` filters in MV/MZ extractor: pure digits (`5`, `100`), pure punctuation/symbols (`…`, `・・・`, `-`, `？？？`, `！！！！`), disabled RPG Maker choices (`-`) are now skipped at extraction (~102 noise segments eliminated on reference MV game)
