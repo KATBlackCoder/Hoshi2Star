@@ -5,6 +5,11 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-06-20
+
+### Fixed
+- Fix AppImage crash when switching Ollama URL to an HTTPS endpoint (RunPod) — replace `default-tls` (native-tls/OpenSSL) with `rustls-tls` in reqwest; OpenSSL's C-level `abort()` on certificate or TLS init failure bypassed Rust error handling entirely; `rustls` is a pure-Rust implementation with no system library dependency
+
 ## [0.4.0] — 2026-06-20
 
 ### Added
@@ -288,6 +293,7 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - TanStack Query for async Tauri invoke() calls
 - GitHub Actions CI/CD for Linux + Windows builds
 
+[0.4.1]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.1
 [0.3.2]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.3.2
 [0.3.1]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.3.1
 [0.3.0]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.3.0
