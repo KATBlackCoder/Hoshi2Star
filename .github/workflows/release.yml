@@ -22,29 +22,30 @@ jobs:
           echo "Building release notes for v$VERSION"
 
           # Extract section between ## [VERSION] and the next ## [
-          NOTES=$(awk "/^## \[$VERSION\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)
+          SECTION=$(awk "/^## \[$VERSION\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)
 
-          # Prepend header + append footer
-          FULL="## Hoshi2Star v$VERSION — 星 → ★
+          # Write full release notes to a temp file to avoid YAML indentation issues
+          NOTES_FILE=$(mktemp)
+          cat > "$NOTES_FILE" << 'HEADER'
+          ## Hoshi2Star v__VER__ — 星 → ★
 
-CAT editor + LLM orchestrator for fan translation of Japanese RPG Maker games.
-Interface available in **English and French** 🇬🇧 🇫🇷
-📖 [README](https://github.com/KATBlackCoder/Hoshi2Star#readme) · [Full Changelog](https://github.com/KATBlackCoder/Hoshi2Star/blob/main/CHANGELOG.md)
+          CAT editor + LLM orchestrator for fan translation of Japanese RPG Maker games.
+          Interface available in **English and French** 🇬🇧 🇫🇷
+          📖 [README](https://github.com/KATBlackCoder/Hoshi2Star#readme) · [Full Changelog](https://github.com/KATBlackCoder/Hoshi2Star/blob/main/CHANGELOG.md)
+          HEADER
 
-$NOTES
+          # Replace placeholder with actual version, strip leading whitespace from heredoc
+          sed -i "s/__VER__/$VERSION/g; s/^          //" "$NOTES_FILE"
 
-### Prerequisites
-- [Ollama](https://ollama.ai) installed locally (or a RunPod HTTPS endpoint)
-- Recommended model: \`ollama pull qwen3:4b-instruct-2507-q8_0\`
-
-### Installation
-- **Linux**: download \`.AppImage\` → \`chmod +x hoshi2star_*.AppImage\` → \`./hoshi2star_*.AppImage\`
-- **Windows**: download and run the \`.msi\`"
+          # Append changelog section and footer
+          echo "" >> "$NOTES_FILE"
+          echo "$SECTION" >> "$NOTES_FILE"
+          printf '\n### Prerequisites\n- [Ollama](https://ollama.ai) installed locally (or a RunPod HTTPS endpoint)\n- Recommended model: `ollama pull qwen3:4b-instruct-2507-q8_0`\n\n### Installation\n- **Linux**: download `.AppImage` → `chmod +x hoshi2star_*.AppImage` → `./hoshi2star_*.AppImage`\n- **Windows**: download and run the `.msi`\n' >> "$NOTES_FILE"
 
           # Write to GITHUB_OUTPUT (multiline safe)
           {
             echo "notes<<EOF_NOTES"
-            echo "$FULL"
+            cat "$NOTES_FILE"
             echo "EOF_NOTES"
           } >> "$GITHUB_OUTPUT"
 
