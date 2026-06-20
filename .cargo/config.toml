@@ -1,4 +1,5 @@
 [build]
-# marshal-rs depends on gxhash which requires AES+SSE2 intrinsics.
-# target-cpu=native enables all features supported by the current CPU.
-rustflags = ["-C", "target-cpu=native"]
+# marshal-rs → gxhash requires AES-NI + SSE2 at minimum.
+# Use x86-64-v2 (AES-NI, SSE4.2) instead of native so the AppImage
+# runs on any x86-64 CPU built after ~2008 without SIGILL on CI-built binaries.
+rustflags = ["-C", "target-feature=+aes,+sse2,+sse4.1,+sse4.2,+pclmul"]
