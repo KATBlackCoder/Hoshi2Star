@@ -211,7 +211,8 @@ pub async fn extract_terms_from_project(
         "/no_think\n\
         Here are source texts from a Japanese RPG. Identify up to 50 terms worth glossarizing \
         (character names, place names, skill names, item names, class names).\n\
-        For each term, provide a suggested {lang_target} translation.\n\
+        For each term, provide exactly ONE {lang_target} translation — the best fit for a Japanese RPG context.\n\
+        Rules: single word or short phrase only. No slashes, no parentheses, no alternatives.\n\
         Format: [{{\"source\":\"JP term\",\"target\":\"{lang_target} term\",\
         \"domain\":\"character|skill|item|state|other\"}}]\n\n\
         Source texts:\n{source_list}"

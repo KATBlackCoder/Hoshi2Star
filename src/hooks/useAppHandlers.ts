@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { useProjectStore, usePendingGlossaryExtract } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { useLlmStore } from "@/stores/llm";
+import type { FontScanResult } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,6 +32,10 @@ export function useAppHandlers() {
   const [showTranslateAll, setShowTranslateAll] = useState(false);
   const [translateAllStats, setTranslateAllStats] =
     useState<ProjectStats | null>(null);
+  const [showFontDialog, setShowFontDialog] = useState(false);
+  const [fontScanResult, setFontScanResult] = useState<FontScanResult | null>(
+    null,
+  );
 
   const { t } = useTranslation();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
@@ -101,11 +106,42 @@ export function useAppHandlers() {
     setExportDialog(null);
     if (!activeProjectId) return;
     try {
-      await invoke("export_project", { projectId: activeProjectId });
+      const scan = await invoke<FontScanResult>("scan_font_status", {
+        projectId: activeProjectId,
+      });
+      setFontScanResult(scan);
+      setShowFontDialog(true);
+      return;
+    } catch {
+      // scan failure is non-fatal — export without font dialog
+    }
+    await doExport(null, false);
+  }
+
+  async function doExport(fontSize: number | null, replaceExisting: boolean) {
+    if (!activeProjectId) return;
+    try {
+      await invoke("export_project", {
+        projectId: activeProjectId,
+        fontSize,
+        replaceExisting,
+      });
       toast.success(t("toasts.exportSuccess"));
     } catch (err) {
       toast.error(t("toasts.exportError", { error: String(err) }));
     }
+  }
+
+  function handleExportFontApply(fontSize: number, replaceExisting: boolean) {
+    setShowFontDialog(false);
+    setFontScanResult(null);
+    void doExport(fontSize, replaceExisting);
+  }
+
+  function handleExportFontSkip() {
+    setShowFontDialog(false);
+    setFontScanResult(null);
+    void doExport(null, false);
   }
 
   async function handleTranslateAll() {
@@ -152,6 +188,8 @@ export function useAppHandlers() {
     exportStats,
     showTranslateAll,
     translateAllStats,
+    showFontDialog,
+    fontScanResult,
     // Setters
     setShowSettings,
     setShowAbout,
@@ -162,6 +200,8 @@ export function useAppHandlers() {
     handleGlossaryDecline,
     handleExportAll,
     handleExportConfirm,
+    handleExportFontApply,
+    handleExportFontSkip,
     handleTranslateAll,
     handleTranslateAllStart,
     handleTranslate,

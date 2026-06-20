@@ -289,8 +289,15 @@ pub async fn get_source_files(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<SourceFile>, String> {
     sqlx::query_as::<_, SourceFile>(
-        "SELECT id, project_id, file_name, file_path, file_type, translation_secs \
-         FROM source_files WHERE project_id = ? ORDER BY file_name",
+        "SELECT sf.id, sf.project_id, sf.file_name, sf.file_path, sf.file_type, \
+                sf.translation_secs, \
+                COUNT(s.id) as total_count, \
+                SUM(CASE WHEN s.target_text != '' THEN 1 ELSE 0 END) as translated_count \
+         FROM source_files sf \
+         LEFT JOIN segments s ON s.source_file_id = sf.id \
+         WHERE sf.project_id = ? \
+         GROUP BY sf.id \
+         ORDER BY sf.file_name",
     )
     .bind(&project_id)
     .fetch_all(&state.db)
@@ -511,6 +518,161 @@ pub async fn delete_project(
     }
 
     Ok(())
+}
+
+/// Dump all translatable segments from any supported game to a JSON file.
+///
+/// Writes `hoshi2star_debug_extract.json` inside the game directory and returns
+/// its absolute path. Works for Wolf RPG, RPG Maker MV/MZ, and VX Ace.
+/// Intended for Claude-assisted analysis: open the JSON in a Claude conversation
+/// to identify which texts need translation vs which can be skipped.
+#[tauri::command]
+pub async fn debug_dump_segments(game_path: String) -> Result<String, String> {
+    use crate::engines::wolf::extractor::WolfSegmentKind;
+    use std::collections::HashMap;
+
+    #[derive(serde::Serialize)]
+    struct DebugSegment {
+        key: String,
+        source_text: String,
+        kind: String,
+    }
+
+    #[derive(serde::Serialize)]
+    struct DebugFileEntry {
+        file_name: String,
+        file_type: String,
+        segment_count: usize,
+        segments: Vec<DebugSegment>,
+    }
+
+    #[derive(serde::Serialize)]
+    struct DebugDump {
+        engine: String,
+        game_path: String,
+        total_files: usize,
+        total_segments: usize,
+        by_kind: HashMap<String, usize>,
+        files: Vec<DebugFileEntry>,
+    }
+
+    let game_dir = Path::new(&game_path);
+    let engine = detect_engine(game_dir).map_err(|e| e.to_string())?;
+
+    let mut dump_files: Vec<DebugFileEntry> = Vec::new();
+    let engine_label;
+
+    match engine {
+        Engine::Wolf => {
+            engine_label = "wolf";
+            let wolf_version = guess_wolf_version_from_structure(game_dir);
+            let entries = wolf_extractor::extract_all_wolf(game_dir, &wolf_version)
+                .map_err(|e| e.to_string())?;
+
+            for (file_name, file_type, segs) in entries {
+                let segments: Vec<DebugSegment> = segs
+                    .into_iter()
+                    .map(|s| {
+                        let kind = match &s.kind {
+                            WolfSegmentKind::MapMessage { .. } => "map_message",
+                            WolfSegmentKind::DatabaseField { .. } => "database_field",
+                            WolfSegmentKind::CommonEventMessage { .. } => "common_event_message",
+                        }
+                        .to_string();
+                        DebugSegment {
+                            key: s.key,
+                            source_text: s.source_text,
+                            kind,
+                        }
+                    })
+                    .collect();
+                let segment_count = segments.len();
+                dump_files.push(DebugFileEntry {
+                    file_name,
+                    file_type,
+                    segment_count,
+                    segments,
+                });
+            }
+        }
+
+        Engine::MvMz => {
+            engine_label = "mv_mz";
+            let data_dir = find_data_dir(game_dir)
+                .ok_or_else(|| "Cannot find data directory in game folder".to_string())?;
+
+            for (file_name, _file_path, file_type, json_value) in
+                collect_json_files(&data_dir).map_err(|e| e.to_string())?
+            {
+                let raw_segs = dispatch_extract(&file_name, &json_value);
+                let segments: Vec<DebugSegment> = raw_segs
+                    .into_iter()
+                    .map(|s| DebugSegment {
+                        key: s.key,
+                        source_text: s.source,
+                        kind: format!("{:?}", s.kind),
+                    })
+                    .collect();
+                let segment_count = segments.len();
+                dump_files.push(DebugFileEntry {
+                    file_name,
+                    file_type,
+                    segment_count,
+                    segments,
+                });
+            }
+        }
+
+        Engine::VxAce => {
+            engine_label = "vx_ace";
+            let data_dir = find_vx_ace_data_dir(game_dir)
+                .ok_or_else(|| "Cannot find Data/ directory in VX Ace game folder".to_string())?;
+
+            for (file_name, _file_path, file_type, bytes) in
+                collect_rvdata2_files(&data_dir).map_err(|e| e.to_string())?
+            {
+                let raw_segs = vx_extractor::extract_from_bytes(&file_name, &bytes);
+                let segments: Vec<DebugSegment> = raw_segs
+                    .into_iter()
+                    .map(|s| DebugSegment {
+                        key: s.key,
+                        source_text: s.source,
+                        kind: format!("{:?}", s.kind),
+                    })
+                    .collect();
+                let segment_count = segments.len();
+                dump_files.push(DebugFileEntry {
+                    file_name,
+                    file_type,
+                    segment_count,
+                    segments,
+                });
+            }
+        }
+    }
+
+    let total_segments: usize = dump_files.iter().map(|f| f.segment_count).sum();
+    let mut by_kind: HashMap<String, usize> = HashMap::new();
+    for f in &dump_files {
+        for s in &f.segments {
+            *by_kind.entry(s.kind.clone()).or_insert(0) += 1;
+        }
+    }
+
+    let dump = DebugDump {
+        engine: engine_label.to_string(),
+        game_path: game_path.clone(),
+        total_files: dump_files.len(),
+        total_segments,
+        by_kind,
+        files: dump_files,
+    };
+
+    let json = serde_json::to_string_pretty(&dump).map_err(|e| e.to_string())?;
+    let output_path = game_dir.join("hoshi2star_debug_extract.json");
+    std::fs::write(&output_path, &json).map_err(|e| e.to_string())?;
+
+    Ok(output_path.to_string_lossy().to_string())
 }
 
 // ---------------------------------------------------------------------------

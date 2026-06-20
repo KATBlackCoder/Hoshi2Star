@@ -1,7 +1,8 @@
 //! Tauri commands for exporting project data (game files, QA report, TM).
 
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, path::PathBuf, sync::LazyLock};
 
+use regex::Regex;
 use serde::Serialize;
 
 use crate::{
@@ -16,6 +17,123 @@ use crate::{
     state::AppState,
 };
 
+// ---------------------------------------------------------------------------
+// Font-size helpers
+// ---------------------------------------------------------------------------
+
+static RE_FONT_PREFIX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\\f\[\d+\]").expect("RE_FONT_PREFIX must compile"));
+
+/// Prepend `\f[n]` to `text`, or replace the existing `\f[*]` prefix if
+/// `replace_existing` is true.  Returns the original string unchanged when
+/// the prefix already exists and `replace_existing` is false.
+fn apply_font_prefix(text: &str, n: u32, replace_existing: bool) -> String {
+    if RE_FONT_PREFIX.is_match(text) {
+        if replace_existing {
+            RE_FONT_PREFIX
+                .replace(text, format!("\\f[{n}]").as_str())
+                .into_owned()
+        } else {
+            text.to_string()
+        }
+    } else {
+        format!("\\f[{n}]{text}")
+    }
+}
+
+/// Result returned by `scan_font_status`.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FontScanResult {
+    /// Segments whose `target_text` already starts with a `\f[N]` prefix.
+    pub existing_font_count: i64,
+    /// Total translated segments analysed.
+    pub total_translated: i64,
+}
+
+/// Scan translated segments for existing `\f[N]` prefixes.
+///
+/// Pass either `source_file_id` (file-level scan) or `project_id`
+/// (project-level scan).
+#[tauri::command]
+pub async fn scan_font_status(
+    source_file_id: Option<String>,
+    project_id: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<FontScanResult, String> {
+    let texts: Vec<String> = match (source_file_id.as_deref(), project_id.as_deref()) {
+        (Some(fid), _) => sqlx::query_scalar(
+            "SELECT target_text FROM segments WHERE source_file_id = ? AND target_text != ''",
+        )
+        .bind(fid)
+        .fetch_all(&state.db)
+        .await
+        .map_err(|e| e.to_string())?,
+        (_, Some(pid)) => sqlx::query_scalar(
+            "SELECT s.target_text FROM segments s \
+             JOIN source_files sf ON s.source_file_id = sf.id \
+             WHERE sf.project_id = ? AND s.target_text != ''",
+        )
+        .bind(pid)
+        .fetch_all(&state.db)
+        .await
+        .map_err(|e| e.to_string())?,
+        _ => return Err("source_file_id or project_id required".to_string()),
+    };
+
+    let total_translated = texts.len() as i64;
+    let existing_font_count = texts.iter().filter(|t| RE_FONT_PREFIX.is_match(t)).count() as i64;
+
+    Ok(FontScanResult {
+        existing_font_count,
+        total_translated,
+    })
+}
+
+/// Apply `\f[n]` to every translated segment in a file or project, persisting
+/// the change to the DB.  Called before injection when the user confirms a
+/// font-size choice in the UI.
+async fn persist_font_size(
+    source_file_id: Option<&str>,
+    project_id: Option<&str>,
+    font_size: u32,
+    replace_existing: bool,
+    db: &sqlx::SqlitePool,
+) -> Result<(), String> {
+    let rows: Vec<(String, String)> = match (source_file_id, project_id) {
+        (Some(fid), _) => sqlx::query_as(
+            "SELECT id, target_text FROM segments WHERE source_file_id = ? AND target_text != ''",
+        )
+        .bind(fid)
+        .fetch_all(db)
+        .await
+        .map_err(|e| e.to_string())?,
+        (_, Some(pid)) => sqlx::query_as(
+            "SELECT s.id, s.target_text FROM segments s \
+             JOIN source_files sf ON s.source_file_id = sf.id \
+             WHERE sf.project_id = ? AND s.target_text != ''",
+        )
+        .bind(pid)
+        .fetch_all(db)
+        .await
+        .map_err(|e| e.to_string())?,
+        _ => return Err("source_file_id or project_id required".to_string()),
+    };
+
+    for (id, text) in &rows {
+        let new_text = apply_font_prefix(text, font_size, replace_existing);
+        if new_text != *text {
+            sqlx::query("UPDATE segments SET target_text = ? WHERE id = ?")
+                .bind(&new_text)
+                .bind(id)
+                .execute(db)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 /// Re-inject all translated segments back into the game files.
 ///
 /// Dispatches based on `file_type` prefix:
@@ -25,8 +143,15 @@ use crate::{
 #[tauri::command]
 pub async fn export_project(
     project_id: String,
+    font_size: Option<u32>,
+    replace_existing: bool,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
+    // Apply \f[N] prefix to all translated segments if the user requested it.
+    if let Some(n) = font_size {
+        persist_font_size(None, Some(&project_id), n, replace_existing, &state.db).await?;
+    }
+
     let files = sqlx::query_as::<_, SourceFile>(
         "SELECT id, project_id, file_name, file_path, file_type, translation_secs \
          FROM source_files WHERE project_id = ?",
@@ -204,6 +329,116 @@ pub async fn export_tm(
     tokio::fs::write(&output_path, tmx)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Inject translations for a single source file back into the game (debug/verify path).
+///
+/// Equivalent to `export_project` scoped to one file — writes in-place using the
+/// same Option-A strategy.  The command enforces completeness server-side: it
+/// returns `Err` if any segment in the file still has an empty `target_text`.
+///
+/// Returns the absolute path of the written file so the frontend can display it.
+#[tauri::command]
+pub async fn debug_inject_file(
+    source_file_id: String,
+    font_size: Option<u32>,
+    replace_existing: bool,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    // Fetch file metadata.
+    let file = sqlx::query_as::<_, SourceFile>(
+        "SELECT sf.id, sf.project_id, sf.file_name, sf.file_path, sf.file_type, \
+                sf.translation_secs, 0 as total_count, 0 as translated_count \
+         FROM source_files sf WHERE sf.id = ?",
+    )
+    .bind(&source_file_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Fetch project info.
+    let (game_path, _engine): (String, String) =
+        sqlx::query_as("SELECT game_path, engine FROM projects WHERE id = ?")
+            .bind(&file.project_id)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    // Enforce completeness: refuse if any segment is untranslated.
+    let untranslated: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM segments WHERE source_file_id = ? AND target_text = ''",
+    )
+    .bind(&source_file_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if untranslated > 0 {
+        return Err(format!("{untranslated} segment(s) not yet translated"));
+    }
+
+    // Apply \f[N] prefix if requested.
+    if let Some(n) = font_size {
+        persist_font_size(Some(&source_file_id), None, n, replace_existing, &state.db).await?;
+    }
+
+    // Fetch translations (key → target_text).
+    let segs: Vec<(String, String)> = sqlx::query_as(
+        "SELECT json_key, target_text FROM segments \
+         WHERE source_file_id = ? AND target_text != ''",
+    )
+    .bind(&source_file_id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Dispatch by engine.
+    if file.file_type.starts_with("wolf_") {
+        let mut translations_by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
+        for (key, text) in segs {
+            let parts: Vec<&str> = key.splitn(3, '/').collect();
+            if parts.len() >= 2 {
+                let file_key = format!("{}/{}", parts[0], parts[1]);
+                translations_by_file
+                    .entry(file_key)
+                    .or_default()
+                    .push(WolfTranslation { key, text });
+            }
+        }
+        let game_dir = Path::new(&game_path);
+        let version = crate::engines::detector::guess_wolf_version_from_structure(game_dir);
+        let results = wolf_inject_all(game_dir, &translations_by_file, &version)
+            .await
+            .map_err(|e| e.to_string())?;
+        let out_path = results
+            .into_iter()
+            .next()
+            .map(|r| r.file_path)
+            .unwrap_or_else(|| PathBuf::from(&file.file_path));
+        Ok(out_path.to_string_lossy().to_string())
+    } else if file.file_type.starts_with("vx_") {
+        let pairs: Vec<(&str, &str)> = segs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let bytes =
+            std::fs::read(&file.file_path).map_err(|e| format!("read {}: {e}", file.file_name))?;
+        let out = vx_injector::inject_and_serialize(&bytes, &pairs)
+            .map_err(|e| format!("inject {}: {e}", file.file_name))?;
+        std::fs::write(&file.file_path, out)
+            .map_err(|e| format!("write {}: {e}", file.file_name))?;
+        Ok(file.file_path.clone())
+    } else {
+        let pairs: Vec<(&str, &str)> = segs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let raw = std::fs::read_to_string(&file.file_path)
+            .map_err(|e| format!("read {}: {e}", file.file_name))?;
+        let mut json: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("parse {}: {e}", file.file_name))?;
+        injector::inject(&mut json, &pairs)
+            .map_err(|e| format!("inject {}: {e}", file.file_name))?;
+        let out = serde_json::to_string(&json)
+            .map_err(|e| format!("serialise {}: {e}", file.file_name))?;
+        std::fs::write(&file.file_path, out)
+            .map_err(|e| format!("write {}: {e}", file.file_name))?;
+        Ok(file.file_path.clone())
+    }
 }
 
 /// Export all segments for a project as a flat JSON file for debugging.

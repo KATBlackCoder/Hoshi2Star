@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
-use crate::llm::provider::{DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_URL};
+use crate::llm::provider::{DEFAULT_BATCH_SIZE, DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_URL};
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +30,10 @@ pub struct SourceFile {
     pub file_path: String,
     pub file_type: String,
     pub translation_secs: Option<i64>,
+    #[sqlx(default)]
+    pub translated_count: i64,
+    #[sqlx(default)]
+    pub total_count: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
@@ -65,6 +69,13 @@ pub struct ProviderConfig {
     pub model: String,
     /// Optional API key (for cloud providers like OpenAI / DeepSeek).
     pub api_key: Option<String>,
+    /// Number of segments sent to the provider per LLM call.
+    #[serde(default = "default_batch_size")]
+    pub batch_size: usize,
+}
+
+fn default_batch_size() -> usize {
+    DEFAULT_BATCH_SIZE
 }
 
 impl Default for ProviderConfig {
@@ -73,6 +84,7 @@ impl Default for ProviderConfig {
             url: DEFAULT_OLLAMA_URL.to_string(),
             model: DEFAULT_OLLAMA_MODEL.to_string(),
             api_key: None,
+            batch_size: DEFAULT_BATCH_SIZE,
         }
     }
 }

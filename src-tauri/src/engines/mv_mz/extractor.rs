@@ -6,7 +6,7 @@
 //! JSON Pointer keys allow the injector to write translations back
 //! with `serde_json::Value::pointer_mut()`.
 
-use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
+use crate::{engines::filter, llm::tokenizer::Engine as TokEngine};
 use serde_json::Value;
 
 /// Semantic kind of a translatable text unit.
@@ -107,15 +107,7 @@ pub fn extract_common_events(json: &Value) -> Vec<ExtractedSegment> {
         if event.is_null() {
             continue;
         }
-        if let Some(name) = event.get("name").and_then(Value::as_str) {
-            if !name.is_empty() {
-                segments.push(ExtractedSegment::new(
-                    format!("/{ei}/name"),
-                    name,
-                    SegmentKind::CommonEventName,
-                ));
-            }
-        }
+        // CommonEvent `name` is a developer label never shown to the player — skip it.
         let list = match event.get("list").and_then(Value::as_array) {
             Some(l) => l,
             None => continue,
@@ -219,7 +211,7 @@ pub fn extract_skills(json: &Value) -> Vec<ExtractedSegment> {
             ("description", SegmentKind::SkillDescription),
         ] {
             if let Some(text) = entry.get(field).and_then(Value::as_str) {
-                if !text.trim().is_empty() {
+                if filter::needs_translation(text, TokEngine::MvMz) {
                     segments.push(ExtractedSegment::new(
                         format!("/{i}/{field}"),
                         text,
@@ -230,7 +222,7 @@ pub fn extract_skills(json: &Value) -> Vec<ExtractedSegment> {
         }
         for msg_field in &["message1", "message2"] {
             if let Some(text) = entry.get(msg_field).and_then(Value::as_str) {
-                if !text.trim().is_empty() {
+                if filter::needs_translation(text, TokEngine::MvMz) {
                     segments.push(ExtractedSegment::new(
                         format!("/{i}/{msg_field}"),
                         text,
@@ -260,7 +252,7 @@ pub fn extract_states(json: &Value) -> Vec<ExtractedSegment> {
             continue;
         }
         if let Some(text) = entry.get("name").and_then(Value::as_str) {
-            if !text.is_empty() {
+            if filter::needs_translation(text, TokEngine::MvMz) {
                 segments.push(ExtractedSegment::new(
                     format!("/{i}/name"),
                     text,
@@ -270,7 +262,7 @@ pub fn extract_states(json: &Value) -> Vec<ExtractedSegment> {
         }
         for msg_field in &["message1", "message2", "message3", "message4"] {
             if let Some(text) = entry.get(msg_field).and_then(Value::as_str) {
-                if !text.trim().is_empty() {
+                if filter::needs_translation(text, TokEngine::MvMz) {
                     segments.push(ExtractedSegment::new(
                         format!("/{i}/{msg_field}"),
                         text,
@@ -294,16 +286,17 @@ pub fn extract_system(json: &Value) -> Vec<ExtractedSegment> {
 
     if let Some(title) = json.get("gameTitle").and_then(Value::as_str) {
         if !title.trim().is_empty() {
+            let branded = format!("{title} by Hoshi2Star");
             segments.push(ExtractedSegment::new(
                 "/gameTitle",
-                title,
+                branded,
                 SegmentKind::GameTitle,
             ));
         }
     }
 
     if let Some(currency) = json.get("currencyUnit").and_then(Value::as_str) {
-        if !currency.trim().is_empty() {
+        if filter::needs_translation(currency, TokEngine::MvMz) {
             segments.push(ExtractedSegment::new(
                 "/currencyUnit",
                 currency,
@@ -316,7 +309,7 @@ pub fn extract_system(json: &Value) -> Vec<ExtractedSegment> {
     if let Some(basic) = json.pointer("/terms/basic").and_then(Value::as_array) {
         for (i, term) in basic.iter().enumerate() {
             if let Some(text) = term.as_str() {
-                if !text.trim().is_empty() {
+                if filter::needs_translation(text, TokEngine::MvMz) {
                     segments.push(ExtractedSegment::new(
                         format!("/terms/basic/{i}"),
                         text,
@@ -331,7 +324,7 @@ pub fn extract_system(json: &Value) -> Vec<ExtractedSegment> {
     if let Some(commands) = json.pointer("/terms/commands").and_then(Value::as_array) {
         for (i, term) in commands.iter().enumerate() {
             if let Some(text) = term.as_str() {
-                if !text.trim().is_empty() {
+                if filter::needs_translation(text, TokEngine::MvMz) {
                     segments.push(ExtractedSegment::new(
                         format!("/terms/commands/{i}"),
                         text,
@@ -346,7 +339,7 @@ pub fn extract_system(json: &Value) -> Vec<ExtractedSegment> {
     if let Some(params) = json.pointer("/terms/params").and_then(Value::as_array) {
         for (i, term) in params.iter().enumerate() {
             if let Some(text) = term.as_str() {
-                if !text.trim().is_empty() {
+                if filter::needs_translation(text, TokEngine::MvMz) {
                     segments.push(ExtractedSegment::new(
                         format!("/terms/params/{i}"),
                         text,
@@ -363,7 +356,7 @@ pub fn extract_system(json: &Value) -> Vec<ExtractedSegment> {
         msg_keys.sort(); // deterministic ordering for tests
         for key in msg_keys {
             if let Some(text) = messages[key].as_str() {
-                if !text.trim().is_empty() {
+                if filter::needs_translation(text, TokEngine::MvMz) {
                     segments.push(ExtractedSegment::new(
                         format!("/terms/messages/{key}"),
                         text,
@@ -394,7 +387,7 @@ fn extract_simple_array(json: &Value, fields: &[(&str, SegmentKind)]) -> Vec<Ext
         }
         for (field, kind) in fields {
             if let Some(text) = entry.get(field).and_then(Value::as_str) {
-                if !text.trim().is_empty() {
+                if filter::needs_translation(text, TokEngine::MvMz) {
                     segments.push(ExtractedSegment::new(
                         format!("/{i}/{field}"),
                         text,
@@ -405,21 +398,6 @@ fn extract_simple_array(json: &Value, fields: &[(&str, SegmentKind)]) -> Vec<Ext
         }
     }
     segments
-}
-
-/// Returns `true` if `text` contains only RPG Maker escape codes and whitespace —
-/// nothing meaningful to translate once placeholders are stripped.
-fn is_placeholder_only(text: &str) -> bool {
-    let tok = Tokenizer::tokenize(text, TokEngine::MvMz);
-    if tok.map.is_empty() {
-        return false; // No placeholders at all — whatever text is there is real content
-    }
-    // Remove every ⟦ph_N⟧ token; check if anything translatable remains
-    let bare = tok
-        .map
-        .keys()
-        .fold(tok.text.clone(), |s, k| s.replace(k.as_str(), ""));
-    bare.trim().is_empty()
 }
 
 /// Extract dialogue and choices from an event command list.
@@ -441,7 +419,7 @@ fn extract_event_list(list: &[Value], list_path: &str, segments: &mut Vec<Extrac
             // Show Text header — in MZ, params[4] = speaker name
             101 => {
                 if let Some(name) = params.get(4).and_then(Value::as_str) {
-                    if !name.trim().is_empty() && !is_placeholder_only(name) {
+                    if filter::needs_translation(name, TokEngine::MvMz) {
                         segments.push(ExtractedSegment::new(
                             format!("{list_path}/{li}/parameters/4"),
                             name,
@@ -453,7 +431,7 @@ fn extract_event_list(list: &[Value], list_path: &str, segments: &mut Vec<Extrac
             // Show Text continuation — one line of dialogue
             401 => {
                 if let Some(text) = params.first().and_then(Value::as_str) {
-                    if !text.trim().is_empty() && !is_placeholder_only(text) {
+                    if filter::needs_translation(text, TokEngine::MvMz) {
                         segments.push(ExtractedSegment::new(
                             format!("{list_path}/{li}/parameters/0"),
                             text,
@@ -467,7 +445,7 @@ fn extract_event_list(list: &[Value], list_path: &str, segments: &mut Vec<Extrac
                 if let Some(choices) = params.first().and_then(Value::as_array) {
                     for (ci, choice) in choices.iter().enumerate() {
                         if let Some(text) = choice.as_str() {
-                            if !text.trim().is_empty() && !is_placeholder_only(text) {
+                            if filter::needs_translation(text, TokEngine::MvMz) {
                                 segments.push(ExtractedSegment::new(
                                     format!("{list_path}/{li}/parameters/0/{ci}"),
                                     text,
@@ -683,7 +661,7 @@ mod tests {
         let segs = extract_system(&json);
         // gameTitle + currencyUnit + 2 basic + 2 commands + 2 params + 1 message = 9
         assert_eq!(segs.len(), 9);
-        assert_eq!(segs[0].source, "勇者の物語");
+        assert_eq!(segs[0].source, "勇者の物語 by Hoshi2Star");
         assert_eq!(segs[0].kind, SegmentKind::GameTitle);
         assert_eq!(segs[1].source, "G");
         assert_eq!(segs[1].kind, SegmentKind::SystemTerm);
@@ -702,12 +680,10 @@ mod tests {
             }
         ]);
         let segs = extract_common_events(&json);
-        // event name + dialogue
-        assert_eq!(segs.len(), 2);
-        assert_eq!(segs[0].source, "自動起動");
-        assert_eq!(segs[0].kind, SegmentKind::CommonEventName);
-        assert_eq!(segs[1].source, "共通イベントのセリフ");
-        assert_eq!(segs[1].kind, SegmentKind::Dialogue);
+        // event name is skipped — only dialogue extracted
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].source, "共通イベントのセリフ");
+        assert_eq!(segs[0].kind, SegmentKind::Dialogue);
     }
 
     #[test]
@@ -849,5 +825,112 @@ mod tests {
         let segs = extract_map(&json);
         assert_eq!(segs.len(), 1);
         assert_eq!(segs[0].source, r"捕えた！\V[5]水深１５m");
+    }
+
+    // --- needs_translation filter tests ---
+
+    #[test]
+    fn test_skip_pure_number_dialogue() {
+        // "5" alone in a dialogue line → no translation needed
+        let json = json!({
+            "events": [null, {
+                "id": 1,
+                "pages": [{
+                    "list": [
+                        { "code": 401, "parameters": ["5"] },
+                        { "code": 401, "parameters": ["100"] },
+                        { "code": 401, "parameters": ["勇者のレベルは５だ！"] }
+                    ]
+                }]
+            }]
+        });
+        let segs = extract_map(&json);
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].source, "勇者のレベルは５だ！");
+    }
+
+    #[test]
+    fn test_skip_ellipsis_dialogue() {
+        // Pure ellipsis variants → skipped
+        let json = json!({
+            "events": [null, {
+                "id": 1,
+                "pages": [{
+                    "list": [
+                        { "code": 401, "parameters": ["…"] },
+                        { "code": 401, "parameters": ["・・・"] },
+                        { "code": 401, "parameters": ["………"] },
+                        { "code": 401, "parameters": ["…？"] },
+                        { "code": 401, "parameters": ["反応なし…"] }
+                    ]
+                }]
+            }]
+        });
+        let segs = extract_map(&json);
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].source, "反応なし…");
+    }
+
+    #[test]
+    fn test_skip_dash_choice() {
+        // "-" in choices = disabled RPG Maker choice → skipped
+        let json = json!({
+            "events": [null, {
+                "id": 1,
+                "pages": [{
+                    "list": [
+                        { "code": 102, "parameters": [["-", "はい", "-", "いいえ"]] }
+                    ]
+                }]
+            }]
+        });
+        let segs = extract_map(&json);
+        assert_eq!(segs.len(), 2);
+        assert_eq!(segs[0].source, "はい");
+        assert_eq!(segs[1].source, "いいえ");
+    }
+
+    #[test]
+    fn test_skip_pure_exclamation_marks() {
+        // "！！！！" pure symbols → skipped
+        let json = json!({
+            "events": [null, {
+                "id": 1,
+                "pages": [{
+                    "list": [
+                        { "code": 401, "parameters": ["！！！！"] },
+                        { "code": 401, "parameters": ["？？？"] },
+                        { "code": 401, "parameters": ["やった！！"] }
+                    ]
+                }]
+            }]
+        });
+        let segs = extract_map(&json);
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].source, "やった！！");
+    }
+
+    #[test]
+    fn test_needs_translation_helpers() {
+        // Delegates to filter — just verify the integration works from this extractor
+        use crate::engines::filter;
+        use crate::llm::tokenizer::Engine as TokEngine;
+
+        assert!(!filter::is_pure_number(""));
+        assert!(filter::is_pure_number("5"));
+        assert!(filter::is_pure_number("０"));
+        assert!(!filter::is_pure_number("レベル5"));
+
+        assert!(!filter::is_pure_symbol(""));
+        assert!(filter::is_pure_symbol("…"));
+        assert!(filter::is_pure_symbol("-"));
+        assert!(!filter::is_pure_symbol("反応なし…"));
+
+        assert!(!filter::needs_translation("", TokEngine::MvMz));
+        assert!(!filter::needs_translation("5", TokEngine::MvMz));
+        assert!(!filter::needs_translation("…", TokEngine::MvMz));
+        assert!(!filter::needs_translation(r"\V[12]", TokEngine::MvMz));
+        assert!(filter::needs_translation("反応なし…", TokEngine::MvMz));
+        assert!(filter::needs_translation("こんにちは！", TokEngine::MvMz));
     }
 }

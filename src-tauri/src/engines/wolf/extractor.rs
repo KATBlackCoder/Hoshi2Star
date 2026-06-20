@@ -3,9 +3,11 @@
 use super::dat_parser;
 use super::decrypt::legacy_xor::{extract_all, WolfFile};
 use super::v3_format;
-use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
+use crate::{engines::filter, llm::tokenizer::Engine as TokEngine};
+use regex::Regex;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::LazyLock;
 use wolfrpg_map_parser::{command::Command, common_events_parser, Map};
 
 // ---------------------------------------------------------------------------
@@ -108,6 +110,79 @@ pub enum WolfSegmentKind {
         event_idx: usize,
         cmd_idx: usize,
     },
+}
+
+// ---------------------------------------------------------------------------
+// Speaker name extraction (Wolf v2)
+// ---------------------------------------------------------------------------
+
+/// A character speaker name extracted from Wolf v2 `\E<name>\n` message prefixes.
+pub struct SpeakerName {
+    /// Canonical form after stripping inline Wolf codes (`\c[N]`, etc.).
+    pub canonical: String,
+    /// How many times this speaker appears across all segments.
+    pub occurrences: usize,
+}
+
+/// Matches `\E<anything>\n` at the very start of a source text (Wolf v2 speaker prefix).
+static RE_SPEAKER_PREFIX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\\E([^\n]+)\n").expect("RE_SPEAKER_PREFIX must compile"));
+
+/// Matches inline Wolf display codes like `\c[2]`, `\C[1]`, `\f[0]`.
+static RE_WOLF_INLINE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\\[a-zA-Z]+\[\d+\]").expect("RE_WOLF_INLINE must compile"));
+
+fn is_valid_speaker_name(name: &str) -> bool {
+    let t = name.trim();
+    // Empty or too long (narration sentences are typically 13+ chars; real names ≤ 10).
+    if t.is_empty() || t.chars().count() > 10 {
+        return false;
+    }
+    // Must contain at least one Japanese or ASCII alphanumeric character.
+    t.chars().any(|c| {
+        matches!(c,
+            '\u{3040}'..='\u{30FF}' // hiragana + katakana (incl. ー)
+            | '\u{4E00}'..='\u{9FFF}' // CJK ideographs
+            | 'A'..='Z' | 'a'..='z' | '0'..='9'
+        )
+    })
+}
+
+/// Extract and deduplicate Wolf v2 speaker names from a slice of raw source texts.
+///
+/// Only source texts that start with `\E<name>\n` are considered. The name is
+/// canonicalised by stripping inline Wolf codes (`\c[N]` etc.) and trimming. Names
+/// that are empty, exceed 10 chars, or contain no Japanese/ASCII alphanumeric chars
+/// are discarded (they are typically narration sentences, not character names).
+///
+/// Returns speakers sorted by descending occurrence count, then alphabetically.
+pub fn extract_wolf_speaker_names(source_texts: &[String]) -> Vec<SpeakerName> {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+
+    for text in source_texts {
+        if let Some(cap) = RE_SPEAKER_PREFIX.captures(text) {
+            let raw = &cap[1];
+            let canonical = RE_WOLF_INLINE.replace_all(raw, "").trim().to_string();
+            if is_valid_speaker_name(&canonical) {
+                *counts.entry(canonical).or_insert(0) += 1;
+            }
+        }
+    }
+
+    let mut names: Vec<SpeakerName> = counts
+        .into_iter()
+        .map(|(canonical, occurrences)| SpeakerName {
+            canonical,
+            occurrences,
+        })
+        .collect();
+
+    names.sort_by(|a, b| {
+        b.occurrences
+            .cmp(&a.occurrences)
+            .then(a.canonical.cmp(&b.canonical))
+    });
+    names
 }
 
 // ---------------------------------------------------------------------------
@@ -566,8 +641,7 @@ fn extract_map_segments_v3(
 }
 
 fn is_translatable(text: &str) -> bool {
-    let trimmed = text.trim();
-    !trimmed.is_empty() && !is_wolf_placeholder_only(text) && !is_resource_path(trimmed)
+    filter::needs_translation(text, TokEngine::Wolf) && !is_resource_path(text.trim())
 }
 
 /// Matches a trailing resource file extension (images, audio, video, fonts)
@@ -581,19 +655,6 @@ static RE_RESOURCE_EXTENSION: std::sync::LazyLock<regex::Regex> = std::sync::Laz
 /// Returns true if `text` ends with a known resource file extension.
 fn is_resource_path(text: &str) -> bool {
     RE_RESOURCE_EXTENSION.is_match(text)
-}
-
-fn is_wolf_placeholder_only(text: &str) -> bool {
-    let tok = Tokenizer::tokenize(text, TokEngine::Wolf);
-    if tok.map.is_empty() {
-        return false;
-    }
-    // Strip every ⟦ph_N⟧ token and check whether any real text remains.
-    let bare = tok
-        .map
-        .keys()
-        .fold(tok.text.clone(), |s, k| s.replace(k.as_str(), ""));
-    bare.trim().is_empty()
 }
 
 /// Returns true if `text` contains at least one Japanese character
@@ -703,13 +764,11 @@ pub fn extract_database_segments(
                 };
                 str_pos += 1;
 
-                if value.trim().is_empty() {
+                if !is_translatable(value) {
                     continue;
                 }
-                if is_wolf_placeholder_only(value) {
-                    continue;
-                }
-                if is_resource_path(value.trim()) {
+                // Wolf RPG auto-replaces these values at runtime; they are never player-facing.
+                if value.contains("自動ｼｽﾃﾑ初期化") {
                     continue;
                 }
                 if !is_known_translatable_field(&field.name) && !contains_japanese(value) {
@@ -793,6 +852,9 @@ pub fn extract_common_events(
 
     for (event_idx, event) in events.iter().enumerate() {
         let event_name = event.event_name();
+        if event_name.starts_with("X[") || event_name.starts_with("zz") {
+            continue;
+        }
         for (cmd_idx, command) in event.commands().iter().enumerate() {
             match command {
                 Command::ShowMessage(cmd) => {
@@ -847,6 +909,9 @@ fn extract_common_events_v3(bytes: &[u8]) -> Result<Vec<WolfSegment>, ExtractorE
 
     for (event_idx, event) in common_events.events.iter().enumerate() {
         let event_name = &event.name;
+        if event_name.starts_with("X[") || event_name.starts_with("zz") {
+            continue;
+        }
         for (cmd_idx, command) in event.commands.iter().enumerate() {
             match command.cid {
                 v3_format::command::CID_MESSAGE => {
@@ -1336,6 +1401,18 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_database_skips_auto_init() {
+        // Values containing 自動ｼｽﾃﾑ初期化 are auto-replaced at runtime — not player-facing.
+        let project = make_db_project("System", "description");
+        let dat = make_db_dat_string("ここの値は「自動ｼｽﾃﾑ初期化」処理でセットされます");
+        let segs = extract_database_segments("CDataBase", &project, &dat, &v2()).unwrap();
+        assert!(
+            segs.is_empty(),
+            "auto-init placeholder values must be skipped"
+        );
+    }
+
+    #[test]
     fn test_extract_common_events_invalid_magic_no_panic() {
         // Invalid magic → parser panics → caught → ExtractorError, not a process panic.
         let bytes = b"garbage data that is definitely not a common event file".to_vec();
@@ -1394,6 +1471,17 @@ mod tests {
             segs.iter()
                 .any(|s| !s.source_text.trim().is_empty() && !s.source_text.contains('\u{FFFD}')),
             "Inko CommonEvent.dat should yield at least one readable, non-empty segment"
+        );
+        // Engine-internal (X[) and archived/disabled (zz) events must be filtered out
+        assert!(
+            !segs.iter().any(|s| {
+                if let WolfSegmentKind::CommonEventMessage { event_name, .. } = &s.kind {
+                    event_name.starts_with("X[") || event_name.starts_with("zz")
+                } else {
+                    false
+                }
+            }),
+            "X[ and zz events must not appear in extracted segments"
         );
     }
 
@@ -1521,6 +1609,104 @@ mod tests {
         assert!(
             !by_stem.contains_key("sysdatabasebasic"),
             "SysDataBaseBasic must be skipped (engine-internal, non-translatable)"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Speaker name extraction tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_speaker_plain_name() {
+        let texts = vec!["\\Eほのか\n「こんにちは」".to_string()];
+        let names = extract_wolf_speaker_names(&texts);
+        assert_eq!(names.len(), 1);
+        assert_eq!(names[0].canonical, "ほのか");
+        assert_eq!(names[0].occurrences, 1);
+    }
+
+    #[test]
+    fn test_speaker_colored_name_stripped() {
+        // \c[2]ほのか → canonical must be "ほのか"
+        let texts = vec!["\\E\\c[2]ほのか\n「セリフ」".to_string()];
+        let names = extract_wolf_speaker_names(&texts);
+        assert_eq!(names.len(), 1);
+        assert_eq!(names[0].canonical, "ほのか");
+    }
+
+    #[test]
+    fn test_speaker_deduplication_and_count() {
+        let texts = vec![
+            "\\Eほのか\n「A」".to_string(),
+            "\\Eほのか\n「B」".to_string(),
+            "\\E男\n「C」".to_string(),
+        ];
+        let names = extract_wolf_speaker_names(&texts);
+        assert_eq!(names.len(), 2);
+        assert_eq!(names[0].canonical, "ほのか");
+        assert_eq!(names[0].occurrences, 2);
+    }
+
+    #[test]
+    fn test_speaker_punctuation_only_filtered() {
+        // ……？ — no alphanumeric Japanese → must be filtered
+        let texts = vec!["\\E……？\n「…」".to_string()];
+        let names = extract_wolf_speaker_names(&texts);
+        assert!(names.is_empty(), "punctuation-only must be filtered");
+    }
+
+    #[test]
+    fn test_speaker_long_narration_filtered() {
+        // >10 chars → must be filtered (narration sentence, not a name)
+        let texts = vec!["\\Eここは150年の歴史を持つ道場\n続き".to_string()];
+        let names = extract_wolf_speaker_names(&texts);
+        assert!(
+            names.is_empty(),
+            "narration sentences longer than 10 chars must be filtered"
+        );
+    }
+
+    #[test]
+    fn test_speaker_no_newline_no_match() {
+        // \E without a following \n → no match
+        let texts = vec!["\\Eほのか".to_string()];
+        let names = extract_wolf_speaker_names(&texts);
+        assert!(names.is_empty());
+    }
+
+    #[test]
+    fn test_speaker_mid_text_no_match() {
+        // \E not at position 0 → not a speaker prefix
+        let texts = vec!["普通のテキスト\\Eほのか\n続き".to_string()];
+        let names = extract_wolf_speaker_names(&texts);
+        assert!(
+            names.is_empty(),
+            "\\E mid-text must not be treated as a speaker prefix"
+        );
+    }
+
+    #[test]
+    fn test_real_honoka_speaker_names() {
+        let path = test_dir().join("月咲流ホノカver1.03/Data/BasicData/CommonEvent.dat");
+        if !path.exists() {
+            return;
+        }
+        let bytes = std::fs::read(&path).unwrap();
+        let segs = extract_common_events(&bytes, &v2()).unwrap();
+        let source_texts: Vec<String> = segs.iter().map(|s| s.source_text.clone()).collect();
+        let names = extract_wolf_speaker_names(&source_texts);
+        eprintln!(
+            "Honoka speaker names ({} found): {:?}",
+            names.len(),
+            names.iter().map(|n| &n.canonical).collect::<Vec<_>>()
+        );
+        assert!(
+            names.len() >= 5,
+            "Honoka must have at least 5 speaker names"
+        );
+        assert!(
+            names.iter().any(|n| n.canonical == "ほのか"),
+            "ほのか must be among the extracted speakers"
         );
     }
 }

@@ -34,6 +34,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useProviderConfig } from "@/stores/llm";
+import { useProjectStore } from "@/stores/project";
 import type { GlossaryTerm } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -210,8 +211,13 @@ export function GlossaryPanel({ projectId, langPair }: GlossaryPanelProps) {
   const providerConfig = useProviderConfig();
   const [terms, setTerms] = useState<GlossaryTerm[]>([]);
   const [isExtracting, setIsExtracting] = useState(false);
+  const [isExtractingSpeakers, setIsExtractingSpeakers] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const activeProject = useProjectStore((s) =>
+    s.projects.find((p) => p.id === s.activeProjectId),
+  );
+  const isWolf = activeProject?.engine === "wolf";
 
   const loadTerms = useCallback(async () => {
     if (!projectId) {
@@ -285,6 +291,32 @@ export function GlossaryPanel({ projectId, langPair }: GlossaryPanelProps) {
     }
   }
 
+  async function handleExtractSpeakers() {
+    if (!projectId || isExtractingSpeakers) return;
+    setIsExtractingSpeakers(true);
+    try {
+      const newTerms = await invoke<GlossaryTerm[]>("extract_wolf_speakers", {
+        projectId,
+        langPair,
+      });
+      if (newTerms.length === 0) {
+        toast.info(t("glossaryPanel.extractSpeakersNone"));
+      } else {
+        setTerms((prev) => {
+          const existingIds = new Set(prev.map((t) => t.id));
+          return [...prev, ...newTerms.filter((t) => !existingIds.has(t.id))];
+        });
+        toast.success(
+          `${newTerms.length} ${t("glossaryPanel.extractSpeakersDone")}`,
+        );
+      }
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setIsExtractingSpeakers(false);
+    }
+  }
+
   async function handleSaveEdit(
     id: string,
     source: string,
@@ -355,6 +387,22 @@ export function GlossaryPanel({ projectId, langPair }: GlossaryPanelProps) {
               t("glossaryPanel.extract")
             )}
           </Button>
+          {isWolf && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-5 px-1.5 text-[10px]"
+              onClick={() => void handleExtractSpeakers()}
+              disabled={!projectId || isExtractingSpeakers}
+              title={t("glossaryPanel.extractSpeakers")}
+            >
+              {isExtractingSpeakers ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                t("glossaryPanel.extractSpeakers")
+              )}
+            </Button>
+          )}
         </div>
       </div>
 

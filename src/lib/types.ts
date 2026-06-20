@@ -29,6 +29,13 @@ export interface SourceFile {
   filePath: string;
   fileType: string;
   translationSecs: number | null;
+  translatedCount: number;
+  totalCount: number;
+}
+
+export interface FontScanResult {
+  existingFontCount: number;
+  totalTranslated: number;
 }
 
 export interface Segment {
@@ -130,4 +137,5 @@ export interface ProviderConfig {
   url: string;
   model: string;
   apiKey?: string;
+  batchSize: number;
 }

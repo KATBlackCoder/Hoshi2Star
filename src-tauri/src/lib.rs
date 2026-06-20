@@ -10,14 +10,17 @@ pub mod llm;
 pub mod state;
 pub mod utils;
 
-use commands::export::{export_debug_json, export_project, export_qa_report, export_tm};
+use commands::export::{
+    debug_inject_file, export_debug_json, export_project, export_qa_report, export_tm,
+    scan_font_status,
+};
 use commands::glossary::{
-    add_glossary_term, delete_glossary_term, extract_glossary_terms, get_glossary,
-    update_glossary_term,
+    add_glossary_term, delete_glossary_term, extract_glossary_terms, extract_wolf_speakers,
+    get_glossary, update_glossary_term,
 };
 use commands::project::{
-    delete_project, get_project_stats, get_segments, get_source_files, list_projects, open_project,
-    update_segment,
+    debug_dump_segments, delete_project, get_project_stats, get_segments, get_source_files,
+    list_projects, open_project, update_segment,
 };
 use commands::qa::{get_qa_report, get_tm_suggestions, qa_check_segment};
 use commands::translate::{get_ollama_models, translate_all_segments, translate_segments};
@@ -62,6 +65,7 @@ pub fn run() {
             update_glossary_term,
             delete_glossary_term,
             extract_glossary_terms,
+            extract_wolf_speakers,
             export_tm,
             export_qa_report,
             export_debug_json,
@@ -69,6 +73,9 @@ pub fn run() {
             delete_project,
             get_project_stats,
             translate_all_segments,
+            debug_dump_segments,
+            debug_inject_file,
+            scan_font_status,
         ]);
 
     #[cfg(debug_assertions)]

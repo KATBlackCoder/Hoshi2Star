@@ -19,7 +19,8 @@ use std::sync::LazyLock;
 ///  11. `<L>/<C>/<R>`         — alignment tags
 ///  12. `\A+`, `\A-`          — anti-aliasing
 ///  13. `\E \N \\ \! \. \^ \> \<` — no-arg display control codes
-///  14. `\n`                  — literal newline
+///  14. `^@\d+\n`             — Wolf v3 speaker sprite index prefix (leading only)
+///  15. `\n`                  — literal newline
 pub(crate) static RE_WOLF: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?x)
@@ -39,6 +40,7 @@ pub(crate) static RE_WOLF: LazyLock<Regex> = LazyLock::new(|| {
         | <[LCR]>                              # alignment tags
         | \\A[+\-]                             # anti-aliasing on/off
         | \\[EN\\!.^><]                        # no-arg codes: \E \N \\ \! \. \^ \> \<
+        | ^@\d+\n                              # Wolf v3 speaker prefix (@N\n) — leading only
         | \n                                   # literal newline
         ",
     )
@@ -154,5 +156,48 @@ mod tests {
         let result = Tokenizer::tokenize(r"\V[12]", Engine::MvMz);
         assert_eq!(result.map.len(), 1);
         assert_eq!(result.map.get("⟦ph_0⟧").unwrap(), r"\V[12]");
+    }
+
+    #[test]
+    fn test_wolf_v3_speaker_prefix_round_trip() {
+        // @2\n is the Wolf v3 speaker sprite index — leading @N\n becomes one token
+        let original = "@2\n「ねえ、今日はどこ行く？」";
+        let result = Tokenizer::tokenize(original, Engine::Wolf);
+        assert_eq!(
+            result.map.len(),
+            1,
+            "only the speaker prefix must be tokenized"
+        );
+        assert_eq!(result.map.get("⟦ph_0⟧").unwrap(), "@2\n");
+        assert!(result.text.contains("「ねえ、今日はどこ行く？」"));
+        let restored = Tokenizer::restore(&result.text, &result.map).unwrap();
+        assert_eq!(restored, original);
+    }
+
+    #[test]
+    fn test_wolf_v3_speaker_prefix_two_digit() {
+        // @10\n — two-digit index must also match
+        let original = "@10\nテキスト";
+        let result = Tokenizer::tokenize(original, Engine::Wolf);
+        assert_eq!(result.map.get("⟦ph_0⟧").unwrap(), "@10\n");
+        let restored = Tokenizer::restore(&result.text, &result.map).unwrap();
+        assert_eq!(restored, original);
+    }
+
+    #[test]
+    fn test_wolf_v3_speaker_prefix_not_mid_text() {
+        // @N\n mid-text must NOT be tokenized as a speaker prefix (anchor is leading-only)
+        let original = "テスト@2\nつぎ";
+        let result = Tokenizer::tokenize(original, Engine::Wolf);
+        // The \n inside @2\n is still tokenized as a bare newline
+        assert!(
+            result.map.values().any(|v| v == "\n"),
+            "bare \\n must still be a token"
+        );
+        // But @2 before the \n is not a speaker token
+        assert!(
+            !result.map.values().any(|v| v.starts_with('@')),
+            "@2 mid-text must not be a speaker token"
+        );
     }
 }

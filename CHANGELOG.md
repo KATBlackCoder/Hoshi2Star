@@ -5,6 +5,34 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+### Added
+- Add `engines/filter.rs` — shared filter module for all engine extractors: `is_pure_number()`, `is_pure_symbol()`, `needs_translation(text, engine)`. Single gate replacing per-extractor ad-hoc checks; engine-specific placeholder tokenization via `TokEngine` parameter
+- Add `needs_translation` filters in MV/MZ extractor: pure digits (`5`, `100`), pure punctuation/symbols (`…`, `・・・`, `-`, `？？？`, `！！！！`), disabled RPG Maker choices (`-`) are now skipped at extraction (~102 noise segments eliminated on reference MV game)
+- Add Ollama health check (`GET /api/tags`) before glossary extraction and before translation (`translate_segments` + `translate_all_segments`) — emits a clear "Ollama inaccessible — vérifiez qu'il est démarré" error instead of a raw reqwest TCP error
+- Add 1-retry with 2 s delay to `OllamaProvider::chat()` (used by glossary extraction) — previously a single failed request aborted with no retry
+- Add `debug_dump_segments` universal debug extraction command (replaces `debug_dump_wolf_segments`) — dispatches by engine (MV/MZ, VX Ace, Wolf) and produces a unified JSON with `engine`, `total_files`, `total_segments`, `by_kind` histogram, and per-file segment list
+- Add Groupe F placeholder codes (`\FF[a_0_001]`, `\AA[FF]`, `\F[code]`) to `RE_MVMZ` and `RE_MZONLY` tokenizer — pure plugin-code segments are auto-skipped via `needs_translation`
+- Add `" by Hoshi2Star"` branding suffix to `GameTitle` at MV/MZ extraction
+- Add project deletion confirmation dialog (`AlertDialog`) in `ProjectList` with i18n keys `confirmDeleteTitle/Desc/Cancel/Confirm` (EN + FR)
+- Add exact-one-translation constraint to glossary extraction LLM prompt — eliminates slash-separated double translations (`エール→Aura/Elixir`) from small models
+
+### Changed
+- Refactor all three engine extractors (MV/MZ, VX Ace, Wolf) to delegate all filter logic to `engines::filter::needs_translation` — removed duplicate `is_placeholder_only` / `is_wolf_placeholder_only` local functions; VX Ace gains symbol/number filtering it previously lacked
+- Remove `CommonEventName` from MV/MZ extraction — developer labels (`HUDピクチャ消去`) were extracted as translatable text; now skipped with a comment
+
+### Added
+- Add `debug_inject_file(sourceFileId, fontSize?, replaceExisting)` Tauri command — injects a single fully-translated file back into the game (Wolf or future engines); enforces completeness (all segments must be translated before proceeding)
+- Add per-file "Debug Inject" button (`FlaskConical` icon, hover-only) in `FileTree.tsx` — visible only when `totalCount > 0 && translatedCount === totalCount`; rows restructured from `<button>` to `<div role="button">` to fix invalid nested-button DOM
+- Add `scan_font_status(sourceFileId?, projectId?)` Tauri command — counts segments already prefixed with `\f[N]` vs total translated; drives `FontSizeDialog` before any injection or export
+- Add `FontSizeDialog` component (`src/components/FontSizeDialog.tsx`) — `AlertDialog`-based; always shown before inject/export; numeric input for font size (default 18, range 8–64); optional "replace existing" checkbox when `existingFontCount > 0`; locale keys `fontSizeDialog.*` (EN + FR)
+- Add `\f[N]` font size prefix management in Wolf RPG export flow — `apply_font_prefix()` applies/replaces `\f[N]` at start of each translated segment; `persist_font_size()` writes the prefix to DB before injection so re-injection picks it up automatically; wired into both `debug_inject_file` and `export_project`
+- Add `FontScanResult { existingFontCount, totalTranslated }` IPC type (Rust + TypeScript)
+- Add `translated_count` and `total_count` to `SourceFile` (Rust + TypeScript) — computed by `get_source_files` via `LEFT JOIN segments` + `SUM(CASE …)` / `COUNT`; annotated `#[sqlx(default)]` so existing queries (`export_project`) remain unaffected
+- Add `extract_wolf_speakers(projectId)` Tauri command — scans Wolf `BasicData/*.dat` database segments for speaker names (field `name` on `character` / `actor` / `人物` type names), deduplicates, and inserts them as project-local glossary entries; wired to a new "Speakers" button in `GlossaryPanel`; locale keys `glossaryPanel.extractSpeakers*` (EN + FR)
+- Add Wolf RPG extractor skip filters for Inko v2.0 — `extract_common_events` (v2 + v3) skips events whose command string starts with `X[` or `zz`; `extract_database_segments` skips entries whose value contains `自動ｼｽﾃﾑ初期化`; tests: `test_extract_database_skips_auto_init`, updated `test_real_inko_common_events_v3`
+- Add `^@\d+\n` pattern to `RE_WOLF` tokenizer (anchored at start of string) — tokenizes Wolf speaker-tag lines like `@0\n`, `@12\n`; three unit tests: round-trip, two-digit, mid-text unchanged
+- Add a "Batch size (segments per call)" setting (1–100, default 20) in Settings → LLM — `ProviderConfig.batch_size` flows through `TranslationContext.batch_size` to `batch::group_segments` in `pipeline::run_inner`, replacing the hardcoded `DEFAULT_BATCH_SIZE`. Clamped to `[1, 100]` before grouping; persisted in `settings.json` as `batch_size` (`#[serde(default)]` for backward compatibility with older config files)
+
 ### Fixed
 - Fix `.wolf` v8 archives bundling a duplicate `BasicData/` (e.g. a bonus "complete initial state" sample folder under `データ集/`) shadowing the real database files — `legacy_xor::WolfFile` now carries the full reconstructed archive path (`path` field, via the existing `DARC_DIRECTORY` parent-chain walk), and `extract_dat_pairs_from_archives` only accepts files directly under a top-level `BasicData/`. Previously the duplicate `DataBase.dat` (257 bytes, non-standard header) shadowed the real one (85738 bytes) and surfaced as a spurious "encrypted database" error, while the duplicate `CDataBase.dat` (also 257 bytes, valid header) silently shadowed the real 90631-byte one. Also fixes `SysDataBaseBasic` never being skipped on the archive path (case-sensitive comparison against an already-lowercased stem)
 - Replace the misleading "encrypted database not supported in F4-03 (deferred to F4-05)" error (F4-05 is complete and never covered this) with a neutral message reporting the unexpected indicator byte

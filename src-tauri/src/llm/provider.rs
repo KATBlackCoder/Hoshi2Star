@@ -28,6 +28,9 @@ pub struct TranslationContext {
     /// Project engine (`"wolf"`, `"mv_mz"`, `"vx_ace"`, `"bakin"`, …) — selects
     /// which placeholder patterns `Tokenizer::tokenize` uses (ADR-002).
     pub engine: String,
+    /// Number of segments sent to the provider per LLM call. Clamped to
+    /// `[1, 100]` by the pipeline before being passed to `batch::group_segments`.
+    pub batch_size: usize,
 }
 
 #[derive(Debug, Error)]
@@ -80,6 +83,8 @@ pub const DEFAULT_OLLAMA_URL: &str = "http://localhost:11434";
 pub const DEFAULT_OLLAMA_MODEL: &str = "qwen3:4b-instruct-2507-q4_K_M";
 /// Default per-request timeout.
 pub const DEFAULT_TIMEOUT_SECS: u64 = 120;
+/// Default number of segments per LLM call (see `TranslationContext::batch_size`).
+pub const DEFAULT_BATCH_SIZE: usize = 20;
 
 const MAX_RETRIES: u32 = 3;
 
@@ -272,20 +277,32 @@ impl LlmProvider for OllamaProvider {
             stream: false,
         };
 
-        let resp = self
-            .client
-            .post(format!("{}/api/chat", self.base_url))
-            .json(&request)
-            .send()
-            .await
-            .map_err(LlmError::Http)?;
-
-        let parsed: OllamaChatResponse = resp
-            .json()
-            .await
-            .map_err(|e| LlmError::ResponseFormat(e.to_string()))?;
-
-        Ok(parsed.message.content)
+        let mut last_err: Option<LlmError> = None;
+        for attempt in 0..2 {
+            if attempt > 0 {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+            match self
+                .client
+                .post(format!("{}/api/chat", self.base_url))
+                .json(&request)
+                .send()
+                .await
+            {
+                Err(e) => {
+                    last_err = Some(LlmError::Http(e));
+                    continue;
+                }
+                Ok(resp) => {
+                    return resp
+                        .json::<OllamaChatResponse>()
+                        .await
+                        .map(|r| r.message.content)
+                        .map_err(|e| LlmError::ResponseFormat(e.to_string()));
+                }
+            }
+        }
+        Err(last_err.unwrap())
     }
 }
 
@@ -389,6 +406,7 @@ mod tests {
             target_lang: "en".to_string(),
             glossary_terms: vec![],
             engine: "mv_mz".to_string(),
+            batch_size: DEFAULT_BATCH_SIZE,
         }
     }
 

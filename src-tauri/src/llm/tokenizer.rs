@@ -22,33 +22,38 @@ use std::sync::LazyLock;
 // Regex patterns (compiled once at first use)
 // ---------------------------------------------------------------------------
 
-/// MV/MZ combined: Groupe A + Groupe B + Groupe D (MV `[%n]` form) + Groupe E (plugins).
+/// MV/MZ combined: Groupe A + Groupe B + Groupe D (MV `[%n]` form) + Groupe E + Groupe F (plugins).
 /// NOTE: `\PX/\PY/\FS` (Groupe C) are NOT included — they are MZ-only.
 static RE_MVMZ: LazyLock<Regex> = LazyLock::new(|| {
     // Inside a character class [..], only \\ needs escaping — other chars are literal.
     // Characters matched after the leading backslash: G \ $ . | ! > < ^ { }
     // Groupe E MUST come before Groupe A to avoid partial matches on \+word.
+    // Groupe F MUST come before Groupe A — multi-letter plugin codes (\FF[a_0_001], \AA[FF])
+    // that carry an alphanumeric argument not matched by Groupe A's \d+ restriction.
     // \n (literal newline U+000A) is tokenized last — preserves structural line breaks
     // in multi-line fields (description, profile) so the segment stays on one line.
     Regex::new(
         r"(?x)
-          \\[+\-]\w+\[\d+\]        # Groupe E — plugin codes (\+switch[n], \-var[n], …)
-        | \\[VNPCIvnpci]\[\d+\]   # Groupe A — codes avec argument numérique (maj + min)
-        | \\[G\\$.|!><^{}]        # Groupe B — codes sans argument
-        | \[%\d+\]                # Groupe D (MV) — [%1] [%2] …
-        | \n                      # structural line break (description/profile fields)
+          \\[+\-]\w+\[\d+\]         # Groupe E — plugin codes (\+switch[n], \-var[n], …)
+        | \\[A-Za-z]{1,3}\[[A-Za-z0-9_]+\]  # Groupe F — plugin alphanum codes (\FF[a_0_001], \AA[FF])
+        | \\[VNPCIvnpci]\[\d+\]    # Groupe A — codes avec argument numérique (maj + min)
+        | \\[G\\$.|!><^{}]         # Groupe B — codes sans argument
+        | \[%\d+\]                 # Groupe D (MV) — [%1] [%2] …
+        | \n                       # structural line break (description/profile fields)
         ",
     )
     .expect("RE_MVMZ regex must compile")
 });
 
-/// MZ-only: Groupe C (before A!) + Groupe A + Groupe B + Groupe D (MZ bare `%n` form) + Groupe E.
+/// MZ-only: Groupe C (before A!) + Groupe A + Groupe B + Groupe D (MZ bare `%n` form) + Groupe E + Groupe F.
 /// Groupe C MUST come before Groupe A to prevent `\P` from consuming `\PX`/`\PY`/`\FS`.
+/// Groupe F comes after Groupe C (so \PX[100] is captured by C first) but before Groupe A.
 static RE_MZONLY: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?x)
           \\[+\-]\w+\[\d+\]                # Groupe E — plugin codes (\+switch[n], …)
         | \\(?:PX|PY|FS|px|py|fs)\[\d+\]  # Groupe C — MZ position/font codes (avant A!)
+        | \\[A-Za-z]{1,3}\[[A-Za-z0-9_]+\]  # Groupe F — plugin alphanum codes (\FF[a_0_001], \AA[FF])
         | \\[VNPCIvnpci]\[\d+\]            # Groupe A — codes avec argument numérique (maj + min)
         | \\[G\\$.|!><^{}]                 # Groupe B — codes sans argument
         | %\d+                             # Groupe D (MZ) — %1 %2 … (sans crochets)
@@ -406,6 +411,73 @@ mod tests {
         // Round-trip must preserve lowercase form
         let original = r"\c[3]\n[1] テスト";
         let tok = Tokenizer::tokenize(original, Engine::MvMz);
+        let restored = Tokenizer::restore(&tok.text, &tok.map).unwrap();
+        assert_eq!(restored, original);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Groupe F — plugin alphanumeric codes (\FF[a_0_001], \AA[FF], \F[s_0_001])
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn test_groupe_f_ff_code_tokenized() {
+        let result = Tokenizer::tokenize(r"\FF[a_0_001]", Engine::MvMz);
+        assert_eq!(result.text, "⟦ph_0⟧");
+        assert_eq!(result.map.get("⟦ph_0⟧").unwrap(), r"\FF[a_0_001]");
+    }
+
+    #[test]
+    fn test_groupe_f_f_code_tokenized() {
+        let result = Tokenizer::tokenize(r"\F[s_0_001]", Engine::MvMz);
+        assert_eq!(result.text, "⟦ph_0⟧");
+        assert_eq!(result.map.get("⟦ph_0⟧").unwrap(), r"\F[s_0_001]");
+    }
+
+    #[test]
+    fn test_groupe_f_aa_code_tokenized() {
+        let result = Tokenizer::tokenize(r"\AA[FF]", Engine::MvMz);
+        assert_eq!(result.text, "⟦ph_0⟧");
+        assert_eq!(result.map.get("⟦ph_0⟧").unwrap(), r"\AA[FF]");
+    }
+
+    #[test]
+    fn test_groupe_f_pure_code_segment_is_fully_tokenized() {
+        // Real segment from RJ01311523 — contains ONLY plugin codes, no translatable text.
+        // After adding Groupe F, is_placeholder_only() must return true for such segments.
+        let original = r"\FF[a_0_001]\AA[FF]";
+        let result = Tokenizer::tokenize(original, Engine::MvMz);
+        assert_eq!(result.map.len(), 2, "both codes must be tokenized");
+        let bare = result
+            .map
+            .keys()
+            .fold(result.text.clone(), |s, k| s.replace(k.as_str(), ""));
+        assert!(
+            bare.trim().is_empty(),
+            "no text must remain after stripping tokens"
+        );
+    }
+
+    #[test]
+    fn test_groupe_f_mixed_with_text_round_trip() {
+        // Mixed: plugin code + Japanese text — code tokenized, text preserved.
+        let original = r"\FF[a_0_001]おはよう！";
+        let tok = Tokenizer::tokenize(original, Engine::MvMz);
+        assert_eq!(tok.map.len(), 1);
+        assert!(tok.text.contains("おはよう！"));
+        let restored = Tokenizer::restore(&tok.text, &tok.map).unwrap();
+        assert_eq!(restored, original);
+    }
+
+    #[test]
+    fn test_groupe_f_does_not_break_groupe_a() {
+        // Groupe A (\C[17], \V[12]) must still work correctly alongside Groupe F.
+        let original = r"\C[17]テスト\C[0] \FF[a_0_001]";
+        let tok = Tokenizer::tokenize(original, Engine::MvMz);
+        assert_eq!(
+            tok.map.len(),
+            3,
+            "\\C[17], \\C[0], \\FF[a_0_001] = 3 tokens"
+        );
         let restored = Tokenizer::restore(&tok.text, &tok.map).unwrap();
         assert_eq!(restored, original);
     }

@@ -219,6 +219,17 @@
       "constellation" toolbar (commit `34d9ac8`). Démos de référence dans
       `docs/design/`. Anneaux de progression par fichier (FileTree) différés
       (tâche dormante `tasks/todo.md`, nécessite extension `get_source_files`).
+- [x] `translated_count` + `total_count` sur `SourceFile` — `get_source_files` enrichi d'un
+      `LEFT JOIN segments` + `SUM(CASE …)` / `COUNT`; `#[sqlx(default)]` pour rétrocompat;
+      `FileTree.tsx` affiche le bouton **Debug Inject** uniquement quand le fichier est 100 % traduit.
+- [x] Bouton **Debug Inject** (`FlaskConical`) par fichier dans `FileTree` — déclencheur visible
+      au survol si `translatedCount === totalCount`; appelle `debug_inject_file` via `scan_font_status`
+      + `FontSizeDialog` avant injection.
+- [x] `FontSizeDialog` (`src/components/FontSizeDialog.tsx`) + `scan_font_status` Tauri command —
+      propose d'injecter un préfixe `\f[N]` (taille de police Wolf RPG) sur tous les segments traduits
+      avant injection ou export; détecte les `\f[N]` existants; persisté en DB avant chaque run.
+- [x] `export_project` étendu avec `fontSize: Option<u32>` + `replaceExisting: bool` — même flux
+      `FontSizeDialog` proposé au moment de l'export projet depuis `useAppHandlers`.
 
 ### Robustesse LLM
 - [x] **F3-11** — Batch adaptatif : split récursif sur `ResponseFormat` — `llm_translate_with_split` avec `Box::pin`, récursion bornée à `len==1`, 9 tests pipeline (dont Test A et Test C couvrant le split partiel)
@@ -248,6 +259,9 @@
 
 ### Engine Layer — Wolf RPG v1/v2
 - [-] Intégration `rewolf-trans` (TypeScript) via sidecar Tauri ou bindings WASM — rejeté, approche Rust natif retenue
+- [x] F4-06 `extract_wolf_speakers` Tauri command — scanne les `.dat` du projet pour les noms de personnages
+      (champs `name` sur les types `character`/`actor`/`人物`), déduplique et insère comme termes glossaire
+      projet-local; bouton "Speakers" dans `GlossaryPanel`; locale keys `glossaryPanel.extractSpeakers*`
 - [x] F4-01 : Engine::Wolf détection + WolfVersion + RE_WOLF tokenizer + engines/wolf/ scaffold
 - [x] F4-02 `src-tauri/src/engines/wolf/decryptor.rs` — décryptage `.wolf` (DXA XOR v5/v6/v8)
       *(déplacé vers `wolf/decrypt/legacy_xor.rs` le 2026-06-12)*
@@ -286,6 +300,11 @@
       4 maps + le `CommonEvent.dat` réels d'Inko (v2.0). Remplace l'approche fork
       `wolfrpg-map-parser` pour le v3.x — v2.x (Honoka) reste sur `wolfrpg_map_parser`.
 - [x] Tests sur jeux Wolf v3.x réels (Inko v2.0 : maps + CommonEvent.dat)
+- [x] Filtres de skip Wolf extractor — `extract_common_events` v2/v3 ignore les événements `X[` et `zz`
+      (commandes internes non-traduisibles) ; `extract_database_segments` ignore les entrées contenant
+      `自動ｼｽﾃﾑ初期化` (initialisation système automatique) ; réduit ~100 segments parasites sur Inko v2.0
+- [x] Pattern `^@\d+\n` ajouté à `RE_WOLF` — tokenize les balises orateur Wolf (`@0\n`, `@12\n`)
+      ancrées en début de texte ; round-trip validé (3 tests)
 - [x] F5-02 Décision WolfX (2026-06-12) : **pas de déchiffrement natif ni de sidecar
       UberWolfCli** (ChaCha20 + clé en hash = rétro-ingénierie disproportionnée ;
       licence UberWolf non confirmée = non bundlable ; binaire Windows-only vs
@@ -304,6 +323,21 @@
       `extract_dat_pairs_from_archives` résolvent le faux "encrypted database"
       ET la perte silencieuse de segments `CDataBase`. v5/v6 : pas de
       reconstruction de chemin (dormant, déclencheur = collision constatée).
+
+### Engine Layer — Extraction quality (2026-06-20)
+- [x] `engines/filter.rs` — module partagé `needs_translation(text, engine)` : filtre chiffres purs,
+      symboles purs (`…`, `-`, `？？？`, `！！！！`), placeholders uniquement ; tous les extracteurs
+      (MV/MZ, VX Ace, Wolf) délèguent à ce module ; Wolf garde son filtre `is_resource_path` spécifique
+- [x] Suppression `CommonEventName` de l'extraction MV/MZ — labels développeur jamais visibles
+- [x] Groupe F tokenizer (`\FF[a]`, `\AA[x]`, `\F[c]`) — codes plugin alphanumériques auto-skippés
+- [x] Branding `" by Hoshi2Star"` sur `GameTitle` à l'extraction MV/MZ
+- [x] Debug extraction universelle (`debug_dump_segments`) — MV/MZ + VX Ace + Wolf, JSON unifié
+- [x] Health check Ollama avant extraction glossaire + avant traduction (× 2 commandes) —
+      message d'erreur clair au lieu d'une erreur TCP brute `reqwest`
+- [x] 1-retry avec délai 2 s dans `OllamaProvider::chat()` (extraction glossaire)
+- [x] Confirmation avant suppression de projet (`AlertDialog` + i18n EN/FR)
+- [x] Contrainte "exactement 1 traduction" dans le prompt d'extraction glossaire — élimine les
+      doubles traductions (`エール→Aura/Elixir`) des petits modèles
 
 ### Engine Layer — RPG Developer Bakin
 - [ ] Évaluer adoption DLC Localization Toolkit (SmileBoom) — si > 200 jeux traduits : go
@@ -337,6 +371,46 @@
 - [ ] Cloud TM partagé opt-in (anonymisé) — contribution communautaire
 - [ ] Support RPG Maker 2000/2003 (vgperson workflow, niche)
 - [ ] App mobile companion (lecture seule du projet, validation segments)
+
+### Inspiré de DazedMTLTool (analyse 2026-06-14, non planifié)
+
+> Analyse comparative de https://github.com/dazedanon/DazedMTLTool. Idées à évaluer
+> au cas par cas — aucune ne fait partie d'une phase active.
+
+**Pipeline LLM / robustesse (F2-F3)**
+- [ ] QA contenu post-traduction : détecter traduction vide, trop courte vs source,
+      "runaway" (sortie démesurée), répétition de caractères (glitch modèle) ;
+      retry avec note de correction dans le message user (sans casser le cache prompt)
+- [ ] Historique glissant (N derniers segments traduits) injecté comme contexte
+      de cohérence pour la passe translate
+- [ ] Mode "Estimate" : calcul tokens/coût avant de lancer une traduction réelle
+- [ ] Cache de traduction disque (hash payload → résultat) pour dédup cross-run
+      avant validation humaine, en complément de la TM
+- [ ] Prompt caching Claude : séparer prompt statique (glossaire global + règles,
+      cache ephemeral 1h) du contexte dynamique (glossaire matché + historique)
+- [ ] Batch API Anthropic (50% moins cher) : pipeline 2 passes collect/consume —
+      complexité élevée, à réserver aux gros projets
+- [ ] Adaptive rate limiter par provider (lecture headers `x-ratelimit-*`)
+
+**Glossaire (F3)**
+- [ ] Champs optionnels par terme/personnage : genre, rôle, registre de discours
+      (ex: "flustered", "cold and terse") injectés dans le prompt pour adapter le ton
+- [ ] Matching contextuel : n'injecter dans le prompt que les termes du glossaire
+      réellement présents dans le batch courant (word-boundary aware kanji/kana)
+
+**Engine MV/MZ**
+- [ ] Toggles granulaires par code d'événement (101/102/108/111/122/320/324/
+      355/356/357/401/405/408/657) configurables par projet — couverture des cas limites
+- [ ] Speaker detection heuristique : scan des maps + scoring de patterns
+      (`\n<Name>`, `【Name】`, `Name「...`, code 101) pour pré-configurer la détection
+- [ ] QA largeur de ligne "visible length" ignorant les codes couleur `\c[n]`
+
+**Feature différenciante (hors phases)**
+- [ ] Overlay playtest "click-to-segment" : plugin injecté dans le jeu (NW.js) qui,
+      via un serveur local exposé par le backend Tauri, sélectionne le segment
+      correspondant dans le SegmentGrid pendant le playtest — boucle jeu ↔ CAT editor
+- [ ] Prompt par projet en surcouche : règles custom (ton, avertissements de contenu,
+      terminologie) fusionnées avec le prompt de base plutôt que remplacées
 
 ---
 

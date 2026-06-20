@@ -12,9 +12,9 @@
 //! - `MapInfos.rvdata2` is a Ruby Hash with Integer keys (serialised as string "1", "2", ...)
 //! - `System.rvdata2` uses snake_case fields (`game_title`, `currency_unit`)
 //! - Code 101 in VX Ace has NO speaker name (unlike MZ params[4])
-//! - `is_placeholder_only()` reused from MV/MZ — same escape codes (\V[n], \N[n], etc.)
+//! - Placeholder filtering via `engines::filter` — VX Ace shares the MvMz tokenizer
 
-use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
+use crate::{engines::filter, llm::tokenizer::Engine as TokEngine};
 use marshal_rs::load_utf8;
 use serde_json::Value;
 
@@ -155,7 +155,7 @@ pub fn extract_skills(json: &Value) -> Vec<ExtractedSegment> {
             ("description", SegmentKind::SkillDescription),
         ] {
             if let Some(text) = entry.get(field).and_then(Value::as_str) {
-                if !text.trim().is_empty() {
+                if filter::needs_translation(text, TokEngine::MvMz) {
                     segments.push(ExtractedSegment::new(
                         format!("/{i}/{field}"),
                         text,
@@ -166,7 +166,7 @@ pub fn extract_skills(json: &Value) -> Vec<ExtractedSegment> {
         }
         for msg_field in &["message1", "message2"] {
             if let Some(text) = entry.get(msg_field).and_then(Value::as_str) {
-                if !text.trim().is_empty() {
+                if filter::needs_translation(text, TokEngine::MvMz) {
                     segments.push(ExtractedSegment::new(
                         format!("/{i}/{msg_field}"),
                         text,
@@ -191,7 +191,7 @@ pub fn extract_states(json: &Value) -> Vec<ExtractedSegment> {
             continue;
         }
         if let Some(text) = entry.get("name").and_then(Value::as_str) {
-            if !text.is_empty() {
+            if filter::needs_translation(text, TokEngine::MvMz) {
                 segments.push(ExtractedSegment::new(
                     format!("/{i}/name"),
                     text,
@@ -201,7 +201,7 @@ pub fn extract_states(json: &Value) -> Vec<ExtractedSegment> {
         }
         for msg_field in &["message1", "message2", "message3", "message4"] {
             if let Some(text) = entry.get(msg_field).and_then(Value::as_str) {
-                if !text.trim().is_empty() {
+                if filter::needs_translation(text, TokEngine::MvMz) {
                     segments.push(ExtractedSegment::new(
                         format!("/{i}/{msg_field}"),
                         text,
@@ -261,7 +261,7 @@ pub fn extract_map_infos(json: &Value) -> Vec<ExtractedSegment> {
     keys.sort_by_key(|k| k.parse::<u32>().unwrap_or(u32::MAX));
     for key in keys {
         if let Some(name) = obj[key].get("name").and_then(Value::as_str) {
-            if !name.trim().is_empty() {
+            if filter::needs_translation(name, TokEngine::MvMz) {
                 segments.push(ExtractedSegment::new(
                     format!("/{key}/name"),
                     name,
@@ -287,7 +287,7 @@ pub fn extract_common_events(json: &Value) -> Vec<ExtractedSegment> {
             continue;
         }
         if let Some(name) = event.get("name").and_then(Value::as_str) {
-            if !name.is_empty() {
+            if filter::needs_translation(name, TokEngine::MvMz) {
                 segments.push(ExtractedSegment::new(
                     format!("/{ei}/name"),
                     name,
@@ -346,7 +346,7 @@ pub fn extract_system(json: &Value) -> Vec<ExtractedSegment> {
     let mut segments = Vec::new();
 
     if let Some(title) = json.get("game_title").and_then(Value::as_str) {
-        if !title.trim().is_empty() {
+        if filter::needs_translation(title, TokEngine::MvMz) {
             segments.push(ExtractedSegment::new(
                 "/game_title",
                 title,
@@ -356,7 +356,7 @@ pub fn extract_system(json: &Value) -> Vec<ExtractedSegment> {
     }
 
     if let Some(currency) = json.get("currency_unit").and_then(Value::as_str) {
-        if !currency.trim().is_empty() {
+        if filter::needs_translation(currency, TokEngine::MvMz) {
             segments.push(ExtractedSegment::new(
                 "/currency_unit",
                 currency,
@@ -368,7 +368,7 @@ pub fn extract_system(json: &Value) -> Vec<ExtractedSegment> {
     if let Some(basic) = json.pointer("/terms/basic").and_then(Value::as_array) {
         for (i, term) in basic.iter().enumerate() {
             if let Some(text) = term.as_str() {
-                if !text.trim().is_empty() {
+                if filter::needs_translation(text, TokEngine::MvMz) {
                     segments.push(ExtractedSegment::new(
                         format!("/terms/basic/{i}"),
                         text,
@@ -382,7 +382,7 @@ pub fn extract_system(json: &Value) -> Vec<ExtractedSegment> {
     if let Some(commands) = json.pointer("/terms/commands").and_then(Value::as_array) {
         for (i, term) in commands.iter().enumerate() {
             if let Some(text) = term.as_str() {
-                if !text.trim().is_empty() {
+                if filter::needs_translation(text, TokEngine::MvMz) {
                     segments.push(ExtractedSegment::new(
                         format!("/terms/commands/{i}"),
                         text,
@@ -396,7 +396,7 @@ pub fn extract_system(json: &Value) -> Vec<ExtractedSegment> {
     if let Some(params) = json.pointer("/terms/params").and_then(Value::as_array) {
         for (i, term) in params.iter().enumerate() {
             if let Some(text) = term.as_str() {
-                if !text.trim().is_empty() {
+                if filter::needs_translation(text, TokEngine::MvMz) {
                     segments.push(ExtractedSegment::new(
                         format!("/terms/params/{i}"),
                         text,
@@ -412,7 +412,7 @@ pub fn extract_system(json: &Value) -> Vec<ExtractedSegment> {
         msg_keys.sort();
         for key in msg_keys {
             if let Some(text) = messages[key].as_str() {
-                if !text.trim().is_empty() {
+                if filter::needs_translation(text, TokEngine::MvMz) {
                     segments.push(ExtractedSegment::new(
                         format!("/terms/messages/{key}"),
                         text,
@@ -473,7 +473,7 @@ fn extract_simple_array(json: &Value, fields: &[(&str, SegmentKind)]) -> Vec<Ext
         }
         for (field, kind) in fields {
             if let Some(text) = entry.get(field).and_then(Value::as_str) {
-                if !text.trim().is_empty() {
+                if filter::needs_translation(text, TokEngine::MvMz) {
                     segments.push(ExtractedSegment::new(
                         format!("/{i}/{field}"),
                         text,
@@ -484,21 +484,6 @@ fn extract_simple_array(json: &Value, fields: &[(&str, SegmentKind)]) -> Vec<Ext
         }
     }
     segments
-}
-
-/// Returns `true` if `text` contains only RPG Maker escape codes and whitespace.
-///
-/// Reused from MV/MZ — VX Ace uses the same placeholder codes (\V[n], \N[n], etc.).
-fn is_placeholder_only(text: &str) -> bool {
-    let tok = Tokenizer::tokenize(text, TokEngine::MvMz);
-    if tok.map.is_empty() {
-        return false;
-    }
-    let bare = tok
-        .map
-        .keys()
-        .fold(tok.text.clone(), |s, k| s.replace(k.as_str(), ""));
-    bare.trim().is_empty()
 }
 
 /// Extract dialogue and choices from an event command list.
@@ -522,7 +507,7 @@ fn extract_event_list(list: &[Value], list_path: &str, segments: &mut Vec<Extrac
             // Show Text continuation — one line of dialogue
             401 => {
                 if let Some(text) = params.first().and_then(Value::as_str) {
-                    if !text.trim().is_empty() && !is_placeholder_only(text) {
+                    if filter::needs_translation(text, TokEngine::MvMz) {
                         segments.push(ExtractedSegment::new(
                             format!("{list_path}/{li}/parameters/0"),
                             text,
@@ -536,7 +521,7 @@ fn extract_event_list(list: &[Value], list_path: &str, segments: &mut Vec<Extrac
                 if let Some(choices) = params.first().and_then(Value::as_array) {
                     for (ci, choice) in choices.iter().enumerate() {
                         if let Some(text) = choice.as_str() {
-                            if !text.trim().is_empty() && !is_placeholder_only(text) {
+                            if filter::needs_translation(text, TokEngine::MvMz) {
                                 segments.push(ExtractedSegment::new(
                                     format!("{list_path}/{li}/parameters/0/{ci}"),
                                     text,

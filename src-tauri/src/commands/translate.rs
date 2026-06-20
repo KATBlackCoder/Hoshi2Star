@@ -7,7 +7,7 @@ use crate::{
     domain::types::{ProviderConfig, SourceFile},
     llm::{
         pipeline,
-        provider::{OllamaProvider, TranslationContext},
+        provider::{LlmProvider, OllamaProvider, TranslationContext},
     },
     state::AppState,
 };
@@ -72,6 +72,15 @@ pub async fn translate_segments(
             std::time::Duration::from_secs(120),
         );
 
+        if let Err(e) = provider.health_check().await {
+            let msg = format!(
+                "Ollama inaccessible ({}) — vérifiez qu'il est démarré : {e}",
+                provider_config.url
+            );
+            let _ = handle.emit("h2s://llm/error", serde_json::json!({ "message": msg }));
+            return;
+        }
+
         // Resolve the project_id from the first segment so we can load glossary terms
         // and later update the manifest stats.
         let lang_pair = "ja-en";
@@ -129,6 +138,7 @@ pub async fn translate_segments(
             target_lang: "en".to_string(),
             glossary_terms,
             engine: project_engine,
+            batch_size: provider_config.batch_size,
         };
 
         match pipeline::run(pairs, &provider, context, &db, &handle, None, None).await {
@@ -243,6 +253,15 @@ pub async fn translate_all_segments(
             std::time::Duration::from_secs(120),
         );
 
+        if let Err(e) = provider.health_check().await {
+            let msg = format!(
+                "Ollama inaccessible ({}) — vérifiez qu'il est démarré : {e}",
+                provider_config.url
+            );
+            let _ = handle.emit("h2s://llm/error", serde_json::json!({ "message": msg }));
+            return;
+        }
+
         let lang_pair = "ja-en";
         let mut cooldown =
             pipeline::CooldownState::new(cooldown_threshold_secs, cooldown_duration_secs);
@@ -307,6 +326,7 @@ pub async fn translate_all_segments(
                 target_lang: "en".to_string(),
                 glossary_terms,
                 engine: project_engine.clone(),
+                batch_size: provider_config.batch_size,
             };
 
             let translation_start = std::time::Instant::now();

@@ -22,7 +22,18 @@
   },
   "fileTree": {
     "title": "Fichiers",
-    "empty": "Ouvrir un jeu pour afficher les fichiers"
+    "empty": "Ouvrir un jeu pour afficher les fichiers",
+    "debugInject": "Injecter (debug)",
+    "debugInjectDone": "Injecté : {{path}}",
+    "debugInjectError": "Échec injection : {{error}}"
+  },
+  "fontSizeDialog": {
+    "title": "Appliquer une taille de police",
+    "desc": "{{total}} segment(s) traduit(s) · {{existing}} ont déjà un \\f[N]",
+    "label": "Taille de police (\\f[N])",
+    "replaceLabel": "Remplacer les \\f[N] existants ({{count}} segments)",
+    "skip": "Ignorer",
+    "apply": "Appliquer & injecter"
   },
   "segmentGrid": {
     "columns": {
@@ -96,7 +107,10 @@
     "deleteConfirm": "Supprimer ce terme ?",
     "extractDone": "termes extraits",
     "extractNoTerms": "Aucun nouveau terme trouvé — le jeu n'a peut-être pas de fichiers Actors/Skills/Items/States, ou tous les termes sont déjà dans le glossaire",
-    "extractError": "Erreur d'extraction"
+    "extractError": "Erreur d'extraction",
+    "extractSpeakers": "Personnages",
+    "extractSpeakersDone": "noms de personnages ajoutés",
+    "extractSpeakersNone": "Aucun nouveau nom de personnage trouvé"
   },
   "settings": {
     "title": "Paramètres",
@@ -108,7 +122,9 @@
       "modelNone": "Aucun modèle disponible",
       "modelManual": "Saisir le nom du modèle manuellement",
       "modelError": "Impossible de contacter Ollama — vérifier l'URL",
-      "testButton": "Tester"
+      "testButton": "Tester",
+      "batchSizeLabel": "Taille de lot (segments par appel)",
+      "batchSizeHint": "Plus grand = moins d'appels mais un échec de validation coûte plus cher à corriger. Plus petit = retours de progression plus fins."
     },
     "appearance": {
       "section": "Apparence",
@@ -173,6 +189,10 @@
     "delete": "Supprimer le projet",
     "deleted": "Projet « {{name}} » supprimé",
     "openError": "Impossible d'ouvrir le projet",
-    "deleteError": "Impossible de supprimer le projet"
+    "deleteError": "Impossible de supprimer le projet",
+    "confirmDeleteTitle": "Supprimer « {{name}} » ?",
+    "confirmDeleteDesc": "Tous les segments, traductions et termes de glossaire propres à ce projet seront définitivement supprimés de la base de données. Les fichiers du jeu sur le disque ne sont pas touchés.",
+    "confirmDeleteCancel": "Annuler",
+    "confirmDeleteConfirm": "Supprimer"
   }
 }

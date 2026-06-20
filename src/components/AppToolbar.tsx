@@ -3,7 +3,9 @@ import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { invoke } from "@tauri-apps/api/core";
 import {
+  Bug,
   Clock,
   Download,
   FolderOpen,
@@ -272,6 +274,29 @@ export function AppToolbar({
       >
         <Info className="h-4 w-4" />
       </Button>
+      {activeProject && (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 w-7 p-0 text-muted-foreground hover:text-amber-400"
+          title="Debug — dump extracted segments to JSON"
+          onClick={() => {
+            void invoke<string>("debug_dump_segments", {
+              gamePath: activeProject.gamePath,
+            })
+              .then((path) => {
+                console.info("[h2s] debug dump written →", path);
+                alert(`Debug JSON écrit :\n${path}`);
+              })
+              .catch((err) => {
+                console.error("[h2s] debug dump failed:", err);
+                alert(`Erreur : ${err}`);
+              });
+          }}
+        >
+          <Bug className="h-4 w-4" />
+        </Button>
+      )}
       <Button
         size="sm"
         variant="ghost"

@@ -30,11 +30,23 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const { saveSettings } = useSettingsStore();
 
   const [draft, setDraft] = useState<AppSettings>(currentSettings);
-  const [originalSettings] = useState<AppSettings>(currentSettings);
+  const [originalSettings, setOriginalSettings] =
+    useState<AppSettings>(currentSettings);
 
   const [models, setModels] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
+
+  // Re-sync local draft/original from the store every time the modal opens —
+  // `currentSettings` may have changed (loadSettings resolved, or a previous
+  // save) since this component's state was first initialized.
+  useEffect(() => {
+    if (open) {
+      setDraft(currentSettings);
+      setOriginalSettings(currentSettings);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   async function fetchModels(url: string) {
     setModelsLoading(true);
@@ -173,6 +185,34 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               {modelsError && (
                 <p className="text-[11px] text-destructive">{modelsError}</p>
               )}
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-xs text-muted-foreground">
+                {t("settings.llm.batchSizeLabel")}
+              </label>
+              <Input
+                type="number"
+                min={1}
+                max={100}
+                className="h-8 text-xs"
+                value={draft.batchSize}
+                onChange={(e) =>
+                  setDraft((d) => ({
+                    ...d,
+                    batchSize: Number(e.target.value),
+                  }))
+                }
+                onBlur={() =>
+                  setDraft((d) => ({
+                    ...d,
+                    batchSize: Math.min(100, Math.max(1, d.batchSize || 1)),
+                  }))
+                }
+              />
+              <p className="text-[11px] text-muted-foreground">
+                {t("settings.llm.batchSizeHint")}
+              </p>
             </div>
           </section>
 

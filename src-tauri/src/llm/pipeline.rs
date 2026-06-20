@@ -34,11 +34,8 @@ use std::time::{Duration, Instant};
 use tauri::Emitter;
 use thiserror::Error;
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const DEFAULT_BATCH_SIZE: usize = 20;
+#[cfg(test)]
+use crate::llm::provider::DEFAULT_BATCH_SIZE;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -202,7 +199,7 @@ where
         .map(|(i, id)| (id.clone(), i))
         .collect();
 
-    let batches = batch::group_segments(all_ids, DEFAULT_BATCH_SIZE);
+    let batches = batch::group_segments(all_ids, context.batch_size.clamp(1, 100));
     let mut done = 0usize;
 
     for batch_ids in &batches {
@@ -456,6 +453,7 @@ mod tests {
             target_lang: "en".to_string(),
             glossary_terms: vec![],
             engine: "mv_mz".to_string(),
+            batch_size: DEFAULT_BATCH_SIZE,
         }
     }
 

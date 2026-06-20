@@ -12,6 +12,7 @@ import {
 import { SettingsModal } from "@/components/settings/SettingsModal";
 import { AboutModal } from "@/components/AboutModal";
 import { TranslateAllDialog } from "@/components/TranslateAllDialog";
+import { FontSizeDialog } from "@/components/FontSizeDialog";
 import { usePendingGlossaryExtract } from "@/stores/project";
 import type { useAppHandlers } from "@/hooks/useAppHandlers";
 
@@ -36,6 +37,8 @@ export function AppDialogs({ handlers }: AppDialogsProps) {
     exportStats,
     showTranslateAll,
     translateAllStats,
+    showFontDialog,
+    fontScanResult,
     setShowSettings,
     setShowAbout,
     setExportDialog,
@@ -43,6 +46,8 @@ export function AppDialogs({ handlers }: AppDialogsProps) {
     handleGlossaryConfirm,
     handleGlossaryDecline,
     handleExportConfirm,
+    handleExportFontApply,
+    handleExportFontSkip,
     handleTranslateAllStart,
   } = handlers;
 
@@ -109,6 +114,16 @@ export function AppDialogs({ handlers }: AppDialogsProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Font size dialog — shown after export confirm when lines are too long */}
+      {fontScanResult && (
+        <FontSizeDialog
+          open={showFontDialog}
+          scan={fontScanResult}
+          onApply={handleExportFontApply}
+          onSkip={handleExportFontSkip}
+        />
+      )}
 
       {/* Glossary extraction prompt */}
       <AlertDialog open={pendingGlossaryExtract !== null}>

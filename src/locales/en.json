@@ -22,7 +22,18 @@
   },
   "fileTree": {
     "title": "Files",
-    "empty": "Open a game to view files"
+    "empty": "Open a game to view files",
+    "debugInject": "Debug inject",
+    "debugInjectDone": "Injected: {{path}}",
+    "debugInjectError": "Injection failed: {{error}}"
+  },
+  "fontSizeDialog": {
+    "title": "Apply font size",
+    "desc": "{{total}} translated segment(s) · {{existing}} already have \\f[N]",
+    "label": "Font size (\\f[N])",
+    "replaceLabel": "Replace existing \\f[N] ({{count}} segments)",
+    "skip": "Skip",
+    "apply": "Apply & inject"
   },
   "segmentGrid": {
     "columns": {
@@ -96,7 +107,10 @@
     "deleteConfirm": "Delete this term?",
     "extractDone": "terms extracted",
     "extractNoTerms": "No new terms found — the game may have no Actors/Skills/Items/States, or all terms are already in the glossary",
-    "extractError": "Extraction error"
+    "extractError": "Extraction error",
+    "extractSpeakers": "Speakers",
+    "extractSpeakersDone": "speaker names added",
+    "extractSpeakersNone": "No new speaker names found"
   },
   "settings": {
     "title": "Settings",
@@ -108,7 +122,9 @@
       "modelNone": "No model available",
       "modelManual": "Enter model name manually",
       "modelError": "Cannot reach Ollama — check the URL",
-      "testButton": "Test"
+      "testButton": "Test",
+      "batchSizeLabel": "Batch size (segments per call)",
+      "batchSizeHint": "Larger = fewer calls but a validation failure costs more to fix. Smaller = finer progress updates."
     },
     "appearance": {
       "section": "Appearance",
@@ -173,6 +189,10 @@
     "delete": "Delete project",
     "deleted": "Project \"{{name}}\" deleted",
     "openError": "Failed to open project",
-    "deleteError": "Failed to delete project"
+    "deleteError": "Failed to delete project",
+    "confirmDeleteTitle": "Delete \"{{name}}\"?",
+    "confirmDeleteDesc": "This will permanently remove all segments, translations, and project-specific glossary terms from the database. The game files on disk are not affected.",
+    "confirmDeleteCancel": "Cancel",
+    "confirmDeleteConfirm": "Delete"
   }
 }

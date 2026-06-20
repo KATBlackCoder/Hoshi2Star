@@ -48,6 +48,7 @@ interface LlmState {
 const DEFAULT_CONFIG: ProviderConfig = {
   url: "http://localhost:11434",
   model: "qwen3:4b",
+  batchSize: 20,
 };
 
 // ---------------------------------------------------------------------------
