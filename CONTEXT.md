@@ -341,6 +341,34 @@ Le workflow `.github/workflows/release.yml` se déclenche sur `push: tags: v*` :
 
 ---
 
+## RunPod — Setup Ollama
+
+RunPod est utilisé comme provider LLM distant (alternative à Ollama local) via une URL HTTPS.
+
+### Commande de démarrage (terminal RunPod)
+
+```bash
+bash -c "
+  mkdir -p /workspace/ollama-models &&
+  apt-get update && apt-get install -y zstd &&
+  curl -fsSL https://ollama.com/install.sh | sh &&
+  ollama serve &
+  until ollama list > /dev/null 2>&1; do sleep 1; done &&
+  ollama pull qwen3:4b-instruct-2507-q8_0 &&
+  wait
+"
+```
+
+**Pourquoi `until ollama list`** : `sleep 5` fixe n'est pas fiable — Ollama n'est pas toujours prêt en 5s au premier démarrage. Le poll toutes les secondes garantit que `ollama pull` s'exécute seulement quand le serveur répond.
+
+**Si "ollama not found"** après l'install : ajouter `export PATH=$PATH:/usr/local/bin` juste après le `curl | sh` — le script d'install peut ne pas mettre à jour le PATH du shell courant.
+
+### Connexion depuis Hoshi2Star
+
+Dans Settings → URL Ollama, utiliser l'URL HTTPS publique du pod RunPod (ex: `https://xxxxx-11434.proxy.runpod.net`). Le fix rustls (v0.4.1) est requis — `native-tls` (OpenSSL) crashait en SIGABRT sur les URLs HTTPS.
+
+---
+
 ## Progression du développement
 
 Voir `ROADMAP.md` pour l'état actuel du projet.
