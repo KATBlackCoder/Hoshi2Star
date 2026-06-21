@@ -2,7 +2,7 @@
 
 # Hoshi2Star ★
 
-![Version](https://img.shields.io/badge/version-0.4.0-blue)
+![Version](https://img.shields.io/badge/version-0.4.2-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-lightgrey)
 
@@ -84,10 +84,11 @@ Instead of running Ollama locally, you can use a cloud GPU on [RunPod](https://r
    OLLAMA_MODELS = /workspace/ollama-models
    ```
 3. Expose HTTP port `11434`
-4. Set this **Start Command** (replace `qwen3:14b` with your preferred model):
+4. Set this **Start Command** (replace the model name if needed):
    ```bash
-   bash -c "mkdir -p /workspace/ollama-models && apt-get update && apt-get install -y zstd && curl -fsSL https://ollama.com/install.sh | sh && ollama serve & sleep 5 && ollama pull qwen3:14b && wait"
+   bash -c "mkdir -p /workspace/ollama-models && apt-get update && apt-get install -y zstd && curl -fsSL https://ollama.com/install.sh | sh && ollama serve & until ollama list > /dev/null 2>&1; do sleep 1; done && ollama pull qwen3:4b-instruct-2507-q8_0 && wait"
    ```
+   > `until ollama list` polls every second until the server is ready before pulling — more reliable than a fixed `sleep 5`.
 5. Once the pod is running, copy the proxy URL from RunPod → Connect:
    ```
    https://[POD_ID]-11434.proxy.runpod.net
