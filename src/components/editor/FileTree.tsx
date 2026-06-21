@@ -118,8 +118,13 @@ export function FileTree() {
     }
   }
 
-  async function handleDebugInject(fileId: string) {
+  async function handleDebugInject(fileId: string, fileType: string) {
     if (injectingId) return;
+    // Font size dialog only makes sense for Wolf RPG (\f[N] control code)
+    if (!fileType.startsWith("wolf_")) {
+      await doInject(fileId, null, false);
+      return;
+    }
     try {
       const scan = await invoke<FontScanResult>("scan_font_status", {
         sourceFileId: fileId,
@@ -205,7 +210,7 @@ export function FileTree() {
                     )}
                     onClick={(e) => {
                       e.stopPropagation();
-                      void handleDebugInject(file.id);
+                      void handleDebugInject(file.id, file.fileType);
                     }}
                     disabled={injectingId === file.id}
                     title={t("fileTree.debugInject")}
