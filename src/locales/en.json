@@ -62,7 +62,9 @@
     "translateRow": "Translate this segment",
     "translateSelected": "Translate {{count}} lines",
     "retranslateNeedsReview": "Retry {{count}} failed",
-    "noModelConfigured": "No LLM model configured — open Settings (⚙)"
+    "noModelConfigured": "No LLM model configured — open Settings (⚙)",
+    "searchPlaceholder": "Search source or target…",
+    "searchClear": "Clear search"
   },
   "tmPanel": {
     "title": "Translation Memory",

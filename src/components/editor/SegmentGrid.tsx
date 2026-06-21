@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useTranslation } from "react-i18next";
+import {
+  SegmentSearchBar,
+  type QaFilter,
+} from "@/components/editor/SegmentSearchBar";
 import {
   useReactTable,
   getCoreRowModel,
@@ -55,9 +52,8 @@ export function SegmentGrid({
 
   const [segments, setSegments] = useState<Segment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [qaFilter, setQaFilter] = useState<
-    "all" | "errors" | "critical" | "untranslated" | "needs_review"
-  >("all");
+  const [qaFilter, setQaFilter] = useState<QaFilter>("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
   const activeProjectIdRef = useRef(activeProjectId);
@@ -98,29 +94,45 @@ export function SegmentGrid({
   // Reset filter + selection when switching files
   useEffect(() => {
     setQaFilter("all");
+    setSearchQuery("");
     setRowSelection({});
   }, [activeFileId]);
 
   const filteredSegments = useMemo(() => {
+    let result = segments;
+
     switch (qaFilter) {
       case "errors":
-        return segments.filter(
+        result = result.filter(
           (s) =>
             s.qaScore !== null && s.qaScore !== undefined && s.qaScore < 100,
         );
+        break;
       case "critical":
-        return segments.filter(
+        result = result.filter(
           (s) =>
             s.qaScore !== null && s.qaScore !== undefined && s.qaScore < 70,
         );
+        break;
       case "untranslated":
-        return segments.filter((s) => s.status === "untranslated");
+        result = result.filter((s) => s.status === "untranslated");
+        break;
       case "needs_review":
-        return segments.filter((s) => s.status === "needs_review");
-      default:
-        return segments;
+        result = result.filter((s) => s.status === "needs_review");
+        break;
     }
-  }, [segments, qaFilter]);
+
+    if (searchQuery.trim() !== "") {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (s) =>
+          s.sourceText.toLowerCase().includes(q) ||
+          s.targetText.toLowerCase().includes(q),
+      );
+    }
+
+    return result;
+  }, [segments, qaFilter, searchQuery]);
 
   const statusCounts = useMemo(() => {
     const counts: Record<Segment["status"], number> = {
@@ -362,75 +374,56 @@ export function SegmentGrid({
         )}
       </div>
 
-      {/* Toolbar: QA filter + batch translate */}
-      <div className="shrink-0 border-b px-3 py-1.5 flex items-center gap-2">
-        <Select
-          value={qaFilter}
-          onValueChange={(v) =>
-            setQaFilter(
-              v as
-                | "all"
-                | "errors"
-                | "critical"
-                | "untranslated"
-                | "needs_review",
-            )
-          }
-        >
-          <SelectTrigger className="h-7 w-48 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t("segmentGrid.filterAll")}</SelectItem>
-            <SelectItem value="errors">
-              {t("segmentGrid.filterQaErrors")}
-            </SelectItem>
-            <SelectItem value="critical">
-              {t("segmentGrid.filterQaCritical")}
-            </SelectItem>
-            <SelectItem value="untranslated">
-              {t("segmentGrid.filterUntranslated")}
-            </SelectItem>
-            <SelectItem value="needs_review">
-              {t("segmentGrid.filterNeedsReview")}
-            </SelectItem>
-          </SelectContent>
-        </Select>
+      {/* Search bar + QA filter */}
+      <SegmentSearchBar
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        qaFilter={qaFilter}
+        onQaFilterChange={setQaFilter}
+        shownCount={filteredSegments.length}
+        totalCount={segments.length}
+      />
 
-        {needsReviewIds.length > 0 && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 gap-1.5 text-xs text-yellow-400 border-yellow-400/40 hover:bg-yellow-400/10"
-            disabled={isTranslating}
-            onClick={() => {
-              if (!providerConfig.model.trim()) {
-                toast.error(t("segmentGrid.noModelConfigured"));
-                return;
-              }
-              void startTranslation(needsReviewIds, undefined);
-            }}
-          >
-            <RefreshCw className="h-3 w-3" />
-            {t("segmentGrid.retranslateNeedsReview", {
-              count: needsReviewIds.length,
-            })}
-          </Button>
-        )}
+      {/* Batch action toolbar */}
+      {(needsReviewIds.length > 0 || selectedIds.length >= 2) && (
+        <div className="shrink-0 border-b px-3 py-1.5 flex items-center gap-2">
+          {needsReviewIds.length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 text-xs text-yellow-400 border-yellow-400/40 hover:bg-yellow-400/10"
+              disabled={isTranslating}
+              onClick={() => {
+                if (!providerConfig.model.trim()) {
+                  toast.error(t("segmentGrid.noModelConfigured"));
+                  return;
+                }
+                void startTranslation(needsReviewIds, undefined);
+              }}
+            >
+              <RefreshCw className="h-3 w-3" />
+              {t("segmentGrid.retranslateNeedsReview", {
+                count: needsReviewIds.length,
+              })}
+            </Button>
+          )}
 
-        {selectedIds.length >= 2 && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 gap-1.5 text-xs"
-            disabled={isTranslating}
-            onClick={handleTranslateSelected}
-          >
-            <Play className="h-3 w-3" />
-            {t("segmentGrid.translateSelected", { count: selectedIds.length })}
-          </Button>
-        )}
-      </div>
+          {selectedIds.length >= 2 && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 text-xs"
+              disabled={isTranslating}
+              onClick={handleTranslateSelected}
+            >
+              <Play className="h-3 w-3" />
+              {t("segmentGrid.translateSelected", {
+                count: selectedIds.length,
+              })}
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Virtual body */}
       <div ref={parentRef} className="flex-1 overflow-auto">

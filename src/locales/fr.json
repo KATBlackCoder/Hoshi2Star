@@ -62,7 +62,9 @@
     "translateRow": "Traduire ce segment",
     "translateSelected": "Traduire {{count}} lignes",
     "retranslateNeedsReview": "Réessayer {{count}} échoués",
-    "noModelConfigured": "Aucun modèle LLM configuré — ouvrez les Paramètres (⚙)"
+    "noModelConfigured": "Aucun modèle LLM configuré — ouvrez les Paramètres (⚙)",
+    "searchPlaceholder": "Rechercher dans source ou cible…",
+    "searchClear": "Effacer la recherche"
   },
   "tmPanel": {
     "title": "Mémoire de traduction",
