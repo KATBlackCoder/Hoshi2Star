@@ -1,288 +1,85 @@
 # Hoshi2Star — ROADMAP
 
-> Référence de progression pour Claude Code.
-> Mettre à jour le statut des tâches au fil du développement.
-> Format : `[ ]` à faire · `[x]` fait · `[~]` en cours · `[-]` abandonné/reporté
+> Tâches **à venir uniquement**. Pour l'historique des phases complètes, voir `git log`.
+> Format : `[ ]` à faire · `[~]` en cours · `[-]` abandonné/reporté
 
 ---
 
-## Légende des phases
+## État des phases
 
-| Phase | Horizon | Objectif |
-|-------|---------|---------|
-| **F0** | Pré-dev | Setup environnement et fondations |
-| **F1** | Mois 1–2 | Parsers MV/MZ + UI skeleton |
-| **F2** | Mois 3–4 | LLM pipeline + TM + **MVP vendable** |
-| **F3** | Mois 5–6 | Polissage + Glossaire + TM fuzzy + beta privée |
-| **F4** | Mois 7–9 | Wolf RPG (priorité absolue) + diff-aware + lancement public |
-| **F5** | Mois 10–12 | Wolf v3/WolfX + Bakin + consolidation |
+| Phase | Objectif | Statut |
+|-------|---------|--------|
+| **F0** | Setup & fondations | [~] Quasi-complet |
+| **F1** | Parsers MV/MZ + UI skeleton | ✅ Complet |
+| **F2** | LLM pipeline + TM + MVP | ✅ Complet |
+| **F3** | Polissage + Glossaire + TM fuzzy + beta privée | [~] En cours |
+| **F4** | Wolf RPG + diff-aware + lancement public | [~] En cours |
+| **F5** | Wolf v3/WolfX + Bakin + consolidation | [~] En cours |
 
----
-
-## Moteurs — ordre de priorité
+## Moteurs
 
 | Moteur | Statut | Priorité |
 |--------|--------|---------|
 | RPG Maker MV/MZ | ✅ Supporté | — |
-| Wolf RPG v1/v2/v3 | 🔜 F4 | **Absolue** |
-| RPG Maker VX Ace | ⏸ Code prêt, désactivé | Post-Wolf RPG |
+| Wolf RPG v1/v2/v3 | ✅ Supporté | — |
+| RPG Maker VX Ace | ⏸ Code prêt, désactivé | Post-consolidation |
 | RPG Developer Bakin | 🔜 F5 | Basse |
 | Autres (Ren'Py, Kirikiri) | 🔜 Backlog | Si demande |
 
 ---
 
-## F0 — Setup & fondations
-**Statut : [~] En cours**
+## F0 — Setup restant
 
-### Environnement système (CachyOS)
-- [x] `webkit2gtk-4.1`, `base-devel`, `libappindicator-gtk3`, `librsvg`, `xdotool` installés via pacman
-- [x] `pnpm` installé via pacman (repo `extra`)
-- [x] `rustup` installé, toolchain stable active
-- [x] Workaround NVIDIA documenté dans `~/.zshrc` si GPU NVIDIA
-  - X11 : `WEBKIT_DISABLE_DMABUF_RENDERER=1`
-  - Wayland : `__NV_DISABLE_EXPLICIT_SYNC=1`
-
-### Projet Tauri v2 initialisé
-- [x] `pnpm create tauri-app` — React + TypeScript + pnpm
-- [x] Vérification `lib.rs` comme entrée (pas `main.rs`)
-- [x] `pnpm dlx shadcn@latest init` (CSS variables: yes, base color: zinc, preset Nova)
-- [x] Tailwind v4 configuré (`@tailwindcss/vite` plugin + `@import "tailwindcss"`)
-- [x] `pnpm add zustand @tanstack/react-table @tanstack/react-virtual @tanstack/react-query`
-- [x] Rust deps ajoutés : `tokio` (full), `sqlx` (sqlite + runtime-tokio + macros), `serde` (derive), `serde_json`, `thiserror`
-- [x] `src-tauri/capabilities/default.json` créé avec `core:default`
-- [x] `src-tauri/migrations/` créé (vide avec `.gitkeep`)
-- [x] `src-tauri/src/state.rs` créé (AppState vide — complété en F1)
-- [x] `src-tauri/src/commands/mod.rs` créé (vide — commands ajoutées en F1)
-- [x] Structure `src/` créée : `components/editor/`, `features/`, `stores/`, `lib/`, `hooks/`
-
-### Outillage Claude Code
-- [x] `CONTEXT.md` à la racine
-- [x] `ROADMAP.md` à la racine (ce fichier)
-- [x] `.mcp.json` créé (`context7`, `filesystem`, `github`, `rust-docs`, `tauri`)
-- [x] `.claude/settings.json` avec hooks :
-  - PostToolUse Edit/Write `.rs` → `cargo fmt`
-  - PostToolUse Edit/Write `.ts/.tsx` → `prettier --write`
-  - PreToolUse Bash → bloquer `npm install`, `yarn add`, `git push --force`
 - [ ] Skills installés : `shadcn`, `tdd`, `vercel-react-best-practices`, `webapp-testing`
-
-### ADRs initiaux rédigés
-- [x] `docs/adr/ADR-001.md` — SQLite via sqlx async
-- [x] `docs/adr/ADR-002.md` — Placeholder tokenisation Rust-side
-- [x] `docs/adr/ADR-003.md` — TM globale cross-projet
-- [x] `docs/adr/ADR-004.md` — MVP MV/MZ uniquement
-- [x] `docs/adr/ADR-005.md` — lib.rs comme entrée app
-
-### VSCode configuré
-- [ ] Extensions : rust-analyzer, tauri-vscode, CodeLLDB, Even Better TOML, Tailwind CSS IntelliSense
 - [ ] `.vscode/settings.json` : rust-analyzer linkedProjects, check.command clippy, formatOnSave
 - [ ] `.vscode/launch.json` : config debug Rust LLDB + pnpm dev pre-task
 
 ---
 
-## F1 — Parsers MV/MZ + UI skeleton
-**Statut : [x] Complet**
-**Critère de sortie : Ouvrir un jeu MV/MZ et afficher ses segments dans la grille.**
+## F3 — Beta privée
 
-### Engine Layer — RPG Maker MV/MZ
-- [-] Intégration lib Rust `rvpacker-txt-rs` — implémentation custom retenue (plus de contrôle)
-- [x] `src-tauri/src/engines/mv_mz/extractor.rs` — lecture `data/*.json` du jeu
-- [x] `src-tauri/src/engines/mv_mz/injector.rs` — réécriture `data/*.json` traduit
-- [x] `src-tauri/src/engines/mv_mz/decryptor.rs` — décryptage `.rpgmvp/.rpgmvo` (XOR + clé `System.json`)
-- [x] `src-tauri/src/engines/detector.rs` — détection automatique du moteur (présence de fichiers caractéristiques)
-- [x] Tests unitaires Rust : extraction round-trip (extract → inject → même contenu)
+**Critère de sortie : 20–30 beta testeurs actifs, feedback collecté.**
 
-### Core Layer — DB + State
-- [x] `src-tauri/migrations/0001_initial.sql` — tables `projects`, `source_files`, `segments`
-- [x] `src-tauri/src/db/pool.rs` — init SqlitePool, run migrations au démarrage
-- [x] `src-tauri/src/state.rs` — `AppState { db: SqlitePool }`
-- [x] Setup dans `lib.rs` avec `.manage(AppState { db })`
-
-### Commands Tauri — F1
-- [x] `open_project(path: String)` — détecte moteur, extrait segments, insère en DB
-- [x] `get_source_files(project_id)` — liste les fichiers d'un projet
-- [x] `get_segments(project_id, file_id)` — segments paginés avec statut
-- [x] `update_segment(id, target_text)` — save traduction manuelle
-- [x] `export_project(project_id)` — réinjection dans les fichiers du jeu
-
-### CAT UI — skeleton
-- [x] Layout 3 colonnes : FileTree | SegmentGrid | SidePanel (shadcn `ResizablePanelGroup`)
-- [x] `src/components/editor/SegmentGrid.tsx` — TanStack Table + Virtual scroll
-  - Colonnes : #, Source, Target (éditable inline), Status, QA Score
-  - Row selection, keyboard navigation (Tab pour passer au segment suivant)
-- [x] `src/components/editor/FileTree.tsx` — arbre fichiers du projet
-- [x] `src/stores/editor.ts` — Zustand : `activeProjectId`, `activeFileId`, `activeSegmentId`
-- [x] `src/stores/project.ts` — Zustand : projets ouverts, metadata
-- [-] TanStack Query — reporté F2 (useEffect direct utilisé pour F1)
-- [x] Import projet (dialog file picker via `tauri-plugin-dialog`)
-
----
-
-## F2 — LLM pipeline + TM + MVP vendable
-**Statut : [x] Complet**
-**Critère de sortie : Pré-traduire un jeu MV/MZ avec Ollama local, TM exact match fonctionnelle, QA placeholders live. Ce milestone = MVP vendable.**
-
-### LLM Layer
-- [x] `src-tauri/src/llm/tokenizer.rs` — détection et remplacement placeholders par UUID opaques (`⟦ph_001⟧`) — implémenté en F1
-- [x] `src-tauri/src/llm/provider.rs` — trait `LlmProvider` + implémentations :
-  - [x] `OllamaProvider` (local, priorité MVP)
-  - [ ] `OpenAIProvider` (clé user fournie)
-  - [ ] `DeepSeekProvider`
-- [x] `src-tauri/src/llm/pipeline.rs` — orchestration passes :
-  - [x] Passe 1 : translate (avec glossaire injecté dans le prompt)
-  - [ ] Passe 2 : review (consistency sur fenêtre de 10 segments)
-  - [ ] Passe 3 (optionnel) : tone
-- [x] `src-tauri/src/llm/batch.rs` — groupement segments (batch de 20–50), déduplication par hash
-- [x] Validation post-LLM : restauration UUIDs → placeholders originaux, rejet si UUID manquant
-
-### Core Layer — TM v1
-- [x] `src-tauri/migrations/0002_tm.sql` — table `tm_entries (source_hash, source_text, target_text, engine, lang_pair, confidence)`
-- [x] `src-tauri/src/core/tm.rs` — insert, lookup exact match (hash SHA-256 du segment normalisé)
-- [x] TM auto-alimentée à chaque validation manuelle de segment
-
-### Core Layer — QA v1
-- [x] `src-tauri/src/core/qa.rs` — checks sur chaque segment sauvegardé :
-  - [x] Placeholders : tous ceux du source présents dans le target
-  - [x] Longueur message box : MV/MZ max ~50 chars/ligne × 4 lignes (configurable)
-  - [x] BOM UTF-8 détecté dans le target
-- [x] QA score par segment (0–100) retourné avec chaque `update_segment`
-
-### Commands Tauri — F2
-- [x] `translate_segments(ids: Vec<String>, provider_config)` — lance pipeline LLM en background (tokio::spawn), émet events de progression
-- [x] `get_tm_suggestions(source_text, lang_pair)` — exact match TM
-- [x] `get_qa_report(project_id)` — résumé des erreurs QA du projet
-
-### CAT UI — F2
-- [x] `src/components/editor/TMPanel.tsx` — sidebar TM : affiche suggestions exact match
-- [x] `src/components/editor/QAPanel.tsx` — erreurs QA live sur le segment actif
-- [x] `src/stores/llm.ts` — Zustand : `isTranslating`, `translationProgress`, `providerConfig`
-- [x] Settings panel : configuration provider LLM (URL Ollama, clé API, modèle)
-- [x] Indicateur progression traduction batch (event `h2s://llm/progress`)
-- [x] Highlight placeholders dans le source (couleur distincte — composant HighlightedSource, F2 partiel)
-
-### Distribution MVP
-- [x] Build Windows `.msi` (GitHub Actions — `tauri-apps/tauri-action@v0`)
-- [x] Build Linux `.AppImage` et `.deb` (GitHub Actions — ubuntu-22.04)
-- [x] Page de téléchargement GitHub Releases (release draft auto sur push `v*`)
-
----
-
-## F3 — Polissage + Glossaire + TM fuzzy + beta privée
-**Statut : [~] En cours**
-**Critère de sortie : 20–30 beta testeurs actifs, feedback collecté, TM fuzzy + glossaire fonctionnels.**
-
-### Engine Layer — VX Ace
-- [-] VX Ace reporté — code disponible dans engines/vx_ace/
-      mais désactivé. Réactivation prévue post-Wolf RPG stable.
-
-### Core Layer — TM v2 (fuzzy matching)
-- [x] Levenshtein distance normalisée sur les segments (seuil 80 % configurable)
-- [x] `src-tauri/src/core/tm.rs` — `lookup_fuzzy(source_text, threshold)` → `Vec<TmSuggestion>`
-- [x] Export TM au format TMX standard (compatibilité OmegaT/Trados)
-
-### Core Layer — Glossaire v1
-- [x] `src-tauri/migrations/0003_glossary.sql` — `glossary_terms (source, target, lang_pair, domain, project_id nullable)`
-- [x] `src-tauri/src/core/glossary.rs` — CRUD termes, deux niveaux (global + projet-local)
-- [x] Injection des termes dans le prompt de traduction (passe 1)
-
-### CAT UI — F3
-- [x] `src/components/editor/GlossaryPanel.tsx` — affichage termes reconnus dans le segment actif
-- [x] Highlight inline des termes glossaire dans le source
-- [x] TM sidebar avec fuzzy suggestions (% match affiché)
-- [x] QA : warning si terme glossaire non respecté dans le target
-- [x] Rapport QA exportable HTML
-
-### Persistence projet
-- [x] Manifest `.hoshi2star.json` — écriture à l'ouverture, réouverture sans ré-extraction, stats auto-mises à jour
-- [x] `translation_secs` per-file in DB (`0004_source_files_translation_secs.sql`) — durée de traduction persistée entre sessions
-
-### Gestion des projets
-- [x] `list_projects` Tauri command — liste tous les projets connus en DB (triés par dernière mise à jour)
-- [x] `delete_project` Tauri command — supprime projet + fichiers + segments (cascade) + `.hoshi2star.json`
-- [x] `ProjectList` panel — affiché à l'ouverture si aucun projet actif, avec boutons Continuer / Supprimer
-
-### Tokenizer — Groupe E
-- [x] Patterns `\+word[n]` / `\-word[n]` ajoutés à `RE_MVMZ` (community plugins courants : `\+switch[n]`, `\+variable[n]`, etc.)
-
-### SegmentGrid — UX traduction
-- [x] Bouton Traduire par ligne (colonne `actions`) — retraduit un segment individuel sans ouvrir le modal
-- [x] Colonne checkbox de sélection — sélectionner ≥2 lignes affiche un bouton "Traduire N lignes" dans la toolbar
-
-### Polissage UI
-- [x] Settings modal — Ollama URL/modèle, thème, langue, persistence tauri-plugin-store
-- [x] Glossary prompt on project open — AlertDialog après ouverture neuve (`wasRestored: false`), bannière non-bloquante pendant extraction, bouton Traduire désactivé jusqu'à fin extraction
-- [x] Thème **Tenmon 天文** (observatoire nocturne) — palette indigo/violet/or
-      (`--star`), starfield, Noto Sans JP, toolbar restylée (logo ★, bouton
-      Traduire primary, chip projet/engine), statuts à pastilles, chips
-      placeholders cyan (MV/MZ + Wolf via `getPlaceholderRegex`), glossaire
-      surlignage or, en-têtes de panneaux unifiés (commit `a8642e2`) +
-      éléments phase 2 : anneau QA, récap statuts SegmentGrid, progression
-      "constellation" toolbar (commit `34d9ac8`). Démos de référence dans
-      `docs/design/`. Anneaux de progression par fichier (FileTree) différés
-      (tâche dormante `tasks/todo.md`, nécessite extension `get_source_files`).
-- [x] `translated_count` + `total_count` sur `SourceFile` — `get_source_files` enrichi d'un
-      `LEFT JOIN segments` + `SUM(CASE …)` / `COUNT`; `#[sqlx(default)]` pour rétrocompat;
-      `FileTree.tsx` affiche le bouton **Debug Inject** uniquement quand le fichier est 100 % traduit.
-- [x] Bouton **Debug Inject** (`FlaskConical`) par fichier dans `FileTree` — déclencheur visible
-      au survol si `translatedCount === totalCount`; appelle `debug_inject_file` via `scan_font_status`
-      + `FontSizeDialog` avant injection.
-- [x] `FontSizeDialog` (`src/components/FontSizeDialog.tsx`) + `scan_font_status` Tauri command —
-      propose d'injecter un préfixe `\f[N]` (taille de police Wolf RPG) sur tous les segments traduits
-      avant injection ou export; détecte les `\f[N]` existants; persisté en DB avant chaque run.
-- [x] `export_project` étendu avec `fontSize: Option<u32>` + `replaceExisting: bool` — même flux
-      `FontSizeDialog` proposé au moment de l'export projet depuis `useAppHandlers`.
-
-### Robustesse LLM
-- [x] **F3-11** — Batch adaptatif : split récursif sur `ResponseFormat` — `llm_translate_with_split` avec `Box::pin`, récursion bornée à `len==1`, 9 tests pipeline (dont Test A et Test C couvrant le split partiel)
-
-### Toolbar UX — Export & Traduction
-- [x] **F3-12** — Bouton "Export All" (`Download`) — dialog bloquant si segments non traduits (compte + Close seulement), dialog de confirmation sinon (fichiers + segments)
-- [x] **F3-12** — Commande `get_project_stats` — `{ fileCount, totalSegments, untranslatedCount }` via une seule requête SQLite
-- [x] **F3-12** — Bouton "Translate All" (`Languages`) — dialog pré-traduction avec stats + inputs durée travail/pause (défaut 20 min / 3 min)
-- [x] **F3-12** — Commande `translate_all_segments` — traduction projet entier en fond (`tokio::spawn`), cooldown automatique avec événements `h2s://llm/cooling { remainingSecs }`
-- [x] **F3-12** — `CooldownBadge` dans la toolbar — icône `Snowflake` + compte à rebours `MM:SS` en bleu pendant la pause
-- [x] **F3-12** — `isCooling`, `cooldownRemaining`, `startTranslateAll` dans `useLlmStore`
-
-### Beta privée
 - [ ] Recrutement 20–30 testeurs via Discord fan-trad / F95zone
 - [ ] Feedback form intégré à l'app (event `h2s://feedback/submit`)
 - [ ] Suivi des bugs critiques (GitHub Issues via `to-issues` skill)
 
 ---
 
-## F4 — Wolf RPG (priorité absolue) + diff-aware merge + lancement public
-**Statut : [~] En cours**
-**Critère de sortie : Lancement payant, Wolf RPG v1/v2 fonctionnel, diff-aware merge disponible.**
+## F4 — Lancement public
 
-> Wolf RPG est la priorité absolue — représente ~40% des jeux JP
-> non traduits sur DLsite. RuneTranslate le supporte déjà.
-> À compléter avant tout autre moteur.
+**Critère de sortie : Lancement payant, diff-aware merge disponible.**
 
-### Engine Layer — Wolf RPG v1/v2
-- [-] Intégration `rewolf-trans` (TypeScript) via sidecar Tauri ou bindings WASM — rejeté, approche Rust natif retenue
-- [x] F4-06 `extract_wolf_speakers` Tauri command — scanne les `.dat` du projet pour les noms de personnages
-      (champs `name` sur les types `character`/`actor`/`人物`), déduplique et insère comme termes glossaire
-      projet-local; bouton "Speakers" dans `GlossaryPanel`; locale keys `glossaryPanel.extractSpeakers*`
-- [x] F4-01 : Engine::Wolf détection + WolfVersion + RE_WOLF tokenizer + engines/wolf/ scaffold
-- [x] F4-02 `src-tauri/src/engines/wolf/decryptor.rs` — décryptage `.wolf` (DXA XOR v5/v6/v8)
-      *(déplacé vers `wolf/decrypt/legacy_xor.rs` le 2026-06-12)*
-- [x] F4-03 `src-tauri/src/engines/wolf/extractor.rs` — lecture `.mps` + `.dat`
-- [x] F4-04 `src-tauri/src/engines/wolf/injector.rs` — réécriture + repack `.wolf`
-- [x] Tests round-trip Wolf v1/v2
-- [x] F4-05 Intégration complète — `open_project` Wolf + `export_project` Wolf + QA engine param + FileTree icons violet + archive fallback (DXA → `Data/`)
+### Core Layer — Project Sync (mise à jour de jeu)
 
-### Core Layer — Diff-aware merge
-- [ ] `src-tauri/src/core/diff.rs` — comparaison `old_project` vs `new_project` (hash par segment)
-  - Identique → conserver traduction
-  - Modifié → marquer `needs_review` + conserver ancienne trad comme référence
-  - Nouveau → status `untranslated`
-- [ ] Command `update_project_version(project_id, new_game_path)` — merge intelligent
-- [ ] UI : badge "needs review" sur segments modifiés + diff side-by-side
+> Permet de continuer un projet existant après la mise à jour du jeu source,
+> sans perdre les traductions déjà validées.
+
+**Principe** : `segment_key` (identifiant stable) + `source_hash` (SHA-256).
+Au re-import, comparaison par clé puis par hash :
+
+| Cas | Action |
+|-----|--------|
+| Même clé + même hash | Conserver traduction + statut inchangés |
+| Même clé + hash différent | `NeedsReview`, garder ancienne trad comme référence |
+| Nouvelle clé | Créer segment `Untranslated` |
+| Clé disparue | Archiver (soft-delete — TM garde la traduction) |
+
+- [ ] `src-tauri/migrations/XXXX_segment_key.sql` — colonnes `segment_key TEXT` et `source_hash TEXT`
+- [ ] `src-tauri/src/core/diff.rs` — `diff_projects(old, new) -> DiffReport { unchanged, modified, added, removed }`
+- [ ] Clés stables par moteur : `engines/mv_mz/segment_key.rs`, `engines/wolf/segment_key.rs`
+- [ ] Command `sync_project_version(project_id, new_game_path)` — re-extrait + merge intelligent
+- [ ] UI : dialog pré-sync avec résumé `X inchangés · Y modifiés · Z nouveaux · W supprimés`
+- [ ] UI : badge `NeedsReview` (⚠) sur segments modifiés + vue diff source old/new side-by-side
+- [ ] UI : filtre "Afficher uniquement les segments modifiés" dans SegmentGrid
 
 ### LLM Layer — Passe tone (optionnel par projet)
+
 - [ ] Config par projet : registre (familier / formel / médiéval / contemporain)
 - [ ] Passe 3 activable/désactivable dans les settings projet
 
 ### Monétisation
+
 - [ ] Intégration système de licence (Polar.sh ou LemonSqueezy — one-shot 29 $ + 9 $/6 mois)
 - [ ] Free tier : MV/MZ uniquement, 1 projet actif, Ollama local, sans TM cross-projet
 - [ ] Indie tier (29 $ one-shot) : tous moteurs dispo, TM cross-projet, QA complet, 6 mois updates
@@ -291,126 +88,38 @@
 ---
 
 ## F5 — Wolf v3/WolfX + Bakin + consolidation
-**Statut : [~] En cours**
+
 **Critère de sortie : Couverture moteurs complète, 500 utilisateurs cible.**
 
-### Engine Layer — Wolf RPG v3/WolfX
-- [x] F5-01 `src-tauri/src/engines/wolf/v3_format/` — parser maison `.mps`/`CommonEvent.dat` v3.x
-      (LZ4 + modèle plat `Command::Init` façon WolfTL), round-trip byte-exact validé sur les
-      4 maps + le `CommonEvent.dat` réels d'Inko (v2.0). Remplace l'approche fork
-      `wolfrpg-map-parser` pour le v3.x — v2.x (Honoka) reste sur `wolfrpg_map_parser`.
-- [x] Tests sur jeux Wolf v3.x réels (Inko v2.0 : maps + CommonEvent.dat)
-- [x] Filtres de skip Wolf extractor — `extract_common_events` v2/v3 ignore les événements `X[` et `zz`
-      (commandes internes non-traduisibles) ; `extract_database_segments` ignore les entrées contenant
-      `自動ｼｽﾃﾑ初期化` (initialisation système automatique) ; réduit ~100 segments parasites sur Inko v2.0
-- [x] Pattern `^@\d+\n` ajouté à `RE_WOLF` — tokenize les balises orateur Wolf (`@0\n`, `@12\n`)
-      ancrées en début de texte ; round-trip validé (3 tests)
-- [x] F5-02 Décision WolfX (2026-06-12) : **pas de déchiffrement natif ni de sidecar
-      UberWolfCli** (ChaCha20 + clé en hash = rétro-ingénierie disproportionnée ;
-      licence UberWolf non confirmée = non bundlable ; binaire Windows-only vs
-      `targets: "all"`). Workflow officiel : pré-étape manuelle UberWolf → ouvrir
-      le dossier `Data/` déchiffré. Couture posée : `wolf/decrypt/wolfx.rs` (stub
-      de guidage) + `decryptor.rs` → `wolf/decrypt/legacy_xor.rs` (commit 69fa25c).
-      Remplace l'ancien plan `decryptor_v3.rs`.
-- [ ] Documentation workflow WolfX (pré-étape UberWolf) dans `docs/engines.md` +
-      message de guidage visible côté UI quand `PossibleWolfX` est détecté
-- [x] Fix collision `BasicData/*.dat` dans archives `.wolf` v8 (2026-06-13) :
-      certains jeux embarquent une copie bonus de `Data/BasicData/` dans un
-      sous-dossier (ex. `データ集/（完全初期状態データ）/Data/BasicData/`),
-      qui écrasait les vrais `DataBase.dat`/`CDataBase.dat`/etc. via le mapping
-      par stem seul. `WolfFile.path` (chemin reconstruit via `DARC_DIRECTORY`)
-      + filtre "1 niveau sous `BasicData/`" dans
-      `extract_dat_pairs_from_archives` résolvent le faux "encrypted database"
-      ET la perte silencieuse de segments `CDataBase`. v5/v6 : pas de
-      reconstruction de chemin (dormant, déclencheur = collision constatée).
+### Wolf RPG v3 / WolfX
 
-### Engine Layer — Extraction quality (2026-06-20)
-- [x] `engines/filter.rs` — module partagé `needs_translation(text, engine)` : filtre chiffres purs,
-      symboles purs (`…`, `-`, `？？？`, `！！！！`), placeholders uniquement ; tous les extracteurs
-      (MV/MZ, VX Ace, Wolf) délèguent à ce module ; Wolf garde son filtre `is_resource_path` spécifique
-- [x] Suppression `CommonEventName` de l'extraction MV/MZ — labels développeur jamais visibles
-- [x] Groupe F tokenizer (`\FF[a]`, `\AA[x]`, `\F[c]`) — codes plugin alphanumériques auto-skippés
-- [x] Branding `" by Hoshi2Star"` sur `GameTitle` à l'extraction MV/MZ
-- [x] Debug extraction universelle (`debug_dump_segments`) — MV/MZ + VX Ace + Wolf, JSON unifié
-- [x] Health check Ollama avant extraction glossaire + avant traduction (× 2 commandes) —
-      message d'erreur clair au lieu d'une erreur TCP brute `reqwest`
-- [x] 1-retry avec délai 2 s dans `OllamaProvider::chat()` (extraction glossaire)
-- [x] Confirmation avant suppression de projet (`AlertDialog` + i18n EN/FR)
-- [x] Contrainte "exactement 1 traduction" dans le prompt d'extraction glossaire — élimine les
-      doubles traductions (`エール→Aura/Elixir`) des petits modèles
+- [ ] Documentation workflow WolfX (pré-étape UberWolf) dans `docs/engines.md`
+      + message de guidage visible côté UI quand `PossibleWolfX` est détecté
 
 ### Engine Layer — RPG Developer Bakin
+
 - [ ] Évaluer adoption DLC Localization Toolkit (SmileBoom) — si > 200 jeux traduits : go
 - [ ] `src-tauri/src/engines/bakin/extractor.rs` — via DLC string-table export OU reverse BakinUnpack
 - [ ] `src-tauri/src/engines/bakin/injector.rs`
 - [ ] Tests Bakin
 
 ### Langues sources additionnelles (add-ons)
+
 - [ ] Support Korean source (DLsite Korea) — pack "Korean Source" 9 $
 - [ ] Support Chinese source (Wolf RPG CN) — pack "Chinese Source" 9 $
 - [ ] Détection automatique langue source dans `detector.rs`
 
 ### Collaboration (Git sync)
+
 - [ ] `src-tauri/src/sync/git.rs` — wrapper `git2` crate pour sync projet de traduction
 - [ ] Merge de projets `.h2s` entre 2–3 traducteurs
 - [ ] Résolution de conflits segment par segment dans l'UI
 
 ### Consolidation
-- [ ] Skill `improve-codebase-architecture` lancé — audit deep modules
+
 - [ ] ADRs mis à jour pour toutes les décisions prises en F3/F4/F5
 - [ ] `docs/engines.md` complet pour tous les moteurs supportés
 - [ ] `CONTEXT.md` mis à jour avec les nouveaux patterns
-
----
-
-## Backlog — idées futures (non planifiées)
-
-- [ ] Traduction d'images (OCR + inpainting + ré-encryption `.rpgmvp`) — complexité élevée
-- [ ] Plugin VSCode pour éditer les segments directement dans l'IDE
-- [ ] Export format `.po/.pot` (interopérabilité avec d'autres outils CAT)
-- [ ] Cloud TM partagé opt-in (anonymisé) — contribution communautaire
-- [ ] Support RPG Maker 2000/2003 (vgperson workflow, niche)
-- [ ] App mobile companion (lecture seule du projet, validation segments)
-
-### Inspiré de DazedMTLTool (analyse 2026-06-14, non planifié)
-
-> Analyse comparative de https://github.com/dazedanon/DazedMTLTool. Idées à évaluer
-> au cas par cas — aucune ne fait partie d'une phase active.
-
-**Pipeline LLM / robustesse (F2-F3)**
-- [ ] QA contenu post-traduction : détecter traduction vide, trop courte vs source,
-      "runaway" (sortie démesurée), répétition de caractères (glitch modèle) ;
-      retry avec note de correction dans le message user (sans casser le cache prompt)
-- [ ] Historique glissant (N derniers segments traduits) injecté comme contexte
-      de cohérence pour la passe translate
-- [ ] Mode "Estimate" : calcul tokens/coût avant de lancer une traduction réelle
-- [ ] Cache de traduction disque (hash payload → résultat) pour dédup cross-run
-      avant validation humaine, en complément de la TM
-- [ ] Prompt caching Claude : séparer prompt statique (glossaire global + règles,
-      cache ephemeral 1h) du contexte dynamique (glossaire matché + historique)
-- [ ] Batch API Anthropic (50% moins cher) : pipeline 2 passes collect/consume —
-      complexité élevée, à réserver aux gros projets
-- [ ] Adaptive rate limiter par provider (lecture headers `x-ratelimit-*`)
-
-**Glossaire (F3)**
-- [ ] Champs optionnels par terme/personnage : genre, rôle, registre de discours
-      (ex: "flustered", "cold and terse") injectés dans le prompt pour adapter le ton
-- [ ] Matching contextuel : n'injecter dans le prompt que les termes du glossaire
-      réellement présents dans le batch courant (word-boundary aware kanji/kana)
-
-**Engine MV/MZ**
-- [ ] Toggles granulaires par code d'événement (101/102/108/111/122/320/324/
-      355/356/357/401/405/408/657) configurables par projet — couverture des cas limites
-- [ ] Speaker detection heuristique : scan des maps + scoring de patterns
-      (`\n<Name>`, `【Name】`, `Name「...`, code 101) pour pré-configurer la détection
-- [ ] QA largeur de ligne "visible length" ignorant les codes couleur `\c[n]`
-
-**Feature différenciante (hors phases)**
-- [ ] Overlay playtest "click-to-segment" : plugin injecté dans le jeu (NW.js) qui,
-      via un serveur local exposé par le backend Tauri, sélectionne le segment
-      correspondant dans le SegmentGrid pendant le playtest — boucle jeu ↔ CAT editor
-- [ ] Prompt par projet en surcouche : règles custom (ton, avertissements de contenu,
-      terminologie) fusionnées avec le prompt de base plutôt que remplacées
 
 ---
 
@@ -418,7 +127,6 @@
 
 | Milestone | Signal go/pivot |
 |-----------|----------------|
-| Fin F2 (MVP) | 20+ beta testeurs actifs → continuer F3 |
 | Lancement F4 | 50 payants en 3 mois → continuer ; sinon pivoter vers SaaS Bakin uniquement |
 | Fin F5 | 200 payants cumulés → revenu d'appoint validé |
 | 12 mois | 500 payants = ~2 400–6 000 $/mois récurrent selon mix tiers |
