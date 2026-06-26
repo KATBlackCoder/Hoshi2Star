@@ -314,7 +314,7 @@ export function SegmentGrid({
     count: rows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 40,
-    overscan: 10,
+    overscan: 5,
   });
 
   if (!activeFileId) {

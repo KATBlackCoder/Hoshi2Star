@@ -50,6 +50,12 @@ export const useActiveProject = () =>
     (s) => s.projects.find((p) => p.id === s.activeProjectId) ?? null,
   );
 
+/** Narrow selector — returns only the engine string, avoids object re-creation on unrelated store updates. */
+export const useActiveEngine = () =>
+  useProjectStore(
+    (s) => s.projects.find((p) => p.id === s.activeProjectId)?.engine ?? "",
+  );
+
 export const useSourceFiles = () => useProjectStore((s) => s.sourceFiles);
 
 export const usePendingGlossaryExtract = () =>

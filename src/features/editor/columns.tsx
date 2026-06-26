@@ -1,9 +1,9 @@
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
-import { useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Segment, SegmentStatus } from "@/lib/types";
 import { useGlossaryTerms } from "@/stores/editor";
-import { useActiveProject } from "@/stores/project";
+import { useActiveEngine } from "@/stores/project";
 import { cn } from "@/lib/utils";
 import { getPlaceholderRegex } from "@/lib/constants";
 import { buildHighlightedNodes } from "@/lib/highlight-utils";
@@ -35,7 +35,11 @@ export const STATUS_STYLES: Record<
   },
 };
 
-function StatusBadge({ status }: { status: SegmentStatus }) {
+const StatusBadge = memo(function StatusBadge({
+  status,
+}: {
+  status: SegmentStatus;
+}) {
   const { t } = useTranslation();
   const style = STATUS_STYLES[status];
   return (
@@ -49,7 +53,7 @@ function StatusBadge({ status }: { status: SegmentStatus }) {
       {t(`segmentGrid.status.${status}`)}
     </span>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // Editable target cell
@@ -64,7 +68,7 @@ interface EditableCellProps {
   onTabNext: (currentIndex: number) => void;
 }
 
-function EditableCell({
+const EditableCell = memo(function EditableCell({
   segmentId,
   initialValue,
   rowIndex,
@@ -76,7 +80,7 @@ function EditableCell({
   const savedRef = useRef(initialValue);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
@@ -134,22 +138,26 @@ function EditableCell({
       spellCheck={false}
     />
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // Source text highlight (placeholders + glossary terms)
 // ---------------------------------------------------------------------------
 
-function SourceCell({ text }: { text: string }) {
+const SourceCell = memo(function SourceCell({ text }: { text: string }) {
   const terms = useGlossaryTerms();
-  const activeProject = useActiveProject();
-  const nodes = buildHighlightedNodes(
-    text,
-    terms.map((t) => t.sourceText),
-    getPlaceholderRegex(activeProject?.engine ?? ""),
+  const engine = useActiveEngine();
+  const nodes = useMemo(
+    () =>
+      buildHighlightedNodes(
+        text,
+        terms.map((t) => t.sourceText),
+        getPlaceholderRegex(engine),
+      ),
+    [text, terms, engine],
   );
   return <p className="text-xs leading-relaxed whitespace-pre-wrap">{nodes}</p>;
-}
+});
 
 // ---------------------------------------------------------------------------
 // Column factory

@@ -148,7 +148,7 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
         targetText: targetText ?? "",
       }),
     enabled: !!sourceText,
-    staleTime: 0, // always fresh
+    staleTime: 300,
   });
 
   // Project QA report badge
