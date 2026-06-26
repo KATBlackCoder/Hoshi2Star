@@ -111,12 +111,12 @@ export function useAppHandlers() {
   async function doExport(fontSize: number | null, replaceExisting: boolean) {
     if (!activeProjectId) return;
     try {
-      await invoke("export_project", {
+      const zipPath = await invoke<string>("export_project", {
         projectId: activeProjectId,
         fontSize,
         replaceExisting,
       });
-      toast.success(t("toasts.exportSuccess"));
+      toast.success(t("toasts.exportSuccess"), { description: zipPath });
     } catch (err) {
       toast.error(t("toasts.exportError", { error: String(err) }));
     }

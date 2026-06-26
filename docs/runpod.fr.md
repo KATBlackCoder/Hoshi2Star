@@ -17,7 +17,7 @@ Au lieu d'utiliser Ollama en local, vous pouvez louer un GPU cloud sur [RunPod](
 3. Exposez le port HTTP `11434`
 4. Définissez cette **Commande de démarrage** :
    ```bash
-   bash -c "mkdir -p /workspace/ollama-models && apt-get update && apt-get install -y zstd && curl -fsSL https://ollama.com/install.sh | sh && ollama serve & until ollama list > /dev/null 2>&1; do sleep 1; done && ollama pull qwen3:4b-instruct-2507-q8_0 && wait"
+   bash -c "mkdir -p /workspace/ollama-models && apt-get update && apt-get install -y zstd && curl -fsSL https://ollama.com/install.sh | sh && ollama serve & until ollama list > /dev/null 2>&1; do sleep 1; done && ollama pull gemma4:26b-a4b-it-q4_K_M && wait"
    ```
    > Pour utiliser un autre modèle, remplacez `qwen3:4b-instruct-2507-q8_0` par le vôtre — ex. `gemma4:26b-a4b-it-q4_K_M`. Les noms de modèles sont disponibles sur [ollama.com/library](https://ollama.com/library).
    >

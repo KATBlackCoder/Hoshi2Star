@@ -5,6 +5,8 @@ use std::{collections::HashMap, path::Path, path::PathBuf, sync::LazyLock};
 use regex::Regex;
 use serde::Serialize;
 
+use std::io::Write as _;
+
 use crate::{
     core::{report, tm},
     domain::types::SourceFile,
@@ -12,7 +14,9 @@ use crate::{
         detector::guess_wolf_version_from_structure,
         mv_mz::injector,
         vx_ace::injector as vx_injector,
-        wolf::injector::{inject_all as wolf_inject_all, WolfTranslation},
+        wolf::injector::{
+            inject_all as wolf_inject_all, inject_all_to_memory as wolf_to_memory, WolfTranslation,
+        },
     },
     state::AppState,
 };
@@ -134,23 +138,31 @@ async fn persist_font_size(
     Ok(())
 }
 
-/// Re-inject all translated segments back into the game files.
+/// Re-inject all translated segments and write `hoshi2star.zip` in the game root.
 ///
-/// Dispatches based on `file_type` prefix:
-///  - `"wolf_*"` → batch call to `wolf_inject_all` (Option A: decrypted files)
-///  - `"vx_*"`   → VX Ace Marshal round-trip
-///  - otherwise  → MV/MZ JSON round-trip
+/// Each engine contributes `(relative_zip_path, bytes)` entries:
+///  - `"wolf_*"` → `inject_all_to_memory` (no disk I/O on the Wolf side)
+///  - `"vx_*"`   → `inject_and_serialize` (Marshal round-trip)
+///  - otherwise  → `inject_to_bytes` (JSON round-trip)
+///
+/// Returns the absolute path of the written zip file.
 #[tauri::command]
 pub async fn export_project(
     project_id: String,
     font_size: Option<u32>,
     replace_existing: bool,
     state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
-    // Apply \f[N] prefix to all translated segments if the user requested it.
+) -> Result<String, String> {
     if let Some(n) = font_size {
         persist_font_size(None, Some(&project_id), n, replace_existing, &state.db).await?;
     }
+
+    let game_path: String = sqlx::query_scalar("SELECT game_path FROM projects WHERE id = ?")
+        .bind(&project_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
+    let game_dir = Path::new(&game_path);
 
     let files = sqlx::query_as::<_, SourceFile>(
         "SELECT id, project_id, file_name, file_path, file_type, translation_secs \
@@ -161,75 +173,67 @@ pub async fn export_project(
     .await
     .map_err(|e| e.to_string())?;
 
-    // Detect Wolf files early — they are handled in a single batch call.
+    let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
+
     let has_wolf = files.iter().any(|f| f.file_type.starts_with("wolf_"));
     if has_wolf {
-        return export_project_wolf(&project_id, &files, &state.db).await;
-    }
+        let wolf_entries =
+            collect_wolf_zip_entries(&project_id, &files, game_dir, &state.db).await?;
+        entries.extend(wolf_entries);
+    } else {
+        for file in &files {
+            let translations: Vec<(String, String)> = sqlx::query_as::<_, (String, String)>(
+                "SELECT json_key, target_text FROM segments \
+                 WHERE source_file_id = ? AND target_text != ''",
+            )
+            .bind(&file.id)
+            .fetch_all(&state.db)
+            .await
+            .map_err(|e| e.to_string())?;
 
-    for file in &files {
-        // Only re-inject segments that have a translation
-        let translations: Vec<(String, String)> = sqlx::query_as::<_, (String, String)>(
-            "SELECT json_key, target_text FROM segments \
-             WHERE source_file_id = ? AND target_text != ''",
-        )
-        .bind(&file.id)
-        .fetch_all(&state.db)
-        .await
-        .map_err(|e| e.to_string())?;
+            if translations.is_empty() {
+                continue;
+            }
 
-        if translations.is_empty() {
-            continue;
-        }
+            let pairs: Vec<(&str, &str)> = translations
+                .iter()
+                .map(|(k, v)| (k.as_str(), v.as_str()))
+                .collect();
 
-        let pairs: Vec<(&str, &str)> = translations
-            .iter()
-            .map(|(k, v)| (k.as_str(), v.as_str()))
-            .collect();
+            let bytes = if file.file_type.starts_with("vx_") {
+                let raw = std::fs::read(&file.file_path)
+                    .map_err(|e| format!("read {}: {e}", file.file_name))?;
+                vx_injector::inject_and_serialize(&raw, &pairs)
+                    .map_err(|e| format!("inject {}: {e}", file.file_name))?
+            } else {
+                let raw = std::fs::read_to_string(&file.file_path)
+                    .map_err(|e| format!("read {}: {e}", file.file_name))?;
+                injector::inject_to_bytes(&raw, &pairs)
+                    .map_err(|e| format!("inject {}: {e}", file.file_name))?
+            };
 
-        if file.file_type.starts_with("vx_") {
-            // VX Ace: binary Marshal round-trip
-            let bytes = std::fs::read(&file.file_path)
-                .map_err(|e| format!("read {}: {e}", file.file_name))?;
-            let out = vx_injector::inject_and_serialize(&bytes, &pairs)
-                .map_err(|e| format!("inject {}: {e}", file.file_name))?;
-            std::fs::write(&file.file_path, out)
-                .map_err(|e| format!("write {}: {e}", file.file_name))?;
-        } else {
-            // MV/MZ: JSON text round-trip
-            let raw = std::fs::read_to_string(&file.file_path)
-                .map_err(|e| format!("read {}: {e}", file.file_name))?;
-            let mut json: serde_json::Value =
-                serde_json::from_str(&raw).map_err(|e| format!("parse {}: {e}", file.file_name))?;
-            injector::inject(&mut json, &pairs)
-                .map_err(|e| format!("inject {}: {e}", file.file_name))?;
-            let out = serde_json::to_string(&json)
-                .map_err(|e| format!("serialise {}: {e}", file.file_name))?;
-            std::fs::write(&file.file_path, out)
-                .map_err(|e| format!("write {}: {e}", file.file_name))?;
+            // Relative path inside the zip mirrors the on-disk layout.
+            let rel = PathBuf::from(&file.file_path)
+                .strip_prefix(game_dir)
+                .map(|p| p.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_else(|_| file.file_name.clone());
+            entries.push((rel, bytes));
         }
     }
 
-    Ok(())
+    let zip_path = game_dir.join("hoshi2star.zip");
+    write_zip(&zip_path, entries)?;
+    Ok(zip_path.to_string_lossy().into_owned())
 }
 
-/// Wolf RPG export: collect all translated segments, group by file key,
-/// and call `inject_all` once (Option A — writes decrypted files to Data/).
-async fn export_project_wolf(
-    project_id: &str,
+/// Collect Wolf zip entries in memory without writing to disk.
+async fn collect_wolf_zip_entries(
+    _project_id: &str,
     files: &[SourceFile],
+    game_dir: &Path,
     db: &sqlx::SqlitePool,
-) -> Result<(), String> {
-    // Fetch game_path for game_dir and wolf version detection.
-    let game_path: String = sqlx::query_scalar("SELECT game_path FROM projects WHERE id = ?")
-        .bind(project_id)
-        .fetch_one(db)
-        .await
-        .map_err(|e| e.to_string())?;
-    let game_dir = Path::new(&game_path);
+) -> Result<Vec<(String, Vec<u8>)>, String> {
     let version = guess_wolf_version_from_structure(game_dir);
-
-    // Build HashMap<file_key, Vec<WolfTranslation>> from all Wolf source files.
     let mut translations_by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
 
     for file in files {
@@ -246,9 +250,6 @@ async fn export_project_wolf(
         .map_err(|e| e.to_string())?;
 
         for (key, text) in segs {
-            // Derive the file_key from the first two path components of json_key.
-            // e.g. "MapData/Map001/events/..." → "MapData/Map001"
-            //      "Database/Actors/0/..."    → "Database/Actors"
             let parts: Vec<&str> = key.splitn(3, '/').collect();
             if parts.len() >= 2 {
                 let file_key = format!("{}/{}", parts[0], parts[1]);
@@ -261,13 +262,26 @@ async fn export_project_wolf(
     }
 
     if translations_by_file.is_empty() {
-        return Ok(());
+        return Ok(vec![]);
     }
 
-    wolf_inject_all(game_dir, &translations_by_file, &version)
+    wolf_to_memory(game_dir, &translations_by_file, &version)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())
+}
 
+/// Write a zip archive at `path` containing the given `(relative_path, bytes)` entries.
+fn write_zip(path: &Path, entries: Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    for (rel_path, bytes) in entries {
+        zip.start_file(&rel_path, options)
+            .map_err(|e| e.to_string())?;
+        zip.write_all(&bytes).map_err(|e| e.to_string())?;
+    }
+    zip.finish().map_err(|e| e.to_string())?;
     Ok(())
 }
 

@@ -51,6 +51,17 @@ Trois emplacements : toast post-extraction · barre dans ProjectList · % dans t
 - [x] 3. `tokenizer.rs` — 4 tests : tokenize `\n<Name>`, tokenize `\#`, round-trip, pas de conflit avec `\n[N]`
 - [x] 4. Vérification : 27 tests ✓ · clippy ✓
 
+## Complété — Export ZIP (2026-06-26)
+
+- [x] 1. `Cargo.toml` — ajouter crate `zip = "2"`
+- [x] 2. `engines/mv_mz/injector.rs` — ajouter `inject_to_bytes(raw_json, pairs) -> Vec<u8>`
+- [x] 3. `engines/wolf/injector.rs` — ajouter `inject_all_to_memory(...) -> Vec<(String, Vec<u8>)>`
+- [x] 4. `commands/export.rs` — refactorer `export_project` → zip `hoshi2star.zip` + `collect_wolf_zip_entries` + `write_zip`
+- [x] 5. `commands/export.rs` — return type `Result<String, String>` (retourne le chemin zip)
+- [x] 6. `useAppHandlers.ts` — `invoke<string>`, toast description = chemin zip
+- [x] 7. i18n `en.json` + `fr.json` — messages mis à jour (ZIP / hoshi2star.zip)
+- [x] 8. Vérification : clippy ✓ · typecheck ✓ · 336 tests ✓ (2 échecs pré-existants Inko)
+
 ## Backlog
 
 - [ ] Anneaux de progression par fichier dans FileTree (FileTree rings) — `translated_count`/

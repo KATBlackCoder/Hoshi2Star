@@ -13,6 +13,16 @@ pub enum InjectorError {
     NotAString(String),
 }
 
+/// Inject translations into raw JSON bytes and return the result in memory.
+/// No disk I/O — used by the zip export path.
+pub fn inject_to_bytes(raw_json: &str, translations: &[(&str, &str)]) -> Result<Vec<u8>, String> {
+    let mut json: Value = serde_json::from_str(raw_json).map_err(|e| e.to_string())?;
+    inject(&mut json, translations).map_err(|e| e.to_string())?;
+    serde_json::to_string(&json)
+        .map(|s| s.into_bytes())
+        .map_err(|e| e.to_string())
+}
+
 /// Inject translated segments back into a parsed JSON value.
 ///
 /// `translations` is a slice of `(json_pointer_key, translated_text)` pairs.

@@ -478,6 +478,46 @@ pub fn inject_dat(
 /// Keys in `translations_by_file`:
 ///   `"MapData/{stem}"`   → translations for that `.mps`
 ///   `"Database/{stem}"`  → translations for that `.dat` pair
+/// Inject translations and return `(relative_zip_path, bytes)` pairs — no disk I/O.
+/// Used by the zip export path.
+pub async fn inject_all_to_memory(
+    game_dir: &Path,
+    translations_by_file: &HashMap<String, Vec<WolfTranslation>>,
+    version: &WolfVersion,
+) -> Result<Vec<(String, Vec<u8>)>, InjectorError> {
+    let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
+
+    for (file_key, translations) in translations_by_file {
+        let parts: Vec<&str> = file_key.splitn(2, '/').collect();
+        if parts.len() < 2 {
+            continue;
+        }
+        let stem = parts[1];
+
+        match parts[0] {
+            "MapData" => {
+                let Some(bytes) = super::extractor::load_mps_for_stem(game_dir, stem) else {
+                    continue;
+                };
+                let (new_bytes, _) = inject_map(stem, &bytes, translations, version)?;
+                entries.push((format!("Data/MapData/{stem}.mps"), new_bytes));
+            }
+            "Database" => {
+                let Some((project_bytes, dat_bytes)) =
+                    super::extractor::load_dat_for_stem(game_dir, stem)
+                else {
+                    return Err(InjectorError::MissingProject(stem.to_string()));
+                };
+                let (new_bytes, _) = inject_dat(&project_bytes, &dat_bytes, translations, version)?;
+                entries.push((format!("Data/BasicData/{stem}.dat"), new_bytes));
+            }
+            _ => {}
+        }
+    }
+
+    Ok(entries)
+}
+
 pub async fn inject_all(
     game_dir: &Path,
     translations_by_file: &HashMap<String, Vec<WolfTranslation>>,

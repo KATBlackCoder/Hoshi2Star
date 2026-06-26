@@ -154,7 +154,7 @@
     "start": "Translate"
   },
   "toasts": {
-    "exportSuccess": "Game exported with translations",
+    "exportSuccess": "ZIP exported — hoshi2star.zip ready",
     "exportError": "Export error: {{error}}"
   },
   "lang": {
