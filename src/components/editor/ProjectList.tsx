@@ -39,8 +39,12 @@ export function ProjectList() {
     setIsOpening(project.id);
     try {
       await openProject(project.gamePath);
-    } catch {
-      toast.error(t("projectList.openError"));
+    } catch (err) {
+      const msg = String(err);
+      const key = msg.includes("could not identify game engine")
+        ? "projectList.engineNotFound"
+        : "projectList.openError";
+      toast.error(t(key));
     } finally {
       setIsOpening(null);
     }
@@ -77,7 +81,11 @@ export function ProjectList() {
     try {
       await openProject(selected as string);
     } catch (err) {
-      console.error("open_project failed:", err);
+      const msg = String(err);
+      const key = msg.includes("could not identify game engine")
+        ? "projectList.engineNotFound"
+        : "projectList.openError";
+      toast.error(t(key));
     } finally {
       setOpeningNew(false);
     }

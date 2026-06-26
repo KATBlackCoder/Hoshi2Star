@@ -192,6 +192,7 @@
     "delete": "Supprimer le projet",
     "deleted": "Projet « {{name}} » supprimé",
     "openError": "Impossible d'ouvrir le projet",
+    "engineNotFound": "Moteur de jeu non détecté. Supportés : RPG Maker MV/MZ, Wolf RPG v1/v2/v3.",
     "deleteError": "Impossible de supprimer le projet",
     "confirmDeleteTitle": "Supprimer « {{name}} » ?",
     "confirmDeleteDesc": "Tous les segments, traductions et termes de glossaire propres à ce projet seront définitivement supprimés de la base de données. Les fichiers du jeu sur le disque ne sont pas touchés.",

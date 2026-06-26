@@ -192,6 +192,7 @@
     "delete": "Delete project",
     "deleted": "Project \"{{name}}\" deleted",
     "openError": "Failed to open project",
+    "engineNotFound": "No game engine detected. Supported: RPG Maker MV/MZ, Wolf RPG v1/v2/v3.",
     "deleteError": "Failed to delete project",
     "confirmDeleteTitle": "Delete \"{{name}}\"?",
     "confirmDeleteDesc": "This will permanently remove all segments, translations, and project-specific glossary terms from the database. The game files on disk are not affected.",
