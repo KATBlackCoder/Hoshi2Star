@@ -22,12 +22,14 @@ use std::sync::LazyLock;
 // Regex patterns (compiled once at first use)
 // ---------------------------------------------------------------------------
 
-/// MV/MZ combined: Groupe A + Groupe B + Groupe D (MV `[%n]` form) + Groupe E + Groupe F (plugins).
+/// MV/MZ combined: Groupe A + Groupe B + Groupe D (MV `[%n]` form) + Groupe E + Groupe F + Groupe G (plugins).
 /// NOTE: `\PX/\PY/\FS` (Groupe C) are NOT included — they are MZ-only.
 static RE_MVMZ: LazyLock<Regex> = LazyLock::new(|| {
     // Inside a character class [..], only \\ needs escaping — other chars are literal.
-    // Characters matched after the leading backslash: G \ $ . | ! > < ^ { }
+    // Characters matched after the leading backslash: G \ $ . | ! > < ^ { } #
     // Groupe E MUST come before Groupe A to avoid partial matches on \+word.
+    // Groupe G MUST come before Groupe A/F — \n<Name> uses angle brackets, not square brackets,
+    // so there is no actual regex conflict with A/F, but ordering makes intent explicit.
     // Groupe F MUST come before Groupe A — multi-letter plugin codes (\FF[a_0_001], \AA[FF])
     // that carry an alphanumeric argument not matched by Groupe A's \d+ restriction.
     // \n (literal newline U+000A) is tokenized last — preserves structural line breaks
@@ -35,9 +37,10 @@ static RE_MVMZ: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?x)
           \\[+\-]\w+\[\d+\]         # Groupe E — plugin codes (\+switch[n], \-var[n], …)
+        | \\n<[^>]+>                # Groupe G — Yanfly name box (\n<Name>)
         | \\[A-Za-z]{1,3}\[[A-Za-z0-9_]+\]  # Groupe F — plugin alphanum codes (\FF[a_0_001], \AA[FF])
         | \\[VNPCIvnpci]\[\d+\]    # Groupe A — codes avec argument numérique (maj + min)
-        | \\[G\\$.|!><^{}]         # Groupe B — codes sans argument
+        | \\[G\\$.|!><^{}\#]        # Groupe B — codes sans argument (incl. \# scene titles)
         | \[%\d+\]                 # Groupe D (MV) — [%1] [%2] …
         | \n                       # structural line break (description/profile fields)
         ",
@@ -45,17 +48,19 @@ static RE_MVMZ: LazyLock<Regex> = LazyLock::new(|| {
     .expect("RE_MVMZ regex must compile")
 });
 
-/// MZ-only: Groupe C (before A!) + Groupe A + Groupe B + Groupe D (MZ bare `%n` form) + Groupe E + Groupe F.
+/// MZ-only: Groupe C (before A!) + Groupe A + Groupe B + Groupe D (MZ bare `%n` form) + Groupe E + Groupe F + Groupe G.
 /// Groupe C MUST come before Groupe A to prevent `\P` from consuming `\PX`/`\PY`/`\FS`.
+/// Groupe G MUST come before Groupe A/F — see RE_MVMZ comment.
 /// Groupe F comes after Groupe C (so \PX[100] is captured by C first) but before Groupe A.
 static RE_MZONLY: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?x)
           \\[+\-]\w+\[\d+\]                # Groupe E — plugin codes (\+switch[n], …)
+        | \\n<[^>]+>                       # Groupe G — Yanfly name box (\n<Name>)
         | \\(?:PX|PY|FS|px|py|fs)\[\d+\]  # Groupe C — MZ position/font codes (avant A!)
         | \\[A-Za-z]{1,3}\[[A-Za-z0-9_]+\]  # Groupe F — plugin alphanum codes (\FF[a_0_001], \AA[FF])
         | \\[VNPCIvnpci]\[\d+\]            # Groupe A — codes avec argument numérique (maj + min)
-        | \\[G\\$.|!><^{}]                 # Groupe B — codes sans argument
+        | \\[G\\$.|!><^{}\#]               # Groupe B — codes sans argument (incl. \# scene titles)
         | %\d+                             # Groupe D (MZ) — %1 %2 … (sans crochets)
         | \n                               # structural line break (description/profile fields)
         ",
@@ -496,5 +501,68 @@ mod tests {
         assert_eq!(Engine::from_project_engine("mv_mz"), Engine::MvMz);
         assert_eq!(Engine::from_project_engine("vx_ace"), Engine::MvMz);
         assert_eq!(Engine::from_project_engine("bakin"), Engine::MvMz);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Groupe G — Yanfly name box (\n<Name>)
+    // ---------------------------------------------------------------------------
+
+    // 15. \n<Name> est tokenisé comme un placeholder opaque
+    #[test]
+    fn test_groupe_g_name_box_tokenized() {
+        let result = Tokenizer::tokenize(r"\n<ハルカ>", Engine::MvMz);
+        assert_eq!(result.text, "⟦ph_0⟧");
+        assert_eq!(result.map.get("⟦ph_0⟧").unwrap(), r"\n<ハルカ>");
+    }
+
+    // 16. \n<Name> + dialogue — code protégé, texte traduit normalement
+    #[test]
+    fn test_groupe_g_name_box_round_trip() {
+        let original = r"\n<ハルカ>「はぁ…はぁ…」";
+        let tok = Tokenizer::tokenize(original, Engine::MvMz);
+        assert_eq!(tok.map.len(), 1, "only the name box code is a token");
+        assert!(
+            tok.text.contains("「はぁ…はぁ…」"),
+            "dialogue text must remain"
+        );
+        let restored = Tokenizer::restore(&tok.text, &tok.map).unwrap();
+        assert_eq!(restored, original);
+    }
+
+    // 17. \n<Name> ne crée pas de conflit avec \n[N] (Groupe A)
+    #[test]
+    fn test_groupe_g_no_conflict_with_groupe_a() {
+        // \n[1] → Groupe A ; \n<ハルカ> → Groupe G — deux tokens distincts
+        let original = r"\n[1] dit \n<ハルカ>「…」";
+        let tok = Tokenizer::tokenize(original, Engine::MvMz);
+        assert_eq!(
+            tok.map.len(),
+            2,
+            "\\n[1] and \\n<Name> are two distinct tokens"
+        );
+        let values: Vec<&str> = tok.map.values().map(String::as_str).collect();
+        assert!(values.contains(&r"\n[1]"));
+        assert!(values.contains(&r"\n<ハルカ>"));
+        let restored = Tokenizer::restore(&tok.text, &tok.map).unwrap();
+        assert_eq!(restored, original);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Groupe B étendu — \# (titre de scène)
+    // ---------------------------------------------------------------------------
+
+    // 18. \# est tokenisé comme placeholder Groupe B
+    #[test]
+    fn test_groupe_b_scene_title_tokenized() {
+        let original = r"\#夜の学園祭";
+        let tok = Tokenizer::tokenize(original, Engine::MvMz);
+        assert_eq!(tok.map.len(), 1);
+        assert_eq!(tok.map.get("⟦ph_0⟧").unwrap(), r"\#");
+        assert!(
+            tok.text.contains("夜の学園祭"),
+            "title text must remain translatable"
+        );
+        let restored = Tokenizer::restore(&tok.text, &tok.map).unwrap();
+        assert_eq!(restored, original);
     }
 }

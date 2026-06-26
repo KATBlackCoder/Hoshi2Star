@@ -44,6 +44,13 @@ Trois emplacements : toast post-extraction · barre dans ProjectList · % dans t
 - [x] 8. i18n `en.json` + `fr.json` — ajouter clé `project.extracted`
 - [x] 9. Vérification : `cargo clippy` ✓ · `pnpm typecheck` ✓
 
+## En cours — Tokenizer Groupe G + \# (2026-06-26)
+
+- [x] 1. `tokenizer.rs` — ajouter Groupe G (`\\n<[^>]+>`) dans RE_MVMZ et RE_MZONLY
+- [x] 2. `tokenizer.rs` — ajouter `\#` (échappé) dans Groupe B des deux regex
+- [x] 3. `tokenizer.rs` — 4 tests : tokenize `\n<Name>`, tokenize `\#`, round-trip, pas de conflit avec `\n[N]`
+- [x] 4. Vérification : 27 tests ✓ · clippy ✓
+
 ## Backlog
 
 - [ ] Anneaux de progression par fichier dans FileTree (FileTree rings) — `translated_count`/
