@@ -30,6 +30,20 @@ l'analyser et identifier ce qui mérite traduction vs ce qui peut être skippé.
 - [x] 4. `AppToolbar.tsx` — retirer la condition `engine === "wolf"`, appeler `debug_dump_segments`
 - [x] 5. Vérification : cargo clippy ✓ · pnpm typecheck ✓
 
+## En cours — Stats de segments (2026-06-26)
+
+Trois emplacements : toast post-extraction · barre dans ProjectList · % dans toolbar pill.
+
+- [x] 1. Rust `domain/types.rs` — ajouter `translated_count` + `needs_review_count` à `ProjectStats`
+- [x] 2. Rust `commands/project.rs` — étendre la query SQL de `get_project_stats` (5 sous-requêtes)
+- [x] 3. TS `lib/types.ts` — ajouter interface `ProjectStats` partagée
+- [x] 4. TS `stores/project.ts` — ajouter `activeProjectStats`, fetch après open, toast si `!wasRestored`
+- [x] 5. TS `useAppHandlers.ts` — supprimer interface locale, importer depuis `lib/types`
+- [x] 6. TS `AppToolbar.tsx` — afficher `37%` dans la pill projet
+- [x] 7. TS `ProjectList.tsx` — fetch stats par carte, afficher barre + compteurs
+- [x] 8. i18n `en.json` + `fr.json` — ajouter clé `project.extracted`
+- [x] 9. Vérification : `cargo clippy` ✓ · `pnpm typecheck` ✓
+
 ## Backlog
 
 - [ ] Anneaux de progression par fichier dans FileTree (FileTree rings) — `translated_count`/

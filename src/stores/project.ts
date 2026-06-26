@@ -2,11 +2,17 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { t } from "i18next";
 import { toast } from "sonner";
-import type { OpenProjectResult, Project, SourceFile } from "@/lib/types";
+import type {
+  OpenProjectResult,
+  Project,
+  ProjectStats,
+  SourceFile,
+} from "@/lib/types";
 
 interface ProjectState {
   projects: Project[];
   activeProjectId: string | null;
+  activeProjectStats: ProjectStats | null;
   sourceFiles: SourceFile[];
   /** project.id en attente de réponse utilisateur (oui/non) — null si aucun */
   pendingGlossaryExtract: string | null;
@@ -16,6 +22,7 @@ interface ProjectState {
   // Actions
   addProject: (project: Project) => void;
   setActiveProject: (id: string | null) => void;
+  setActiveProjectStats: (stats: ProjectStats | null) => void;
   setSourceFiles: (files: SourceFile[]) => void;
   removeProject: (id: string) => void;
   setPendingGlossaryExtract: (id: string | null) => void;
@@ -25,6 +32,7 @@ interface ProjectState {
 export const useProjectStore = create<ProjectState>()((set) => ({
   projects: [],
   activeProjectId: null,
+  activeProjectStats: null,
   sourceFiles: [],
   pendingGlossaryExtract: null,
   isExtractingGlossary: false,
@@ -33,6 +41,8 @@ export const useProjectStore = create<ProjectState>()((set) => ({
     set((state) => ({ projects: [...state.projects, project] })),
 
   setActiveProject: (id) => set({ activeProjectId: id }),
+
+  setActiveProjectStats: (stats) => set({ activeProjectStats: stats }),
 
   setSourceFiles: (files) => set({ sourceFiles: files }),
 
@@ -64,6 +74,9 @@ export const usePendingGlossaryExtract = () =>
 export const useIsExtractingGlossary = () =>
   useProjectStore((s) => s.isExtractingGlossary);
 
+export const useActiveProjectStats = () =>
+  useProjectStore((s) => s.activeProjectStats);
+
 // Thunk: open a game folder via Tauri and register the project in the store.
 export async function openProject(
   gamePath: string,
@@ -78,13 +91,22 @@ export async function openProject(
     useProjectStore.getState().setPendingGlossaryExtract(project.id);
   }
 
-  const files = await invoke<SourceFile[]>("get_source_files", {
-    projectId: project.id,
-  });
+  const [files, stats] = await Promise.all([
+    invoke<SourceFile[]>("get_source_files", { projectId: project.id }),
+    invoke<ProjectStats>("get_project_stats", { projectId: project.id }),
+  ]);
   useProjectStore.getState().setSourceFiles(files);
+  useProjectStore.getState().setActiveProjectStats(stats);
 
   if (wasRestored) {
     toast.success(t("project.restored"));
+  } else {
+    toast.success(
+      t("project.extracted", {
+        total: stats.totalSegments,
+        translated: stats.translatedCount,
+      }),
+    );
   }
 
   return { project, wasRestored };

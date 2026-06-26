@@ -38,6 +38,14 @@ export interface FontScanResult {
   totalTranslated: number;
 }
 
+export interface ProjectStats {
+  fileCount: number;
+  totalSegments: number;
+  untranslatedCount: number;
+  translatedCount: number;
+  needsReviewCount: number;
+}
+
 export interface Segment {
   id: string;
   sourceFileId: string;

@@ -6,17 +6,7 @@ import { toast } from "sonner";
 import { useProjectStore, usePendingGlossaryExtract } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { useLlmStore } from "@/stores/llm";
-import type { FontScanResult } from "@/lib/types";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-export interface ProjectStats {
-  fileCount: number;
-  totalSegments: number;
-  untranslatedCount: number;
-}
+import type { FontScanResult, ProjectStats } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Hook

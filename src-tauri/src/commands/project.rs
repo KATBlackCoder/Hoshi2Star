@@ -457,25 +457,34 @@ pub async fn get_project_stats(
     project_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<ProjectStats, String> {
-    let (file_count, total_segments, untranslated_count) = sqlx::query_as::<_, (i64, i64, i64)>(
-        "SELECT \
-            (SELECT COUNT(*) FROM source_files WHERE project_id = ?1), \
-            (SELECT COUNT(*) FROM segments s \
-               JOIN source_files sf ON s.source_file_id = sf.id \
-               WHERE sf.project_id = ?1), \
-            (SELECT COUNT(*) FROM segments s \
-               JOIN source_files sf ON s.source_file_id = sf.id \
-               WHERE sf.project_id = ?1 AND s.status = 'untranslated')",
-    )
-    .bind(&project_id)
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| e.to_string())?;
+    let (file_count, total_segments, untranslated_count, translated_count, needs_review_count) =
+        sqlx::query_as::<_, (i64, i64, i64, i64, i64)>(
+            "SELECT \
+                (SELECT COUNT(*) FROM source_files WHERE project_id = ?1), \
+                (SELECT COUNT(*) FROM segments s \
+                   JOIN source_files sf ON s.source_file_id = sf.id \
+                   WHERE sf.project_id = ?1), \
+                (SELECT COUNT(*) FROM segments s \
+                   JOIN source_files sf ON s.source_file_id = sf.id \
+                   WHERE sf.project_id = ?1 AND s.status = 'untranslated'), \
+                (SELECT COUNT(*) FROM segments s \
+                   JOIN source_files sf ON s.source_file_id = sf.id \
+                   WHERE sf.project_id = ?1 AND s.status = 'translated'), \
+                (SELECT COUNT(*) FROM segments s \
+                   JOIN source_files sf ON s.source_file_id = sf.id \
+                   WHERE sf.project_id = ?1 AND s.status = 'needs_review')",
+        )
+        .bind(&project_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(ProjectStats {
         file_count,
         total_segments,
         untranslated_count,
+        translated_count,
+        needs_review_count,
     })
 }
 

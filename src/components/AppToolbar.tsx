@@ -21,6 +21,7 @@ import {
   openProject,
   useProjectStore,
   useIsExtractingGlossary,
+  useActiveProjectStats,
 } from "@/stores/project";
 import {
   useIsTranslating,
@@ -153,6 +154,7 @@ export function AppToolbar({
   const isTranslating = useIsTranslating();
   const isExtractingGlossary = useIsExtractingGlossary();
   const progress = useTranslationProgress();
+  const activeProjectStats = useActiveProjectStats();
 
   async function handleOpenGame() {
     const selected = await open({
@@ -257,6 +259,16 @@ export function AppToolbar({
           <span className="shrink-0 rounded-full border border-primary/30 bg-primary/10 px-1.5 font-mono text-[9px] uppercase tracking-wider text-primary">
             {activeProject.engine}
           </span>
+          {activeProjectStats && activeProjectStats.totalSegments > 0 && (
+            <span className="shrink-0 font-mono text-[10px] tabular-nums text-star/80">
+              {Math.round(
+                (activeProjectStats.translatedCount /
+                  activeProjectStats.totalSegments) *
+                  100,
+              )}
+              %
+            </span>
+          )}
         </span>
       )}
 

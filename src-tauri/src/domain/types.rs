@@ -100,13 +100,15 @@ pub struct OpenProjectResult {
     pub was_restored: bool,
 }
 
-/// Project-level statistics: used by the frontend to gate the "Export All" flow.
+/// Project-level statistics: used by the frontend for the "Export All" gate and progress display.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectStats {
     pub file_count: i64,
     pub total_segments: i64,
     pub untranslated_count: i64,
+    pub translated_count: i64,
+    pub needs_review_count: i64,
 }
 
 /// Summary of QA errors for a whole project.

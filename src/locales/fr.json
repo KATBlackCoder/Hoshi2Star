@@ -161,7 +161,8 @@
     "toggle": "FR"
   },
   "project": {
-    "restored": "Projet restauré — reprise de la traduction"
+    "restored": "Projet restauré — reprise de la traduction",
+    "extracted": "Extraction terminée — {{total}} segments · {{translated}} traduits"
   },
   "glossaryPrompt": {
     "title": "📖 Glossaire auto",
