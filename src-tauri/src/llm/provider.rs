@@ -177,21 +177,22 @@ impl LlmProvider for OllamaProvider {
             .enumerate()
             .map(|(i, s)| format!("[{}] {}", i + 1, s))
             .collect();
-        // /no_think désactive le bloc <think> de qwen3 (et des modèles compatibles).
-        // Les autres modèles ignorent silencieusement cette directive.
-        let prompt_body = format!("/no_think\n{}", numbered.join("\n"));
-
-        let system_prompt = format!(
-            "You are a professional game localisation assistant.\n\
-             Translate the following numbered lines from {src} to {tgt}.\n\
-             CRITICAL RULE: Every ⟦ph_N⟧ token in the source MUST appear identically in your \
-             translation. Never translate, remove, paraphrase or modify any ⟦ph_N⟧ token. \
-             If you cannot place a token naturally, keep it at the end of the translated sentence.\n\
-             Output ONLY the translated lines, one per line, with the same numbering.{glossary}",
-            src = context.source_lang,
-            tgt = context.target_lang,
-            glossary = glossary_hint,
+        let tmpl = crate::llm::prompts::translate_for(&context.target_lang);
+        let system_prompt = tmpl.render(
+            &tmpl.system,
+            &[
+                (
+                    "source_lang",
+                    crate::llm::prompts::lang_code_to_name(&context.source_lang),
+                ),
+                (
+                    "target_lang",
+                    crate::llm::prompts::lang_code_to_name(&context.target_lang),
+                ),
+                ("glossary", &glossary_hint),
+            ],
         );
+        let prompt_body = tmpl.render(&tmpl.user, &[("segments", &numbered.join("\n"))]);
 
         let mut last_err = String::new();
 

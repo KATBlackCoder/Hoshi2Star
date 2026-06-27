@@ -6,6 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 ## [Unreleased]
 
 ### Added
+- Add compile-time embedded LLM prompt templates — `prompts/translate/default.toml` and `prompts/glossary/default.toml` replace hardcoded Rust strings; new `llm/prompts.rs` module exposes `translate_for()`, `glossary_for()`, `lang_code_to_name()`, and `PromptTemplate::render()`; per-language files (`fr.toml`, `es.toml`, …) can be added without touching provider or glossary code; LLM now receives full language names (`"Japanese"` / `"English"`) instead of BCP-47 codes
 - Add `\FS[N]` font-size prefix support for RPG Maker MV/MZ export — `scan_font_status` now returns `engine` in `FontScanResult`; `apply_font_prefix` dispatches `\f[N]` (Wolf) or `\FS[N]` (MV/MZ) based on engine; font dialog shows the correct code and a note that MV requires a message plugin (VisuStella/Yanfly)
 - Add `strip_font_prefixes(projectId)` Tauri command — strips any `\f[N]` or `\FS[N]` prefix from all segments in a project DB (cleanup for pre-fix exports); called automatically on Skip when `existingFontCount > 0`
 - Add `isExporting` loading state to Export All toolbar button — button disabled with `Loader2` spinner during export, restored on success or error

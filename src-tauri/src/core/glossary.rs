@@ -202,25 +202,23 @@ pub async fn extract_terms_from_project(
         .join("\n");
 
     // 2. Build extraction prompt
-    let system = "You are a Japanese game localization expert.\n\
-        Identify proper nouns and game-specific terms that must be translated consistently.\n\
-        Respond ONLY with a JSON array. No explanation. No markdown.";
-
-    let lang_target = lang_pair.split('-').nth(1).unwrap_or("en").to_uppercase();
-    let user = format!(
-        "/no_think\n\
-        Here are source texts from a Japanese RPG. Identify up to 50 terms worth glossarizing \
-        (character names, place names, skill names, item names, class names).\n\
-        For each term, provide exactly ONE {lang_target} translation — the best fit for a Japanese RPG context.\n\
-        Rules: single word or short phrase only. No slashes, no parentheses, no alternatives.\n\
-        Format: [{{\"source\":\"JP term\",\"target\":\"{lang_target} term\",\
-        \"domain\":\"character|skill|item|state|other\"}}]\n\n\
-        Source texts:\n{source_list}"
+    let lang_code = lang_pair.split('-').nth(1).unwrap_or("en");
+    let tmpl = crate::llm::prompts::glossary_for(lang_code);
+    let system = tmpl.system.clone();
+    let user = tmpl.render(
+        &tmpl.user,
+        &[
+            (
+                "target_lang",
+                crate::llm::prompts::lang_code_to_name(lang_code),
+            ),
+            ("source_list", &source_list),
+        ],
     );
 
     // 3. Call LLM — single chat turn
     let raw = provider
-        .chat(system, &user)
+        .chat(&system, &user)
         .await
         .map_err(|e| e.to_string())?;
 

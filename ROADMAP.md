@@ -73,6 +73,20 @@ Au re-import, comparaison par clé puis par hash :
 - [ ] UI : badge `NeedsReview` (⚠) sur segments modifiés + vue diff source old/new side-by-side
 - [ ] UI : filtre "Afficher uniquement les segments modifiés" dans SegmentGrid
 
+### LLM Layer — Langues cibles additionnelles
+
+> Prérequis : externalisation des prompts LLM vers TOML (dossier `prompts/translate/` +
+> `prompts/glossary/`) — terrain préparé dès F3 : `{{target_lang}}` paramétrable,
+> `translate_for(lang)` route vers le bon `.toml`, `lang_code_to_name()` disponible.
+
+- [ ] Settings UI : sélecteur langue cible (FR / EN / ES / DE / …) persisté dans le store Zustand
+- [ ] `commands/translate.rs` : recevoir `target_lang` depuis le frontend (plus de hardcode `"en"`)
+- [ ] `lang_pair` dynamique (`ja-fr`, `ja-es`, …) propagé dans TM + glossaire
+- [ ] `prompts/translate/fr.toml` — règles typographiques FR + register (tutoiement/vouvoiement)
+- [ ] `prompts/translate/es.toml` — castillan vs latam + vosotros/ustedes
+- [ ] `prompts/translate/de.toml` — majuscules noms communs + Sie/du
+- [ ] `prompts/glossary/fr.toml`, `es.toml`, `de.toml` — instructions extraction adaptées si nécessaire
+
 ### LLM Layer — Passe tone (optionnel par projet)
 
 - [ ] Config par projet : registre (familier / formel / médiéval / contemporain)
@@ -104,6 +118,8 @@ Au re-import, comparaison par clé puis par hash :
 - [ ] Tests Bakin
 
 ### Langues sources additionnelles (add-ons)
+
+> Distinct des langues **cibles** (FR/ES/DE) — voir F4. Ici : autres langues *sources* (≠ japonais).
 
 - [ ] Support Korean source (DLsite Korea) — pack "Korean Source" 9 $
 - [ ] Support Chinese source (Wolf RPG CN) — pack "Chinese Source" 9 $

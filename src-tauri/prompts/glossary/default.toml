@@ -1,0 +1,17 @@
+system = """
+You are a Japanese game localization expert.
+Identify proper nouns and game-specific terms that must be translated consistently.
+Respond ONLY with a JSON array. No explanation. No markdown.
+"""
+
+user = """
+/no_think
+Here are source texts from a Japanese RPG. Identify up to 50 terms worth glossarizing \
+(character names, place names, skill names, item names, class names).
+For each term, provide exactly ONE {{target_lang}} translation — the best fit for a Japanese RPG context.
+Rules: single word or short phrase only. No slashes, no parentheses, no alternatives.
+Format: [{"source":"JP term","target":"{{target_lang}} term","domain":"character|skill|item|state|other"}]
+
+Source texts:
+{{source_list}}
+"""

@@ -80,6 +80,55 @@ clippy ✓ · typecheck ✓ · 336 tests ✓ (2 Inko pré-existants)
 - [x] 10. `en.json` + `fr.json` — `{{code}}` interpolé + clé `hintMvMz`
 - [x] 11. Vérification ✓
 
+## En cours — Externalisation des prompts LLM vers TOML
+
+Objectif : sortir les prompts hardcodés de `provider.rs` et `glossary.rs` vers des
+fichiers `.toml` embarqués à la compilation via `include_str!()`. Structure dossier
+dès maintenant pour accueillir les langues cibles futures sans refactor.
+
+**Architecture :**
+```
+src-tauri/prompts/
+  translate/
+    default.toml    ← fallback générique (ja→en aujourd'hui)
+  glossary/
+    default.toml    ← fallback générique
+```
+Quand on ajoutera FR : créer `translate/fr.toml` + bras `"fr"` dans le `match`.
+
+**Variables dans les templates :**
+- `translate/default.toml` : `{{source_lang}}` / `{{target_lang}}` / `{{glossary}}` / `{{segments}}`
+- `glossary/default.toml` : `{{target_lang}}` / `{{source_list}}`
+- Les valeurs sont des noms complets (`"Japanese"`, `"English"`) — pas des codes courts (`"ja"`, `"en"`)
+  → `translate.rs` conserve `"ja"`/`"en"` en interne ; `prompts.rs` expose `lang_code_to_name()`
+
+**Fichiers créés :**
+- `src-tauri/prompts/translate/default.toml`
+- `src-tauri/prompts/glossary/default.toml`
+- `src-tauri/src/llm/prompts.rs`
+
+**Fichiers modifiés :**
+- `src-tauri/Cargo.toml` — ajouter `toml = "0.8"`
+- `src-tauri/src/llm/mod.rs` — `pub mod prompts`
+- `src-tauri/src/llm/provider.rs` — remplacer `format!()` hardcodé
+- `src-tauri/src/core/glossary.rs` — remplacer strings hardcodées
+
+- [x] 1. `Cargo.toml` — ajouter dépendance `toml = { version = "0.8", features = ["parse"] }`
+- [x] 2. Créer `src-tauri/prompts/translate/default.toml` — system + user avec variables ci-dessus
+- [x] 3. Créer `src-tauri/prompts/glossary/default.toml` — system + user avec variables ci-dessus
+- [x] 4. Créer `src-tauri/src/llm/prompts.rs` :
+         · `PromptTemplate { system, user }` + `render(part, vars)`
+         · `fn lang_code_to_name(code: &str) -> &str` (`"ja"` → `"Japanese"`, `"en"` → `"English"`, …)
+         · `LazyLock` `TRANSLATE_DEFAULT` + `GLOSSARY_DEFAULT`
+         · `fn translate_for(target_lang: &str) -> &'static PromptTemplate` (fallback default)
+         · `fn glossary_for(target_lang: &str) -> &'static PromptTemplate` (idem)
+- [x] 5. `src-tauri/src/llm/mod.rs` — ajouter `pub mod prompts`
+- [x] 6. `src-tauri/src/llm/provider.rs` — appeler `prompts::translate_for(&context.target_lang)`,
+         passer `lang_code_to_name(source_lang)` et `lang_code_to_name(target_lang)` au `render()`
+- [x] 7. `src-tauri/src/core/glossary.rs` — appeler `prompts::glossary_for(lang_target)`,
+         passer `lang_code_to_name(lang_target)` au `render()`
+- [x] 8. Vérification : clippy ✓ · 343/349 tests ✓ (2 échecs Inko pré-existants, 4 ignored)
+
 ## Backlog
 
 - [ ] Anneaux de progression par fichier dans FileTree (FileTree rings) — `translated_count`/
