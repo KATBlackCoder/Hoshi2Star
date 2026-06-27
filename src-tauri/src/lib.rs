@@ -12,7 +12,7 @@ pub mod utils;
 
 use commands::export::{
     debug_inject_file, export_debug_json, export_project, export_qa_report, export_tm,
-    scan_font_status,
+    scan_font_status, strip_font_prefixes,
 };
 use commands::glossary::{
     add_glossary_term, delete_glossary_term, extract_glossary_terms, extract_wolf_speakers,
@@ -76,6 +76,7 @@ pub fn run() {
             debug_dump_segments,
             debug_inject_file,
             scan_font_status,
+            strip_font_prefixes,
         ]);
 
     #[cfg(debug_assertions)]

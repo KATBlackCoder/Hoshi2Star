@@ -26,6 +26,7 @@ export function useAppHandlers() {
   const [fontScanResult, setFontScanResult] = useState<FontScanResult | null>(
     null,
   );
+  const [isExporting, setIsExporting] = useState(false);
 
   const { t } = useTranslation();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
@@ -99,9 +100,11 @@ export function useAppHandlers() {
       const scan = await invoke<FontScanResult>("scan_font_status", {
         projectId: activeProjectId,
       });
-      setFontScanResult(scan);
-      setShowFontDialog(true);
-      return;
+      if (scan.engine === "wolf" || scan.engine === "mv_mz") {
+        setFontScanResult(scan);
+        setShowFontDialog(true);
+        return;
+      }
     } catch {
       // scan failure is non-fatal — export without font dialog
     }
@@ -110,6 +113,7 @@ export function useAppHandlers() {
 
   async function doExport(fontSize: number | null, replaceExisting: boolean) {
     if (!activeProjectId) return;
+    setIsExporting(true);
     try {
       const zipPath = await invoke<string>("export_project", {
         projectId: activeProjectId,
@@ -119,6 +123,8 @@ export function useAppHandlers() {
       toast.success(t("toasts.exportSuccess"), { description: zipPath });
     } catch (err) {
       toast.error(t("toasts.exportError", { error: String(err) }));
+    } finally {
+      setIsExporting(false);
     }
   }
 
@@ -128,10 +134,20 @@ export function useAppHandlers() {
     void doExport(fontSize, replaceExisting);
   }
 
-  function handleExportFontSkip() {
+  async function handleExportFontSkip() {
     setShowFontDialog(false);
+    const scan = fontScanResult;
     setFontScanResult(null);
-    void doExport(null, false);
+    setIsExporting(true);
+    try {
+      // Strip any prefix already in the DB (written by a previous export before the fix).
+      if (activeProjectId && scan && scan.existingFontCount > 0) {
+        await invoke("strip_font_prefixes", { projectId: activeProjectId });
+      }
+      await doExport(null, false);
+    } finally {
+      setIsExporting(false);
+    }
   }
 
   async function handleTranslateAll() {
@@ -180,6 +196,7 @@ export function useAppHandlers() {
     translateAllStats,
     showFontDialog,
     fontScanResult,
+    isExporting,
     // Setters
     setShowSettings,
     setShowAbout,

@@ -36,6 +36,7 @@ export interface SourceFile {
 export interface FontScanResult {
   existingFontCount: number;
   totalTranslated: number;
+  engine: string;
 }
 
 export interface ProjectStats {

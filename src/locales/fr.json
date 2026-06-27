@@ -29,9 +29,10 @@
   },
   "fontSizeDialog": {
     "title": "Appliquer une taille de police",
-    "desc": "{{total}} segment(s) traduit(s) · {{existing}} ont déjà un \\f[N]",
-    "label": "Taille de police (\\f[N])",
-    "replaceLabel": "Remplacer les \\f[N] existants ({{count}} segments)",
+    "desc": "{{total}} segment(s) traduit(s) · {{existing}} ont déjà un {{code}}",
+    "label": "Taille de police ({{code}})",
+    "replaceLabel": "Remplacer les {{code}} existants ({{count}} segments)",
+    "hintMvMz": "Note : nécessite RPG Maker MZ ou un plugin de messages (ex. VisuStella Message Core) pour MV.",
     "skip": "Ignorer",
     "apply": "Appliquer & injecter"
   },

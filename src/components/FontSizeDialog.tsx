@@ -28,6 +28,8 @@ export function FontSizeDialog({
   const [fontSize, setFontSize] = useState(18);
   const [replaceExisting, setReplaceExisting] = useState(true);
 
+  const code = scan.engine === "wolf" ? "\\f[N]" : "\\FS[N]";
+
   return (
     <AlertDialog open={open}>
       <AlertDialogContent>
@@ -39,11 +41,14 @@ export function FontSizeDialog({
           {t("fontSizeDialog.desc", {
             total: scan.totalTranslated,
             existing: scan.existingFontCount,
+            code,
           })}
         </p>
 
         <div className="flex items-center gap-3 mt-2">
-          <span className="shrink-0 text-sm">{t("fontSizeDialog.label")}</span>
+          <span className="shrink-0 text-sm">
+            {t("fontSizeDialog.label", { code })}
+          </span>
           <Input
             type="number"
             min={8}
@@ -64,8 +69,15 @@ export function FontSizeDialog({
             />
             {t("fontSizeDialog.replaceLabel", {
               count: scan.existingFontCount,
+              code,
             })}
           </label>
+        )}
+
+        {scan.engine === "mv_mz" && (
+          <p className="text-xs text-muted-foreground mt-1">
+            {t("fontSizeDialog.hintMvMz")}
+          </p>
         )}
 
         <AlertDialogFooter className="gap-2">

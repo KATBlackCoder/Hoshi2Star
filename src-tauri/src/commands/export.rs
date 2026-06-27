@@ -25,23 +25,43 @@ use crate::{
 // Font-size helpers
 // ---------------------------------------------------------------------------
 
-static RE_FONT_PREFIX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\\f\[\d+\]").expect("RE_FONT_PREFIX must compile"));
+/// Wolf RPG font-size prefix: `\f[N]`
+static RE_FONT_PREFIX_WOLF: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\\f\[\d+\]").expect("RE_FONT_PREFIX_WOLF must compile"));
 
-/// Prepend `\f[n]` to `text`, or replace the existing `\f[*]` prefix if
-/// `replace_existing` is true.  Returns the original string unchanged when
-/// the prefix already exists and `replace_existing` is false.
-fn apply_font_prefix(text: &str, n: u32, replace_existing: bool) -> String {
-    if RE_FONT_PREFIX.is_match(text) {
+/// RPG Maker MZ font-size prefix: `\FS[N]`
+static RE_FONT_PREFIX_MVMZ: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\\FS\[\d+\]").expect("RE_FONT_PREFIX_MVMZ must compile"));
+
+fn font_prefix_code(engine: &str, n: u32) -> String {
+    if engine == "wolf" {
+        format!("\\f[{n}]")
+    } else {
+        format!("\\FS[{n}]")
+    }
+}
+
+fn font_prefix_re(engine: &str) -> &'static Regex {
+    if engine == "wolf" {
+        &RE_FONT_PREFIX_WOLF
+    } else {
+        &RE_FONT_PREFIX_MVMZ
+    }
+}
+
+/// Prepend the engine-appropriate font-size code to `text`, or replace the
+/// existing prefix when `replace_existing` is true.
+fn apply_font_prefix(text: &str, n: u32, replace_existing: bool, engine: &str) -> String {
+    let re = font_prefix_re(engine);
+    let code = font_prefix_code(engine, n);
+    if re.is_match(text) {
         if replace_existing {
-            RE_FONT_PREFIX
-                .replace(text, format!("\\f[{n}]").as_str())
-                .into_owned()
+            re.replace(text, code.as_str()).into_owned()
         } else {
             text.to_string()
         }
     } else {
-        format!("\\f[{n}]{text}")
+        format!("{code}{text}")
     }
 }
 
@@ -49,88 +69,120 @@ fn apply_font_prefix(text: &str, n: u32, replace_existing: bool) -> String {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FontScanResult {
-    /// Segments whose `target_text` already starts with a `\f[N]` prefix.
+    /// Segments whose `target_text` already starts with the engine font prefix.
     pub existing_font_count: i64,
     /// Total translated segments analysed.
     pub total_translated: i64,
+    /// Engine of the project (`"wolf"`, `"mv_mz"`, etc.).
+    pub engine: String,
 }
 
-/// Scan translated segments for existing `\f[N]` prefixes.
+/// Scan translated segments for existing font-size prefixes.
 ///
 /// Pass either `source_file_id` (file-level scan) or `project_id`
-/// (project-level scan).
+/// (project-level scan). The result includes `engine` so the frontend can
+/// pick the correct code label (`\f[N]` vs `\FS[N]`).
 #[tauri::command]
 pub async fn scan_font_status(
     source_file_id: Option<String>,
     project_id: Option<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<FontScanResult, String> {
-    let texts: Vec<String> = match (source_file_id.as_deref(), project_id.as_deref()) {
-        (Some(fid), _) => sqlx::query_scalar(
-            "SELECT target_text FROM segments WHERE source_file_id = ? AND target_text != ''",
+    // Resolve project id and engine from DB.
+    let (resolved_pid, engine): (String, String) =
+        match (source_file_id.as_deref(), project_id.as_deref()) {
+            (Some(fid), _) => sqlx::query_as(
+                "SELECT p.id, p.engine FROM projects p \
+             JOIN source_files sf ON sf.project_id = p.id \
+             WHERE sf.id = ?",
+            )
+            .bind(fid)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e| e.to_string())?,
+            (_, Some(pid)) => sqlx::query_as("SELECT id, engine FROM projects WHERE id = ?")
+                .bind(pid)
+                .fetch_one(&state.db)
+                .await
+                .map_err(|e| e.to_string())?,
+            _ => return Err("source_file_id or project_id required".to_string()),
+        };
+
+    // Fetch (file_type, target_text) so we can filter to Map-only for mv_mz.
+    let rows: Vec<(String, String)> = match source_file_id.as_deref() {
+        Some(fid) => sqlx::query_as(
+            "SELECT sf.file_type, s.target_text FROM segments s \
+             JOIN source_files sf ON s.source_file_id = sf.id \
+             WHERE s.source_file_id = ? AND s.target_text != ''",
         )
         .bind(fid)
         .fetch_all(&state.db)
         .await
         .map_err(|e| e.to_string())?,
-        (_, Some(pid)) => sqlx::query_scalar(
-            "SELECT s.target_text FROM segments s \
+        None => sqlx::query_as(
+            "SELECT sf.file_type, s.target_text FROM segments s \
              JOIN source_files sf ON s.source_file_id = sf.id \
              WHERE sf.project_id = ? AND s.target_text != ''",
         )
-        .bind(pid)
+        .bind(&resolved_pid)
         .fetch_all(&state.db)
         .await
         .map_err(|e| e.to_string())?,
-        _ => return Err("source_file_id or project_id required".to_string()),
     };
 
+    // For mv_mz: prefix applies to Map files only.
+    let texts: Vec<&str> = rows
+        .iter()
+        .filter(|(ft, _)| engine != "mv_mz" || ft == "map")
+        .map(|(_, t)| t.as_str())
+        .collect();
+
     let total_translated = texts.len() as i64;
-    let existing_font_count = texts.iter().filter(|t| RE_FONT_PREFIX.is_match(t)).count() as i64;
+    // Count any font prefix regardless of type — catches cross-engine leftovers.
+    let existing_font_count = texts
+        .iter()
+        .filter(|t| RE_FONT_PREFIX_WOLF.is_match(t) || RE_FONT_PREFIX_MVMZ.is_match(t))
+        .count() as i64;
 
     Ok(FontScanResult {
         existing_font_count,
         total_translated,
+        engine,
     })
 }
 
-/// Apply `\f[n]` to every translated segment in a file or project, persisting
-/// the change to the DB.  Called before injection when the user confirms a
-/// font-size choice in the UI.
-async fn persist_font_size(
-    source_file_id: Option<&str>,
-    project_id: Option<&str>,
-    font_size: u32,
-    replace_existing: bool,
-    db: &sqlx::SqlitePool,
+/// Strip any wolf (`\f[N]`) or mv_mz (`\FS[N]`) font-size prefix from `text`.
+fn strip_font_prefix(text: &str) -> String {
+    let s = RE_FONT_PREFIX_WOLF.replace(text, "");
+    RE_FONT_PREFIX_MVMZ.replace(s.as_ref(), "").into_owned()
+}
+
+/// Remove existing font-size prefixes from every segment in the project.
+///
+/// Called when the user skips the font-size dialog, to undo any prefix that
+/// was written by a previous (now-fixed) export.  No-op if no prefix exists.
+#[tauri::command]
+pub async fn strip_font_prefixes(
+    project_id: String,
+    state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let rows: Vec<(String, String)> = match (source_file_id, project_id) {
-        (Some(fid), _) => sqlx::query_as(
-            "SELECT id, target_text FROM segments WHERE source_file_id = ? AND target_text != ''",
-        )
-        .bind(fid)
-        .fetch_all(db)
-        .await
-        .map_err(|e| e.to_string())?,
-        (_, Some(pid)) => sqlx::query_as(
-            "SELECT s.id, s.target_text FROM segments s \
-             JOIN source_files sf ON s.source_file_id = sf.id \
-             WHERE sf.project_id = ? AND s.target_text != ''",
-        )
-        .bind(pid)
-        .fetch_all(db)
-        .await
-        .map_err(|e| e.to_string())?,
-        _ => return Err("source_file_id or project_id required".to_string()),
-    };
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT s.id, s.target_text FROM segments s \
+         JOIN source_files sf ON s.source_file_id = sf.id \
+         WHERE sf.project_id = ? AND s.target_text != ''",
+    )
+    .bind(&project_id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| e.to_string())?;
 
     for (id, text) in &rows {
-        let new_text = apply_font_prefix(text, font_size, replace_existing);
-        if new_text != *text {
+        let clean = strip_font_prefix(text);
+        if clean != *text {
             sqlx::query("UPDATE segments SET target_text = ? WHERE id = ?")
-                .bind(&new_text)
+                .bind(&clean)
                 .bind(id)
-                .execute(db)
+                .execute(&state.db)
                 .await
                 .map_err(|e| e.to_string())?;
         }
@@ -153,15 +205,13 @@ pub async fn export_project(
     replace_existing: bool,
     state: tauri::State<'_, AppState>,
 ) -> Result<String, String> {
-    if let Some(n) = font_size {
-        persist_font_size(None, Some(&project_id), n, replace_existing, &state.db).await?;
-    }
+    let (game_path, engine): (String, String) =
+        sqlx::query_as("SELECT game_path, engine FROM projects WHERE id = ?")
+            .bind(&project_id)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e| e.to_string())?;
 
-    let game_path: String = sqlx::query_scalar("SELECT game_path FROM projects WHERE id = ?")
-        .bind(&project_id)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| e.to_string())?;
     let game_dir = Path::new(&game_path);
 
     let files = sqlx::query_as::<_, SourceFile>(
@@ -177,12 +227,20 @@ pub async fn export_project(
 
     let has_wolf = files.iter().any(|f| f.file_type.starts_with("wolf_"));
     if has_wolf {
-        let wolf_entries =
-            collect_wolf_zip_entries(&project_id, &files, game_dir, &state.db).await?;
+        let wolf_entries = collect_wolf_zip_entries(
+            &project_id,
+            &files,
+            game_dir,
+            font_size,
+            replace_existing,
+            &engine,
+            &state.db,
+        )
+        .await?;
         entries.extend(wolf_entries);
     } else {
         for file in &files {
-            let translations: Vec<(String, String)> = sqlx::query_as::<_, (String, String)>(
+            let mut translations: Vec<(String, String)> = sqlx::query_as::<_, (String, String)>(
                 "SELECT json_key, target_text FROM segments \
                  WHERE source_file_id = ? AND target_text != ''",
             )
@@ -193,6 +251,16 @@ pub async fn export_project(
 
             if translations.is_empty() {
                 continue;
+            }
+
+            // For mv_mz: apply prefix to Map files only.
+            let should_prefix = engine != "mv_mz" || file.file_type == "map";
+            if let Some(n) = font_size {
+                if should_prefix {
+                    for (_, text) in &mut translations {
+                        *text = apply_font_prefix(text, n, replace_existing, &engine);
+                    }
+                }
             }
 
             let pairs: Vec<(&str, &str)> = translations
@@ -231,6 +299,9 @@ async fn collect_wolf_zip_entries(
     _project_id: &str,
     files: &[SourceFile],
     game_dir: &Path,
+    font_size: Option<u32>,
+    replace_existing: bool,
+    engine: &str,
     db: &sqlx::SqlitePool,
 ) -> Result<Vec<(String, Vec<u8>)>, String> {
     let version = guess_wolf_version_from_structure(game_dir);
@@ -249,7 +320,10 @@ async fn collect_wolf_zip_entries(
         .await
         .map_err(|e| e.to_string())?;
 
-        for (key, text) in segs {
+        for (key, mut text) in segs {
+            if let Some(n) = font_size {
+                text = apply_font_prefix(&text, n, replace_existing, engine);
+            }
             let parts: Vec<&str> = key.splitn(3, '/').collect();
             if parts.len() >= 2 {
                 let file_key = format!("{}/{}", parts[0], parts[1]);
@@ -371,7 +445,7 @@ pub async fn debug_inject_file(
     .map_err(|e| e.to_string())?;
 
     // Fetch project info.
-    let (game_path, _engine): (String, String) =
+    let (game_path, engine): (String, String) =
         sqlx::query_as("SELECT game_path, engine FROM projects WHERE id = ?")
             .bind(&file.project_id)
             .fetch_one(&state.db)
@@ -391,13 +465,8 @@ pub async fn debug_inject_file(
         return Err(format!("{untranslated} segment(s) not yet translated"));
     }
 
-    // Apply \f[N] prefix if requested.
-    if let Some(n) = font_size {
-        persist_font_size(Some(&source_file_id), None, n, replace_existing, &state.db).await?;
-    }
-
     // Fetch translations (key → target_text).
-    let segs: Vec<(String, String)> = sqlx::query_as(
+    let mut segs: Vec<(String, String)> = sqlx::query_as(
         "SELECT json_key, target_text FROM segments \
          WHERE source_file_id = ? AND target_text != ''",
     )
@@ -405,6 +474,17 @@ pub async fn debug_inject_file(
     .fetch_all(&state.db)
     .await
     .map_err(|e| e.to_string())?;
+
+    // Apply font-size prefix in-memory (never written to DB).
+    // For mv_mz: Map files only.
+    let should_prefix = engine != "mv_mz" || file.file_type == "map";
+    if let Some(n) = font_size {
+        if should_prefix {
+            for (_, text) in &mut segs {
+                *text = apply_font_prefix(text, n, replace_existing, &engine);
+            }
+        }
+    }
 
     // Dispatch by engine.
     if file.file_type.starts_with("wolf_") {

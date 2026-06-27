@@ -62,6 +62,24 @@ Trois emplacements : toast post-extraction · barre dans ProjectList · % dans t
 - [x] 7. i18n `en.json` + `fr.json` — messages mis à jour (ZIP / hoshi2star.zip)
 - [x] 8. Vérification : clippy ✓ · typecheck ✓ · 336 tests ✓ (2 échecs pré-existants Inko)
 
+## Complété — Font size MV/MZ (\\FS[N]) (2026-06-27)
+
+`\FS[N]` MZ-natif (Groupe C). `\f[N]` Wolf-only. Dialog gate wolf/mv_mz.
+Hint affiché pour mv_mz : nécessite MZ ou plugin messages pour MV.
+clippy ✓ · typecheck ✓ · 336 tests ✓ (2 Inko pré-existants)
+
+- [x] 1. `export.rs` — `RE_FONT_PREFIX_MVMZ` + `engine: String` dans `FontScanResult`
+- [x] 2. `export.rs` — `apply_font_prefix(text, n, replace, engine)` engine-aware
+- [x] 3. `export.rs` — `scan_font_status` fetch engine depuis DB, retourne engine
+- [x] 4. `export.rs` — `persist_font_size(…, engine)` passe engine à apply
+- [x] 5. `export.rs` — `export_project` fetch engine avec game_path
+- [x] 6. `export.rs` — `debug_inject_file` utilise engine (plus `_engine`)
+- [x] 7. `lib/types.ts` — `engine: string` dans `FontScanResult`
+- [x] 8. `useAppHandlers.ts` — gate wolf/mv_mz uniquement
+- [x] 9. `FontSizeDialog.tsx` — `code` calculé, hint mv_mz
+- [x] 10. `en.json` + `fr.json` — `{{code}}` interpolé + clé `hintMvMz`
+- [x] 11. Vérification ✓
+
 ## Backlog
 
 - [ ] Anneaux de progression par fichier dans FileTree (FileTree rings) — `translated_count`/

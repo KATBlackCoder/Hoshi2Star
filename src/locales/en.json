@@ -29,9 +29,10 @@
   },
   "fontSizeDialog": {
     "title": "Apply font size",
-    "desc": "{{total}} translated segment(s) · {{existing}} already have \\f[N]",
-    "label": "Font size (\\f[N])",
-    "replaceLabel": "Replace existing \\f[N] ({{count}} segments)",
+    "desc": "{{total}} translated segment(s) · {{existing}} already have {{code}}",
+    "label": "Font size ({{code}})",
+    "replaceLabel": "Replace existing {{code}} ({{count}} segments)",
+    "hintMvMz": "Note: requires RPG Maker MZ or a message plugin (e.g. VisuStella Message Core) for MV.",
     "skip": "Skip",
     "apply": "Apply & inject"
   },

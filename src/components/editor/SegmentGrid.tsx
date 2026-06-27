@@ -20,6 +20,7 @@ import { createSegmentColumns, STATUS_STYLES } from "@/features/editor/columns";
 import type {
   GlossaryTerm,
   PaginatedSegments,
+  ProjectStats,
   Segment,
   SegmentUpdate,
   SourceFile,
@@ -40,6 +41,7 @@ export function SegmentGrid({
   const { t, i18n } = useTranslation();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const setSourceFiles = useProjectStore((s) => s.setSourceFiles);
+  const setActiveProjectStats = useProjectStore((s) => s.setActiveProjectStats);
   const activeFileId = useEditorStore((s) => s.activeFileId);
   const setActiveSegment = useEditorStore((s) => s.setActiveSegment);
   const activeSegmentId = useEditorStore((s) => s.activeSegmentId);
@@ -81,6 +83,17 @@ export function SegmentGrid({
         .catch(() => {});
     },
     [setSourceFiles],
+  );
+
+  const reloadProjectStats = useCallback(
+    (projectId: string) => {
+      invoke<ProjectStats>("get_project_stats", {
+        projectId,
+      })
+        .then(setActiveProjectStats)
+        .catch(() => {});
+    },
+    [setActiveProjectStats],
   );
 
   useEffect(() => {
@@ -174,11 +187,12 @@ export function SegmentGrid({
       const fid = activeFileIdRef.current;
       if (pid && fid) loadSegments(pid, fid);
       if (pid) reloadSourceFiles(pid);
+      if (pid) reloadProjectStats(pid);
     });
     return () => {
       void unlisten.then((fn) => fn());
     };
-  }, [loadSegments, reloadSourceFiles]);
+  }, [loadSegments, reloadSourceFiles, reloadProjectStats]);
 
   // Load glossary terms when the active project changes
   useEffect(() => {

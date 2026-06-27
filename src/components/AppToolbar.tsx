@@ -136,6 +136,7 @@ interface AppToolbarProps {
   onTranslate: () => void;
   onTranslateAll: () => void;
   onExportAll: () => void;
+  isExporting: boolean;
 }
 
 export function AppToolbar({
@@ -144,6 +145,7 @@ export function AppToolbar({
   onTranslate,
   onTranslateAll,
   onExportAll,
+  isExporting,
 }: AppToolbarProps) {
   const { t } = useTranslation();
   const [isOpening, setIsOpening] = useState(false);
@@ -246,9 +248,13 @@ export function AppToolbar({
           variant="outline"
           className="h-7 gap-1.5 text-xs"
           onClick={onExportAll}
-          disabled={isTranslating}
+          disabled={isTranslating || isExporting}
         >
-          <Download className="h-3.5 w-3.5" />
+          {isExporting ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Download className="h-3.5 w-3.5" />
+          )}
           {t("toolbar.exportAll")}
         </Button>
       )}

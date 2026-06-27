@@ -5,6 +5,22 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+### Added
+- Add `\FS[N]` font-size prefix support for RPG Maker MV/MZ export — `scan_font_status` now returns `engine` in `FontScanResult`; `apply_font_prefix` dispatches `\f[N]` (Wolf) or `\FS[N]` (MV/MZ) based on engine; font dialog shows the correct code and a note that MV requires a message plugin (VisuStella/Yanfly)
+- Add `strip_font_prefixes(projectId)` Tauri command — strips any `\f[N]` or `\FS[N]` prefix from all segments in a project DB (cleanup for pre-fix exports); called automatically on Skip when `existingFontCount > 0`
+- Add `isExporting` loading state to Export All toolbar button — button disabled with `Loader2` spinner during export, restored on success or error
+
+### Fixed
+- Fix font-size prefix being permanently written to DB (`persist_font_size`) — prefix is now applied **in-memory at export time only** (never touches `target_text` in the DB); segments in the editor no longer show `\f[N]`/`\FS[N]` prefixes after an export
+- Fix Export All font dialog shown for all engines — dialog now only appears for `wolf` and `mv_mz` projects; VX Ace and Bakin skip straight to export
+- Fix `scan_font_status` engine mismatch — scan now detects any prefix type (`\f[N]` or `\FS[N]`) regardless of project engine, so cross-engine leftovers (e.g. Wolf prefix on a MV/MZ project) are correctly counted and stripped
+- Fix missing spinner during Skip — `setIsExporting(true)` now fires before `await strip_font_prefixes`, so the toolbar button shows its loading state for the entire skip + export sequence
+- Fix stale `%` progress badge in toolbar — `SegmentGrid` now reloads `activeProjectStats` on `h2s://llm/completed` alongside segments and source files
+
+### Changed
+- Limit MV/MZ font-size prefix to `Map*.json` files only — `scan_font_status` and `export_project` filter to `file_type = "map"` for MV/MZ engine; actors, items, system, etc. are not prefixed
+- Parameterize `fontSizeDialog` i18n strings — `\f[N]` / `\FS[N]` no longer hardcoded; replaced by `{{code}}` interpolation variable; new `hintMvMz` key added (EN + FR)
+
 ## [0.4.2] — 2026-06-20
 
 ### Fixed

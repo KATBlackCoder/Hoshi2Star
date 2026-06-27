@@ -49,6 +49,7 @@ export default function App() {
         onTranslate={handlers.handleTranslate}
         onTranslateAll={() => void handlers.handleTranslateAll()}
         onExportAll={() => void handlers.handleExportAll()}
+        isExporting={handlers.isExporting}
       />
 
       {isExtractingGlossary && (
