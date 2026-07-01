@@ -4,7 +4,68 @@
 > Ordre : 1 → 2 → 3 → 4 → 5 → 7 → 6 → 8 → 9 (`docs/audit-remediation-plan-2026-07-01.md`).
 > - Phase 1 : ✅ **terminée & mergée sur `main`** (2026-07-01).
 > - Phase 2 : ✅ **terminée & mergée sur `main`** (2026-07-01).
-> - 👉 **PROCHAINE : Phase 3 — 🟠 robustesse des promesses UI.**
+> - Phase 3 : ✅ **terminée & mergée sur `main`** (2026-07-01).
+> - 👉 **PROCHAINE : Phase 4 — 🟠 correctness du moteur QA.**
+
+## ✅ Phase 3 — Robustesse des promesses UI (P1, silencieux) — TERMINÉE
+
+> Plan de `docs/audit-remediation-plan-2026-07-01.md` §Phase 3 + complément §1.4/§1.5.
+> **Vérifié sur le code réel (2026-07-01)** : les 4 défauts sont confirmés aux lignes
+> de l'audit. Fait nouveau : `get_segments` retourne DÉJÀ `total` (vrai `COUNT`,
+> `project.rs:332`) et `PaginatedSegments.total` existe côté TS (`types.ts:72`) —
+> l'UI l'ignore. Branche : `fix/ui-promise-robustness`.
+> **Contrainte** : aucun test front n'existe (Vitest = Phase 7) → vérification
+> manuelle via `pnpm tauri dev` + gate typecheck/clippy/tests (le plan l'acte).
+
+### Étape 1 — `ProjectList.tsx:44-51` : stats tout-ou-rien
+- [x] `Promise.allSettled` : un `get_project_stats` en échec ne rejette plus le lot
+
+### Étape 2 — `SegmentGrid.tsx:230-244` : `handleSave` rejet non géré
+- [x] try/catch autour de `invoke("update_segment")` + `toast.error`
+- [x] i18n : clé `segmentGrid.saveError` dans `en.json` + `fr.json`
+
+### Étape 3 — `SegmentGrid.tsx` : sélection → mauvais segments après filtrage
+- [x] `getRowId: (row) => row.id` → `rowSelection` keyée par id de segment ;
+      `selectedIds` sans mapping par index — désigner un autre segment devient impossible
+- [x] Reset de `rowSelection` sur changement de `qaFilter`/`searchQuery`
+
+### Étape 4 — `SegmentGrid.tsx:66-77` : plafond 5000 lignes silencieux
+> Décision validée : **chargement par pages successives** (pageSize 2000).
+- [x] `loadSegments` : boucle jusqu'à `total` + garde d'annulation `loadSeqRef`
+      (un load périmé n'écrase ni `segments` ni `isLoading` du fichier suivant)
+- [x] Footer/`totalCount` : corrects une fois le fichier complet (`isLoading` couvre
+      le chargement)
+- [x] Doc-comment `get_segments` aligné (pages successives de 2000)
+
+### Étape 5 — `QAPanel.tsx` / `TMPanel.tsx` : dialogues `save()` non gardés
+- [x] `await save(...)` dans try/catch → toast `exportError` existante (les 2 panneaux)
+
+### Vérification
+- [x] Gate : `pnpm typecheck` ✅ · `cargo clippy -- -D warnings` ✅ · `cargo test`
+      = 363 pass (Rust intact hors doc-comment)
+- [x] **Vérification manuelle via MCP Tauri** (`pnpm tauri:linux`, projet réel MV) :
+      · ProjectList : stats des 2 cartes affichées (✓ 15498 / ✓ 22803) — allSettled OK
+      · Map119.json (561 segments) chargé ENTIER, footer « 561 segments », filtré « 6 / 561 »
+      · Boucle multi-pages prouvée sur le protocole réel : 6 pages × 100 → 561 ids uniques
+      · Sélection : 2 lignes cochées → « Traduire 2 lignes » ; recherche modifiée →
+        bouton disparu + 0 case cochée (reset OK)
+      · handleSave : édition « Sandwich » → « Sandwich. » persistée (updatedAt bump),
+        puis restaurée à l'identique (TM nettoyée, cf. découverte ci-dessous)
+- [x] docs/architecture.md non touché (aucun changement d'architecture)
+- [x] CHANGELOG.md (Fixed) + docs/journal/ + tasks/todo.md cochés
+
+**Phase 3 : livrée — 5 fixes UI, vérifiés en live sur l'app dev pilotée via MCP.**
+
+### Découvertes hors scope loggées (→ Backlog)
+- 🐛 **TM : doublons à chaque re-sauvegarde** — `tm.rs::insert` utilise
+  `INSERT OR REPLACE` mais le PK est un UUID neuf et `idx_tm_hash_lang` n'est PAS
+  UNIQUE → le REPLACE ne remplace jamais, une ligne s'ajoute à chaque save du même
+  segment (observé en live : 2 entrées pour le même `source_hash`). Fix : migration
+  index UNIQUE (source_hash, lang_pair) + dédup des données existantes + upsert.
+- 🐛 **`pnpm lint` cassé** (pré-existant, vérifié sur arbre propre) : ESLint 10
+  exige `eslint.config.js` (flat config), le repo a encore `.eslintrc.*`.
+- Phase 7 : tests front à écrire pour les 4 fixes (ProjectList allSettled,
+  handleSave erreur, sélection/filtre, chargement complet multi-pages)
 
 ## ✅ Phase 2 — Éliminer les paniques des parsers binaires Wolf (P1, crash) — TERMINÉE
 
@@ -266,6 +327,9 @@ Quand on ajoutera FR : créer `translate/fr.toml` + bras `"fr"` dans le `match`.
 
 ## Backlog
 
+- [ ] 🐛 TM : doublons à chaque re-sauvegarde (`tm.rs::insert` REPLACE inopérant,
+      index non-UNIQUE) — découvert Phase 3, cf. section Phase 3
+- [ ] 🐛 `pnpm lint` cassé : migrer `.eslintrc.*` → `eslint.config.js` (ESLint 10)
 - [ ] Anneaux de progression par fichier dans FileTree (FileTree rings) — `translated_count`/
       `total_count` maintenant disponibles; rend la tâche dormante Tenmon réalisable
 - [ ] Documentation workflow WolfX (pré-étape UberWolf) dans `docs/engines.md` +

@@ -70,9 +70,15 @@ export function TMPanel({ onApply }: TMPanelProps) {
   });
 
   async function handleExport() {
-    const path = await save({
-      filters: [{ name: "TMX", extensions: ["tmx"] }],
-    });
+    let path: string | null;
+    try {
+      path = await save({
+        filters: [{ name: "TMX", extensions: ["tmx"] }],
+      });
+    } catch (e) {
+      toast.error(t("tmPanel.exportError", { error: String(e) }));
+      return;
+    }
     if (!path) return;
     setIsExporting(true);
     invoke("export_tm", { langPair: "ja-en", outputPath: path })

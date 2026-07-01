@@ -37,6 +37,7 @@
     "apply": "Appliquer & injecter"
   },
   "segmentGrid": {
+    "saveError": "Échec de la sauvegarde du segment : {{error}}",
     "columns": {
       "number": "#",
       "source": "Source",
