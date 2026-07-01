@@ -15,7 +15,8 @@ use crate::{
         mv_mz::injector,
         vx_ace::injector as vx_injector,
         wolf::injector::{
-            inject_all as wolf_inject_all, inject_all_to_memory as wolf_to_memory, WolfTranslation,
+            inject_all as wolf_inject_all, inject_all_to_memory as wolf_to_memory,
+            injection_bucket, WolfTranslation,
         },
     },
     state::AppState,
@@ -324,9 +325,7 @@ async fn collect_wolf_zip_entries(
             if let Some(n) = font_size {
                 text = apply_font_prefix(&text, n, replace_existing, engine);
             }
-            let parts: Vec<&str> = key.splitn(3, '/').collect();
-            if parts.len() >= 2 {
-                let file_key = format!("{}/{}", parts[0], parts[1]);
+            if let Some(file_key) = injection_bucket(&key) {
                 translations_by_file
                     .entry(file_key)
                     .or_default()
@@ -490,9 +489,7 @@ pub async fn debug_inject_file(
     if file.file_type.starts_with("wolf_") {
         let mut translations_by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
         for (key, text) in segs {
-            let parts: Vec<&str> = key.splitn(3, '/').collect();
-            if parts.len() >= 2 {
-                let file_key = format!("{}/{}", parts[0], parts[1]);
+            if let Some(file_key) = injection_bucket(&key) {
                 translations_by_file
                     .entry(file_key)
                     .or_default()

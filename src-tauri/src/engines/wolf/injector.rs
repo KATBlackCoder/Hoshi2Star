@@ -58,6 +58,44 @@ pub struct InjectionResult {
     pub updated_count: usize,
 }
 
+/// Bucket for all `CommonEvents/*` segment keys.
+///
+/// Unlike maps/databases (one physical file per stem), every common event
+/// shares the single `Data/BasicData/CommonEvent.dat`, so all `CommonEvents/*`
+/// translations must collapse into one bucket — otherwise [`inject_all`] /
+/// [`inject_all_to_memory`] would inject the file once per event name and drop
+/// all but the last event's translations.
+const COMMON_EVENTS_BUCKET: &str = "CommonEvents/CommonEvent";
+
+/// Maps a Wolf segment key to the injection bucket (the `file_key` consumed by
+/// [`inject_all`] / [`inject_all_to_memory`]).
+///
+/// - `MapData/{stem}/…`  → `MapData/{stem}`   (one `.mps` per stem)
+/// - `Database/{stem}/…` → `Database/{stem}`  (one `.dat` pair per stem)
+/// - `CommonEvents/…`    → [`COMMON_EVENTS_BUCKET`] (single physical file)
+///
+/// Returns `None` for keys that don't belong to any injectable Wolf file.
+pub fn injection_bucket(segment_key: &str) -> Option<String> {
+    let mut parts = segment_key.splitn(2, '/');
+    let head = parts.next()?;
+    match head {
+        "CommonEvents" => {
+            // Require at least one path segment after the head so bare
+            // "CommonEvents" (no data) is not treated as injectable.
+            parts.next()?;
+            Some(COMMON_EVENTS_BUCKET.to_string())
+        }
+        "MapData" | "Database" => {
+            let stem = parts.next()?.split('/').next()?;
+            if stem.is_empty() {
+                return None;
+            }
+            Some(format!("{head}/{stem}"))
+        }
+        _ => None,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Step 3 — encode_for_wolf
 // ---------------------------------------------------------------------------
@@ -191,7 +229,24 @@ fn patch_mps_strings(
         }
     }
 
-    // Sequential scan: find each ReadString matching src[i] and splice dst[i].
+    Ok(splice_wolf_strings(original, &replacements, updated))
+}
+
+/// Sequential ReadString splice shared by the `.mps` and `CommonEvent.dat`
+/// injectors (both v2.x binary formats store text as `size: u32 + bytes + 0x00`
+/// frames in stream order).
+///
+/// Walks `original`, and for each `(src, dst)` replacement — consumed strictly
+/// in order — splices the next frame whose payload matches `src`. Non-matching
+/// bytes are copied through verbatim. Because `replacements` includes a no-op
+/// `dst == src` entry for every translatable command (translated or not), each
+/// frame is consumed in the exact order the parser emitted it, so duplicate
+/// source strings can't de-align.
+fn splice_wolf_strings(
+    original: &[u8],
+    replacements: &[(Vec<u8>, Vec<u8>)],
+    updated: &mut usize,
+) -> Vec<u8> {
     let mut out: Vec<u8> = Vec::with_capacity(original.len());
     let mut pos = 0usize;
     let mut rep_idx = 0usize;
@@ -223,7 +278,7 @@ fn patch_mps_strings(
         pos += 1;
     }
 
-    Ok(out)
+    out
 }
 
 /// Inject translations into a v3.x (LZ4-compressed) `.mps` map using the
@@ -466,6 +521,165 @@ pub fn inject_dat(
 }
 
 // ---------------------------------------------------------------------------
+// Step 4b — inject_common_events (CommonEvent.dat)
+// ---------------------------------------------------------------------------
+
+/// Inject translations into a Wolf RPG `CommonEvent.dat` file.
+///
+/// Symmetric to [`inject_map`]: v2.x uses the sequential ReadString splice
+/// (via [`splice_wolf_strings`]); v3.5 (Inko, LZ4-compressed) parses to the
+/// in-house [`v3_format`] AST, replaces `string_args` by key, then dumps and
+/// recompresses.
+///
+/// Keys match [`super::extractor::extract_common_events`]:
+/// `CommonEvents/{event_name}/{event_idx}/{cmd_idx}[/choices/{choice_idx}]`
+/// (flat command list — no `pages` level, unlike maps).
+pub fn inject_common_events(
+    bytes: &[u8],
+    translations: &[WolfTranslation],
+    version: &WolfVersion,
+) -> Result<(Vec<u8>, InjectionResult), InjectorError> {
+    let translation_map: HashMap<&str, &str> = translations
+        .iter()
+        .map(|t| (t.key.as_str(), t.text.as_str()))
+        .collect();
+
+    let mut updated = 0usize;
+    let patched = if v3_format::common_events::is_lz4_v3(bytes) {
+        inject_common_events_v3(bytes, &translation_map, &mut updated)?
+    } else {
+        let bytes_owned = bytes.to_vec();
+        let events = std::panic::catch_unwind(move || {
+            wolfrpg_map_parser::common_events_parser::parse_bytes(&bytes_owned)
+        })
+        .map_err(|_| {
+            InjectorError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "wolfrpg-map-parser panicked on CommonEvent.dat bytes",
+            ))
+        })?;
+        patch_common_events_strings(bytes, &events, &translation_map, version, &mut updated)?
+    };
+
+    Ok((
+        patched,
+        InjectionResult {
+            file_path: PathBuf::from("CommonEvent.dat"),
+            updated_count: updated,
+        },
+    ))
+}
+
+/// Build the ordered replacement list for every translatable command in a v2.x
+/// `CommonEvent.dat` and splice it into the raw bytes — mirrors
+/// [`patch_mps_strings`], but with the flat common-event command list.
+fn patch_common_events_strings(
+    original: &[u8],
+    events: &[wolfrpg_map_parser::db_parser::common_event::CommonEvent],
+    translations: &HashMap<&str, &str>,
+    version: &WolfVersion,
+    updated: &mut usize,
+) -> Result<Vec<u8>, InjectorError> {
+    use wolfrpg_map_parser::command::Command;
+
+    let mut replacements: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
+
+    for (event_idx, event) in events.iter().enumerate() {
+        let event_name = event.event_name();
+        for (cmd_idx, command) in event.commands().iter().enumerate() {
+            match command {
+                Command::ShowMessage(cmd) => {
+                    let text = cmd.text();
+                    if text.trim().is_empty() {
+                        continue;
+                    }
+                    let key = format!("CommonEvents/{event_name}/{event_idx}/{cmd_idx}");
+                    let src = encode_for_wolf(text, version)?;
+                    let dst = match translations.get(key.as_str()) {
+                        Some(&t) => encode_for_wolf(t, version)?,
+                        None => src.clone(),
+                    };
+                    replacements.push((src, dst));
+                }
+                Command::ShowChoice(cmd) => {
+                    for (choice_idx, choice) in cmd.choices().iter().enumerate() {
+                        if choice.trim().is_empty() {
+                            continue;
+                        }
+                        let key = format!(
+                            "CommonEvents/{event_name}/{event_idx}/{cmd_idx}/choices/{choice_idx}"
+                        );
+                        let src = encode_for_wolf(choice, version)?;
+                        let dst = match translations.get(key.as_str()) {
+                            Some(&t) => encode_for_wolf(t, version)?,
+                            None => src.clone(),
+                        };
+                        replacements.push((src, dst));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Ok(splice_wolf_strings(original, &replacements, updated))
+}
+
+/// Inject translations into a v3.5 (LZ4-compressed) `CommonEvent.dat` using the
+/// in-house [`v3_format`] parser — mirrors [`inject_map_v3`] with the flat
+/// common-event command list.
+fn inject_common_events_v3(
+    bytes: &[u8],
+    translations: &HashMap<&str, &str>,
+    updated: &mut usize,
+) -> Result<Vec<u8>, InjectorError> {
+    let decompressed = v3_format::common_events::decompress(bytes)?;
+    let mut common_events = v3_format::common_events::CommonEventsV3::parse(&decompressed)?;
+
+    for (event_idx, event) in common_events.events.iter_mut().enumerate() {
+        let event_name = event.name.clone();
+        for (cmd_idx, command) in event.commands.iter_mut().enumerate() {
+            match command.cid {
+                v3_format::command::CID_MESSAGE => {
+                    if let Some(text) = command.string_args.first_mut() {
+                        if text.trim().is_empty() {
+                            continue;
+                        }
+                        let key = format!("CommonEvents/{event_name}/{event_idx}/{cmd_idx}");
+                        if let Some(&t) = translations.get(key.as_str()) {
+                            if t != text.as_str() {
+                                *updated += 1;
+                                *text = t.to_owned();
+                            }
+                        }
+                    }
+                }
+                v3_format::command::CID_CHOICES => {
+                    for (choice_idx, choice) in command.string_args.iter_mut().enumerate() {
+                        if choice.trim().is_empty() {
+                            continue;
+                        }
+                        let key = format!(
+                            "CommonEvents/{event_name}/{event_idx}/{cmd_idx}/choices/{choice_idx}"
+                        );
+                        if let Some(&t) = translations.get(key.as_str()) {
+                            if t != choice.as_str() {
+                                *updated += 1;
+                                *choice = t.to_owned();
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let dumped = common_events.dump()?;
+    Ok(v3_format::common_events::recompress(&dumped)?)
+}
+
+// ---------------------------------------------------------------------------
 // Step 5 — inject_all (Option A export)
 // ---------------------------------------------------------------------------
 
@@ -510,6 +724,14 @@ pub async fn inject_all_to_memory(
                 };
                 let (new_bytes, _) = inject_dat(&project_bytes, &dat_bytes, translations, version)?;
                 entries.push((format!("Data/BasicData/{stem}.dat"), new_bytes));
+            }
+            "CommonEvents" => {
+                // All CommonEvents/* keys share the single CommonEvent.dat.
+                let Some(bytes) = super::extractor::load_common_event_bytes(game_dir) else {
+                    continue;
+                };
+                let (new_bytes, _) = inject_common_events(&bytes, translations, version)?;
+                entries.push(("Data/BasicData/CommonEvent.dat".to_string(), new_bytes));
             }
             _ => {}
         }
@@ -562,6 +784,17 @@ pub async fn inject_all(
                 let out = db_dir.join(format!("{stem}.dat"));
                 result.file_path = out.clone();
                 // Write only .dat — .project is never modified.
+                std::fs::write(&out, &new_bytes)?;
+                results.push(result);
+            }
+            "CommonEvents" => {
+                // All CommonEvents/* keys share the single CommonEvent.dat.
+                let Some(bytes) = super::extractor::load_common_event_bytes(game_dir) else {
+                    continue;
+                };
+                let (new_bytes, mut result) = inject_common_events(&bytes, translations, version)?;
+                let out = db_dir.join("CommonEvent.dat");
+                result.file_path = out.clone();
                 std::fs::write(&out, &new_bytes)?;
                 results.push(result);
             }
@@ -1027,5 +1260,336 @@ mod tests {
         // Round-trip: re-parsing must still satisfy parse(dump(x)) == x.
         let redumped = map.dump().unwrap();
         assert_eq!(redumped, decompressed);
+    }
+
+    // -----------------------------------------------------------------------
+    // Common Events injection (Phase 1 — audit 2026-07-01)
+    // -----------------------------------------------------------------------
+
+    /// Build a temp game dir containing a synthetic v3.5 `CommonEvent.dat` with
+    /// the given `(event_name, message)` events, and return `(tmp, game_dir)`.
+    fn make_ce_game_dir(events: &[(&str, &str)]) -> (tempfile::TempDir, std::path::PathBuf) {
+        use crate::engines::wolf::v3_format::common_events::{recompress, CommonEventsV3};
+
+        let ce = CommonEventsV3::synthetic_messages(events);
+        let decompressed = ce.dump().unwrap();
+        let on_disk = recompress(&decompressed).unwrap();
+
+        let tmp = tempfile::tempdir().unwrap();
+        let game_dir = tmp.path().to_path_buf();
+        let basic = game_dir.join("Data").join("BasicData");
+        std::fs::create_dir_all(&basic).unwrap();
+        std::fs::write(basic.join("CommonEvent.dat"), &on_disk).unwrap();
+        (tmp, game_dir)
+    }
+
+    /// Reproduces the Phase 1 data-loss bug: Common Events translations are
+    /// extracted and bucketed, but `inject_all_to_memory` silently drops them
+    /// because there is no `"CommonEvents"` dispatch arm. Two distinct event
+    /// names are used so the fix must also collapse them into a single bucket
+    /// (one physical `CommonEvent.dat`) — a naive per-event bucket would keep
+    /// only the last event's translation.
+    #[tokio::test]
+    async fn test_common_events_translations_survive_export() {
+        use crate::engines::wolf::extractor::extract_common_events;
+
+        let (_tmp, game_dir) = make_ce_game_dir(&[("EvA", "こんにちは"), ("EvB", "さようなら")]);
+        let ce_bytes = std::fs::read(game_dir.join("Data/BasicData/CommonEvent.dat")).unwrap();
+
+        // Extraction yields two CommonEvents segments (key parity source).
+        let segs = extract_common_events(&ce_bytes, &v3()).unwrap();
+        assert_eq!(segs.len(), 2, "two CommonEvents segments expected");
+
+        // Bucket exactly the way the export pipeline does.
+        let mut by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
+        for seg in &segs {
+            let bucket = injection_bucket(&seg.key).expect("wolf key must have a bucket");
+            let text = format!("[T]{}", seg.source_text);
+            by_file.entry(bucket).or_default().push(WolfTranslation {
+                key: seg.key.clone(),
+                text,
+            });
+        }
+
+        let entries = inject_all_to_memory(&game_dir, &by_file, &v3())
+            .await
+            .unwrap();
+
+        // Exactly one physical CommonEvent.dat entry, and BOTH translations
+        // must survive into it.
+        let ce_entries: Vec<_> = entries
+            .iter()
+            .filter(|(p, _)| p.ends_with("CommonEvent.dat"))
+            .collect();
+        assert_eq!(
+            ce_entries.len(),
+            1,
+            "exactly one CommonEvent.dat entry expected, got {}",
+            ce_entries.len()
+        );
+
+        let new_bytes = &ce_entries[0].1;
+        let new_segs = extract_common_events(new_bytes, &v3()).unwrap();
+        let texts: Vec<&str> = new_segs.iter().map(|s| s.source_text.as_str()).collect();
+        assert!(
+            texts.contains(&"[T]こんにちは"),
+            "EvA translation missing: {texts:?}"
+        );
+        assert!(
+            texts.contains(&"[T]さようなら"),
+            "EvB translation missing: {texts:?}"
+        );
+    }
+
+    /// All `CommonEvents/*` keys must collapse to a single bucket (one physical
+    /// `CommonEvent.dat`), while Map/Database keys bucket per stem.
+    #[test]
+    fn test_injection_bucket_collapses_common_events() {
+        assert_eq!(
+            injection_bucket("CommonEvents/EvA/0/0").as_deref(),
+            injection_bucket("CommonEvents/EvB/1/0").as_deref(),
+            "different common-event names must share one bucket"
+        );
+        assert_eq!(
+            injection_bucket("MapData/Map001/events/0/pages/0/0").as_deref(),
+            Some("MapData/Map001"),
+        );
+        assert_eq!(
+            injection_bucket("Database/DataBase/0/0/name").as_deref(),
+            Some("Database/DataBase"),
+        );
+        assert_eq!(injection_bucket("nope").as_deref(), None);
+    }
+
+    // -- v2.x (Honoka) CommonEvent.dat synthetic fixture -------------------
+    //
+    // The real Honoka fixture isn't present in every checkout, so we build a
+    // minimal-but-valid v2 `CommonEvent.dat` by hand (Shift-JIS, one event with
+    // one ShowMessage + the Exit terminator). Layout mirrors the forked
+    // `wolfrpg_map_parser::db_parser::models::common_event::CommonEvent::parse`.
+
+    /// Exit command frame: signature `0x01000000` (BE) + 1 command padding +
+    /// 3 bytes consumed by `parse_empty`.
+    fn make_exit_cmd() -> Vec<u8> {
+        let mut b = 0x0100_0000u32.to_be_bytes().to_vec();
+        b.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+        b
+    }
+
+    /// One v2 common event with a single ShowMessage command and the Exit
+    /// terminator. `command_count` is 2 (ShowMessage + Exit, each counting 1).
+    fn make_v2_common_event(id: u32, name: &str, message: &str) -> Vec<u8> {
+        let mut b = Vec::new();
+        b.push(0x8e); // EVENT_SIGNATURE
+        b.extend_from_slice(&id.to_le_bytes());
+        b.extend_from_slice(&0u32.to_le_bytes()); // event_type
+        b.extend_from_slice(&[0u8; 5]); // padding
+        b.push(0x00); // number_arguments_count
+        b.push(0x00); // string_arguments_count
+        b.extend(sjis_string(name)); // event_name
+        b.extend_from_slice(&2u32.to_le_bytes()); // command_count
+        b.extend(make_show_message_cmd(message));
+        b.extend(make_exit_cmd());
+        b.extend(sjis_string("")); // unknown string
+        b.extend(sjis_string("")); // note
+        b.push(0x00); // padding
+        b.extend_from_slice(&0u32.to_le_bytes()); // argument_names_count
+        b.extend_from_slice(&0u32.to_le_bytes()); // argument_types_count
+        b.extend_from_slice(&0u32.to_le_bytes()); // db_options count
+        b.extend_from_slice(&0u32.to_le_bytes()); // db_references count
+        b.extend_from_slice(&0u32.to_le_bytes()); // argument_values len
+        b.push(0x00); // padding
+        b.extend_from_slice(&0u32.to_le_bytes()); // color
+        for _ in 0..100 {
+            b.extend(sjis_string("")); // var_names (fixed 100)
+        }
+        b.push(0x00); // padding
+        b.extend_from_slice(&0u32.to_le_bytes()); // trailing "4 + len" block (len 0)
+        b.push(0x00); // padding
+        b.extend(sjis_string("")); // return_name
+        b.extend_from_slice(&0u32.to_le_bytes()); // return_variable
+        b.push(0x92); // END_SIGNATURE
+        b
+    }
+
+    /// A full v2 `CommonEvent.dat`: 11-byte magic (version `0x8F`, non-LZ4) +
+    /// event count + events.
+    fn make_v2_common_event_dat(events: &[(&str, &str)]) -> Vec<u8> {
+        let mut b = Vec::new();
+        b.extend_from_slice(b"\x00\x57\x00\x00\x4F\x4C\x00\x46\x43\x00\x8F");
+        b.extend_from_slice(&(events.len() as u32).to_le_bytes());
+        for (i, (name, msg)) in events.iter().enumerate() {
+            b.extend(make_v2_common_event(i as u32 + 1, name, msg));
+        }
+        b
+    }
+
+    fn write_ce_dat(bytes: &[u8]) -> (tempfile::TempDir, std::path::PathBuf) {
+        let tmp = tempfile::tempdir().unwrap();
+        let game_dir = tmp.path().to_path_buf();
+        let basic = game_dir.join("Data").join("BasicData");
+        std::fs::create_dir_all(&basic).unwrap();
+        std::fs::write(basic.join("CommonEvent.dat"), bytes).unwrap();
+        (tmp, game_dir)
+    }
+
+    /// The synthetic v2 fixture must parse and yield the message segment — this
+    /// guards the fixture itself before the round-trip tests rely on it.
+    #[test]
+    fn test_v2_common_event_fixture_extracts() {
+        use crate::engines::wolf::extractor::extract_common_events;
+        let bytes = make_v2_common_event_dat(&[("EvA", "Hello")]);
+        assert!(
+            !v3_format::common_events::is_lz4_v3(&bytes),
+            "must be v2 (non-LZ4)"
+        );
+        let segs = extract_common_events(&bytes, &v2()).unwrap();
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].source_text, "Hello");
+        assert_eq!(segs[0].key, "CommonEvents/EvA/0/0");
+    }
+
+    /// v2 (Honoka) end-to-end: two events → bucket → inject → re-extract, both
+    /// translations survive into the single `CommonEvent.dat`.
+    #[tokio::test]
+    async fn test_v2_common_events_translations_survive_export() {
+        use crate::engines::wolf::extractor::extract_common_events;
+
+        let bytes = make_v2_common_event_dat(&[("EvA", "Hello"), ("EvB", "World")]);
+        let (_tmp, game_dir) = write_ce_dat(&bytes);
+
+        let segs = extract_common_events(&bytes, &v2()).unwrap();
+        assert_eq!(segs.len(), 2);
+
+        let mut by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
+        for seg in &segs {
+            let bucket = injection_bucket(&seg.key).unwrap();
+            by_file.entry(bucket).or_default().push(WolfTranslation {
+                key: seg.key.clone(),
+                text: format!("[T]{}", seg.source_text),
+            });
+        }
+
+        let entries = inject_all_to_memory(&game_dir, &by_file, &v2())
+            .await
+            .unwrap();
+        let ce: Vec<_> = entries
+            .iter()
+            .filter(|(p, _)| p.ends_with("CommonEvent.dat"))
+            .collect();
+        assert_eq!(ce.len(), 1);
+
+        let new_segs = extract_common_events(&ce[0].1, &v2()).unwrap();
+        let texts: Vec<&str> = new_segs.iter().map(|s| s.source_text.as_str()).collect();
+        assert!(texts.contains(&"[T]Hello"), "EvA missing: {texts:?}");
+        assert!(texts.contains(&"[T]World"), "EvB missing: {texts:?}");
+    }
+
+    /// v2 identity: empty translations must reproduce the input byte-for-byte
+    /// (no de-alignment on the sequential splice).
+    #[test]
+    fn test_v2_common_events_identity() {
+        let bytes = make_v2_common_event_dat(&[("EvA", "Hello"), ("EvA", "Hello")]);
+        let (out, result) = inject_common_events(&bytes, &[], &v2()).unwrap();
+        assert_eq!(out, bytes, "identity injection must be byte-exact");
+        assert_eq!(result.updated_count, 0);
+    }
+
+    // -- Real-file CommonEvent.dat injection (UberWolf-decrypted fixtures) --
+    //
+    // These read the real Honoka (v2) / Inko (v3.5) `CommonEvent.dat` and skip
+    // gracefully when the fixture isn't present (same convention as the other
+    // real-file tests). They are the definitive proof for Phase 1 on real data.
+
+    /// Honoka (v2): empty injection is byte-exact, and a real translation
+    /// survives re-extraction.
+    #[test]
+    fn test_real_honoka_common_events_inject() {
+        use crate::engines::wolf::extractor::extract_common_events;
+        let path = test_dir().join("月咲流ホノカver1.03/Data/BasicData/CommonEvent.dat");
+        if !path.exists() {
+            return;
+        }
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(
+            !v3_format::common_events::is_lz4_v3(&bytes),
+            "Honoka must be v2"
+        );
+
+        // Identity: no translations → byte-exact.
+        let (identity, res) = inject_common_events(&bytes, &[], &v2()).unwrap();
+        assert_eq!(identity, bytes, "v2 identity injection must be byte-exact");
+        assert_eq!(res.updated_count, 0);
+
+        // Translate the first segment and confirm it round-trips.
+        let segs = extract_common_events(&bytes, &v2()).unwrap();
+        assert!(
+            !segs.is_empty(),
+            "Honoka CommonEvent.dat must yield segments"
+        );
+        let target = "★ホシ2スター★";
+        let translations = vec![WolfTranslation {
+            key: segs[0].key.clone(),
+            text: target.to_owned(),
+        }];
+        let (new_bytes, res) = inject_common_events(&bytes, &translations, &v2()).unwrap();
+        assert_eq!(res.updated_count, 1);
+
+        let new_segs = extract_common_events(&new_bytes, &v2()).unwrap();
+        let hit = new_segs.iter().find(|s| s.key == segs[0].key).unwrap();
+        assert_eq!(hit.source_text, target, "translation must round-trip");
+        assert_eq!(
+            new_segs.len(),
+            segs.len(),
+            "segment count must be preserved"
+        );
+    }
+
+    /// Inko (v3.5, LZ4): the decompressed payload of an empty injection is
+    /// byte-exact, and a real translation survives re-extraction.
+    #[test]
+    fn test_real_inko_common_events_inject() {
+        use crate::engines::wolf::extractor::extract_common_events;
+        use crate::engines::wolf::v3_format::common_events::decompress;
+        let path = test_dir().join("Densyanai_Inko_ver2.0/Data/BasicData/CommonEvent.dat");
+        if !path.exists() {
+            return;
+        }
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(
+            v3_format::common_events::is_lz4_v3(&bytes),
+            "Inko must be v3.5 LZ4"
+        );
+
+        // Identity on the decompressed payload (LZ4 recompression isn't
+        // byte-stable, but the underlying data must be — same invariant as
+        // `test_real_inko_common_events_v3_round_trip`).
+        let (identity, res) = inject_common_events(&bytes, &[], &v3()).unwrap();
+        assert_eq!(res.updated_count, 0);
+        assert_eq!(
+            decompress(&identity).unwrap(),
+            decompress(&bytes).unwrap(),
+            "v3 identity injection must preserve the decompressed payload"
+        );
+
+        // Translate the first segment and confirm it round-trips.
+        let segs = extract_common_events(&bytes, &v3()).unwrap();
+        assert!(!segs.is_empty(), "Inko CommonEvent.dat must yield segments");
+        let target = "★ホシ2スター★";
+        let translations = vec![WolfTranslation {
+            key: segs[0].key.clone(),
+            text: target.to_owned(),
+        }];
+        let (new_bytes, res) = inject_common_events(&bytes, &translations, &v3()).unwrap();
+        assert_eq!(res.updated_count, 1);
+
+        let new_segs = extract_common_events(&new_bytes, &v3()).unwrap();
+        let hit = new_segs.iter().find(|s| s.key == segs[0].key).unwrap();
+        assert_eq!(hit.source_text, target, "translation must round-trip");
+        assert_eq!(
+            new_segs.len(),
+            segs.len(),
+            "segment count must be preserved"
+        );
     }
 }
