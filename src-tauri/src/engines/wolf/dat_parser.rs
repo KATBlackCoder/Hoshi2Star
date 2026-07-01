@@ -155,9 +155,27 @@ fn read_u32(c: &mut Cursor<&[u8]>) -> Result<u32, DatParseError> {
 }
 
 fn read_bytes(c: &mut Cursor<&[u8]>, n: usize) -> Result<Vec<u8>, DatParseError> {
+    // Refuse a forged length BEFORE allocating: `vec![0u8; n]` with an
+    // attacker-controlled `n` can abort on OOM (or panic on capacity overflow)
+    // long before `read_exact` gets a chance to fail.
+    let remaining = c.get_ref().len().saturating_sub(c.position() as usize);
+    if n > remaining {
+        return Err(DatParseError::Io(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            format!("need {n} bytes, only {remaining} available"),
+        )));
+    }
     let mut b = vec![0u8; n];
     c.read_exact(&mut b).map_err(DatParseError::Io)?;
     Ok(b)
+}
+
+/// Bound a `Vec` pre-allocation by what the remaining input could possibly
+/// hold (every element consumes at least 4 bytes), so a forged count cannot
+/// trigger a multi-GiB `with_capacity` before parsing fails on EOF.
+fn bounded_cap(c: &Cursor<&[u8]>, count: usize) -> usize {
+    let remaining = c.get_ref().len().saturating_sub(c.position() as usize);
+    count.min(remaining / 4)
 }
 
 /// Read a Wolf RPG length-prefixed string.
@@ -190,19 +208,19 @@ fn read_wolf_string(c: &mut Cursor<&[u8]>, is_utf8: bool) -> Result<String, DatP
 fn parse_project(bytes: &[u8], is_utf8: bool) -> Result<Vec<ProjectTypeInfo>, DatParseError> {
     let mut c = Cursor::new(bytes);
     let type_count = read_u32(&mut c)? as usize;
-    let mut types = Vec::with_capacity(type_count);
+    let mut types = Vec::with_capacity(bounded_cap(&c, type_count));
 
     for _ in 0..type_count {
         let name = read_wolf_string(&mut c, is_utf8)?;
 
         let field_count = read_u32(&mut c)? as usize;
-        let mut field_names = Vec::with_capacity(field_count);
+        let mut field_names = Vec::with_capacity(bounded_cap(&c, field_count));
         for _ in 0..field_count {
             field_names.push(read_wolf_string(&mut c, is_utf8)?);
         }
 
         let data_count = read_u32(&mut c)? as usize;
-        let mut data_names = Vec::with_capacity(data_count);
+        let mut data_names = Vec::with_capacity(bounded_cap(&c, data_count));
         for _ in 0..data_count {
             data_names.push(read_wolf_string(&mut c, is_utf8)?);
         }
@@ -236,12 +254,12 @@ fn parse_project(bytes: &[u8], is_utf8: bool) -> Result<Vec<ProjectTypeInfo>, Da
         let cnt = read_u32(&mut c)? as usize;
         for _ in 0..cnt {
             let n = read_u32(&mut c)? as usize;
-            read_bytes(&mut c, n * 4)?;
+            read_bytes(&mut c, n.saturating_mul(4))?;
         }
 
         // unknown4: count + u32s — default values per field
         let cnt = read_u32(&mut c)? as usize;
-        read_bytes(&mut c, cnt * 4)?;
+        read_bytes(&mut c, cnt.saturating_mul(4))?;
 
         types.push(ProjectTypeInfo {
             name,
@@ -292,7 +310,7 @@ fn parse_dat_types(
         }
 
         // Read indexInfo for each active field; borrow name from project schema.
-        let mut fields = Vec::with_capacity(fields_size);
+        let mut fields = Vec::with_capacity(bounded_cap(&c, fields_size));
         for i in 0..fields_size {
             let index_info = read_u32(&mut c)?;
             let name = proj
@@ -315,7 +333,7 @@ fn parse_dat_types(
         });
 
         let data_count = read_u32(&mut c)? as usize;
-        let mut entries = Vec::with_capacity(data_count);
+        let mut entries = Vec::with_capacity(bounded_cap(&c, data_count));
 
         for i in 0..data_count {
             let name = proj
@@ -631,6 +649,41 @@ mod tests {
         assert_eq!(db.types[0].fields[0].is_valid(), true);
         assert_eq!(db.types[0].entries[0].int_values, [42u32]);
         assert!(db.types[0].entries[0].string_values.is_empty());
+    }
+
+    // --- Phase 2 (audit 2026-07-01): malformed input → Err, never a huge alloc ---
+
+    #[test]
+    fn test_read_bytes_beyond_input_is_err() {
+        // A forged length must fail BEFORE allocating (usize::MAX used to
+        // panic with "capacity overflow"; 4 GiB used to be allocated for real).
+        let buf = [0u8; 4];
+        let mut c = Cursor::new(&buf[..]);
+        assert!(read_bytes(&mut c, usize::MAX).is_err());
+    }
+
+    #[test]
+    fn test_parse_project_huge_type_count_is_err() {
+        // type_count = u32::MAX with no data behind it must fail fast,
+        // not pre-allocate gigabytes (with_capacity → alloc abort).
+        let mut project = Vec::new();
+        project.extend_from_slice(&u32::MAX.to_le_bytes());
+        assert!(parse_project(&project, false).is_err());
+    }
+
+    #[test]
+    fn test_parse_database_huge_fields_size_is_err() {
+        let project = make_minimal_project("T", "F", "");
+        let version: u8 = 0xC1;
+        let mut dat = Vec::new();
+        dat.push(0x00);
+        dat.extend_from_slice(&DB_MAGIC_SJIS);
+        dat.push(version);
+        dat.extend_from_slice(&1u32.to_le_bytes()); // type_count = 1
+        dat.extend_from_slice(&DAT_TYPE_SEPARATOR);
+        dat.extend_from_slice(&0u32.to_le_bytes()); // unknown1
+        dat.extend_from_slice(&u32::MAX.to_le_bytes()); // fields_size forgé
+        assert!(parse_database(&project, &dat).is_err());
     }
 
     #[test]

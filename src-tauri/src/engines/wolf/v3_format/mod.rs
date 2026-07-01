@@ -66,4 +66,10 @@ pub enum V3FormatError {
     },
     #[error("trailing data after map terminator: {remaining} bytes remain at offset {offset}")]
     TrailingData { offset: usize, remaining: usize },
+    #[error("tile data size overflows: width={width} height={height} layers={layer_cnt}")]
+    TileSizeOverflow {
+        width: u32,
+        height: u32,
+        layer_cnt: u32,
+    },
 }

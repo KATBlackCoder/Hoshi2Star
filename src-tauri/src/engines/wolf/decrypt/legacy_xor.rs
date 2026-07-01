@@ -538,7 +538,7 @@ pub fn extract_all(data: &[u8]) -> Result<WolfArchive, DecryptorError> {
     // The header key (all-zero) must NOT be used for TOC/file decryption.
     let data_key = if header_key == [0u8; 12] {
         let ks = base_offset as usize;
-        if data.len() >= ks + 12 {
+        if data.len() >= ks.saturating_add(12) {
             let mut k = [0u8; 12];
             k.copy_from_slice(&data[ks..ks + 12]);
             k
@@ -549,13 +549,14 @@ pub fn extract_all(data: &[u8]) -> Result<WolfArchive, DecryptorError> {
         header_key
     };
 
-    // Step 4 — extract and decrypt TOC
+    // Step 4 — extract and decrypt TOC (offsets are attacker-controlled u64s:
+    // do the bound check in u64 so a forged value cannot wrap)
+    let toc_end = index_offset
+        .checked_add(index_size)
+        .filter(|&end| end <= data.len() as u64)
+        .ok_or(DecryptorError::HeaderTooShort)?;
     let toc_start = index_offset as usize;
-    let toc_end = toc_start + index_size as usize;
-    if toc_end > data.len() {
-        return Err(DecryptorError::HeaderTooShort);
-    }
-    let mut toc_data = data[toc_start..toc_end].to_vec();
+    let mut toc_data = data[toc_start..toc_end as usize].to_vec();
 
     // parse_index decrypts toc_data in place; toc_data is readable after the call
     let entries = parse_index(
@@ -577,7 +578,10 @@ pub fn extract_all(data: &[u8]) -> Result<WolfArchive, DecryptorError> {
             return Err(DecryptorError::UnsupportedCompression);
         }
 
-        let start = base_offset as usize + entry.data_offset as usize;
+        let start = base_offset
+            .checked_add(entry.data_offset)
+            .and_then(|v| usize::try_from(v).ok())
+            .ok_or(DecryptorError::HeaderTooShort)?;
         let len = entry.unpacked_size as usize;
         if start.saturating_add(len) > data.len() {
             return Err(DecryptorError::HeaderTooShort);
@@ -587,7 +591,10 @@ pub fn extract_all(data: &[u8]) -> Result<WolfArchive, DecryptorError> {
         key_conv(&mut file_data, entry.unpacked_size, &data_key);
 
         // Decode filename: null-terminated at toc_data[name_offset..]
-        let ns = entry.name_offset as usize;
+        let ns = usize::try_from(entry.name_offset)
+            .ok()
+            .filter(|&ns| ns <= toc_data.len())
+            .ok_or(DecryptorError::HeaderTooShort)?;
         let name_len = toc_data[ns..]
             .iter()
             .position(|&b| b == 0)
@@ -613,6 +620,12 @@ pub fn extract_all(data: &[u8]) -> Result<WolfArchive, DecryptorError> {
 // ---------------------------------------------------------------------------
 // DXA v8 — Huffman decoder (port of DxLib Huffman.cpp::Huffman_Decode)
 // ---------------------------------------------------------------------------
+
+/// Sanity ceiling for decompressed output claimed by an archive header.
+/// A forged size field must not drive the allocation (`orig_size` can claim up
+/// to `u64::MAX` → "capacity overflow" panic; `dest_size` up to 4 GiB → OOM).
+/// 1 GiB is far above any real Wolf RPG file.
+const MAX_DECODE_OUTPUT: usize = 1 << 30;
 
 /// Decode DxLib Huffman-compressed data.
 ///
@@ -659,7 +672,11 @@ fn huffman_decode(data: &[u8]) -> Option<Vec<u8>> {
 
     // Header: original size, compressed size, 256-entry delta-coded weight table
     let orig_bits = bs.read(6) as u8 + 1;
-    let orig_size = bs.read(orig_bits) as usize;
+    let orig_size = bs.read(orig_bits);
+    if orig_size > MAX_DECODE_OUTPUT as u64 {
+        return None;
+    }
+    let orig_size = orig_size as usize;
     let press_bits = bs.read(6) as u8 + 1;
     let _ = bs.read(press_bits); // press_size not needed for decode
 
@@ -776,6 +793,9 @@ fn lz_decode(data: &[u8]) -> Option<Vec<u8>> {
     let src_size = (u32::from_le_bytes(data[4..8].try_into().ok()?) as usize).checked_sub(9)?;
     let keycode = data[8] as u32;
 
+    if dest_size > MAX_DECODE_OUTPUT {
+        return None;
+    }
     let mut out = vec![0u8; dest_size];
     let mut dp = 0usize;
     let mut sp = 9usize;
@@ -987,9 +1007,18 @@ fn parse_darc_dirs(toc: &[u8], dt_offset: usize) -> Vec<DarcDir> {
 /// Find which `DarcDir` owns the file-table entry at `entry_ft_offset` (relative to FT start).
 fn find_parent_dir(dirs: &[DarcDir], entry_ft_offset: u64, entry_sz: u64) -> usize {
     for (i, dir) in dirs.iter().enumerate() {
+        // Fields come from the attacker-controlled TOC: a forged range that
+        // overflows u64 cannot own any entry — skip it instead of panicking.
+        let Some(end) = dir
+            .file_head_num
+            .checked_mul(entry_sz)
+            .and_then(|span| dir.file_head_address.checked_add(span))
+        else {
+            continue;
+        };
         if dir.file_head_num > 0
             && entry_ft_offset >= dir.file_head_address
-            && entry_ft_offset < dir.file_head_address + dir.file_head_num * entry_sz
+            && entry_ft_offset < end
         {
             return i;
         }
@@ -1013,11 +1042,11 @@ fn read_uppercase_name(toc: &[u8], name_address: usize) -> &[u8] {
 
 /// Read the original (mixed-case) null-terminated name from the v8 name table.
 fn read_original_name(toc: &[u8], name_address: usize) -> &[u8] {
-    if name_address + 4 > toc.len() {
+    if name_address.saturating_add(4) > toc.len() {
         return b"";
     }
     let pack_num = u16::from_le_bytes([toc[name_address], toc[name_address + 1]]) as usize;
-    let orig_start = name_address + 4 + pack_num * 4;
+    let orig_start = name_address.saturating_add(4).saturating_add(pack_num * 4);
     if orig_start >= toc.len() {
         return b"";
     }
@@ -1046,8 +1075,8 @@ fn build_per_file_key_str(
     }
     let mut dir = &dirs[parent_dir_idx];
     while dir.parent_dir_address != u64::MAX {
-        let dir_ft_off = ft_offset + dir.dir_address as usize;
-        if dir_ft_off + 8 <= toc.len() {
+        let dir_ft_off = ft_offset.saturating_add(dir.dir_address as usize);
+        if dir_ft_off.saturating_add(8) <= toc.len() {
             let dir_name_addr =
                 u64::from_le_bytes(toc[dir_ft_off..dir_ft_off + 8].try_into().unwrap()) as usize;
             ks.extend_from_slice(read_uppercase_name(toc, dir_name_addr));
@@ -1182,10 +1211,11 @@ fn extract_v8_huffman_only(
     has_key: bool,
     key_offset: u64,
 ) -> Result<Vec<u8>, DecryptorError> {
-    if file_start + huff_sz > archive.len() {
-        return Err(DecryptorError::HeaderTooShort);
-    }
-    let mut huff_buf = archive[file_start..file_start + huff_sz].to_vec();
+    let huff_end = file_start
+        .checked_add(huff_sz)
+        .filter(|&end| end <= archive.len())
+        .ok_or(DecryptorError::HeaderTooShort)?;
+    let mut huff_buf = archive[file_start..huff_end].to_vec();
     if has_key {
         key_conv7(&mut huff_buf, key_offset, key);
     }
@@ -1200,14 +1230,20 @@ fn extract_v8_huffman_only(
     }
 
     // Large file: decoded = [front_huff_kb | back_huff_kb], middle is raw on disk
-    let middle_sz = unpacked - huff_kb * 2;
-    let mid_start = file_start + huff_sz;
-    if mid_start + middle_sz > archive.len() {
+    if decoded.len() < huff_kb * 2 {
         return Err(DecryptorError::HeaderTooShort);
     }
-    let mut mid_buf = archive[mid_start..mid_start + middle_sz].to_vec();
+    let middle_sz = unpacked - huff_kb * 2;
+    let mid_end = huff_end
+        .checked_add(middle_sz)
+        .filter(|&end| end <= archive.len())
+        .ok_or(DecryptorError::HeaderTooShort)?;
+    let mut mid_buf = archive[huff_end..mid_end].to_vec();
     if has_key {
-        key_conv7(&mut mid_buf, key_offset + huff_sz as u64, key);
+        let mid_key_offset = key_offset
+            .checked_add(huff_sz as u64)
+            .ok_or(DecryptorError::HeaderTooShort)?;
+        key_conv7(&mut mid_buf, mid_key_offset, key);
     }
 
     let mut out = Vec::with_capacity(unpacked);
@@ -1235,10 +1271,11 @@ fn assemble_v8_lz_stream(
     has_key: bool,
     key_offset: u64,
 ) -> Result<Vec<u8>, DecryptorError> {
-    if file_start + huff_sz > archive.len() {
-        return Err(DecryptorError::HeaderTooShort);
-    }
-    let mut huff_buf = archive[file_start..file_start + huff_sz].to_vec();
+    let huff_end = file_start
+        .checked_add(huff_sz)
+        .filter(|&end| end <= archive.len())
+        .ok_or(DecryptorError::HeaderTooShort)?;
+    let mut huff_buf = archive[file_start..huff_end].to_vec();
     if has_key {
         key_conv7(&mut huff_buf, key_offset, key);
     }
@@ -1253,14 +1290,20 @@ fn assemble_v8_lz_stream(
     }
 
     // Large LZ stream: decoded = [front_huff_kb | back_huff_kb], middle on disk
-    let middle_sz = press_sz - huff_kb * 2;
-    let mid_start = file_start + huff_sz;
-    if mid_start + middle_sz > archive.len() {
+    if decoded.len() < huff_kb * 2 {
         return Err(DecryptorError::HeaderTooShort);
     }
-    let mut mid_buf = archive[mid_start..mid_start + middle_sz].to_vec();
+    let middle_sz = press_sz - huff_kb * 2;
+    let mid_end = huff_end
+        .checked_add(middle_sz)
+        .filter(|&end| end <= archive.len())
+        .ok_or(DecryptorError::HeaderTooShort)?;
+    let mut mid_buf = archive[huff_end..mid_end].to_vec();
     if has_key {
-        key_conv7(&mut mid_buf, key_offset + huff_sz as u64, key);
+        let mid_key_offset = key_offset
+            .checked_add(huff_sz as u64)
+            .ok_or(DecryptorError::HeaderTooShort)?;
+        key_conv7(&mut mid_buf, mid_key_offset, key);
     }
 
     let mut lz_stream = Vec::with_capacity(press_sz);
@@ -1384,8 +1427,13 @@ fn extract_all_v8(data: &[u8]) -> Result<WolfArchive, DecryptorError> {
             [0u8; 7]
         };
 
-        let file_start = base_offset + data_offset as usize;
-        let unp = unpacked_size as usize;
+        // All entry fields are attacker-controlled u64s read from the TOC:
+        // offset math must be checked, casts must not truncate.
+        let file_start = (base_offset as u64)
+            .checked_add(data_offset)
+            .and_then(|v| usize::try_from(v).ok())
+            .ok_or(DecryptorError::HeaderTooShort)?;
+        let unp = usize::try_from(unpacked_size).map_err(|_| DecryptorError::HeaderTooShort)?;
         let huff_sz = huff_press_data_size;
         let press_sz = packed_size;
         let key_off = unpacked_size; // Wolf RPG: key position = DataSize (unpacked_size)
@@ -1393,33 +1441,31 @@ fn extract_all_v8(data: &[u8]) -> Result<WolfArchive, DecryptorError> {
         let file_data: Vec<u8> = match (huff_sz == u64::MAX, press_sz == -1) {
             // Case 4: raw XOR only
             (true, true) => {
-                if file_start + unp > data.len() {
-                    return Err(DecryptorError::HeaderTooShort);
-                }
-                let mut buf = data[file_start..file_start + unp].to_vec();
+                let end = file_start
+                    .checked_add(unp)
+                    .filter(|&end| end <= data.len())
+                    .ok_or(DecryptorError::HeaderTooShort)?;
+                let mut buf = data[file_start..end].to_vec();
                 if has_key {
                     key_conv7(&mut buf, key_off, &file_key);
                 }
                 buf
             }
             // Case 3: Huffman-encoded, no LZ
-            (false, true) => extract_v8_huffman_only(
-                data,
-                file_start,
-                unp,
-                huff_sz as usize,
-                huff_kb,
-                &file_key,
-                has_key,
-                key_off,
-            )?,
+            (false, true) => {
+                let hz = usize::try_from(huff_sz).map_err(|_| DecryptorError::HeaderTooShort)?;
+                extract_v8_huffman_only(
+                    data, file_start, unp, hz, huff_kb, &file_key, has_key, key_off,
+                )?
+            }
             // Case 2: LZ only, no Huffman
             (true, false) => {
-                let pz = press_sz as usize;
-                if file_start + pz > data.len() {
-                    return Err(DecryptorError::HeaderTooShort);
-                }
-                let mut lz_buf = data[file_start..file_start + pz].to_vec();
+                let pz = usize::try_from(press_sz).map_err(|_| DecryptorError::HeaderTooShort)?;
+                let end = file_start
+                    .checked_add(pz)
+                    .filter(|&end| end <= data.len())
+                    .ok_or(DecryptorError::HeaderTooShort)?;
+                let mut lz_buf = data[file_start..end].to_vec();
                 if has_key {
                     key_conv7(&mut lz_buf, key_off, &file_key);
                 }
@@ -1427,16 +1473,10 @@ fn extract_all_v8(data: &[u8]) -> Result<WolfArchive, DecryptorError> {
             }
             // Case 1: Huffman + LZ
             (false, false) => {
-                let pz = press_sz as usize;
+                let pz = usize::try_from(press_sz).map_err(|_| DecryptorError::HeaderTooShort)?;
+                let hz = usize::try_from(huff_sz).map_err(|_| DecryptorError::HeaderTooShort)?;
                 let lz_stream = assemble_v8_lz_stream(
-                    data,
-                    file_start,
-                    pz,
-                    huff_sz as usize,
-                    huff_kb,
-                    &file_key,
-                    has_key,
-                    key_off,
+                    data, file_start, pz, hz, huff_kb, &file_key, has_key, key_off,
                 )?;
                 lz_decode(&lz_stream).ok_or(DecryptorError::UnsupportedCompression)?
             }
@@ -2052,5 +2092,122 @@ mod tests {
             }
             Err(e) => println!("❌ FAILED: {e}"),
         }
+    }
+
+    // --- Phase 2 (audit 2026-07-01): malformed input → Err, never panic ---
+
+    /// Decrypt the TOC of a `make_v5_archive` result in place, apply `patch`,
+    /// then re-encrypt (`key_conv` is a symmetric XOR).
+    fn patch_v5_toc(
+        archive: &mut [u8],
+        key: &[u8; 12],
+        content_len: usize,
+        patch: impl FnOnce(&mut [u8]),
+    ) {
+        let index_offset = 0x18 + content_len;
+        let toc = &mut archive[index_offset..];
+        key_conv(toc, index_offset as u64 % 12, key);
+        patch(toc);
+        key_conv(toc, index_offset as u64 % 12, key);
+    }
+
+    /// Same as [`patch_v5_toc`] for `make_v6_archive` (v6 TOC key offset = 0).
+    fn patch_v6_toc(
+        archive: &mut [u8],
+        key: &[u8; 12],
+        content_len: usize,
+        patch: impl FnOnce(&mut [u8]),
+    ) {
+        let index_offset = 0x2C + content_len;
+        let toc = &mut archive[index_offset..];
+        key_conv(toc, 0, key);
+        patch(toc);
+        key_conv(toc, 0, key);
+    }
+
+    #[test]
+    fn test_huffman_decode_huge_orig_size_returns_none() {
+        // All-ones header claims orig_bits = 64 and orig_size ≈ u64::MAX:
+        // must refuse instead of panicking with "capacity overflow".
+        assert!(huffman_decode(&[0xFF; 16]).is_none());
+    }
+
+    #[test]
+    fn test_lz_decode_huge_dest_size_returns_none() {
+        // destsize = u32::MAX with a 1-byte body: must refuse the 4 GiB allocation.
+        let mut data = Vec::new();
+        data.extend_from_slice(&u32::MAX.to_le_bytes()); // dest_size
+        data.extend_from_slice(&10u32.to_le_bytes()); // total_srcsize (9 header + 1)
+        data.push(0xAA); // keycode
+        data.push(0x42); // body
+        assert!(lz_decode(&data).is_none());
+    }
+
+    #[test]
+    fn test_extract_all_v5_name_offset_out_of_bounds_is_err() {
+        let key = WOLF_KEYS
+            .iter()
+            .find(|(n, _)| *n == "v2.20")
+            .map(|(_, k)| *k)
+            .unwrap();
+        let content = b"0123456789";
+        let mut archive = make_v5_archive(&key, "game.dat", content);
+        // Name table "game.dat\0" = 9 bytes → entry starts at 9;
+        // entry[0x00..0x04] = name_offset → point far beyond the TOC.
+        patch_v5_toc(&mut archive, &key, content.len(), |toc| {
+            toc[9..13].copy_from_slice(&0xFFFFu32.to_le_bytes());
+        });
+        assert!(extract_all(&archive).is_err());
+    }
+
+    #[test]
+    fn test_extract_all_v6_huge_data_offset_is_err() {
+        let key = WOLF_KEYS
+            .iter()
+            .find(|(n, _)| *n == "v2.20")
+            .map(|(_, k)| *k)
+            .unwrap();
+        let content = b"0123456789";
+        let mut archive = make_v6_archive(&key, "data.bin", content, 932);
+        // Name table "data.bin\0" = 9 bytes → entry starts at 9;
+        // entry[0x28..0x30] = data_offset → u64::MAX (base_offset + data_offset wraps).
+        patch_v6_toc(&mut archive, &key, content.len(), |toc| {
+            toc[9 + 0x28..9 + 0x30].copy_from_slice(&(-1i64).to_le_bytes());
+        });
+        assert!(extract_all(&archive).is_err());
+    }
+
+    #[test]
+    fn test_extract_v8_huffman_only_short_decoded_is_err() {
+        // [0u8; 16] huffman-decodes to an EMPTY buffer (orig_size = 0), while
+        // unpacked = 2049 > 2*huff_kb selects the "large file" branch that used
+        // to slice decoded[..huff_kb] unchecked.
+        let archive = vec![0u8; 4096];
+        let r = extract_v8_huffman_only(&archive, 0, 2049, 16, 1024, &[0u8; 7], false, 0);
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn test_assemble_v8_lz_stream_short_decoded_is_err() {
+        let archive = vec![0u8; 4096];
+        let r = assemble_v8_lz_stream(&archive, 0, 2049, 16, 1024, &[0u8; 7], false, 0);
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn test_extract_v8_huffman_only_offset_overflow_is_err() {
+        // file_start near usize::MAX: file_start + huff_sz must not wrap.
+        let archive = vec![0u8; 64];
+        let r = extract_v8_huffman_only(
+            &archive,
+            usize::MAX - 8,
+            2049,
+            16,
+            1024,
+            &[0u8; 7],
+            false,
+            0,
+        );
+        assert!(r.is_err());
     }
 }
