@@ -311,6 +311,22 @@ pub(crate) struct MapV3 {
     pub events: Vec<EventV3>,
 }
 
+/// Tile-data byte length (`width * height * layer_cnt * 4`), computed in u64 so
+/// forged dimensions cannot overflow the `u32` math (panic in debug, silent wrap
+/// in release) before the bounded `ByteReader` gets a chance to reject the read.
+fn tile_data_len(width: u32, height: u32, layer_cnt: u32) -> Result<usize, V3FormatError> {
+    (width as u64)
+        .checked_mul(height as u64)
+        .and_then(|v| v.checked_mul(layer_cnt as u64))
+        .and_then(|v| v.checked_mul(4))
+        .and_then(|v| usize::try_from(v).ok())
+        .ok_or(V3FormatError::TileSizeOverflow {
+            width,
+            height,
+            layer_cnt,
+        })
+}
+
 impl MapV3 {
     pub(crate) fn is_utf8(&self) -> bool {
         self.magic[16] == 0x55
@@ -352,7 +368,7 @@ impl MapV3 {
             if marker == NO_TILES_MARKER {
                 None
             } else {
-                let tile_len = (width * height * layer_cnt * 4) as usize;
+                let tile_len = tile_data_len(width, height, layer_cnt)?;
                 let extra = tile_len
                     .checked_sub(4)
                     .ok_or(V3FormatError::UnexpectedEof {
@@ -360,13 +376,16 @@ impl MapV3 {
                         needed: 4,
                         available: tile_len,
                     })?;
+                // Read (bounds-checked, no allocation) BEFORE allocating tile_len,
+                // so a forged size cannot drive a huge allocation.
+                let rest = reader.read_bytes(extra)?;
                 let mut data = Vec::with_capacity(tile_len);
                 data.extend_from_slice(&marker.to_le_bytes());
-                data.extend_from_slice(reader.read_bytes(extra)?);
+                data.extend_from_slice(rest);
                 Some(data)
             }
         } else {
-            let tile_len = (width * height * layer_cnt * 4) as usize;
+            let tile_len = tile_data_len(width, height, layer_cnt)?;
             Some(reader.read_bytes(tile_len)?.to_vec())
         };
 
@@ -685,6 +704,21 @@ mod tests {
         let parsed = MapV3::parse(&bytes).unwrap();
         assert_eq!(parsed, map);
         assert_eq!(parsed.dump().unwrap(), bytes);
+    }
+
+    // --- Phase 2 (audit 2026-07-01): malformed input → Err, never panic ---
+
+    #[test]
+    fn test_map_parse_huge_tile_dims_is_err() {
+        // Forge width/height so that width*height*layer_cnt*4 overflows u32:
+        // must return Err, not panic (debug) or wrap to a bogus length (release).
+        let map = empty_map(0x60, false, 2, 2);
+        let mut bytes = map.dump().unwrap();
+        // Header: magic 20 + version 4 + unknown2 1 + empty string 5 + tileset 4
+        // → width at 34..38, height at 38..42.
+        bytes[34..38].copy_from_slice(&0x4000_0000u32.to_le_bytes());
+        bytes[38..42].copy_from_slice(&4u32.to_le_bytes());
+        assert!(MapV3::parse(&bytes).is_err());
     }
 
     #[test]

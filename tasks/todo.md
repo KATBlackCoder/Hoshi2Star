@@ -1,6 +1,88 @@
 # Tasks — Hoshi2Star
 
-## 🔴 Phase 1 — Réinjecter les Common Events Wolf à l'export (P0, perte de données)
+> **Remédiation audit 2026-07-01 — avancement**
+> Ordre : 1 → 2 → 3 → 4 → 5 → 7 → 6 → 8 → 9 (`docs/audit-remediation-plan-2026-07-01.md`).
+> - Phase 1 : ✅ **terminée & mergée sur `main`** (2026-07-01).
+> - Phase 2 : ✅ **terminée & mergée sur `main`** (2026-07-01).
+> - 👉 **PROCHAINE : Phase 3 — 🟠 robustesse des promesses UI.**
+
+## ✅ Phase 2 — Éliminer les paniques des parsers binaires Wolf (P1, crash) — TERMINÉE
+
+> Plan de `docs/audit-remediation-plan-2026-07-01.md` §Phase 2 + complément §2.
+> **Vérifié sur le code réel (2026-07-01)** : tous les sites sont encore aux lignes de
+> l'audit (le code n'a pas bougé). Tous les champs `DxFileEntry` sont `u64` attaquant
+> (`legacy_xor.rs:62-66`) → les casts `as usize` + additions brutes peuvent réellement
+> wrapper même en 64-bit. Branche : `fix/wolf-parser-panics`.
+> **NE PAS toucher** : les `catch_unwind` d'`extractor.rs` (garde-fou voulu).
+> Convention erreur : réutiliser `DecryptorError::HeaderTooShort` (déjà utilisé pour
+> toutes les bornes voisines :555/582/1185/1196…) — pas de nouveau variant.
+
+### Étape A — Racine : allocation Huffman non bornée (`legacy_xor.rs:731`)
+- [x] Test rouge : `huffman_decode(&[0xFF;16])` (orig_bits=64, orig_size≈u64::MAX) →
+      panique « capacity overflow » prouvée
+- [x] Fix : const `MAX_DECODE_OUTPUT = 1 GiB` (partagée Huffman/LZ) → `return None`
+      (les appelants mappent déjà `None` → `Err`)
+- [x] Même classe : `lz_decode` — `dest_size` plafonné (rouge prouvé : retournait
+      `Some(vec 4 GiB)`)
+
+### Étape B — Slice TOC non bornée (`legacy_xor.rs:591`)
+- [x] Test rouge : `make_v5_archive` + helper `patch_v5_toc` (XOR symétrique) avec
+      `name_offset=0xFFFF` → panique OOB prouvée
+- [x] Fix : `usize::try_from(name_offset)` + borne `ns ≤ toc_data.len()` → `Err(HeaderTooShort)`
+
+### Étape C — Slices Huffman v8 (`legacy_xor.rs:1214/1216` + `:1267/1269`)
+- [x] Tests rouges : appels directs `extract_v8_huffman_only`/`assemble_v8_lz_stream`
+      avec blob `[0u8;16]` (décode vers tampon VIDE) + `unpacked/press_sz > 2*huff_kb`
+      → panique « range end index 1024 out of range for slice of length 0 » prouvée ×2
+- [x] Fix : `decoded.len() < huff_kb * 2` → `Err(HeaderTooShort)` dans les 2 fonctions
+
+### Étape D — Tier arithmétique : additions d'offsets en `checked_add`
+- [x] `:541` (`saturating_add`), `:554` (check u64 `index_offset+index_size` avant cast),
+      `:580` (checked u64 + `try_from`), `:1387` (idem v8)
+- [x] Sites frères mêmes fonctions : `:1185`, `:1204-1205`, `:1238`, `:1257-1258`,
+      `:1396`, `:1419` + casts `u64→usize` non tronquants (`unp`, `pz`, `hz`) +
+      `key_offset + huff_sz` (u64) en `checked_add`
+- [x] **Ajouts vérifiés hors liste audit (même classe, même chemin de dispatch v8)** :
+      `read_original_name` (`:1016/:1020` saturating), `build_per_file_key_str`
+      (`:1049` saturating), `find_parent_dir` (`:992` `checked_mul`+`checked_add`,
+      skip du dir forgé)
+- [x] Tests rouges : v6 `data_offset=u64::MAX` via `patch_v6_toc` (panique add overflow
+      prouvée) + `extract_v8_huffman_only(file_start≈usize::MAX)` (panique add prouvée).
+      `:554` non testable en rouge (champs v5/v6 u32 → pas de wrap 64-bit) → défensif.
+
+### Étape E — `v3_format/map.rs:355/369` : multiplication tiles non vérifiée
+- [x] Test rouge : dump d'une map valide + patch `width=0x4000_0000, height=4` →
+      « attempt to multiply with overflow » prouvé (map.rs:369)
+- [x] Fix : `tile_data_len(width,height,layer_cnt)` en `checked_mul` u64 → nouveau
+      variant `V3FormatError::TileSizeOverflow` ; branche utf8 : `read_bytes` (borné,
+      sans alloc) AVANT `Vec::with_capacity(tile_len)`
+
+### Étape F — `dat_parser.rs` : allocations pilotées par l'entrée
+- [x] `read_bytes` : refuse `n > bytes restants` AVANT `vec![0u8; n]` (couvre aussi
+      `n*4`/`cnt*4`, passés en `saturating_mul`)
+- [x] Helper `bounded_cap(cursor, count)` (`count.min(remaining/4)`) appliqué aux 5
+      `with_capacity` attaquants : `parse_project` ×3 + `parse_dat_types` `fields_size`
+      + `data_count`
+- [x] Tests rouges : `read_bytes(n=usize::MAX)` → « capacity overflow » prouvé ;
+      `type_count=u32::MAX` → **SIGABRT alloc 309 Go** prouvé (tuait tout le process !) ;
+      `fields_size=u32::MAX` → **SIGABRT alloc 137 Go** prouvé
+
+### Vérification (gate obligatoire)
+- [x] 11 tests rouges prouvés AVANT fix (9 paniques + 2 SIGABRT), 11/11 verts après
+- [x] Non-régression fixtures réelles : `test_real_honoka_*` (v2 + archive v8 DXA) +
+      `test_real_inko_*` (v3.5) tous verts
+- [x] Gate : `pnpm typecheck` ✅ · `cargo clippy -- -D warnings` ✅ (seul warning :
+      toolchain `pclmul` pré-existant, hors code) · `cargo test` = **363 pass / 0 fail / 4 ignored**
+- [x] CHANGELOG.md (Fixed)
+- [x] docs/architecture.md : PAS touché — aucun changement d'architecture (fns internes
+      durcies ; seul ajout : variant interne `V3FormatError::TileSizeOverflow`, pas un type IPC)
+- [x] docs/journal/ : entrée de session
+- [x] tasks/todo.md : coché
+
+**Phase 2 : livrée — 11 sites de panique/abort éliminés (legacy_xor.rs, v3_format/map.rs,
+dat_parser.rs), `catch_unwind` d'extractor.rs intacts, prouvé rouge→vert site par site.**
+
+## ✅ Phase 1 — Réinjecter les Common Events Wolf à l'export (P0, perte de données) — TERMINÉE
 
 > Plan de `docs/audit-remediation-plan-2026-07-01.md` §Phase 1. Vérifié sur le code réel
 > (2026-07-01). Le bug est confirmé : `inject_all_to_memory`/`inject_all` (injector.rs:483/521)
@@ -44,7 +126,7 @@
 - [x] `docs/architecture.md` : section `wolf/injector.rs` + date 2026-07-01
 - [x] CHANGELOG.md (Fixed)
 
-**Phase 1 : livrée — v2 (Honoka) ET v3 (Inko) vérifiés sur fixtures synthétiques ET sur les jeux réels.** Reste à commiter/merger.
+**Phase 1 : livrée — v2 (Honoka) ET v3 (Inko) vérifiés sur fixtures synthétiques ET sur les jeux réels. Commitée + mergée sur `main` (2 commits + merge --no-ff).**
 
 ### Résolu par les fixtures fournies
 - [x] Les 2 tests `test_real_inko_*_round_trip` qui paniquaient (fixture Inko absente) passent maintenant
