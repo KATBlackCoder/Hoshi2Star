@@ -1,6 +1,6 @@
 # Hoshi2Star — Architecture
 
-> Dernière mise à jour : 2026-06-18
+> Dernière mise à jour : 2026-07-01
 > Ce document décrit l'architecture réelle de l'application.
 > À mettre à jour à chaque ajout de module majeur.
 
@@ -118,7 +118,7 @@ Couche métier pure — pas de `tauri::State`, pas d'`AppHandle`, testable sans 
 | `mv_mz/decryptor.rs` | Décryptage XOR des assets chiffrés RPG Maker MV/MZ. Clé lue depuis `System.json`. |
 | `vx_ace/` | Extractor + injector RPG Maker VX Ace via marshal-rs (Ruby Marshal binary). **Code disponible mais désactivé** dans `engines/detector.rs` — réactivation prévue post-Wolf RPG stable. |
 | `wolf/extractor.rs` | Lit les `.mps` (cartes) et `.dat`/`.project` (base de données) depuis `Data/MapData/` et `Data/BasicData/`. Fallback transparent vers les archives `.wolf` (DXA chiffrées) via `wolf/decrypt/legacy_xor.rs`. Exporte `extract_all_wolf()` → `Vec<(file_name, file_type, Vec<WolfSegment>)>`. |
-| `wolf/injector.rs` | Réinjecte les traductions dans `.mps` et `.dat` via `wolfrpg-map-parser`. Écrit dans `Data/MapData/` et `Data/BasicData/` (Option A — priorité sur les archives). Charge les bytes sources via `load_mps_for_stem`/`load_dat_for_stem` (archive-aware). |
+| `wolf/injector.rs` | Réinjecte les traductions dans `.mps`, `.dat` **et `CommonEvent.dat`** via `wolfrpg-map-parser` (v2.x) / `v3_format` (v3.5 Inko, LZ4). Écrit dans `Data/MapData/` et `Data/BasicData/` (Option A — priorité sur les archives). `inject_map` / `inject_dat` / `inject_common_events` sont routés par `inject_all` (disque) et `inject_all_to_memory` (ZIP) selon le préfixe de clé. `injection_bucket(segment_key)` mappe une clé de segment vers son fichier physique — tous les `CommonEvents/*` **collapsent dans un seul bucket** (`CommonEvent.dat` est unique, contrairement aux `.mps`/`.dat` un-par-stem). Charge les bytes sources via `load_mps_for_stem`/`load_dat_for_stem`/`load_common_event_bytes` (archive-aware). Splice binaire v2.x partagé par `.mps` et `CommonEvent.dat` (`splice_wolf_strings`). |
 | `wolf/decrypt/legacy_xor.rs` | Décryptage XOR des archives `.wolf` (DXA v2/v3 jusqu'à v3.31). Détecte la clé par heuristique. Émet `PossibleWolfX` si toutes les clés échouent (WolfX v3.5+). |
 | `wolf/decrypt/wolfx.rs` | Couture WolfX (Wolf v3.5+ Pro, ChaCha20) — **non implémenté par décision** : pré-étape manuelle UberWolf, puis ouvrir le dossier `Data/` déchiffré. Renvoie une erreur de guidage. |
 | `wolf/encoding.rs` | Conversion Shift-JIS ↔ UTF-8 pour les fichiers Wolf v2/v3. |

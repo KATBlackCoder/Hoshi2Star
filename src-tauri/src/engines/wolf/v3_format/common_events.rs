@@ -77,9 +77,7 @@ pub(crate) fn decompress(bytes: &[u8]) -> Result<Vec<u8>, V3FormatError> {
 
 /// Recompresses a `header[0..11] ++ payload` buffer (as produced by
 /// [`decompress`] / [`CommonEventsV3::dump`]) back into the on-disk layout.
-// CommonEvent.dat injection is not yet wired (extraction-only, matching v2.x
-// parity); reserved for a future injector.
-#[allow(dead_code)]
+/// Used by `wolf::injector::inject_common_events` (v3.5 path).
 pub(crate) fn recompress(decompressed: &[u8]) -> Result<Vec<u8>, V3FormatError> {
     super::compression::recompress_block(decompressed, HEADER_SIZE)
 }
@@ -252,8 +250,6 @@ impl CommonEventV3 {
         })
     }
 
-    /// Reserved for a future injector (see [`recompress`]).
-    #[allow(dead_code)]
     pub(crate) fn dump(
         &self,
         writer: &mut ByteWriter,
@@ -342,14 +338,10 @@ pub(crate) struct CommonEventsV3 {
 }
 
 impl CommonEventsV3 {
-    /// Reserved for a future injector (see [`recompress`]).
-    #[allow(dead_code)]
     pub(crate) fn is_utf8(&self) -> bool {
         self.magic[UTF8_MAGIC_INDEX] == 0x55
     }
 
-    /// Reserved for a future injector (see [`recompress`]).
-    #[allow(dead_code)]
     pub(crate) fn is_v35(&self) -> bool {
         V35_VERSIONS.contains(&self.version)
     }
@@ -410,8 +402,6 @@ impl CommonEventsV3 {
 
     /// Writes `header[0..11] ++ payload` — the inverse of
     /// [`CommonEventsV3::parse`], ready for [`recompress`].
-    /// Reserved for a future injector (see [`recompress`]).
-    #[allow(dead_code)]
     pub(crate) fn dump(&self) -> Result<Vec<u8>, V3FormatError> {
         let is_utf8 = self.is_utf8();
         let v35 = self.is_v35();
@@ -429,6 +419,62 @@ impl CommonEventsV3 {
         writer.write_u8(self.terminator);
 
         Ok(writer.into_bytes())
+    }
+}
+
+/// Test-only builders for synthetic v3.5 `CommonEvent.dat` data.
+///
+/// The real Inko/Honoka fixtures live in encrypted `.wolf` archives that are
+/// not always present in CI, so injector round-trip tests build controlled CE
+/// bytes here instead. Kept out of `mod tests` so any test in the crate (e.g.
+/// `wolf::injector`) can reach it.
+#[cfg(test)]
+impl CommonEventsV3 {
+    /// Build a synthetic v3.5 CE (decompressed form) with exactly one
+    /// `CID_MESSAGE` command per `(event_name, message)` pair. UTF-8, version
+    /// `0x93`. Use with [`dump`](Self::dump) + [`recompress`] to obtain
+    /// on-disk bytes that [`is_lz4_v3`] accepts.
+    pub(crate) fn synthetic_messages(events: &[(&str, &str)]) -> Self {
+        use super::command::CID_MESSAGE;
+
+        let mut magic = MAGIC;
+        magic[UTF8_MAGIC_INDEX] = 0x55; // UTF-8
+
+        let events = events
+            .iter()
+            .enumerate()
+            .map(|(i, (name, message))| CommonEventV3 {
+                int_id: i as u32 + 1,
+                unknown1: 0,
+                unknown2: [0u8; UNKNOWN2_LEN],
+                name: (*name).to_owned(),
+                commands: vec![Command {
+                    cid: CID_MESSAGE,
+                    args: Vec::new(),
+                    indent: 0,
+                    string_args: vec![(*message).to_owned()],
+                    move_data: None,
+                    v35_unknown: vec![0xAB],
+                }],
+                unknown11: String::new(),
+                description: String::new(),
+                unknown3: Vec::new(),
+                unknown4: Vec::new(),
+                unknown5: Vec::new(),
+                unknown6: Vec::new(),
+                unknown7: vec![0u8; UNKNOWN7_LEN],
+                unknown8: vec![String::new(); UNKNOWN8_LEN],
+                unknown9: String::new(),
+                unknown10: None,
+            })
+            .collect();
+
+        CommonEventsV3 {
+            magic,
+            version: 0x93,
+            events,
+            terminator: 0x89,
+        }
     }
 }
 

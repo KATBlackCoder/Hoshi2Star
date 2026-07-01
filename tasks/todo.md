@@ -1,5 +1,58 @@
 # Tasks — Hoshi2Star
 
+## 🔴 Phase 1 — Réinjecter les Common Events Wolf à l'export (P0, perte de données)
+
+> Plan de `docs/audit-remediation-plan-2026-07-01.md` §Phase 1. Vérifié sur le code réel
+> (2026-07-01). Le bug est confirmé : `inject_all_to_memory`/`inject_all` (injector.rs:483/521)
+> ne matchent que `MapData`/`Database`, `_ => {}` (514/568). Aucun `inject_common_events`.
+
+### Étape 1 — Verify read-only + test rouge (priorité absolue)
+- [x] Pas de fixture Wolf réelle dans ce checkout (`test/性処理係のある学校` = MV/MZ) →
+      reproduction via CE v3 synthétique (`CommonEventsV3::synthetic_messages`), pas de fixture chiffrée
+- [x] Test **rouge** via le **regroupement** (extract→`injection_bucket`→`inject_all_to_memory`)
+      avec 2 event_names → prouvé rouge (compile-fail sur `injection_bucket` absent, puis
+      assert perte). `test_common_events_translations_survive_export`
+
+### Contraintes de correction (silencieuses si ratées — cf. advisor)
+- [x] **C1 — Bucket unique** : `injection_bucket()` collapse tous les `CommonEvents/*` en
+      `COMMON_EVENTS_BUCKET = "CommonEvents/CommonEvent"`. Les 2 sites de bucketing d'`export.rs`
+      (`collect_wolf_zip_entries` + `debug_inject_file`) l'utilisent. Clé complète conservée.
+- [x] **C2 — Parité de clés** : injecteur régénère `CommonEvents/{event_name}/{event_idx}/{cmd_idx}`
+      (+`/choices/{choice_idx}`), pas de `pages`, `event_name = event.event_name()` (v2) / `event.name` (v3).
+- [x] **C3** : test rouge passe par `injection_bucket` + `inject_all_to_memory` (2 event_names).
+
+### Implémentation
+- [x] `inject_common_events(bytes, translations, version)` : v2 → `common_events_parser::parse_bytes`
+      (catch_unwind) + `patch_common_events_strings` (remplacements ordonnés, dst=src si non traduit) +
+      `splice_wolf_strings` (splice partagé extrait de `patch_mps_strings`). v3 → `inject_common_events_v3`
+      (`is_lz4_v3` → `decompress` → `CommonEventsV3::parse` → mute `string_args` → `dump` → `recompress`).
+- [x] Arm `"CommonEvents"` dans **`inject_all_to_memory` ET `inject_all`** → `load_common_event_bytes`,
+      écrit/emet `Data/BasicData/CommonEvent.dat`.
+- [x] `export.rs` : les 2 sites routent via `injection_bucket`.
+
+### Vérification
+- [x] **v3 (Inko)** vert : `test_common_events_translations_survive_export` (2 CE, both survive) via `CommonEventsV3::synthetic_messages`
+- [x] **v2 (Honoka)** vert : fixture v2 synthétique construite à la main (`make_v2_common_event_dat`) →
+      `test_v2_common_event_fixture_extracts` + `test_v2_common_events_translations_survive_export` (2 CE) +
+      `test_v2_common_events_identity` (byte-exact, doublons → pas de dé-alignement du splice)
+- [x] `test_injection_bucket_collapses_common_events`
+- [x] **Vérif fichiers réels** (fixtures fournies par l'utilisateur, renommées en `Densyanai_Inko_ver2.0` /
+      `月咲流ホノカver1.03` pour matcher les 13 refs de tests existantes) :
+      `test_real_honoka_common_events_inject` (v2 : identity byte-exact + trad round-trip) +
+      `test_real_inko_common_events_inject` (v3.5 : identity payload décompressé + trad round-trip)
+- [x] Gate : `pnpm typecheck` ✅ · `cargo clippy -- -D warnings` ✅ · `cargo test` = **352 pass / 0 fail / 4 ignored**
+- [x] `docs/architecture.md` : section `wolf/injector.rs` + date 2026-07-01
+- [x] CHANGELOG.md (Fixed)
+
+**Phase 1 : livrée — v2 (Honoka) ET v3 (Inko) vérifiés sur fixtures synthétiques ET sur les jeux réels.** Reste à commiter/merger.
+
+### Résolu par les fixtures fournies
+- [x] Les 2 tests `test_real_inko_*_round_trip` qui paniquaient (fixture Inko absente) passent maintenant
+      (fixtures présentes). Note portabilité : ils paniquent toujours (au lieu de skip) sur un checkout sans
+      fixtures — aligner sur `if !path.exists() { return; }` reste un petit nettoyage optionnel.
+
+---
+
 ## Complétées (session 2026-06-17/18)
 
 - [x] Wolf extractor skip filters : `X[`/`zz` events, `自動ｼｽﾃﾑ初期化` DB, `@N\n` tokenizer (317 tests)

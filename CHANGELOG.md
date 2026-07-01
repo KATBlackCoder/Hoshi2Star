@@ -12,6 +12,7 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - Add `isExporting` loading state to Export All toolbar button — button disabled with `Loader2` spinner during export, restored on success or error
 
 ### Fixed
+- Fix Wolf RPG Common Events translations silently dropped from the export ZIP — the injector had no `CommonEvent.dat` path and `export.rs` bucketed `CommonEvents/*` keys per event name (all mapping to one physical file); added `inject_common_events` (v2.x binary splice + v3.5 LZ4 parse/dump/recompress) plus a `"CommonEvents"` dispatch arm, and `injection_bucket()` now collapses every common event into the single `CommonEvent.dat` bucket so all translations survive
 - Fix font-size prefix being permanently written to DB (`persist_font_size`) — prefix is now applied **in-memory at export time only** (never touches `target_text` in the DB); segments in the editor no longer show `\f[N]`/`\FS[N]` prefixes after an export
 - Fix Export All font dialog shown for all engines — dialog now only appears for `wolf` and `mv_mz` projects; VX Ace and Bakin skip straight to export
 - Fix `scan_font_status` engine mismatch — scan now detects any prefix type (`\f[N]` or `\FS[N]`) regardless of project engine, so cross-engine leftovers (e.g. Wolf prefix on a MV/MZ project) are correctly counted and stripped
