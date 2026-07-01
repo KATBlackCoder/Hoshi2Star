@@ -307,7 +307,8 @@ pub async fn get_source_files(
 
 /// Return a paginated list of segments for a given source file.
 ///
-/// `page` is 0-indexed; `page_size` should be between 1 and 500.
+/// `page` is 0-indexed. The UI loads a file's segments in successive pages
+/// (2000 per call) until `total` is reached — see `SegmentGrid::loadSegments`.
 #[tauri::command]
 pub async fn get_segments(
     project_id: String,

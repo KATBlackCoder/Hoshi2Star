@@ -63,17 +63,38 @@ export function SegmentGrid({
   activeProjectIdRef.current = activeProjectId;
   activeFileIdRef.current = activeFileId;
 
+  // Monotonic sequence: a load started for a file the user has already left
+  // must not overwrite the segments of the newly opened file.
+  const loadSeqRef = useRef(0);
+
   const loadSegments = useCallback((projectId: string, fileId: string) => {
+    const seq = ++loadSeqRef.current;
     setIsLoading(true);
-    invoke<PaginatedSegments>("get_segments", {
-      projectId,
-      fileId,
-      page: 0,
-      pageSize: 5000,
-    })
-      .then((result) => setSegments(result.items))
-      .catch(() => setSegments([]))
-      .finally(() => setIsLoading(false));
+    void (async () => {
+      try {
+        // The backend is paginated and returns the real COUNT: fetch every
+        // page so files larger than one page are no longer silently truncated
+        // (footer and status counts then cover the whole file).
+        const pageSize = 2000;
+        let all: Segment[] = [];
+        for (let page = 0; ; page++) {
+          const result = await invoke<PaginatedSegments>("get_segments", {
+            projectId,
+            fileId,
+            page,
+            pageSize,
+          });
+          if (seq !== loadSeqRef.current) return; // stale load — file switched
+          all = all.concat(result.items);
+          if (all.length >= result.total || result.items.length === 0) break;
+        }
+        setSegments(all);
+      } catch {
+        if (seq === loadSeqRef.current) setSegments([]);
+      } finally {
+        if (seq === loadSeqRef.current) setIsLoading(false);
+      }
+    })();
   }, []);
 
   const reloadSourceFiles = useCallback(
@@ -110,6 +131,12 @@ export function SegmentGrid({
     setSearchQuery("");
     setRowSelection({});
   }, [activeFileId]);
+
+  // Also drop the selection when the visible subset changes: rows checked
+  // then hidden by a filter/search would otherwise stay silently selected.
+  useEffect(() => {
+    setRowSelection({});
+  }, [qaFilter, searchQuery]);
 
   const filteredSegments = useMemo(() => {
     let result = segments;
@@ -229,18 +256,24 @@ export function SegmentGrid({
 
   const handleSave = useCallback(
     async (id: string, text: string) => {
-      const updated = await invoke<Segment>("update_segment", {
-        id,
-        targetText: text,
-      });
-      setSegments((prev) =>
-        prev.map((s) => (s.id === updated.id ? updated : s)),
-      );
-      if (id === activeSegmentIdRef.current) {
-        setActiveSegment(id, updated.sourceText, updated.targetText);
+      try {
+        const updated = await invoke<Segment>("update_segment", {
+          id,
+          targetText: text,
+        });
+        setSegments((prev) =>
+          prev.map((s) => (s.id === updated.id ? updated : s)),
+        );
+        if (id === activeSegmentIdRef.current) {
+          setActiveSegment(id, updated.sourceText, updated.targetText);
+        }
+      } catch (err) {
+        // A failed save kept the row's old value — tell the user instead of
+        // rejecting silently (callers fire-and-forget this promise).
+        toast.error(t("segmentGrid.saveError", { error: String(err) }));
       }
     },
-    [setActiveSegment],
+    [setActiveSegment, t],
   );
 
   // Translate a single segment directly (no config modal — uses current providerConfig)
@@ -260,13 +293,11 @@ export function SegmentGrid({
     [segments],
   );
 
-  // Translate selected rows
+  // Translate selected rows — rowSelection is keyed by segment id (getRowId),
+  // so a selection can never designate a different segment after filtering.
   const selectedIds = useMemo(
-    () =>
-      Object.keys(rowSelection)
-        .map((idx) => filteredSegments[Number(idx)]?.id)
-        .filter(Boolean),
-    [rowSelection, filteredSegments],
+    () => Object.keys(rowSelection).filter((id) => rowSelection[id]),
+    [rowSelection],
   );
 
   function handleTranslateSelected() {
@@ -317,6 +348,7 @@ export function SegmentGrid({
     data: filteredSegments,
     columns,
     getCoreRowModel: getCoreRowModel(),
+    getRowId: (row) => row.id,
     enableRowSelection: true,
     state: { rowSelection },
     onRowSelectionChange: setRowSelection,

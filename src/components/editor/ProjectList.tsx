@@ -41,12 +41,15 @@ export function ProjectList() {
 
   useEffect(() => {
     if (projects.length === 0) return;
-    void Promise.all(
-      projects.map((p) =>
-        invoke<ProjectStats>("get_project_stats", { projectId: p.id }).then(
-          (stats) => setProjectStats((prev) => ({ ...prev, [p.id]: stats })),
-        ),
-      ),
+    // allSettled: one failing get_project_stats must not reject the whole
+    // batch and wipe the stats bars of every other card.
+    void Promise.allSettled(
+      projects.map(async (p) => {
+        const stats = await invoke<ProjectStats>("get_project_stats", {
+          projectId: p.id,
+        });
+        setProjectStats((prev) => ({ ...prev, [p.id]: stats }));
+      }),
     );
   }, [projects]);
 

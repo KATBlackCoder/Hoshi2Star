@@ -122,10 +122,16 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
 
   const handleExport = async () => {
     if (!activeProjectId) return;
-    const path = await save({
-      filters: [{ name: "HTML", extensions: ["html"] }],
-      defaultPath: "qa-report.html",
-    });
+    let path: string | null;
+    try {
+      path = await save({
+        filters: [{ name: "HTML", extensions: ["html"] }],
+        defaultPath: "qa-report.html",
+      });
+    } catch (e) {
+      toast.error(t("qaPanel.exportError", { error: String(e) }));
+      return;
+    }
     if (!path) return;
     setIsExporting(true);
     invoke("export_qa_report", {
