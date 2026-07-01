@@ -130,8 +130,11 @@ fn is_fullwidth(c: char) -> bool {
         | '\u{3040}'..='\u{309F}'
         // Katakana
         | '\u{30A0}'..='\u{30FF}'
-        // Full-width ASCII and half-width/full-width forms
-        | '\u{FF00}'..='\u{FFEF}'
+        // Halfwidth/Fullwidth Forms block — FULL-width sub-ranges only
+        // (East Asian Width = F). FF61–FF9F (half-width katakana/punctuation),
+        // FFA0–FFDF (half-width jamo) and FFE8–FFEE are half-width: 1 unit.
+        | '\u{FF00}'..='\u{FF60}'
+        | '\u{FFE0}'..='\u{FFE6}'
         // CJK Compatibility Ideographs
         | '\u{F900}'..='\u{FAFF}'
         // CJK Extension A
@@ -393,6 +396,17 @@ mod tests {
     fn test_measure_line_units_mixed() {
         // 'A'=1 + 'B'=1 + '日'=2 = 4
         assert_eq!(measure_line_units("AB日"), 4.0);
+    }
+
+    #[test]
+    fn test_measure_line_units_halfwidth_katakana() {
+        // U+FF61..=U+FF9F are HALF-width forms (East Asian Width = H):
+        // 1 unit each, despite living in the FF00 block.
+        assert_eq!(measure_line_units("ｱｲｳ"), 3.0);
+        // Half-width punctuation (｡ U+FF61, ･ U+FF65) too.
+        assert_eq!(measure_line_units("｡･"), 2.0);
+        // Full-width forms of the same block stay 2 units (Ａ U+FF21, ￥ U+FFE5).
+        assert_eq!(measure_line_units("Ａ￥"), 4.0);
     }
 
     // --- check_line_length ---

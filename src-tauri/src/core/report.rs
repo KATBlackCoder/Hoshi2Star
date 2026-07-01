@@ -1,7 +1,9 @@
 //! QA report generation — collect per-segment QA details and render to HTML.
 //!
 //! Errors are recalculated at export time (not stored in DB) so the report
-//! is always fresh. Glossary terms are not applied (indicative report only).
+//! is always fresh. Glossary terms are supplied by the caller
+//! (`export_qa_report` loads the project glossary) so `GlossaryMismatch`
+//! errors appear in the report.
 
 use crate::core::qa::{self, QaError};
 use crate::utils::text::escape_xml;
@@ -28,14 +30,17 @@ pub struct QaSegmentDetail {
 // DB collection
 // ---------------------------------------------------------------------------
 
-/// Fetch all translated segments for `project_id`, recalculate QA errors,
-/// and return only those with `score < 100`.
+/// Fetch all translated segments for `project_id`, recalculate QA errors
+/// (including glossary checks against `terms` as `(source, expected_target)`
+/// pairs), and return `(total_checked, details)` where `total_checked` is the
+/// number of segments examined and `details` only those with `score < 100`.
 ///
 /// Uses `ROW_NUMBER()` (SQLite ≥ 3.25 — bundled libsqlite3-sys 0.30.1 → 3.46.x).
 pub async fn collect_qa_details(
     pool: &SqlitePool,
     project_id: &str,
-) -> Result<Vec<QaSegmentDetail>, sqlx::Error> {
+    terms: &[(String, String)],
+) -> Result<(usize, Vec<QaSegmentDetail>), sqlx::Error> {
     #[derive(sqlx::FromRow)]
     struct Row {
         segment_id: String,
@@ -66,9 +71,10 @@ pub async fn collect_qa_details(
     .fetch_all(pool)
     .await?;
 
+    let total_checked = rows.len();
     let mut details = Vec::new();
     for row in rows {
-        let result = qa::check(&row.source_text, &row.target_text, &[], &row.engine);
+        let result = qa::check(&row.source_text, &row.target_text, terms, &row.engine);
         if result.score < 100 {
             details.push(QaSegmentDetail {
                 segment_id: row.segment_id,
@@ -81,7 +87,7 @@ pub async fn collect_qa_details(
             });
         }
     }
-    Ok(details)
+    Ok((total_checked, details))
 }
 
 // ---------------------------------------------------------------------------
@@ -218,9 +224,16 @@ fn unix_timestamp_to_date_str() -> String {
 
 /// Generate a standalone HTML QA report.
 ///
+/// `total_checked` is the number of segments examined (all translated
+/// segments), not just the ones with errors — see [`collect_qa_details`].
 /// `lang` is "en" or "fr". The output is a self-contained file with inline CSS
 /// and JS — no external resources, no server required.
-pub fn generate_qa_html(project_title: &str, details: &[QaSegmentDetail], lang: &str) -> String {
+pub fn generate_qa_html(
+    project_title: &str,
+    details: &[QaSegmentDetail],
+    total_checked: usize,
+    lang: &str,
+) -> String {
     use std::collections::HashSet;
     use std::fmt::Write as _;
 
@@ -229,7 +242,6 @@ pub fn generate_qa_html(project_title: &str, details: &[QaSegmentDetail], lang: 
 
     // Statistics
     let total_with_errors = details.len();
-    let total_checked = details.len(); // only segments with errors are passed in
 
     let mut count_missing_ph: usize = 0;
     let mut count_line_long: usize = 0;
@@ -593,7 +605,7 @@ mod tests {
             ),
         ];
 
-        let html = generate_qa_html("MyGame", &details, "en");
+        let html = generate_qa_html("MyGame", &details, details.len(), "en");
 
         assert!(html.contains("<html"), "missing <html");
         assert!(html.contains("<table"), "missing <table");
@@ -612,7 +624,7 @@ mod tests {
 
     #[test]
     fn test_generate_qa_html_empty_details() {
-        let html = generate_qa_html("EmptyProject", &[], "en");
+        let html = generate_qa_html("EmptyProject", &[], 0, "en");
         assert!(html.contains("All segments pass QA"));
         assert!(
             !html.contains("<table"),
@@ -630,9 +642,88 @@ mod tests {
             85,
             vec![QaError::BomDetected],
         )];
-        let html = generate_qa_html("MonJeu", &details, "fr");
+        let html = generate_qa_html("MonJeu", &details, details.len(), "fr");
         assert!(html.contains("Rapport QA"), "missing FR title");
         assert!(html.contains("Généré le"), "missing FR generated label");
         assert!(html.contains("BOM UTF-8"), "missing FR bom label");
+    }
+
+    // --- Phase 4 (audit 2026-07-01): glossary wiring + real denominator ---
+
+    /// Seed a minimal project with two translated segments:
+    /// - s1 violates the glossary term ハルカ→Haruka (target omits "Haruka")
+    /// - s2 is clean
+    async fn seed_project(pool: &sqlx::SqlitePool) {
+        sqlx::query(
+            "INSERT INTO projects (id, name, engine, game_path) VALUES ('p1','T','mv_mz','/tmp')",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO source_files (id, project_id, file_name, file_path, file_type) \
+             VALUES ('f1','p1','Map001.json','/tmp/Map001.json','map')",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO segments (id, source_file_id, json_key, source_text, target_text, status) \
+             VALUES ('s1','f1','/1/t','ハルカはどこ？','Where is she?','translated')",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO segments (id, source_file_id, json_key, source_text, target_text, status) \
+             VALUES ('s2','f1','/2/t','こんにちは','Hello','translated')",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_collect_qa_details_applies_glossary_terms() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let pool = crate::db::pool::init(tmp.path().to_str().unwrap())
+            .await
+            .unwrap();
+        seed_project(&pool).await;
+
+        let terms = vec![("ハルカ".to_string(), "Haruka".to_string())];
+        let (total_checked, details) = collect_qa_details(&pool, "p1", &terms).await.unwrap();
+
+        // Both translated segments were examined, only s1 has an error.
+        assert_eq!(total_checked, 2);
+        assert_eq!(details.len(), 1);
+        assert_eq!(details[0].segment_id, "s1");
+
+        // A segment whose source contains a glossary term but whose target
+        // lacks the expected translation must surface a GlossaryMismatch.
+        assert!(
+            details.iter().any(|d| d
+                .errors
+                .iter()
+                .any(|e| matches!(e, QaError::GlossaryMismatch { .. }))),
+            "expected a GlossaryMismatch for s1 (ハルカ → Haruka missing), got: {details:?}"
+        );
+    }
+
+    #[test]
+    fn test_generate_qa_html_denominator_uses_total_checked() {
+        let details = vec![make_detail(
+            "Map001.json",
+            1,
+            "source",
+            "target",
+            85,
+            vec![QaError::BomDetected],
+        )];
+        let html = generate_qa_html("MyGame", &details, 10, "en");
+        assert!(
+            html.contains("1 segments with errors / 10 checked"),
+            "denominator must be the real checked total, not details.len()"
+        );
     }
 }

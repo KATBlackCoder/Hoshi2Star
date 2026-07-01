@@ -5,7 +5,56 @@
 > - Phase 1 : ✅ **terminée & mergée sur `main`** (2026-07-01).
 > - Phase 2 : ✅ **terminée & mergée sur `main`** (2026-07-01).
 > - Phase 3 : ✅ **terminée & mergée sur `main`** (2026-07-01).
-> - 👉 **PROCHAINE : Phase 4 — 🟠 correctness du moteur QA.**
+> - Phase 4 : ✅ **terminée & mergée sur `main`** (2026-07-01).
+> - 👉 **PROCHAINE : Phase 5 — 🟡 cohérence #8 (Option 2) + alignements doc/valeurs.**
+
+## ✅ Phase 4 — Correctness du moteur QA (P2, faux résultats) — TERMINÉE
+
+> Plan de `docs/audit-remediation-plan-2026-07-01.md` §Phase 4 + complément §1.2/§1.3.
+> **Vérifié sur le code réel (2026-07-01)** : les 3 défauts confirmés —
+> `qa.rs:134` (`'\u{FF00}'..='\u{FFEF}'` entier compté largeur 2),
+> `report.rs:231-232` (`total_checked = details.len()`, le commentaire l'avoue),
+> `report.rs:71` (`qa::check(..., &[], ...)`, doc de module :4 « Glossary terms are
+> not applied »). `export_qa_report` vit dans `commands/export.rs:366` (pas qa.rs).
+> Branche : `fix/qa-correctness`.
+
+### Étape 1 — `qa.rs` : katakana demi-largeur comptés pleine largeur
+- [x] Test rouge prouvé : `measure_line_units("ｱｲｳ")` retournait 6.0 (attendu 3.0)
+- [x] Fix : `'\u{FF00}'..='\u{FFEF}'` → sous-plages EAW **F** réelles
+      (`FF00–FF60` + `FFE0–FFE6`) ; gardes `｡･` == 2.0 et `Ａ￥` == 4.0
+
+### Étape 2 — `report.rs` : dénominateur « X / Y vérifiés » toujours X == Y
+- [x] `collect_qa_details` → `(total_checked, details)` (total = lignes avant
+      filtrage `score < 100`)
+- [x] `generate_qa_html(…, total_checked, lang)` — plus de `details.len()`
+- [x] `export_qa_report` propage le tuple
+- [x] Test : « 1 segments with errors / 10 checked » avec 1 détail + total 10
+
+### Étape 3 — `report.rs:71` : check glossaire mort — Option A (câblé)
+- [x] `collect_qa_details(pool, project_id, terms)` — termes injectés
+- [x] `export_qa_report` charge `glossary::list_for_project(…, "ja-en")` →
+      map `(source_text, target_text)`
+- [x] Doc de module `report.rs:1-6` mise à jour
+- [x] Test rouge intégration prouvé (pool SQLite via `db::pool::init` + tempfile,
+      pattern déjà présent dans pool.rs — pas de nouvelle infra nécessaire) :
+      2 segments traduits, s1 viole ハルカ→Haruka → AVANT fix : `got: []` ;
+      APRÈS : `GlossaryMismatch` sur s1 + `total_checked == 2` + `details.len() == 1`
+
+### Hors scope (loggé → Backlog)
+- `qa_check_segment` (`commands/qa.rs:37`) et `update_segment`
+  (`commands/project.rs:388`) passent toujours `&[]` → le QA live ne détecte pas
+  les GlossaryMismatch (cohérent : le panneau live n'affiche pas de stat glossaire).
+
+### Vérification
+- [x] Tests rouges prouvés avant fix (kana 6.0≠3.0 · glossaire `got: []`)
+- [x] Gate : `pnpm typecheck` ✅ · `cargo clippy -- -D warnings` ✅ ·
+      `cargo test` = **366 pass / 0 fail / 4 ignored** (+3)
+- [x] docs/architecture.md : non touché (signatures internes core/, aucun type
+      IPC ni commande modifiés)
+- [x] CHANGELOG.md (Fixed) + docs/journal/ + tasks/todo.md cochés
+
+**Phase 4 : livrée — largeur kana correcte, dénominateur réel, GlossaryMismatch
+vivant dans le rapport (premier test d'intégration DB du module report).**
 
 ## ✅ Phase 3 — Robustesse des promesses UI (P1, silencieux) — TERMINÉE
 
@@ -330,6 +379,8 @@ Quand on ajoutera FR : créer `translate/fr.toml` + bras `"fr"` dans le `match`.
 - [ ] 🐛 TM : doublons à chaque re-sauvegarde (`tm.rs::insert` REPLACE inopérant,
       index non-UNIQUE) — découvert Phase 3, cf. section Phase 3
 - [ ] 🐛 `pnpm lint` cassé : migrer `.eslintrc.*` → `eslint.config.js` (ESLint 10)
+- [ ] QA live : câbler les termes glossaire dans `qa_check_segment` +
+      `update_segment` (aujourd'hui `&[]` — le rapport les applique depuis Phase 4)
 - [ ] Anneaux de progression par fichier dans FileTree (FileTree rings) — `translated_count`/
       `total_count` maintenant disponibles; rend la tâche dormante Tenmon réalisable
 - [ ] Documentation workflow WolfX (pré-étape UberWolf) dans `docs/engines.md` +

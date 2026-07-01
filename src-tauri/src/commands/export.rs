@@ -8,7 +8,7 @@ use serde::Serialize;
 use std::io::Write as _;
 
 use crate::{
-    core::{report, tm},
+    core::{glossary, report, tm},
     domain::types::SourceFile,
     engines::{
         detector::guess_wolf_version_from_structure,
@@ -375,11 +375,20 @@ pub async fn export_qa_report(
         .await
         .map_err(|e| e.to_string())?;
 
-    let details = report::collect_qa_details(&state.db, &project_id)
+    // Glossary terms make GlossaryMismatch live in the report (stat, filter
+    // and badge already exist in the generated HTML).
+    let terms: Vec<(String, String)> = glossary::list_for_project(&state.db, &project_id, "ja-en")
+        .await
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|t| (t.source_text, t.target_text))
+        .collect();
+
+    let (total_checked, details) = report::collect_qa_details(&state.db, &project_id, &terms)
         .await
         .map_err(|e| e.to_string())?;
 
-    let html = report::generate_qa_html(&project_title, &details, &lang);
+    let html = report::generate_qa_html(&project_title, &details, total_checked, &lang);
 
     tokio::fs::write(&output_path, html.as_bytes())
         .await
