@@ -12,6 +12,9 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - Add `isExporting` loading state to Export All toolbar button — button disabled with `Loader2` spinner during export, restored on success or error
 
 ### Fixed
+- Fix half-width katakana counted as full-width in QA line measurement — `is_fullwidth` mapped the whole U+FF00–FFEF block to 2 units; now only the real full-width sub-ranges (U+FF00–FF60, U+FFE0–FFE6) count as 2, so half-width kana text no longer triggers false `LineTooLong` errors
+- Fix QA report "X segments with errors / Y checked" always showing X == Y — `collect_qa_details` now returns the real number of segments examined and the HTML header uses it as denominator
+- Fix dead glossary check in the QA report — `export_qa_report` now loads the project glossary and passes it to the QA engine, so `GlossaryMismatch` errors actually appear in the report (its stat, filter and badge already existed but could never fire)
 - Fix SegmentGrid silently truncating files at 5000 segments — `loadSegments` now fetches every page (2000 per call) until the backend's real `total` is reached, with a stale-load guard so switching files mid-load cannot mix results; footer and status counts now cover the whole file
 - Fix batch selection translating the wrong segments after filtering — row selection is now keyed by segment id (`getRowId`) instead of row index, and is reset whenever the QA filter or search query changes (checked-then-hidden rows can no longer stay silently selected)
 - Fix unhandled promise rejections in the editor UI — a failing `get_project_stats` no longer wipes every project card's stats bar (`Promise.allSettled`), a failed segment save now shows an error toast (new `segmentGrid.saveError` i18n key), and the QA/TM export dialogs guard the `save()` dialog call
