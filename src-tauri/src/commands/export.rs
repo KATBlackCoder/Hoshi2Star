@@ -12,6 +12,7 @@ use crate::{
     domain::types::SourceFile,
     engines::{
         detector::guess_wolf_version_from_structure,
+        filter::{classify_file_type, FileClass},
         mv_mz::injector,
         vx_ace::injector as vx_injector,
         wolf::injector::{
@@ -226,7 +227,9 @@ pub async fn export_project(
 
     let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
 
-    let has_wolf = files.iter().any(|f| f.file_type.starts_with("wolf_"));
+    let has_wolf = files
+        .iter()
+        .any(|f| matches!(classify_file_type(&f.file_type), FileClass::Wolf));
     if has_wolf {
         let wolf_entries = collect_wolf_zip_entries(
             &project_id,
@@ -269,16 +272,21 @@ pub async fn export_project(
                 .map(|(k, v)| (k.as_str(), v.as_str()))
                 .collect();
 
-            let bytes = if file.file_type.starts_with("vx_") {
-                let raw = std::fs::read(&file.file_path)
-                    .map_err(|e| format!("read {}: {e}", file.file_name))?;
-                vx_injector::inject_and_serialize(&raw, &pairs)
-                    .map_err(|e| format!("inject {}: {e}", file.file_name))?
-            } else {
-                let raw = std::fs::read_to_string(&file.file_path)
-                    .map_err(|e| format!("read {}: {e}", file.file_name))?;
-                injector::inject_to_bytes(&raw, &pairs)
-                    .map_err(|e| format!("inject {}: {e}", file.file_name))?
+            // A project is single-engine, so the wolf branch above already
+            // handled every wolf file; here it is VX Ace vs MV/MZ JSON.
+            let bytes = match classify_file_type(&file.file_type) {
+                FileClass::VxAce => {
+                    let raw = std::fs::read(&file.file_path)
+                        .map_err(|e| format!("read {}: {e}", file.file_name))?;
+                    vx_injector::inject_and_serialize(&raw, &pairs)
+                        .map_err(|e| format!("inject {}: {e}", file.file_name))?
+                }
+                _ => {
+                    let raw = std::fs::read_to_string(&file.file_path)
+                        .map_err(|e| format!("read {}: {e}", file.file_name))?;
+                    injector::inject_to_bytes(&raw, &pairs)
+                        .map_err(|e| format!("inject {}: {e}", file.file_name))?
+                }
             };
 
             // Relative path inside the zip mirrors the on-disk layout.
@@ -309,7 +317,7 @@ async fn collect_wolf_zip_entries(
     let mut translations_by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
 
     for file in files {
-        if !file.file_type.starts_with("wolf_") {
+        if !matches!(classify_file_type(&file.file_type), FileClass::Wolf) {
             continue;
         }
         let segs: Vec<(String, String)> = sqlx::query_as::<_, (String, String)>(
@@ -494,50 +502,56 @@ pub async fn debug_inject_file(
         }
     }
 
-    // Dispatch by engine.
-    if file.file_type.starts_with("wolf_") {
-        let mut translations_by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
-        for (key, text) in segs {
-            if let Some(file_key) = injection_bucket(&key) {
-                translations_by_file
-                    .entry(file_key)
-                    .or_default()
-                    .push(WolfTranslation { key, text });
+    // Dispatch by engine class.
+    match classify_file_type(&file.file_type) {
+        FileClass::Wolf => {
+            let mut translations_by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
+            for (key, text) in segs {
+                if let Some(file_key) = injection_bucket(&key) {
+                    translations_by_file
+                        .entry(file_key)
+                        .or_default()
+                        .push(WolfTranslation { key, text });
+                }
             }
+            let game_dir = Path::new(&game_path);
+            let version = crate::engines::detector::guess_wolf_version_from_structure(game_dir);
+            let results = wolf_inject_all(game_dir, &translations_by_file, &version)
+                .await
+                .map_err(|e| e.to_string())?;
+            let out_path = results
+                .into_iter()
+                .next()
+                .map(|r| r.file_path)
+                .unwrap_or_else(|| PathBuf::from(&file.file_path));
+            Ok(out_path.to_string_lossy().to_string())
         }
-        let game_dir = Path::new(&game_path);
-        let version = crate::engines::detector::guess_wolf_version_from_structure(game_dir);
-        let results = wolf_inject_all(game_dir, &translations_by_file, &version)
-            .await
-            .map_err(|e| e.to_string())?;
-        let out_path = results
-            .into_iter()
-            .next()
-            .map(|r| r.file_path)
-            .unwrap_or_else(|| PathBuf::from(&file.file_path));
-        Ok(out_path.to_string_lossy().to_string())
-    } else if file.file_type.starts_with("vx_") {
-        let pairs: Vec<(&str, &str)> = segs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-        let bytes =
-            std::fs::read(&file.file_path).map_err(|e| format!("read {}: {e}", file.file_name))?;
-        let out = vx_injector::inject_and_serialize(&bytes, &pairs)
-            .map_err(|e| format!("inject {}: {e}", file.file_name))?;
-        std::fs::write(&file.file_path, out)
-            .map_err(|e| format!("write {}: {e}", file.file_name))?;
-        Ok(file.file_path.clone())
-    } else {
-        let pairs: Vec<(&str, &str)> = segs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-        let raw = std::fs::read_to_string(&file.file_path)
-            .map_err(|e| format!("read {}: {e}", file.file_name))?;
-        let mut json: serde_json::Value =
-            serde_json::from_str(&raw).map_err(|e| format!("parse {}: {e}", file.file_name))?;
-        injector::inject(&mut json, &pairs)
-            .map_err(|e| format!("inject {}: {e}", file.file_name))?;
-        let out = serde_json::to_string(&json)
-            .map_err(|e| format!("serialise {}: {e}", file.file_name))?;
-        std::fs::write(&file.file_path, out)
-            .map_err(|e| format!("write {}: {e}", file.file_name))?;
-        Ok(file.file_path.clone())
+        FileClass::VxAce => {
+            let pairs: Vec<(&str, &str)> =
+                segs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+            let bytes = std::fs::read(&file.file_path)
+                .map_err(|e| format!("read {}: {e}", file.file_name))?;
+            let out = vx_injector::inject_and_serialize(&bytes, &pairs)
+                .map_err(|e| format!("inject {}: {e}", file.file_name))?;
+            std::fs::write(&file.file_path, out)
+                .map_err(|e| format!("write {}: {e}", file.file_name))?;
+            Ok(file.file_path.clone())
+        }
+        FileClass::Json => {
+            let pairs: Vec<(&str, &str)> =
+                segs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+            let raw = std::fs::read_to_string(&file.file_path)
+                .map_err(|e| format!("read {}: {e}", file.file_name))?;
+            let mut json: serde_json::Value =
+                serde_json::from_str(&raw).map_err(|e| format!("parse {}: {e}", file.file_name))?;
+            injector::inject(&mut json, &pairs)
+                .map_err(|e| format!("inject {}: {e}", file.file_name))?;
+            let out = serde_json::to_string(&json)
+                .map_err(|e| format!("serialise {}: {e}", file.file_name))?;
+            std::fs::write(&file.file_path, out)
+                .map_err(|e| format!("write {}: {e}", file.file_name))?;
+            Ok(file.file_path.clone())
+        }
     }
 }
 

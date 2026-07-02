@@ -22,6 +22,30 @@ pub fn is_map_file(file_name: &str, ext: &str) -> bool {
             .is_ok()
 }
 
+/// Broad engine class of a `source_files.file_type`, used to route export and
+/// injection without scattering `starts_with("wolf_")` / `starts_with("vx_")`
+/// checks across the export layer. Adding an engine adds one variant here plus
+/// one arm at each routing `match`.
+pub enum FileClass {
+    /// Wolf RPG binary (`wolf_map`, `wolf_database`, `wolf_common_events`).
+    Wolf,
+    /// RPG Maker VX Ace marshalled data (`vx_*`).
+    VxAce,
+    /// RPG Maker MV/MZ JSON (`map`, `actors`, … — the default).
+    Json,
+}
+
+/// Classify a `source_files.file_type` into its [`FileClass`].
+pub fn classify_file_type(file_type: &str) -> FileClass {
+    if file_type.starts_with("wolf_") {
+        FileClass::Wolf
+    } else if file_type.starts_with("vx_") {
+        FileClass::VxAce
+    } else {
+        FileClass::Json
+    }
+}
+
 /// Returns `true` if `text` consists entirely of ASCII or fullwidth digits.
 pub fn is_pure_number(text: &str) -> bool {
     let t = text.trim();

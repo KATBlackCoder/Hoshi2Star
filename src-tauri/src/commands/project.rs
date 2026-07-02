@@ -9,10 +9,7 @@ use crate::{
     core::{manifest, qa, tm},
     domain::types::*,
     engines::{
-        detector::{
-            detect_engine, find_data_dir, find_vx_ace_data_dir, guess_wolf_version_from_structure,
-            Engine,
-        },
+        detector::{detect_engine, guess_wolf_version_from_structure, Engine},
         filter,
         mv_mz::extractor,
         vx_ace::extractor as vx_extractor,
@@ -77,29 +74,13 @@ pub async fn open_project(
 
     // 1. Detect engine
     let engine = detect_engine(game_dir).map_err(|e| e.to_string())?;
-    let engine_str = match engine {
-        Engine::MvMz => "mv_mz",
-        Engine::VxAce => "vx_ace",
-        Engine::Wolf => "wolf",
-    };
+    let engine_str = engine.db_str();
 
-    // 2. Locate data directory (MV/MZ: data/ or www/data/ — VX Ace: Data/ or data/)
-    //    Wolf uses game_dir directly (extract_all_wolf does its own data/ walk).
-    let data_dir = match engine {
-        Engine::VxAce => find_vx_ace_data_dir(game_dir)
-            .ok_or_else(|| "Cannot find Data/ directory in VX Ace game folder".to_string())?,
-        Engine::MvMz => find_data_dir(game_dir)
-            .ok_or_else(|| "Cannot find data directory in game folder".to_string())?,
-        Engine::Wolf => game_dir.to_path_buf(),
-    };
+    // 2. Locate data directory (Wolf uses the game root directly).
+    let data_dir = engine.data_dir(game_dir)?;
 
-    // 3. Read game title (MV/MZ: System.json — VX Ace: System.rvdata2 — Wolf: Game.ini)
-    let game_title = match engine {
-        Engine::MvMz => read_game_title(&data_dir.join("System.json")),
-        Engine::VxAce => read_vx_ace_game_title(&data_dir.join("System.rvdata2")),
-        Engine::Wolf => read_wolf_game_title(game_dir),
-    }
-    .unwrap_or_else(|| {
+    // 3. Read game title (falls back to the folder name when absent).
+    let game_title = engine.game_title(game_dir, &data_dir).unwrap_or_else(|| {
         game_dir
             .file_name()
             .and_then(|n| n.to_str())
@@ -126,7 +107,7 @@ pub async fn open_project(
     let mut file_count: u32 = 0;
     let mut segment_count: u32 = 0;
 
-    for file in extract_project(&engine, game_dir)? {
+    for file in extract_project(&engine, game_dir, &data_dir)? {
         let file_id = uuid::Uuid::new_v4().to_string();
         insert_source_file(
             &mut tx,
@@ -473,14 +454,11 @@ pub async fn debug_dump_segments(game_path: String) -> Result<String, String> {
 
     let game_dir = Path::new(&game_path);
     let engine = detect_engine(game_dir).map_err(|e| e.to_string())?;
-    let engine_label = match engine {
-        Engine::MvMz => "mv_mz",
-        Engine::VxAce => "vx_ace",
-        Engine::Wolf => "wolf",
-    };
+    let engine_label = engine.db_str();
+    let data_dir = engine.data_dir(game_dir)?;
 
     // Shared extraction (identical to open_project's, minus persistence).
-    let dump_files: Vec<DebugFileEntry> = extract_project(&engine, game_dir)?
+    let dump_files: Vec<DebugFileEntry> = extract_project(&engine, game_dir, &data_dir)?
         .into_iter()
         .map(|file| {
             let segments: Vec<DebugSegment> = file
@@ -528,54 +506,6 @@ pub async fn debug_dump_segments(game_path: String) -> Result<String, String> {
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
-
-/// Read `GameTitle` from `Game.ini` in a Wolf RPG game directory.
-///
-/// `Game.ini` uses Shift-JIS encoding for v2 games. We read as bytes and
-/// attempt Shift-JIS decoding; falls back to UTF-8 then lossy on failure.
-/// Returns `None` if the file is absent or the key is not found.
-fn read_wolf_game_title(game_dir: &Path) -> Option<String> {
-    let ini_path = game_dir.join("Game.ini");
-    let bytes = std::fs::read(&ini_path).ok()?;
-
-    // Try Shift-JIS first (most Wolf v2 games), then UTF-8, then lossy.
-    let content = {
-        use encoding_rs::SHIFT_JIS;
-        let (decoded, _, had_errors) = SHIFT_JIS.decode(&bytes);
-        if !had_errors {
-            decoded.into_owned()
-        } else {
-            String::from_utf8(bytes.clone())
-                .unwrap_or_else(|_| String::from_utf8_lossy(&bytes).into_owned())
-        }
-    };
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("GameTitle=") {
-            let title = rest.trim().to_string();
-            if !title.is_empty() {
-                return Some(title);
-            }
-        }
-    }
-    None
-}
-
-/// Read `gameTitle` from a `System.json` path (MV/MZ).
-fn read_game_title(system_json_path: &Path) -> Option<String> {
-    let content = std::fs::read_to_string(system_json_path).ok()?;
-    let v: serde_json::Value = serde_json::from_str(&content).ok()?;
-    v.get("gameTitle")?.as_str().map(|s| s.to_string())
-}
-
-/// Read `game_title` from a `System.rvdata2` path (VX Ace, snake_case field).
-fn read_vx_ace_game_title(system_rvdata2_path: &Path) -> Option<String> {
-    let bytes = std::fs::read(system_rvdata2_path).ok()?;
-    let mv: marshal_rs::Value = marshal_rs::load_utf8(&bytes, None).ok()?;
-    let json: serde_json::Value = mv.into();
-    json.get("game_title")?.as_str().map(|s| s.to_string())
-}
 
 /// Collect all relevant `.rvdata2` files from a VX Ace data directory.
 ///
@@ -756,16 +686,18 @@ struct ExtractedFile {
 /// Per-file order is preserved (MV/VX sorted by name inside the `collect_*`
 /// helpers; Wolf in extractor order) and per-segment order is extractor order —
 /// `get_segments`' `ORDER BY rowid` relies on this insertion order.
-fn extract_project(engine: &Engine, game_dir: &Path) -> Result<Vec<ExtractedFile>, String> {
+fn extract_project(
+    engine: &Engine,
+    game_dir: &Path,
+    data_dir: &Path,
+) -> Result<Vec<ExtractedFile>, String> {
     use crate::engines::wolf::extractor::WolfSegmentKind;
 
     let mut files = Vec::new();
     match engine {
         Engine::MvMz => {
-            let data_dir = find_data_dir(game_dir)
-                .ok_or_else(|| "Cannot find data directory in game folder".to_string())?;
             for (file_name, file_path, file_type, json_value) in
-                collect_json_files(&data_dir).map_err(|e| e.to_string())?
+                collect_json_files(data_dir).map_err(|e| e.to_string())?
             {
                 let segments = dispatch_extract(&file_name, &json_value)
                     .into_iter()
@@ -784,10 +716,8 @@ fn extract_project(engine: &Engine, game_dir: &Path) -> Result<Vec<ExtractedFile
             }
         }
         Engine::VxAce => {
-            let data_dir = find_vx_ace_data_dir(game_dir)
-                .ok_or_else(|| "Cannot find Data/ directory in VX Ace game folder".to_string())?;
             for (file_name, file_path, file_type, bytes) in
-                collect_rvdata2_files(&data_dir).map_err(|e| e.to_string())?
+                collect_rvdata2_files(data_dir).map_err(|e| e.to_string())?
             {
                 let segments = vx_extractor::extract_from_bytes(&file_name, &bytes)
                     .into_iter()
