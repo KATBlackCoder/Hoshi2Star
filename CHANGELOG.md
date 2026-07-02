@@ -5,6 +5,11 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+## [0.4.5] — 2026-07-02
+
+### Changed
+- Bump CI release actions to their Node 24 majors (`actions/checkout@v7`, `actions/setup-node@v6`) to clear the GitHub Actions Node 20 deprecation warning; this release also serves as the first end-to-end validation of the in-app auto-updater (0.4.4 → 0.4.5)
+
 ## [0.4.4] — 2026-07-02
 
 ### Added
@@ -338,6 +343,7 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - TanStack Query for async Tauri invoke() calls
 - GitHub Actions CI/CD for Linux + Windows builds
 
+[0.4.5]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.5
 [0.4.4]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.4
 [0.4.3]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.3
 [0.4.2]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.2
