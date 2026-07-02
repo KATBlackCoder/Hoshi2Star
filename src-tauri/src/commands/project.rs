@@ -288,21 +288,33 @@ pub async fn get_source_files(
     project_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<SourceFile>, String> {
+    fetch_source_files(&state.db, &project_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Per-file counters: `translated_count` counts `status = 'translated'`
+/// strictly (a `needs_review` segment has a target but is NOT done), and
+/// `needs_review_count` exposes the remaining review work per file.
+async fn fetch_source_files(
+    pool: &sqlx::SqlitePool,
+    project_id: &str,
+) -> Result<Vec<SourceFile>, sqlx::Error> {
     sqlx::query_as::<_, SourceFile>(
         "SELECT sf.id, sf.project_id, sf.file_name, sf.file_path, sf.file_type, \
                 sf.translation_secs, \
                 COUNT(s.id) as total_count, \
-                SUM(CASE WHEN s.target_text != '' THEN 1 ELSE 0 END) as translated_count \
+                SUM(CASE WHEN s.status = 'translated' THEN 1 ELSE 0 END) as translated_count, \
+                SUM(CASE WHEN s.status = 'needs_review' THEN 1 ELSE 0 END) as needs_review_count \
          FROM source_files sf \
          LEFT JOIN segments s ON s.source_file_id = sf.id \
          WHERE sf.project_id = ? \
          GROUP BY sf.id \
          ORDER BY sf.file_name",
     )
-    .bind(&project_id)
-    .fetch_all(&state.db)
+    .bind(project_id)
+    .fetch_all(pool)
     .await
-    .map_err(|e| e.to_string())
 }
 
 /// Return a paginated list of segments for a given source file.
@@ -458,9 +470,26 @@ pub async fn get_project_stats(
     project_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<ProjectStats, String> {
-    let (file_count, total_segments, untranslated_count, translated_count, needs_review_count) =
-        sqlx::query_as::<_, (i64, i64, i64, i64, i64)>(
-            "SELECT \
+    fetch_project_stats(&state.db, &project_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Project-wide counters. All four statuses are counted so that
+/// `untranslated + translated + needs_review + reviewed == total_segments`.
+async fn fetch_project_stats(
+    pool: &sqlx::SqlitePool,
+    project_id: &str,
+) -> Result<ProjectStats, sqlx::Error> {
+    let (
+        file_count,
+        total_segments,
+        untranslated_count,
+        translated_count,
+        needs_review_count,
+        reviewed_count,
+    ) = sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64)>(
+        "SELECT \
                 (SELECT COUNT(*) FROM source_files WHERE project_id = ?1), \
                 (SELECT COUNT(*) FROM segments s \
                    JOIN source_files sf ON s.source_file_id = sf.id \
@@ -473,12 +502,14 @@ pub async fn get_project_stats(
                    WHERE sf.project_id = ?1 AND s.status = 'translated'), \
                 (SELECT COUNT(*) FROM segments s \
                    JOIN source_files sf ON s.source_file_id = sf.id \
-                   WHERE sf.project_id = ?1 AND s.status = 'needs_review')",
-        )
-        .bind(&project_id)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| e.to_string())?;
+                   WHERE sf.project_id = ?1 AND s.status = 'needs_review'), \
+                (SELECT COUNT(*) FROM segments s \
+                   JOIN source_files sf ON s.source_file_id = sf.id \
+                   WHERE sf.project_id = ?1 AND s.status = 'reviewed')",
+    )
+    .bind(project_id)
+    .fetch_one(pool)
+    .await?;
 
     Ok(ProjectStats {
         file_count,
@@ -486,6 +517,7 @@ pub async fn get_project_stats(
         untranslated_count,
         translated_count,
         needs_review_count,
+        reviewed_count,
     })
 }
 
@@ -916,6 +948,80 @@ fn dispatch_extract(file_name: &str, json: &serde_json::Value) -> Vec<extractor:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- Phase 5 (audit 2026-07-01): counter semantics, one segment per status ---
+
+    /// Seed one project / one file / four segments, one per status.
+    /// Every segment has a NON-empty target so the strict counters cannot be
+    /// satisfied by the old `target_text != ''` definition.
+    async fn seed_one_per_status(pool: &sqlx::SqlitePool) {
+        sqlx::query(
+            "INSERT INTO projects (id, name, engine, game_path) VALUES ('p1','T','mv_mz','/tmp')",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO source_files (id, project_id, file_name, file_path, file_type) \
+             VALUES ('f1','p1','Map001.json','/tmp/Map001.json','map')",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        for (id, status) in [
+            ("s1", "untranslated"),
+            ("s2", "translated"),
+            ("s3", "needs_review"),
+            ("s4", "reviewed"),
+        ] {
+            sqlx::query(
+                "INSERT INTO segments (id, source_file_id, json_key, source_text, target_text, status) \
+                 VALUES (?, 'f1', ?, 'ソース', 'draft', ?)",
+            )
+            .bind(id)
+            .bind(format!("/{id}"))
+            .bind(status)
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_counter_semantics_one_segment_per_status() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let pool = crate::db::pool::init(tmp.path().to_str().unwrap())
+            .await
+            .unwrap();
+        seed_one_per_status(&pool).await;
+
+        // Per-file: translated_count is STRICT (status = 'translated'), not
+        // "any non-empty target"; needs_review work is exposed separately.
+        let files = fetch_source_files(&pool, "p1").await.unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].total_count, 4);
+        assert_eq!(
+            files[0].translated_count, 1,
+            "translated_count must count status='translated' only"
+        );
+        assert_eq!(files[0].needs_review_count, 1);
+
+        // Project-wide: all four statuses are counted and sum to the total.
+        let stats = fetch_project_stats(&pool, "p1").await.unwrap();
+        assert_eq!(stats.total_segments, 4);
+        assert_eq!(stats.untranslated_count, 1);
+        assert_eq!(stats.translated_count, 1);
+        assert_eq!(stats.needs_review_count, 1);
+        assert_eq!(stats.reviewed_count, 1);
+        assert_eq!(
+            stats.untranslated_count
+                + stats.translated_count
+                + stats.needs_review_count
+                + stats.reviewed_count,
+            stats.total_segments,
+            "the four statuses must sum to the total"
+        );
+    }
 
     #[test]
     fn test_classify_map_files() {

@@ -174,6 +174,8 @@ export function FileTree() {
       <ScrollArea className="h-full">
         <div className="p-2 space-y-0.5">
           {files.map((file) => {
+            // Strict: every segment must be status='translated' — a file with
+            // pending needs_review is NOT complete (no inject button).
             const isComplete =
               file.totalCount > 0 && file.translatedCount === file.totalCount;
             return (
@@ -192,6 +194,23 @@ export function FileTree() {
               >
                 {fileIcon(file.fileType)}
                 <span className="truncate flex-1">{file.fileName}</span>
+                {(file.translatedCount > 0 || file.needsReviewCount > 0) && (
+                  <span className="shrink-0 font-mono text-[10px] tabular-nums opacity-80">
+                    {file.translatedCount > 0 && (
+                      <span className="text-green-400/80">
+                        ✓ {file.translatedCount}
+                      </span>
+                    )}
+                    {file.translatedCount > 0 && file.needsReviewCount > 0 && (
+                      <span className="text-muted-foreground"> · </span>
+                    )}
+                    {file.needsReviewCount > 0 && (
+                      <span className="text-amber-400/80">
+                        ⚠ {file.needsReviewCount}
+                      </span>
+                    )}
+                  </span>
+                )}
                 {file.translationSecs !== null &&
                   file.translationSecs !== undefined && (
                     <Badge

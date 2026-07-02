@@ -1,3 +1,10 @@
+// LLM provider defaults — single TS source of truth.
+// DEFAULT_OLLAMA_MODEL MUST match the Rust constant of the same name in
+// src-tauri/src/llm/provider.rs (mirrored there for backend fallbacks).
+export const DEFAULT_OLLAMA_URL = "http://localhost:11434";
+export const DEFAULT_OLLAMA_MODEL = "gemma4:e4b";
+export const DEFAULT_BATCH_SIZE = 20;
+
 // RPG Maker MV/MZ placeholder pattern — single source of truth.
 // Used in columns.tsx (buildHighlightedNodes).
 // Reset lastIndex before each exec() call since the flag /g is stateful.

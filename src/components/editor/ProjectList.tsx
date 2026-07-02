@@ -242,10 +242,12 @@ function SegmentStatsBar({ stats }: { stats: ProjectStats }) {
   const {
     totalSegments,
     translatedCount,
+    reviewedCount,
     needsReviewCount,
     untranslatedCount,
   } = stats;
   const translatedPct = (translatedCount / totalSegments) * 100;
+  const reviewedPct = (reviewedCount / totalSegments) * 100;
   const reviewPct = (needsReviewCount / totalSegments) * 100;
 
   return (
@@ -257,6 +259,10 @@ function SegmentStatsBar({ stats }: { stats: ProjectStats }) {
             style={{ width: `${translatedPct}%` }}
           />
           <div
+            className="bg-blue-400/60 transition-all"
+            style={{ width: `${reviewedPct}%` }}
+          />
+          <div
             className="bg-amber-400/60 transition-all"
             style={{ width: `${reviewPct}%` }}
           />
@@ -264,6 +270,9 @@ function SegmentStatsBar({ stats }: { stats: ProjectStats }) {
       </div>
       <div className="flex gap-3 font-mono text-[10px] tabular-nums text-muted-foreground">
         <span className="text-green-400/80">✓ {translatedCount}</span>
+        {reviewedCount > 0 && (
+          <span className="text-blue-400/80">◎ {reviewedCount}</span>
+        )}
         {needsReviewCount > 0 && (
           <span className="text-amber-400/80">⚠ {needsReviewCount}</span>
         )}

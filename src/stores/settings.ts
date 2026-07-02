@@ -2,6 +2,11 @@ import { create } from "zustand";
 import { load } from "@tauri-apps/plugin-store";
 import i18n from "i18next";
 import { useLlmStore } from "@/stores/llm";
+import {
+  DEFAULT_BATCH_SIZE,
+  DEFAULT_OLLAMA_MODEL,
+  DEFAULT_OLLAMA_URL,
+} from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
 // Types & constants
@@ -19,9 +24,9 @@ export interface AppSettings {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  ollamaUrl: "http://localhost:11434",
-  ollamaModel: "qwen3:4b-instruct-2507-q8_0",
-  batchSize: 20,
+  ollamaUrl: DEFAULT_OLLAMA_URL,
+  ollamaModel: DEFAULT_OLLAMA_MODEL,
+  batchSize: DEFAULT_BATCH_SIZE,
   theme: "dark",
   language: "fr",
 };

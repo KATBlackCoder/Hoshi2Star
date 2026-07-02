@@ -3,6 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import type { ProviderConfig } from "@/lib/types";
+import {
+  DEFAULT_BATCH_SIZE,
+  DEFAULT_OLLAMA_MODEL,
+  DEFAULT_OLLAMA_URL,
+} from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,9 +51,9 @@ interface LlmState {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_CONFIG: ProviderConfig = {
-  url: "http://localhost:11434",
-  model: "qwen3:4b",
-  batchSize: 20,
+  url: DEFAULT_OLLAMA_URL,
+  model: DEFAULT_OLLAMA_MODEL,
+  batchSize: DEFAULT_BATCH_SIZE,
 };
 
 // ---------------------------------------------------------------------------

@@ -6,7 +6,60 @@
 > - Phase 2 : ✅ **terminée & mergée sur `main`** (2026-07-01).
 > - Phase 3 : ✅ **terminée & mergée sur `main`** (2026-07-01).
 > - Phase 4 : ✅ **terminée & mergée sur `main`** (2026-07-01).
-> - 👉 **PROCHAINE : Phase 5 — 🟡 cohérence #8 (Option 2) + alignements doc/valeurs.**
+> - 👉 **EN COURS : Phase 5 — 🟡 cohérence #8 (Option 2) + alignements doc/valeurs.**
+
+## ✅ Phase 5 — Cohérence #8 (Option 2) + alignements doc/valeurs — TERMINÉE
+
+> Plan §Phase 5 + complément §6. Décision produit #8 **déjà tranchée : Option 2**.
+> **Vérifié sur le code réel (2026-07-01)** : `get_source_files` compte
+> `target_text != ''` (project.rs:295) ; `get_project_stats` ignore `reviewed`
+> (:461-489) ; FileTree `isComplete` gate le bouton inject (:177-178, aucun
+> compteur affiché aujourd'hui) ; `SegmentStatsBar` ne rend pas `reviewed`
+> (ProjectList.tsx:238-272) ; modèle par défaut divergent 3× (provider.rs:83
+> `q4_K_M` · settings.ts:23 `q8_0` · llm.ts:50 `qwen3:4b`) ; `H2sError` 0
+> occurrence (CONTEXT.md:195, CLAUDE.md:175) ; « skeleton » CLAUDE.md:69.
+> ⚠ **Types IPC modifiés** → docs/architecture.md À METTRE À JOUR.
+> Branche : `fix/status-consistency`.
+
+### Étape A — Backend : compteurs stricts + reviewed
+- [x] Helpers `fetch_source_files` / `fetch_project_stats` (`&SqlitePool`,
+      commands = façades) — testables sans `tauri::State`
+- [x] `translated_count` strict (`status='translated'`) + `needs_review_count`
+      par fichier ; `reviewed_count` projet (somme des 4 == total)
+- [x] `domain/types.rs` : 2 nouveaux champs (`#[sqlx(default)]` couvre les
+      requêtes à littéraux `0 as …`, ex. export.rs:447)
+- [x] Test rouge prouvé : `translated_count` retournait **4** au lieu de 1
+      (4 segments, 1 par statut, tous target non vide) →
+      `test_counter_semantics_one_segment_per_status` vert, fige les 4 compteurs
+
+### Étape B — Frontend : miroir types + FileTree + barre
+- [x] `lib/types.ts` : `needsReviewCount` / `reviewedCount` (doc-comments)
+- [x] `FileTree.tsx` : compteurs `✓ N · ⚠ M` (verts/ambre) ; inject seulement si
+      100 % strictement `translated`
+- [x] `SegmentStatsBar` : segment `reviewed` bleu (`◎ N`) — somme à 100 %
+- [x] Consommateurs de `translatedCount` vérifiés (grep) : FileTree (voulu),
+      AppToolbar % (déjà strict via ProjectStats), project.ts toast (idem)
+
+### Étape C — Alignements annexes
+- [x] Modèle par défaut unifié sur **`gemma4:e4b`** (choix utilisateur, tag
+      vérifié sur son Ollama local — remplace q4_K_M/q8_0/qwen3:4b) :
+      source TS unique `lib/constants.ts` (settings.ts importait déjà llm.ts →
+      un import inverse aurait créé un cycle) + miroir Rust `DEFAULT_OLLAMA_MODEL`,
+      commentaires croisés. Section RunPod de CONTEXT.md non touchée (exemple
+      de workflow cloud, pas le défaut de l'app).
+- [x] CONTEXT.md + CLAUDE.md : convention `Result<T, String>` + thiserror par
+      module actée (pas de `H2sError` global) ; « skeleton » → état réel
+
+### Vérification
+- [x] Gate : `pnpm typecheck` ✅ · `cargo clippy -- -D warnings` ✅ ·
+      `cargo test` = **367 pass / 0 fail / 4 ignored** (+1)
+- [x] **docs/architecture.md mis à jour** : section domain/types.rs (Option 2,
+      helpers, invariant somme, UI ✓/⚠) + miroir constants.ts
+- [x] CHANGELOG.md (Fixed + Changed) + docs/journal/ + tasks/todo.md cochés
+- [x] Vérification visuelle en live (2 statuts basculés temporairement puis
+      restaurés) : ProjectList `✓ 15496 · ◎ 1 · ⚠ 1 · ○ 0 — 15498` (somme
+      exacte) ; FileTree `Map118 ✓ 44` + bouton inject vs `Map119 ✓ 559 · ⚠ 1`
+      SANS bouton inject
 
 ## ✅ Phase 4 — Correctness du moteur QA (P2, faux résultats) — TERMINÉE
 

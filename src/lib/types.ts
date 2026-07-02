@@ -29,7 +29,10 @@ export interface SourceFile {
   filePath: string;
   fileType: string;
   translationSecs: number | null;
+  /** Segments with status 'translated' (strict — needs_review not included). */
   translatedCount: number;
+  /** Segments with status 'needs_review' (remaining review work). */
+  needsReviewCount: number;
   totalCount: number;
 }
 
@@ -45,6 +48,8 @@ export interface ProjectStats {
   untranslatedCount: number;
   translatedCount: number;
   needsReviewCount: number;
+  /** With the other three counters, the four statuses sum to totalSegments. */
+  reviewedCount: number;
 }
 
 export interface Segment {

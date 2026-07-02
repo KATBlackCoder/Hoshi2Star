@@ -192,7 +192,7 @@ git branch -d <branche>
 ## Conventions code
 
 ### Rust
-- Erreurs : enum `H2sError` dérivant `thiserror::Error + serde::Serialize` — pas de `.unwrap()` hors tests
+- Erreurs : `Result<T, String>` aux frontières IPC (commands, via `map_err(|e| e.to_string())`) ; enums `thiserror` **internes par module** (`DecryptorError`, `V3FormatError`, `DatParseError`, …) — pas d'enum global `H2sError` ; pas de `.unwrap()` hors tests
 - State Tauri : `tauri::State<'_, AppState>` uniquement dans les commands, jamais dans les modules internes
 - Async : `tokio::spawn` pour les tâches LLM longues (ne pas bloquer le thread IPC)
 - Tests : unitaires dans le même fichier (`#[cfg(test)] mod tests`), intégration dans `tests/`
