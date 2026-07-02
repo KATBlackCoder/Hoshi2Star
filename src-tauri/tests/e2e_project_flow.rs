@@ -12,12 +12,13 @@
 //! located as a raw byte substring in the exported archive without depending on
 //! any crate-internal (`pub(crate)`) parser.
 
+use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use hoshi2star_lib::commands::export::export_project;
 use hoshi2star_lib::commands::project::{
-    get_segments, get_source_files, open_project, update_segment,
+    debug_dump_segments, get_segments, get_source_files, open_project, update_segment,
 };
 use hoshi2star_lib::db;
 use hoshi2star_lib::state::AppState;
@@ -120,6 +121,87 @@ async fn mv_open_translate_export_round_trip() {
     assert!(
         zip_entry_contains(Path::new(&zip_path), &file_zip_path, MARKER.as_bytes()),
         "exported {file_zip_path} must contain the injected translation"
+    );
+}
+
+/// Characterization test (Phase 8, étape 0): `debug_dump_segments` must extract
+/// exactly the same `(json_key, source_text)` segments, in the same per-file
+/// order, as `open_project` persists to the DB. The two share one engine
+/// extractor after the Phase 8 dispatch refactor; this locks them together so
+/// the refactor cannot silently diverge the debug path — which the round-trip
+/// tests do not exercise. `get_segments` returns `ORDER BY rowid` (insertion =
+/// extraction order), so ordered comparison is faithful.
+#[tokio::test]
+async fn mv_debug_dump_matches_open_project_extraction() {
+    let fixture = test_dir().join("性処理係のある学校");
+    if !fixture.exists() {
+        return;
+    }
+
+    let tmp = tempfile::tempdir().unwrap();
+    let game_root = tmp.path().join("game");
+    copy_tree(
+        &fixture.join("www").join("data"),
+        &game_root.join("www").join("data"),
+    );
+
+    let db_file = tmp.path().join("h2s.db");
+    let app = mock_app(db_file.to_str().unwrap()).await;
+
+    let game_path = game_root.to_str().unwrap().to_string();
+    let project = open_project(game_path.clone(), app.state())
+        .await
+        .expect("open_project")
+        .project;
+
+    // Map file_name -> [(json_key, source_text)] as persisted by open_project.
+    let files = get_source_files(project.id.clone(), app.state())
+        .await
+        .expect("get_source_files");
+    let mut from_db: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    for f in &files {
+        let page = get_segments(project.id.clone(), f.id.clone(), 0, 1_000_000, app.state())
+            .await
+            .expect("get_segments");
+        from_db.insert(
+            f.file_name.clone(),
+            page.items
+                .into_iter()
+                .map(|s| (s.json_key, s.source_text))
+                .collect(),
+        );
+    }
+
+    // Same map, parsed from the JSON written by debug_dump_segments.
+    let dump_path = debug_dump_segments(game_path)
+        .await
+        .expect("debug_dump_segments");
+    let json = std::fs::read_to_string(&dump_path).unwrap();
+    let dump: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let mut from_dump: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    for f in dump["files"].as_array().unwrap() {
+        let name = f["file_name"].as_str().unwrap().to_string();
+        let segs = f["segments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| {
+                (
+                    s["key"].as_str().unwrap().to_string(),
+                    s["source_text"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect();
+        from_dump.insert(name, segs);
+    }
+
+    assert!(
+        !from_db.is_empty(),
+        "MV fixture must yield at least one source file"
+    );
+    assert_eq!(
+        from_db, from_dump,
+        "debug_dump_segments must extract the same segments per file as open_project persists"
     );
 }
 
