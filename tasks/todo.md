@@ -10,9 +10,10 @@
 > - Phase 7 : ✅ **terminée** (2026-07-02) — 23 tests front (Vitest) + 2 tests
 >   d'intégration Rust ; `pnpm test` ajouté au gate. Branche `feat/test-coverage`.
 > - Phase 6 : ✅ **terminée & mergée sur `main`** (`de0f61a`, 2026-07-02).
-> - 👉 **EN COURS : Phase 8 — dispatch moteur (OCP)** (puis 9).
+> - Phase 8 : ✅ **terminée & mergée sur `main`** (2026-07-02) — ADR-006.
+> - 👉 **PROCHAINE : Phase 9 — performance** (dernière ; sur signal, pas prématuré).
 
-## 🟡 Phase 8 — Centraliser le dispatch moteur (OCP) — PLANIFIÉE
+## ✅ Phase 8 — Centraliser le dispatch moteur (OCP) — TERMINÉE
 
 > Plan §Phase 8. **Sites vérifiés sur le code réel (2026-07-02)**. Refactor **majeur**,
 > **iso-comportement** : le filet est la suite Phase 7 (367 Rust + 2 intégration + 23 front) ;
@@ -48,17 +49,17 @@
 - `export.rs` helpers font (37-51) : `engine=="wolf"` → laissés (config, pas dispatch fichier).
 
 ### Étape 0 — Filet de caractérisation (AVANT tout refactor)
-- [ ] Test snapshot de `debug_dump_segments` sur la fixture MV réelle (JSON figé) →
+- [x] Test snapshot de `debug_dump_segments` sur la fixture MV réelle (JSON figé) →
       convertit ce chemin d'« inspection seule » en « prouvé par le gate ». Ethos Phase 7.
-- [ ] (VX Ace `open_project` reste non couvert par e2e — moteur désactivé, pas de fixture ;
+- [x] (VX Ace `open_project` reste non couvert par e2e — moteur désactivé, pas de fixture ;
       cf. Vérification. On NE crée pas de fixture VX ici.)
 
 ### Commit A — Décomposer `open_project` (aucune abstraction nouvelle)
-- [ ] Extraire `insert_source_file(&mut tx, …)` + `insert_segment(&mut tx, …)` pour tuer le
+- [x] Extraire `insert_source_file(&mut tx, …)` + `insert_segment(&mut tx, …)` pour tuer le
       boilerplate INSERT répété 3×. **Contrainte iso critique** : les helpers prennent
       `&mut Transaction` (PAS `&pool`) — ne PAS sortir les inserts de la transaction unique
       ni changer l'atomicité (le happy-path e2e ne détecterait pas un rollback cassé).
-- [ ] Extraire `extract_project(engine, game_dir, data_dir) -> Vec<(file_name, file_path,
+- [x] Extraire `extract_project(engine, game_dir, data_dir) -> Vec<(file_name, file_path,
       file_type, Vec<CommonSeg>)>` — forme commune consommée par `open_project` ET
       `debug_dump_segments`. **Contraintes iso** :
       - Wolf : `file_path` est *construit* (`Data/{MapData|BasicData}/name`) — cette logique
@@ -68,43 +69,45 @@
         `format!("{:?}")`) — l'extracteur unifié doit **reproduire chacun**, ne pas collapser.
       - VX : garder l'appel `vx_extractor::extract_from_bytes` intact, juste re-câbler sa
         sortie (chemin non couvert e2e → relecture).
-- [ ] Gate complet vert, aucun test existant modifié (test étape 0 inclus).
+- [x] Gate complet vert, aucun test existant modifié (test étape 0 inclus).
 
 ### Commit B — Dispatch centralisé (enum + méthodes)
-- [ ] `Engine::db_str(&self) -> &'static str` → remplace le `match` de `engine_str` (80-84) et
+- [x] `Engine::db_str(&self) -> &'static str` → remplace le `match` de `engine_str` (80-84) et
       la construction manuelle dans manifest/insert.
-- [ ] `Engine::data_dir(&self, game_dir) -> Result<PathBuf,String>` → remplace (88-94).
-- [ ] `Engine::game_title(&self, game_dir, data_dir) -> Option<String>` → remplace (97-101).
-- [ ] `Engine::from_db_str(&str) -> Option<Engine>` (réciproque, pour export.rs qui repart du
-      string DB).
-- [ ] Classification `file_type` centralisée (ex. `FileClass::{Wolf,VxAce,Json}` +
+- [x] `Engine::data_dir(&self, game_dir) -> Result<PathBuf,String>` → remplace (88-94).
+- [x] `Engine::game_title(&self, game_dir, data_dir) -> Option<String>` → remplace (97-101).
+- [x] ~~`Engine::from_db_str(&str) -> Option<Engine>`~~ **RETIRÉ avant merge** : le
+      consommateur export.rs prévu ne s'est pas matérialisé (font scopé hors périmètre) →
+      code mort masqué au `clippy dead_code` par `pub`. Retiré par discipline de portée
+      (relevé advisor).
+- [x] Classification `file_type` centralisée (ex. `FileClass::{Wolf,VxAce,Json}` +
       `fn classify(file_type: &str) -> FileClass`) → `export.rs` (229/272/498) et
       `has_wolf`/font-prefix consomment ça au lieu de `starts_with`.
-- [ ] Router `open_project`, `debug_dump_segments`, `export_project`, `debug_inject_file` via
+- [x] Router `open_project`, `debug_dump_segments`, `export_project`, `debug_inject_file` via
       ces méthodes/classification.
-- [ ] Gate complet vert, aucun test existant modifié.
+- [x] Gate complet vert, aucun test existant modifié.
 
 ### Vérification (⚠ trous de couverture explicites — advisor)
-- [ ] `pnpm typecheck && pnpm test && cargo clippy -- -D warnings && cargo test` — vert,
+- [x] `pnpm typecheck && pnpm test && cargo clippy -- -D warnings && cargo test` — vert,
       aucun test existant modifié.
-- [ ] **Couvert par e2e** : `open_project`+`export_project` pour **MV et Wolf** (fixtures
+- [x] **Couvert par e2e** : `open_project`+`export_project` pour **MV et Wolf** (fixtures
       réelles). Le round-trip Wolf CE verrouille toujours Phase 1.
-- [ ] **NON couvert par e2e → prouvé autrement** :
+- [x] **NON couvert par e2e → prouvé autrement** :
       - `debug_dump_segments` → snapshot étape 0 (gate-proven).
       - `debug_inject_file` → relecture (pas de test e2e) ; vérifier les 3 voies inchangées.
       - `open_project` **bras VX Ace** → relecture seule (moteur désactivé, sans fixture) ;
         appel extracteur intact.
-- [ ] Diff `main` vs branche : confirmer que Bakin = « 1 module + 1 arm/impl » devient vrai.
-- [ ] **Hors périmètre** (ne PAS toucher) : `tokenizer.rs:95/135`, `qa.rs:225`
+- [x] Diff `main` vs branche : confirmer que Bakin = « 1 module + 1 arm/impl » devient vrai.
+- [x] **Hors périmètre** (ne PAS toucher) : `tokenizer.rs:95/135`, `qa.rs:225`
       (`engine=="wolf"` = config par moteur, pas dispatch de fichier ; hors liste de fichiers
       de la phase). Backlog inchangé (doublons TM, ESLint 10, QA live sans glossaire, 8 lints
       clippy --all-targets).
 
 ### Docs (fin de phase)
-- [ ] `docs/architecture.md` : documenter les méthodes d'`Engine` + la classification comme
+- [x] `docs/architecture.md` : documenter les méthodes d'`Engine` + la classification comme
       point de dispatch unique.
-- [ ] ADR si l'abstraction est structurante (enum-méthodes vs trait — décision + rejet trait).
-- [ ] CHANGELOG.md (Changed) + docs/journal/ + tasks/todo.md cochés.
+- [x] ADR si l'abstraction est structurante (enum-méthodes vs trait — décision + rejet trait).
+- [x] CHANGELOG.md (Changed) + docs/journal/ + tasks/todo.md cochés.
 
 ## ✅ Phase 6 — DRY backend + UI — TERMINÉE
 
