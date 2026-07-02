@@ -121,130 +121,31 @@ pub async fn open_project(
         .await
         .map_err(|e| e.to_string())?;
 
-    // 5. Walk data directory: read, extract, insert source_files + segments
+    // 5. Walk data directory: extract (shared with debug_dump_segments), then
+    //    insert source_files + segments inside the single transaction.
     let mut file_count: u32 = 0;
     let mut segment_count: u32 = 0;
 
-    match engine {
-        Engine::MvMz => {
-            let entries = collect_json_files(&data_dir).map_err(|e| e.to_string())?;
-            for (file_name, file_path, file_type, json_value) in &entries {
-                let file_id = uuid::Uuid::new_v4().to_string();
-                sqlx::query(
-                    "INSERT INTO source_files (id, project_id, file_name, file_path, file_type) \
-                     VALUES (?, ?, ?, ?, ?)",
-                )
-                .bind(&file_id)
-                .bind(&project_id)
-                .bind(file_name)
-                .bind(file_path)
-                .bind(file_type)
-                .execute(&mut *tx)
+    for file in extract_project(&engine, game_dir)? {
+        let file_id = uuid::Uuid::new_v4().to_string();
+        insert_source_file(
+            &mut tx,
+            &file_id,
+            &project_id,
+            &file.file_name,
+            &file.file_path,
+            &file.file_type,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        file_count += 1;
+
+        for seg in &file.segments {
+            let seg_id = uuid::Uuid::new_v4().to_string();
+            insert_segment(&mut tx, &seg_id, &file_id, &seg.key, &seg.source_text)
                 .await
                 .map_err(|e| e.to_string())?;
-                file_count += 1;
-
-                for seg in dispatch_extract(file_name, json_value) {
-                    let seg_id = uuid::Uuid::new_v4().to_string();
-                    sqlx::query(
-                        "INSERT INTO segments (id, source_file_id, json_key, source_text) \
-                         VALUES (?, ?, ?, ?)",
-                    )
-                    .bind(&seg_id)
-                    .bind(&file_id)
-                    .bind(&seg.key)
-                    .bind(&seg.source)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                    segment_count += 1;
-                }
-            }
-        }
-        Engine::VxAce => {
-            let entries = collect_rvdata2_files(&data_dir).map_err(|e| e.to_string())?;
-            for (file_name, file_path, file_type, bytes) in &entries {
-                let file_id = uuid::Uuid::new_v4().to_string();
-                sqlx::query(
-                    "INSERT INTO source_files (id, project_id, file_name, file_path, file_type) \
-                     VALUES (?, ?, ?, ?, ?)",
-                )
-                .bind(&file_id)
-                .bind(&project_id)
-                .bind(file_name)
-                .bind(file_path)
-                .bind(file_type)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-                file_count += 1;
-
-                for seg in vx_extractor::extract_from_bytes(file_name, bytes) {
-                    let seg_id = uuid::Uuid::new_v4().to_string();
-                    sqlx::query(
-                        "INSERT INTO segments (id, source_file_id, json_key, source_text) \
-                         VALUES (?, ?, ?, ?)",
-                    )
-                    .bind(&seg_id)
-                    .bind(&file_id)
-                    .bind(&seg.key)
-                    .bind(&seg.source)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                    segment_count += 1;
-                }
-            }
-        }
-        Engine::Wolf => {
-            let wolf_version = guess_wolf_version_from_structure(game_dir);
-            let entries = wolf_extractor::extract_all_wolf(game_dir, &wolf_version)
-                .map_err(|e| e.to_string())?;
-            for (file_name, file_type, segments) in &entries {
-                let file_id = uuid::Uuid::new_v4().to_string();
-                let sub_dir = if file_type == "wolf_map" {
-                    "MapData"
-                } else {
-                    "BasicData"
-                };
-                let file_path = game_dir
-                    .join("Data")
-                    .join(sub_dir)
-                    .join(file_name)
-                    .to_string_lossy()
-                    .to_string();
-                sqlx::query(
-                    "INSERT INTO source_files \
-                     (id, project_id, file_name, file_path, file_type) \
-                     VALUES (?, ?, ?, ?, ?)",
-                )
-                .bind(&file_id)
-                .bind(&project_id)
-                .bind(file_name)
-                .bind(&file_path)
-                .bind(file_type)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-                file_count += 1;
-
-                for seg in segments {
-                    let seg_id = uuid::Uuid::new_v4().to_string();
-                    sqlx::query(
-                        "INSERT INTO segments \
-                         (id, source_file_id, json_key, source_text) \
-                         VALUES (?, ?, ?, ?)",
-                    )
-                    .bind(&seg_id)
-                    .bind(&file_id)
-                    .bind(&seg.key)
-                    .bind(&seg.source_text)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                    segment_count += 1;
-                }
-            }
+            segment_count += 1;
         }
     }
 
@@ -543,7 +444,6 @@ pub async fn delete_project(
 /// to identify which texts need translation vs which can be skipped.
 #[tauri::command]
 pub async fn debug_dump_segments(game_path: String) -> Result<String, String> {
-    use crate::engines::wolf::extractor::WolfSegmentKind;
     use std::collections::HashMap;
 
     #[derive(serde::Serialize)]
@@ -573,98 +473,33 @@ pub async fn debug_dump_segments(game_path: String) -> Result<String, String> {
 
     let game_dir = Path::new(&game_path);
     let engine = detect_engine(game_dir).map_err(|e| e.to_string())?;
+    let engine_label = match engine {
+        Engine::MvMz => "mv_mz",
+        Engine::VxAce => "vx_ace",
+        Engine::Wolf => "wolf",
+    };
 
-    let mut dump_files: Vec<DebugFileEntry> = Vec::new();
-    let engine_label;
-
-    match engine {
-        Engine::Wolf => {
-            engine_label = "wolf";
-            let wolf_version = guess_wolf_version_from_structure(game_dir);
-            let entries = wolf_extractor::extract_all_wolf(game_dir, &wolf_version)
-                .map_err(|e| e.to_string())?;
-
-            for (file_name, file_type, segs) in entries {
-                let segments: Vec<DebugSegment> = segs
-                    .into_iter()
-                    .map(|s| {
-                        let kind = match &s.kind {
-                            WolfSegmentKind::MapMessage { .. } => "map_message",
-                            WolfSegmentKind::DatabaseField { .. } => "database_field",
-                            WolfSegmentKind::CommonEventMessage { .. } => "common_event_message",
-                        }
-                        .to_string();
-                        DebugSegment {
-                            key: s.key,
-                            source_text: s.source_text,
-                            kind,
-                        }
-                    })
-                    .collect();
-                let segment_count = segments.len();
-                dump_files.push(DebugFileEntry {
-                    file_name,
-                    file_type,
-                    segment_count,
-                    segments,
-                });
+    // Shared extraction (identical to open_project's, minus persistence).
+    let dump_files: Vec<DebugFileEntry> = extract_project(&engine, game_dir)?
+        .into_iter()
+        .map(|file| {
+            let segments: Vec<DebugSegment> = file
+                .segments
+                .into_iter()
+                .map(|s| DebugSegment {
+                    key: s.key,
+                    source_text: s.source_text,
+                    kind: s.kind,
+                })
+                .collect();
+            DebugFileEntry {
+                file_name: file.file_name,
+                file_type: file.file_type,
+                segment_count: segments.len(),
+                segments,
             }
-        }
-
-        Engine::MvMz => {
-            engine_label = "mv_mz";
-            let data_dir = find_data_dir(game_dir)
-                .ok_or_else(|| "Cannot find data directory in game folder".to_string())?;
-
-            for (file_name, _file_path, file_type, json_value) in
-                collect_json_files(&data_dir).map_err(|e| e.to_string())?
-            {
-                let raw_segs = dispatch_extract(&file_name, &json_value);
-                let segments: Vec<DebugSegment> = raw_segs
-                    .into_iter()
-                    .map(|s| DebugSegment {
-                        key: s.key,
-                        source_text: s.source,
-                        kind: format!("{:?}", s.kind),
-                    })
-                    .collect();
-                let segment_count = segments.len();
-                dump_files.push(DebugFileEntry {
-                    file_name,
-                    file_type,
-                    segment_count,
-                    segments,
-                });
-            }
-        }
-
-        Engine::VxAce => {
-            engine_label = "vx_ace";
-            let data_dir = find_vx_ace_data_dir(game_dir)
-                .ok_or_else(|| "Cannot find Data/ directory in VX Ace game folder".to_string())?;
-
-            for (file_name, _file_path, file_type, bytes) in
-                collect_rvdata2_files(&data_dir).map_err(|e| e.to_string())?
-            {
-                let raw_segs = vx_extractor::extract_from_bytes(&file_name, &bytes);
-                let segments: Vec<DebugSegment> = raw_segs
-                    .into_iter()
-                    .map(|s| DebugSegment {
-                        key: s.key,
-                        source_text: s.source,
-                        kind: format!("{:?}", s.kind),
-                    })
-                    .collect();
-                let segment_count = segments.len();
-                dump_files.push(DebugFileEntry {
-                    file_name,
-                    file_type,
-                    segment_count,
-                    segments,
-                });
-            }
-        }
-    }
+        })
+        .collect();
 
     let total_segments: usize = dump_files.iter().map(|f| f.segment_count).sum();
     let mut by_kind: HashMap<String, usize> = HashMap::new();
@@ -891,6 +726,170 @@ fn dispatch_extract(file_name: &str, json: &serde_json::Value) -> Vec<extractor:
         "Weapons.json" => extractor::extract_weapons(json),
         _ => vec![],
     }
+}
+
+// ---------------------------------------------------------------------------
+// Shared extraction (open_project + debug_dump_segments)
+// ---------------------------------------------------------------------------
+
+/// One extracted segment, normalized across engines. `kind` is the engine-
+/// specific debug label; only `debug_dump_segments` consumes it (open_project
+/// discards it).
+struct ExtractedFileSeg {
+    key: String,
+    source_text: String,
+    kind: String,
+}
+
+/// One extracted source file, normalized across engines.
+struct ExtractedFile {
+    file_name: String,
+    file_path: String,
+    file_type: String,
+    segments: Vec<ExtractedFileSeg>,
+}
+
+/// Extract every source file + segment for `engine` from `game_dir`, normalized
+/// to a common shape consumed by both `open_project` (persistence) and
+/// `debug_dump_segments` (JSON dump).
+///
+/// Per-file order is preserved (MV/VX sorted by name inside the `collect_*`
+/// helpers; Wolf in extractor order) and per-segment order is extractor order —
+/// `get_segments`' `ORDER BY rowid` relies on this insertion order.
+fn extract_project(engine: &Engine, game_dir: &Path) -> Result<Vec<ExtractedFile>, String> {
+    use crate::engines::wolf::extractor::WolfSegmentKind;
+
+    let mut files = Vec::new();
+    match engine {
+        Engine::MvMz => {
+            let data_dir = find_data_dir(game_dir)
+                .ok_or_else(|| "Cannot find data directory in game folder".to_string())?;
+            for (file_name, file_path, file_type, json_value) in
+                collect_json_files(&data_dir).map_err(|e| e.to_string())?
+            {
+                let segments = dispatch_extract(&file_name, &json_value)
+                    .into_iter()
+                    .map(|s| ExtractedFileSeg {
+                        key: s.key,
+                        source_text: s.source,
+                        kind: format!("{:?}", s.kind),
+                    })
+                    .collect();
+                files.push(ExtractedFile {
+                    file_name,
+                    file_path,
+                    file_type,
+                    segments,
+                });
+            }
+        }
+        Engine::VxAce => {
+            let data_dir = find_vx_ace_data_dir(game_dir)
+                .ok_or_else(|| "Cannot find Data/ directory in VX Ace game folder".to_string())?;
+            for (file_name, file_path, file_type, bytes) in
+                collect_rvdata2_files(&data_dir).map_err(|e| e.to_string())?
+            {
+                let segments = vx_extractor::extract_from_bytes(&file_name, &bytes)
+                    .into_iter()
+                    .map(|s| ExtractedFileSeg {
+                        key: s.key,
+                        source_text: s.source,
+                        kind: format!("{:?}", s.kind),
+                    })
+                    .collect();
+                files.push(ExtractedFile {
+                    file_name,
+                    file_path,
+                    file_type,
+                    segments,
+                });
+            }
+        }
+        Engine::Wolf => {
+            let wolf_version = guess_wolf_version_from_structure(game_dir);
+            let entries = wolf_extractor::extract_all_wolf(game_dir, &wolf_version)
+                .map_err(|e| e.to_string())?;
+            for (file_name, file_type, segs) in entries {
+                // Wolf file_path is constructed (not carried): map files live in
+                // Data/MapData, everything else in Data/BasicData.
+                let sub_dir = if file_type == "wolf_map" {
+                    "MapData"
+                } else {
+                    "BasicData"
+                };
+                let file_path = game_dir
+                    .join("Data")
+                    .join(sub_dir)
+                    .join(&file_name)
+                    .to_string_lossy()
+                    .to_string();
+                let segments = segs
+                    .into_iter()
+                    .map(|s| ExtractedFileSeg {
+                        kind: match &s.kind {
+                            WolfSegmentKind::MapMessage { .. } => "map_message",
+                            WolfSegmentKind::DatabaseField { .. } => "database_field",
+                            WolfSegmentKind::CommonEventMessage { .. } => "common_event_message",
+                        }
+                        .to_string(),
+                        key: s.key,
+                        source_text: s.source_text,
+                    })
+                    .collect();
+                files.push(ExtractedFile {
+                    file_name,
+                    file_path,
+                    file_type,
+                    segments,
+                });
+            }
+        }
+    }
+    Ok(files)
+}
+
+/// Insert one `source_files` row inside the open-project transaction.
+async fn insert_source_file(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    file_id: &str,
+    project_id: &str,
+    file_name: &str,
+    file_path: &str,
+    file_type: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO source_files (id, project_id, file_name, file_path, file_type) \
+         VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(file_id)
+    .bind(project_id)
+    .bind(file_name)
+    .bind(file_path)
+    .bind(file_type)
+    .execute(&mut **tx)
+    .await
+    .map(|_| ())
+}
+
+/// Insert one `segments` row inside the open-project transaction.
+async fn insert_segment(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    seg_id: &str,
+    file_id: &str,
+    json_key: &str,
+    source_text: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO segments (id, source_file_id, json_key, source_text) \
+         VALUES (?, ?, ?, ?)",
+    )
+    .bind(seg_id)
+    .bind(file_id)
+    .bind(json_key)
+    .bind(source_text)
+    .execute(&mut **tx)
+    .await
+    .map(|_| ())
 }
 
 // ---------------------------------------------------------------------------
