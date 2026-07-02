@@ -10,6 +10,7 @@ pub mod llm;
 pub mod state;
 pub mod utils;
 
+use commands::app::updater_supported;
 use commands::export::{
     debug_inject_file, export_debug_json, export_project, export_qa_report, export_tm,
     scan_font_status, strip_font_prefixes,
@@ -33,6 +34,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let db_path = app.path().app_data_dir()?.join("hoshi2star.db");
 
@@ -77,6 +80,7 @@ pub fn run() {
             debug_inject_file,
             scan_font_status,
             strip_font_prefixes,
+            updater_supported,
         ]);
 
     #[cfg(debug_assertions)]

@@ -201,5 +201,19 @@
     "confirmDeleteDesc": "This will permanently remove all segments, translations, and project-specific glossary terms from the database. The game files on disk are not affected.",
     "confirmDeleteCancel": "Cancel",
     "confirmDeleteConfirm": "Delete"
+  },
+  "updater": {
+    "title": "Update available",
+    "body": "Version {{version}} is available. Would you like to update now?",
+    "notesLabel": "What's new",
+    "yes": "Update now",
+    "no": "Not now",
+    "downloading": "Downloading update…",
+    "readyTitle": "Update installed",
+    "readyBody": "The new version is ready. Restart to apply it.",
+    "restart": "Restart now",
+    "later": "Later",
+    "badge": "Update available — click to review",
+    "error": "The update failed. Please try again later."
   }
 }

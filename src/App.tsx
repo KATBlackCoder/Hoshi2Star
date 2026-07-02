@@ -13,9 +13,11 @@ import { QAPanel } from "@/components/editor/QAPanel";
 import { GlossaryPanel } from "@/components/editor/GlossaryPanel";
 import { AppToolbar } from "@/components/AppToolbar";
 import { AppDialogs } from "@/components/AppDialogs";
+import { UpdateDialog } from "@/components/UpdateDialog";
 import { useProjectStore, useIsExtractingGlossary } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { useSettingsStore } from "@/stores/settings";
+import { useUpdaterStore } from "@/stores/updater";
 import { useAppHandlers } from "@/hooks/useAppHandlers";
 import { Toaster } from "@/components/ui/sonner";
 import { BookOpen, Loader2 } from "lucide-react";
@@ -36,10 +38,16 @@ export default function App() {
     (s) => s.activeSegmentTargetText,
   );
   const isExtractingGlossary = useIsExtractingGlossary();
+  const checkForUpdate = useUpdaterStore((s) => s.checkForUpdate);
 
   useEffect(() => {
     void loadSettings();
   }, [loadSettings]);
+
+  // Non-blocking update check once at startup (silent if offline / unsupported).
+  useEffect(() => {
+    void checkForUpdate();
+  }, [checkForUpdate]);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
@@ -123,6 +131,7 @@ export default function App() {
       </ResizablePanelGroup>
 
       <AppDialogs handlers={handlers} />
+      <UpdateDialog />
       <Toaster />
     </div>
   );
