@@ -5,6 +5,8 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+## [0.4.4] — 2026-07-02
+
 ### Added
 - Add in-app auto-updates via `tauri-plugin-updater` + `tauri-plugin-process` (ADR-007) — on startup the app checks GitHub Releases (`latest.json`) for a newer signed build and, if found, shows an `UpdateDialog` (release notes + Yes/No); **Yes** downloads with a live progress bar then offers "Restart now / Later"; **No** dismisses and drops a toolbar badge (`UpdateBadge`) to reopen the choice, persisting the dismissed version so the same update is not re-proposed every launch (a newer version overrides the dismissal). New Zustand `updater` store (state machine `idle→checking→available→downloading→ready`, plus `dismissed`/`error`), new `updater_supported` Tauri command gating the UI to auto-updatable installs only (Windows NSIS + Linux AppImage — deb/rpm and dev builds show no update UI), signed artifacts (`bundle.createUpdaterArtifacts`, minisign pubkey in config, private key via CI secret), Windows `installMode: passive`; 11 Vitest cases lock the store's state machine with the plugin calls mocked
 
@@ -336,6 +338,7 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - TanStack Query for async Tauri invoke() calls
 - GitHub Actions CI/CD for Linux + Windows builds
 
+[0.4.4]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.4
 [0.4.3]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.3
 [0.4.2]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.2
 [0.4.1]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.1
