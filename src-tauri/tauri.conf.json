@@ -25,6 +25,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -32,5 +33,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkwQkQ2OTM4RDk4QkZBRTcKUldUbitvdlpPR205a0FMNE5VRW1kQ2V3a3Z6K0NzNStUN2FXT1kxSDg2eXlvdmtOSkJ1aXd5WkkK",
+      "endpoints": [
+        "https://github.com/KATBlackCoder/Hoshi2Star/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

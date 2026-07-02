@@ -52,6 +52,7 @@ CAT editor + LLM orchestrator for fan-translating Japanese **RPG Maker** & **Wol
 - 🗂 3-panel CAT interface: **Files · Grid · TM + QA**
 - 📇 Project list with progress cards — continue or delete in one click
 - 📦 Export translations back into the game files (ZIP-packaged)
+- 🔄 **Automatic updates** — signed in-app updater checks GitHub Releases on launch (Windows & Linux AppImage)
 
 ---
 

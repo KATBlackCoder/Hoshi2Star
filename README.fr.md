@@ -52,6 +52,7 @@
 - 🗂 Interface CAT 3 panneaux : **Fichiers · Grille · TM + QA**
 - 📇 Liste de projets avec cartes de progression — continuer ou supprimer en un clic
 - 📦 Réinjection des traductions dans les fichiers du jeu (packagées en ZIP)
+- 🔄 **Mises à jour automatiques** — updater in-app signé qui vérifie les GitHub Releases au démarrage (Windows & AppImage Linux)
 
 ---
 

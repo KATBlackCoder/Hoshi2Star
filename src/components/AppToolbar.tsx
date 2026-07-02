@@ -31,6 +31,7 @@ import {
   useIsCooling,
   useCooldownRemaining,
 } from "@/stores/llm";
+import { UpdateBadge } from "@/components/UpdateBadge";
 
 // ---------------------------------------------------------------------------
 // Translation timer
@@ -284,11 +285,13 @@ export function AppToolbar({
         </div>
       )}
 
-      {/* About + Settings buttons — pushed to the right */}
+      {/* Update badge + About + Settings buttons — pushed to the right */}
+      <div className="ml-auto" />
+      <UpdateBadge />
       <Button
         size="sm"
         variant="ghost"
-        className="h-7 w-7 p-0 ml-auto"
+        className="h-7 w-7 p-0"
         onClick={onOpenAbout}
         title={t("about.title")}
       >

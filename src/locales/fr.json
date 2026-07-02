@@ -201,5 +201,19 @@
     "confirmDeleteDesc": "Tous les segments, traductions et termes de glossaire propres à ce projet seront définitivement supprimés de la base de données. Les fichiers du jeu sur le disque ne sont pas touchés.",
     "confirmDeleteCancel": "Annuler",
     "confirmDeleteConfirm": "Supprimer"
+  },
+  "updater": {
+    "title": "Mise à jour disponible",
+    "body": "La version {{version}} est disponible. Voulez-vous mettre à jour maintenant ?",
+    "notesLabel": "Nouveautés",
+    "yes": "Mettre à jour",
+    "no": "Plus tard",
+    "downloading": "Téléchargement de la mise à jour…",
+    "readyTitle": "Mise à jour installée",
+    "readyBody": "La nouvelle version est prête. Redémarrez pour l'appliquer.",
+    "restart": "Redémarrer",
+    "later": "Plus tard",
+    "badge": "Mise à jour disponible — cliquer pour revoir",
+    "error": "La mise à jour a échoué. Réessayez plus tard."
   }
 }
