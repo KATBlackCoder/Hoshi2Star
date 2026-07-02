@@ -16,6 +16,11 @@ ROADMAP.md
 .agents
 docs/games/*
 test/*
+
+# Signing keys — NEVER commit a private updater/signing key.
+# Safety net only: keep the real private key OUTSIDE the repo (~/.tauri/).
+*.key
+.tauri/
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
