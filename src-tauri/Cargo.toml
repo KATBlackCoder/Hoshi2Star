@@ -50,5 +50,7 @@ httpmock = "0.7"
 tauri = { version = "2", features = ["test"] }
 # Integration tests read the exported archive; not re-exposed from [dependencies].
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# Phase 8 characterization test parses the debug-dump JSON.
+serde_json = "1"
 
 

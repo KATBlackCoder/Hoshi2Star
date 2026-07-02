@@ -23,6 +23,88 @@ pub enum Engine {
     Wolf,
 }
 
+impl Engine {
+    /// Stable identifier stored in the `projects.engine` column.
+    pub fn db_str(&self) -> &'static str {
+        match self {
+            Engine::MvMz => "mv_mz",
+            Engine::VxAce => "vx_ace",
+            Engine::Wolf => "wolf",
+        }
+    }
+
+    /// Locate the engine's data directory relative to the game root.
+    ///
+    /// MV/MZ: `data/` or `www/data/`. VX Ace: `Data/` (lowercase fallback).
+    /// Wolf reads from the game root directly, so its data dir is the game root.
+    pub fn data_dir(&self, game_dir: &Path) -> Result<std::path::PathBuf, String> {
+        match self {
+            Engine::MvMz => find_data_dir(game_dir)
+                .ok_or_else(|| "Cannot find data directory in game folder".to_string()),
+            Engine::VxAce => find_vx_ace_data_dir(game_dir)
+                .ok_or_else(|| "Cannot find Data/ directory in VX Ace game folder".to_string()),
+            Engine::Wolf => Ok(game_dir.to_path_buf()),
+        }
+    }
+
+    /// Read the game title from the engine's metadata file, or `None` if absent.
+    pub fn game_title(&self, game_dir: &Path, data_dir: &Path) -> Option<String> {
+        match self {
+            Engine::MvMz => read_mv_mz_game_title(&data_dir.join("System.json")),
+            Engine::VxAce => read_vx_ace_game_title(&data_dir.join("System.rvdata2")),
+            Engine::Wolf => read_wolf_game_title(game_dir),
+        }
+    }
+}
+
+/// Read `gameTitle` from a `System.json` path (MV/MZ).
+fn read_mv_mz_game_title(system_json_path: &Path) -> Option<String> {
+    let content = std::fs::read_to_string(system_json_path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&content).ok()?;
+    v.get("gameTitle")?.as_str().map(|s| s.to_string())
+}
+
+/// Read `game_title` from a `System.rvdata2` path (VX Ace, snake_case field).
+fn read_vx_ace_game_title(system_rvdata2_path: &Path) -> Option<String> {
+    let bytes = std::fs::read(system_rvdata2_path).ok()?;
+    let mv: marshal_rs::Value = marshal_rs::load_utf8(&bytes, None).ok()?;
+    let json: serde_json::Value = mv.into();
+    json.get("game_title")?.as_str().map(|s| s.to_string())
+}
+
+/// Read `GameTitle` from `Game.ini` in a Wolf RPG game directory.
+///
+/// `Game.ini` uses Shift-JIS encoding for v2 games. We read as bytes and
+/// attempt Shift-JIS decoding; falls back to UTF-8 then lossy on failure.
+/// Returns `None` if the file is absent or the key is not found.
+fn read_wolf_game_title(game_dir: &Path) -> Option<String> {
+    let ini_path = game_dir.join("Game.ini");
+    let bytes = std::fs::read(&ini_path).ok()?;
+
+    // Try Shift-JIS first (most Wolf v2 games), then UTF-8, then lossy.
+    let content = {
+        use encoding_rs::SHIFT_JIS;
+        let (decoded, _, had_errors) = SHIFT_JIS.decode(&bytes);
+        if !had_errors {
+            decoded.into_owned()
+        } else {
+            String::from_utf8(bytes.clone())
+                .unwrap_or_else(|_| String::from_utf8_lossy(&bytes).into_owned())
+        }
+    };
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("GameTitle=") {
+            let title = rest.trim().to_string();
+            if !title.is_empty() {
+                return Some(title);
+            }
+        }
+    }
+    None
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum DetectionError {
     #[error("could not identify game engine in directory")]

@@ -81,7 +81,7 @@ Tous les `#[tauri::command]` sont déclarés dans des sous-modules et enregistr�
 
 | Fichier | Commandes Tauri exposées | Raison du regroupement |
 |---------|--------------------------|------------------------|
-| `project.rs` (~727 lignes) | `open_project`, `get_source_files`, `get_segments`, `update_segment`, `list_projects`, `delete_project`, `get_project_stats` | CRUD projet + fichiers + segments. Contient aussi les helpers privés d'extraction (`dispatch_extract`, `classify_mv_mz_file`, etc.) étroitement couplés à `open_project`. |
+| `project.rs` | `open_project`, `get_source_files`, `get_segments`, `update_segment`, `list_projects`, `delete_project`, `get_project_stats`, `debug_dump_segments` | CRUD projet + fichiers + segments. `extract_project(engine, game_dir, data_dir)` normalise l'extraction des 3 moteurs vers une forme commune, partagée par `open_project` (persistance, via les helpers `insert_source_file`/`insert_segment` dans la transaction unique) et `debug_dump_segments` (dump JSON). Le dispatch moteur lui-même vit dans la couche moteur (cf. `detector.rs`, `filter.rs`), pas ici (ADR-006). |
 | `translate.rs` (~400 lignes) | `translate_segments`, `translate_all_segments`, `get_ollama_models` | Toutes les commandes qui déclenchent une interaction LLM. `translate_all_segments` démarre un `tokio::spawn`, crée un `pipeline::CooldownState` (une fois pour tout le projet) et le passe à `pipeline::run` — le cooldown est désormais vérifié par batch (pas par fichier). |
 | `export.rs` | `export_project`, `export_qa_report`, `export_tm`, `export_debug_json`, `debug_inject_file`, `scan_font_status` | Toutes les commandes qui écrivent un fichier sur le disque ou injectent les données du jeu. `debug_inject_file` enforce la complétude avant injection. `scan_font_status` compte les segments déjà préfixés `\f[N]`. `apply_font_prefix` / `persist_font_size` (helpers privés) gèrent le préfixe Wolf RPG taille police. |
 | `qa.rs` (~93 lignes) | `qa_check_segment`, `get_qa_report`, `get_tm_suggestions` | Commandes de lecture QA/TM — pas d'écriture DB. |
@@ -114,7 +114,7 @@ Couche métier pure — pas de `tauri::State`, pas d'`AppHandle`, testable sans 
 
 | Fichier / Dossier | Rôle |
 |-------------------|------|
-| `detector.rs` | Détection automatique du moteur à partir du dossier jeu. Ordre de test : MV/MZ (`data/*.json`) → VX Ace (`data/*.rvdata2`) → Wolf RPG (`Game.exe` + `Data/`). Retourne `Engine` enum + chemin du dossier `Data/`. |
+| `detector.rs` | Détection automatique du moteur à partir du dossier jeu. Ordre de test : MV/MZ (`data/*.json`) → VX Ace (`data/*.rvdata2`) → Wolf RPG (`Game.exe` + `Data/`). Retourne `Engine` enum + chemin du dossier `Data/`. **Point unique de dispatch métadonnées** (ADR-006) : `impl Engine { db_str, data_dir, game_title }` — les lecteurs de titre par moteur (System.json / System.rvdata2 / Game.ini) vivent ici, pas dans la couche commande. |
 | `mv_mz/extractor.rs` | Lit les fichiers JSON de `data/` (Actors, Armors, Weapons, Skills, Items, Enemies, Classes, CommonEvents, MapInfos, Maps, System). Décrypte `.rpgmvp`/`.rpgmvo` si nécessaire. Retourne des `Vec<(json_key, source_text)>`. |
 | `mv_mz/injector.rs` | Réécrit les fichiers JSON avec les traductions. Conserve la structure JSON d'origine — only `value` fields modifiés. |
 | `mv_mz/decryptor.rs` | Décryptage XOR des assets chiffrés RPG Maker MV/MZ. Clé lue depuis `System.json`. |
