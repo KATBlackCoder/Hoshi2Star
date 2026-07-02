@@ -6,7 +6,9 @@
 > - Phase 2 : ✅ **terminée & mergée sur `main`** (2026-07-01).
 > - Phase 3 : ✅ **terminée & mergée sur `main`** (2026-07-01).
 > - Phase 4 : ✅ **terminée & mergée sur `main`** (2026-07-01).
-> - 👉 **EN COURS : Phase 5 — 🟡 cohérence #8 (Option 2) + alignements doc/valeurs.**
+> - Phase 5 : ✅ **terminée & mergée sur `main`** (2026-07-02).
+> - 👉 **PROCHAINE : Phase 7 — 🟡 couverture de tests front + intégration**
+>   (avant 6 et 8, cf. ordre du plan).
 
 ## ✅ Phase 5 — Cohérence #8 (Option 2) + alignements doc/valeurs — TERMINÉE
 
