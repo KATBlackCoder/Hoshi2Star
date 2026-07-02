@@ -29,7 +29,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 4. Verification Before Done
 - **Never mark a task complete without proving it works**
-- Mandatory verification gate: `pnpm typecheck && cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml`
+- Mandatory verification gate: `pnpm typecheck && pnpm test && cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml`
 - Diff behavior between `main` and your changes when relevant
 - Ask yourself: *"Would a senior Rust/Tauri engineer approve this?"*
 - Run tests, check logs, demonstrate correctness — don't assume
