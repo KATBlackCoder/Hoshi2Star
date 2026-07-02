@@ -9,7 +9,110 @@
 > - Phase 5 : ✅ **terminée & mergée sur `main`** (2026-07-02).
 > - Phase 7 : ✅ **terminée** (2026-07-02) — 23 tests front (Vitest) + 2 tests
 >   d'intégration Rust ; `pnpm test` ajouté au gate. Branche `feat/test-coverage`.
-> - 👉 **PROCHAINE : Phase 6 — refactos DRY** (puis 8, puis 9, cf. ordre du plan).
+> - 👉 **PROCHAINE : Phase 8 — dispatch moteur (OCP)** (puis 9). Phase 6 terminée.
+
+## ✅ Phase 6 — DRY backend + UI — TERMINÉE
+
+> Plan §Phase 6. **Sites vérifiés sur le code réel (2026-07-02)** — voir n° de
+> ligne ci-dessous. Pas un bugfix → pas de « test rouge » ; le filet est la suite
+> Phase 7 (367 Rust + 2 intégration + 23 front) : **chaque refacto doit laisser le
+> gate 100 % vert sans changer un seul test** (refacto = iso-comportement). Toute
+> divergence de comportement observée = ce n'était pas une simple duplication →
+> STOP + re-plan. Branche : `refactor/dry-phase-6`.
+>
+> **Ordre** : backend d'abord (1→5, un commit), puis UI (6→9, un commit), merge
+> unique. Gate complet entre les deux blocs.
+
+### Volet backend
+
+- [x] **1. Stats recompute (dupliqué 3×)** → `core/manifest.rs::refresh_stats`.
+      Le bloc `SELECT (…4 COUNT…) FROM … WHERE …` + `manifest::update_stats(…)`
+      est copié-collé à `project.rs:421-450` (clé `s.id = ?`),
+      `translate.rs:148-174` (clé `s.id = ?`) et `translate.rs:368-394` (clé
+      `project_id`). Extraire `pub async fn refresh_stats(pool, project_id)` (best-
+      effort, ne renvoie pas d'erreur) ; `update_segment`/`translate.rs:148`
+      résolvent `project_id` depuis le segment d'abord (une requête triviale, ou
+      variante `refresh_stats_for_segment`). **Attention** : garder le caractère
+      *best-effort* (les 3 sites ignorent l'erreur) — ne pas transformer en
+      `?`/propagation.
+- [x] **2. Filtre glossaire pertinent (dupliqué)** → `core/glossary.rs`.
+      `translate.rs:105-128` (charge `list_for_project`, filtre
+      `pairs.contains(t.source_text)`, fallback par longueur si vide) est répété
+      pour la passe projet. Extraire `pub async fn relevant_terms(pool,
+      project_id, lang_pair, sources: &[…]) -> Vec<(String,String)>` avec la même
+      logique de fallback ; les 2 passes l'appellent.
+- [x] **3. Test « fichier Map ? » (dupliqué 4×)** → helper partagé.
+      `project.rs:814, 886, 916` + `vx_ace/extractor.rs:435` font tous
+      `file_name.starts_with("Map")` + `trim_start_matches("Map")`. Extraire
+      (`engines/mod.rs` ou `utils`) `fn map_id_from_name(file_name) ->
+      Option<&str>` (ou `is_map_file` + extraction du numéro) ; les 4 sites
+      l'utilisent. **Vérifier** : les 3 sites de project.rs partagent-ils
+      exactement la même sémantique (extension `.json` implicite) — sinon garder
+      le helper minimal (booléen + id) sans forcer une unification abusive.
+- [x] **4. Table `QaError` pénalité + label (match répété)** →
+      `QaError::kind()`/table unique. `qa.rs:262-264` (pénalités 10/15/15),
+      `qa.rs:283-330` (`label_en`/`label_fr`), et `report.rs` (labels) répètent le
+      `match` par variante. Introduire une seule source (ex. `impl QaError { fn
+      penalty(&self)->i32; fn label(&self, lang)->String }` déjà partiellement là)
+      et faire consommer `report.rs` par ces méthodes plutôt qu'un `match`
+      parallèle. **Risque moyen** : le score QA est testé (`qa.rs` tests) — le gate
+      doit rester vert à l'identique (mêmes pénalités, mêmes libellés fr/en).
+- [x] **5. glossaire — `SELECT` 9-col + N+1 dédup** → `core/glossary.rs`.
+      Le `SELECT id, source_text, target_text, lang_pair, domain, project_id, …`
+      est répété à `:116, :127, :307` → une `const GLOSSARY_COLUMNS` (ou fonction
+      de mapping `FromRow`). Corriger le **N+1** de dédup (`:230-253` : un `SELECT
+      COUNT(*)` par terme dans la boucle `for term in …take(50)`) par un pré-fetch
+      unique des `source_text` existants (un seul `SELECT source_text WHERE
+      project_id = ?` → `HashSet`) puis test en mémoire. **Iso-comportement** :
+      mêmes termes insérés/ignorés qu'avant.
+
+### Volet UI
+
+- [x] **6. Helper « ouvrir un jeu + mapper l'erreur moteur » (dupliqué 3×)**.
+      `AppToolbar.tsx:60-66` + `ProjectList.tsx:60-66, 101-107` refont le même
+      `catch` → `msg.includes("could not identify game engine") ? clé A : clé B`.
+      Extraire un util (`lib/openProject.ts` ou méthode de `stores/project.ts`)
+      qui invoque `open_project`, mappe l'erreur en clé i18n, et laisse le
+      composant afficher le toast. Ne pas déplacer l'UI (toast) dans le store.
+- [x] **7. Hook `useExportToFile(...)`** → factorise `QAPanel.tsx:127-140` et
+      `TMPanel.tsx:75-87` (même séquence `save()` dialog → `invoke(cmd,…)` →
+      `toast.success/error`). Hook générique `(cmd, args, {successKey, errorKey})`.
+- [x] **8. Source unique statut→couleur** (scopé, validé advisor) — extrait
+      `lib/statusSummary.ts` (`STATUS_SUMMARY` : convention chip ✓/◎/⚠/○ partagée
+      FileTree + ProjectList, classes verbatim). **PAS** fusionné avec
+      `STATUS_STYLES` (badge grille cyan/or) : concepts/teintes distincts →
+      fusion = changement de comportement. — **scoper d'abord** : ce sont
+      potentiellement 3 échelles *différentes* (statut de segment `STATUS_STYLES`
+      / `SegmentStatsBar` ; icône par *type de fichier* `FileTree fileIcon` ;
+      qualité de *match TM* `MatchBadge`). N'unifier que ce qui est réellement le
+      même concept (statut de segment) dans un `lib/statusStyles.ts` ; **ne pas**
+      fusionner de force des palettes de concepts distincts (anti-DRY abusif).
+- [x] **9. Listener `h2s://glossary/extraction-done`** (scopé, validé advisor) —
+      extrait uniquement le type de payload `GlossaryExtractionDonePayload`
+      (types.ts), utilisé par les 3 listeners. **PAS** fusionné en un listener
+      unique : les 3 mettent à jour des états/toasts distincts → fusion = refonte
+      d'architecture d'état, hors iso-comportement. — original ci-dessous :
+      `useAppHandlers.ts:44`, `SegmentGrid.tsx:240`, `GlossaryPanel.tsx:248`.
+      Vérifier s'ils font la *même* chose (recharger le glossaire / rafraîchir la
+      grille) ; si oui, centraliser en **un** listener (probablement dans
+      `useAppHandlers` ou un hook dédié) qui met à jour le store, les autres
+      consommant le store. **Attention** : ne pas casser le rafraîchissement de la
+      grille après extraction (comportement observable Phase 3/5).
+
+### Vérification
+- [x] Backend (1-5) : gate complet vert **sans modifier aucun test** —
+      `pnpm typecheck && pnpm test && cargo clippy -- -D warnings && cargo test`.
+      → 367 Rust + 2 intégration + 23 front, clippy exit 0, typecheck clean.
+- [x] UI (6-9) : idem ; les tests front existants (`ProjectList`, `SegmentGrid`,
+      `FileTree`, `useAppHandlers`) restés verts inchangés → iso-comportement prouvé.
+      Réserve : `useExportToFile` (item 7) prouvé iso **par inspection** (QAPanel/
+      TMPanel sans test) — tests panneaux relèvent de Phase 7 (hors périmètre).
+- [x] `docs/architecture.md` : `manifest::refresh_stats` noté point unique de
+      recalcul de stats.
+- [x] CHANGELOG.md (Changed) + docs/journal/2026-07-02-dry-phase-6.md + todo cochés.
+- [ ] **Hors scope** (log backlog, ne pas traiter ici) : doublons TM (index non-
+      UNIQUE), `pnpm lint` cassé (ESLint 10), QA live sans glossaire, 8 lints
+      `clippy --all-targets` dans le code de test.
 
 ## ✅ Phase 7 — Couverture de tests front + intégration — TERMINÉE
 

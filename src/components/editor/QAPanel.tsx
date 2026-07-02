@@ -1,11 +1,9 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { save } from "@tauri-apps/plugin-dialog";
 import { AlertTriangle, CheckCircle, FileDown } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useExportToFile } from "@/hooks/useExportToFile";
 import { useActiveSegmentId } from "@/stores/editor";
 import { useProjectStore } from "@/stores/project";
 import type { QaErrorType, QaReport, QaResult } from "@/lib/types";
@@ -118,30 +116,20 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
   const { t, i18n } = useTranslation();
   const activeSegmentId = useActiveSegmentId();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
-  const [isExporting, setIsExporting] = useState(false);
+  const { isExporting, exportToFile } = useExportToFile();
 
-  const handleExport = async () => {
+  const handleExport = () => {
     if (!activeProjectId) return;
-    let path: string | null;
-    try {
-      path = await save({
+    void exportToFile({
+      dialog: {
         filters: [{ name: "HTML", extensions: ["html"] }],
         defaultPath: "qa-report.html",
-      });
-    } catch (e) {
-      toast.error(t("qaPanel.exportError", { error: String(e) }));
-      return;
-    }
-    if (!path) return;
-    setIsExporting(true);
-    invoke("export_qa_report", {
-      projectId: activeProjectId,
-      outputPath: path,
-      lang: i18n.language,
-    })
-      .then(() => toast.success(t("qaPanel.exportSuccess")))
-      .catch((e) => toast.error(t("qaPanel.exportError", { error: String(e) })))
-      .finally(() => setIsExporting(false));
+      },
+      command: "export_qa_report",
+      args: { projectId: activeProjectId, lang: i18n.language },
+      successKey: "qaPanel.exportSuccess",
+      errorKey: "qaPanel.exportError",
+    });
   };
 
   // Real-time QA: invoked as a query keyed on source+target text

@@ -29,6 +29,7 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - Fix stale `%` progress badge in toolbar — `SegmentGrid` now reloads `activeProjectStats` on `h2s://llm/completed` alongside segments and source files
 
 ### Changed
+- Deduplicate copy-pasted logic across the backend and UI (audit remediation Phase 6, iso-behaviour — no test modified) — new `manifest::refresh_stats` is now the single project-stats recompute point (3 sites), `glossary::relevant_terms` the single glossary-filter helper (2 sites) with a shared `TERM_COLUMNS` SELECT list and an N+1 dedup fetched once into a `HashSet`, `engines::filter::is_map_file` the single `Map*` filename test (4 sites), and `QaError::penalty`/`type_key` replace the score-penalty and report-key match arms; on the front, `openProjectErrorKey`, the `useExportToFile` hook, the `STATUS_SUMMARY` chip convention and the `GlossaryExtractionDonePayload` type replace their duplicated inline copies
 - Show per-file progress counters in the FileTree (`✓ translated · ⚠ needs review`) and hide the debug-inject button until every segment is strictly translated — no more inviting the user to inject unreviewed LLM fallbacks
 - Render the `reviewed` status (blue) in the project list stats bar so the bar sums to 100%
 - Unify the default Ollama model on `gemma4:e4b` — the backend fallback (`q4_K_M`), the settings default (`q8_0`) and the LLM store initial value (`qwen3:4b`) were three different models; single TS source of truth in `src/lib/constants.ts`, mirrored by `DEFAULT_OLLAMA_MODEL` in Rust

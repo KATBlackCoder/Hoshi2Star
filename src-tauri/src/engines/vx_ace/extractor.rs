@@ -432,14 +432,7 @@ pub fn extract_system(json: &Value) -> Vec<ExtractedSegment> {
 
 /// Dispatch to the correct extract function based on VX Ace file name.
 fn dispatch_extract(file_name: &str, json: &Value) -> Vec<ExtractedSegment> {
-    if file_name.starts_with("Map")
-        && file_name != "MapInfos.rvdata2"
-        && file_name
-            .trim_start_matches("Map")
-            .trim_end_matches(".rvdata2")
-            .parse::<u32>()
-            .is_ok()
-    {
+    if crate::engines::filter::is_map_file(file_name, ".rvdata2") {
         return extract_map(json);
     }
 

@@ -6,7 +6,11 @@ import { toast } from "sonner";
 import { useProjectStore, usePendingGlossaryExtract } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { useLlmStore } from "@/stores/llm";
-import type { FontScanResult, ProjectStats } from "@/lib/types";
+import type {
+  FontScanResult,
+  GlossaryExtractionDonePayload,
+  ProjectStats,
+} from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -40,7 +44,7 @@ export function useAppHandlers() {
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
-    listen<{ projectId: string; terms: unknown[]; error: string | null }>(
+    listen<GlossaryExtractionDonePayload>(
       "h2s://glossary/extraction-done",
       (event) => {
         setExtractingGlossary(false);

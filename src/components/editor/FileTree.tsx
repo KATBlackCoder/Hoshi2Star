@@ -9,6 +9,7 @@ import { useSourceFiles } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { cn } from "@/lib/utils";
 import { formatDuration } from "@/lib/format";
+import { STATUS_SUMMARY } from "@/lib/statusSummary";
 import type { FontScanResult } from "@/lib/types";
 import {
   FileText,
@@ -197,16 +198,17 @@ export function FileTree() {
                 {(file.translatedCount > 0 || file.needsReviewCount > 0) && (
                   <span className="shrink-0 font-mono text-[10px] tabular-nums opacity-80">
                     {file.translatedCount > 0 && (
-                      <span className="text-green-400/80">
-                        ✓ {file.translatedCount}
+                      <span className={STATUS_SUMMARY.translated.className}>
+                        {STATUS_SUMMARY.translated.glyph} {file.translatedCount}
                       </span>
                     )}
                     {file.translatedCount > 0 && file.needsReviewCount > 0 && (
                       <span className="text-muted-foreground"> · </span>
                     )}
                     {file.needsReviewCount > 0 && (
-                      <span className="text-amber-400/80">
-                        ⚠ {file.needsReviewCount}
+                      <span className={STATUS_SUMMARY.needsReview.className}>
+                        {STATUS_SUMMARY.needsReview.glyph}{" "}
+                        {file.needsReviewCount}
                       </span>
                     )}
                   </span>

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { openProjectErrorKey } from "@/lib/projectError";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Bug,
@@ -170,11 +171,7 @@ export function AppToolbar({
     try {
       await openProject(selected as string);
     } catch (err) {
-      const msg = String(err);
-      const key = msg.includes("could not identify game engine")
-        ? "projectList.engineNotFound"
-        : "projectList.openError";
-      toast.error(t(key));
+      toast.error(t(openProjectErrorKey(err)));
     } finally {
       setIsOpening(false);
     }

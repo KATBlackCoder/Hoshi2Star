@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useProviderConfig } from "@/stores/llm";
 import { useProjectStore } from "@/stores/project";
-import type { GlossaryTerm } from "@/lib/types";
+import type { GlossaryExtractionDonePayload, GlossaryTerm } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -241,36 +241,35 @@ export function GlossaryPanel({ projectId, langPair }: GlossaryPanelProps) {
 
   // Listen for extraction-done events
   useEffect(() => {
-    const unlisten = listen<{
-      projectId: string;
-      terms: GlossaryTerm[];
-      error: string | null;
-    }>("h2s://glossary/extraction-done", (event) => {
-      if (event.payload.projectId !== projectId) return;
-      setIsExtracting(false);
+    const unlisten = listen<GlossaryExtractionDonePayload>(
+      "h2s://glossary/extraction-done",
+      (event) => {
+        if (event.payload.projectId !== projectId) return;
+        setIsExtracting(false);
 
-      if (event.payload.error) {
-        toast.error(
-          `${t("glossaryPanel.extractError")}: ${event.payload.error}`,
-          { duration: 8000 },
-        );
-        return;
-      }
+        if (event.payload.error) {
+          toast.error(
+            `${t("glossaryPanel.extractError")}: ${event.payload.error}`,
+            { duration: 8000 },
+          );
+          return;
+        }
 
-      const newTerms = event.payload.terms;
-      setTerms((prev) => {
-        const existingIds = new Set(prev.map((t) => t.id));
-        return [...prev, ...newTerms.filter((t) => !existingIds.has(t.id))];
-      });
+        const newTerms = event.payload.terms;
+        setTerms((prev) => {
+          const existingIds = new Set(prev.map((t) => t.id));
+          return [...prev, ...newTerms.filter((t) => !existingIds.has(t.id))];
+        });
 
-      if (newTerms.length === 0) {
-        toast.info(t("glossaryPanel.extractNoTerms"), { duration: 5000 });
-      } else {
-        toast.success(
-          `${newTerms.length} ${t("glossaryPanel.title").toLowerCase()} ${t("glossaryPanel.extractDone")}`,
-        );
-      }
-    });
+        if (newTerms.length === 0) {
+          toast.info(t("glossaryPanel.extractNoTerms"), { duration: 5000 });
+        } else {
+          toast.success(
+            `${newTerms.length} ${t("glossaryPanel.title").toLowerCase()} ${t("glossaryPanel.extractDone")}`,
+          );
+        }
+      },
+    );
     return () => {
       unlisten.then((fn) => fn());
     };
