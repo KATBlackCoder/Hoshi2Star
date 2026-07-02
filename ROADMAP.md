@@ -139,6 +139,28 @@ Au re-import, comparaison par clé puis par hash :
 
 ---
 
+## Performance — optimisations conditionnelles (sur signal, pas prématuré)
+
+> **Phase 9 du plan de remédiation audit** (`docs/audit-remediation-plan-2026-07-01.md`),
+> reportée ici comme **possibilité** : suffisant à l'échelle actuelle. À déclencher
+> uniquement sur un **point chaud mesuré** (ex. ouverture lente d'un gros jeu, save
+> lent, lookup TM), jamais à l'aveugle. Risque faible. Phases 1→8 de la remédiation
+> sont terminées et mergées.
+
+- [ ] `llm/pipeline.rs` `persist_batch_results` — `UPDATE` ligne par ligne → une seule
+      transaction / `UPDATE` groupé
+- [ ] `llm/pipeline.rs` `translate_batch` — `tm::lookup_exact` par segment →
+      `WHERE source_hash IN (...)` en une requête
+- [ ] Extraction (`open_project`) — INSERT segments un par un → `INSERT` multi-valeurs
+      (réduit le temps d'ouverture sur gros jeux ; les helpers `insert_segment` de la
+      Phase 8 centralisent déjà le point d'insertion)
+- [ ] **NE PAS** optimiser `core/tm.rs` `lookup_fuzzy` (scan O(n)) avant d'atteindre
+      l'échelle documentée (~5k entrées → index trigram, déjà au backlog F5)
+- [x] ~~`update_segment` : sous-requête corrélée 5×COUNT à chaque save~~ — **déjà fait**
+      en Phase 6 (`manifest::refresh_stats`, point unique de recalcul des stats)
+
+---
+
 ## Métriques de validation produit
 
 | Milestone | Signal go/pivot |
