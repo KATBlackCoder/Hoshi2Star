@@ -255,15 +255,7 @@ pub fn check(
     }
 
     // Score calculation
-    let penalty: i32 = errors
-        .iter()
-        .map(|e| match e {
-            QaError::MissingPlaceholder { .. } => 25,
-            QaError::LineTooLong { .. } => 10,
-            QaError::BomDetected => 15,
-            QaError::GlossaryMismatch { .. } => 15,
-        })
-        .sum();
+    let penalty: i32 = errors.iter().map(QaError::penalty).sum();
 
     let score = (100 - penalty).max(0) as u8;
 
@@ -275,6 +267,29 @@ pub fn check(
 // ---------------------------------------------------------------------------
 
 impl QaError {
+    /// Score penalty (points subtracted from 100) for this error kind.
+    ///
+    /// Single source of truth for the per-kind weighting — the score calculation
+    /// and any future consumer read it here rather than re-spelling the match.
+    pub fn penalty(&self) -> i32 {
+        match self {
+            QaError::MissingPlaceholder { .. } => 25,
+            QaError::LineTooLong { .. } => 10,
+            QaError::BomDetected => 15,
+            QaError::GlossaryMismatch { .. } => 15,
+        }
+    }
+
+    /// Stable machine key for this error kind (CSS class / HTML filter value).
+    pub fn type_key(&self) -> &'static str {
+        match self {
+            QaError::MissingPlaceholder { .. } => "missing_placeholder",
+            QaError::LineTooLong { .. } => "line_too_long",
+            QaError::BomDetected => "bom_detected",
+            QaError::GlossaryMismatch { .. } => "glossary_mismatch",
+        }
+    }
+
     /// Human-readable label for this error in the requested language.
     ///
     /// `lang` is `"fr"` for French; any other value falls back to English.

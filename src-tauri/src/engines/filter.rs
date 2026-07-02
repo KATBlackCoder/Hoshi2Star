@@ -6,6 +6,22 @@
 
 use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
 
+/// Returns `true` if `file_name` is a numbered map file (`Map001{ext}` …
+/// `MapNNN{ext}`), but not `MapInfos{ext}`. `ext` includes the leading dot
+/// (e.g. `".json"` for MV/MZ, `".rvdata2"` for VX Ace).
+///
+/// Shared by the MV/MZ and VX Ace classifiers/dispatchers, which each spelled
+/// this test out identically. The numeric-suffix check alone excludes
+/// `MapInfos{ext}` (`"Infos"` is not a `u32`), so no explicit guard is needed.
+pub fn is_map_file(file_name: &str, ext: &str) -> bool {
+    file_name.starts_with("Map")
+        && file_name
+            .trim_start_matches("Map")
+            .trim_end_matches(ext)
+            .parse::<u32>()
+            .is_ok()
+}
+
 /// Returns `true` if `text` consists entirely of ASCII or fullwidth digits.
 pub fn is_pure_number(text: &str) -> bool {
     let t = text.trim();

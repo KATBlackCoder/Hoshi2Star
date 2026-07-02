@@ -33,6 +33,11 @@ pub struct GlossaryTerm {
     pub updated_at: String,
 }
 
+/// Column list for `SELECT`ing a full [`GlossaryTerm`] row — kept in one place
+/// so the field order stays in sync with the struct across every query.
+const TERM_COLUMNS: &str = "id, source_text, target_text, lang_pair, domain, project_id, \
+     auto_generated, created_at, updated_at";
+
 // ---------------------------------------------------------------------------
 // CRUD
 // ---------------------------------------------------------------------------
@@ -112,24 +117,20 @@ pub async fn list_for_project(
     project_id: &str,
     lang_pair: &str,
 ) -> Result<Vec<GlossaryTerm>, sqlx::Error> {
-    let globals = sqlx::query_as::<_, GlossaryTerm>(
-        "SELECT id, source_text, target_text, lang_pair, domain, project_id, \
-                auto_generated, created_at, updated_at \
-         FROM glossary_terms \
+    let globals = sqlx::query_as::<_, GlossaryTerm>(&format!(
+        "SELECT {TERM_COLUMNS} FROM glossary_terms \
          WHERE project_id IS NULL AND lang_pair = ? \
          ORDER BY source_text ASC",
-    )
+    ))
     .bind(lang_pair)
     .fetch_all(pool)
     .await?;
 
-    let locals = sqlx::query_as::<_, GlossaryTerm>(
-        "SELECT id, source_text, target_text, lang_pair, domain, project_id, \
-                auto_generated, created_at, updated_at \
-         FROM glossary_terms \
+    let locals = sqlx::query_as::<_, GlossaryTerm>(&format!(
+        "SELECT {TERM_COLUMNS} FROM glossary_terms \
          WHERE project_id = ? AND lang_pair = ? \
          ORDER BY source_text ASC",
-    )
+    ))
     .bind(project_id)
     .bind(lang_pair)
     .fetch_all(pool)
@@ -148,6 +149,44 @@ pub async fn list_for_project(
     let mut result = filtered_globals;
     result.extend(locals);
     Ok(result)
+}
+
+/// Select the glossary terms relevant to a batch of source strings.
+///
+/// Loads the project glossary ([`list_for_project`]) and keeps the terms whose
+/// `source_text` appears in at least one of `sources` (capped at 20). If none
+/// match, falls back to the 10 shortest terms — short proper names add the least
+/// prompt noise. Returns `(source, target)` pairs ready for
+/// `TranslationContext.glossary_terms`. Single source of truth for the filter
+/// previously duplicated across the batch and project translate paths.
+pub async fn relevant_terms(
+    pool: &SqlitePool,
+    project_id: &str,
+    lang_pair: &str,
+    sources: &[&str],
+) -> Vec<(String, String)> {
+    let all_terms = list_for_project(pool, project_id, lang_pair)
+        .await
+        .unwrap_or_default();
+
+    let relevant: Vec<(String, String)> = all_terms
+        .iter()
+        .filter(|t| sources.iter().any(|src| src.contains(&t.source_text)))
+        .take(20)
+        .map(|t| (t.source_text.clone(), t.target_text.clone()))
+        .collect();
+    if !relevant.is_empty() {
+        return relevant;
+    }
+
+    // Fallback: 10 shortest terms.
+    let mut by_len = all_terms;
+    by_len.sort_by_key(|t| t.source_text.len());
+    by_len
+        .into_iter()
+        .take(10)
+        .map(|t| (t.source_text, t.target_text))
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -225,23 +264,28 @@ pub async fn extract_terms_from_project(
     // 4. Robustly parse the JSON array from the response
     let extracted = parse_json_array(&raw);
 
-    // 5. Insert new terms in DB (skip duplicates, limit to 50)
+    // 5. Insert new terms in DB (skip duplicates, limit to 50).
+    //    Pre-fetch the project's existing source_texts once (a single query)
+    //    instead of a `SELECT COUNT(*)` per candidate — avoids the N+1. The set
+    //    is updated on each successful insert so duplicate sources within this
+    //    same batch are also skipped (matching the previous per-term DB check).
+    let mut existing: std::collections::HashSet<String> = sqlx::query_scalar::<_, String>(
+        "SELECT source_text FROM glossary_terms WHERE project_id = ?",
+    )
+    .bind(project_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .collect();
+
     let mut created = Vec::new();
     for term in extracted.into_iter().take(50) {
         if term.source.is_empty() || term.target.is_empty() {
             continue;
         }
 
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM glossary_terms WHERE source_text = ? AND project_id = ?",
-        )
-        .bind(&term.source)
-        .bind(project_id)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
-
-        if count > 0 {
+        if existing.contains(&term.source) {
             continue;
         }
 
@@ -256,6 +300,7 @@ pub async fn extract_terms_from_project(
         )
         .await
         {
+            existing.insert(term.source.clone());
             created.push(gt);
         }
     }
@@ -303,11 +348,9 @@ fn parse_json_array(raw: &str) -> Vec<ExtractedTerm> {
 // ---------------------------------------------------------------------------
 
 async fn fetch_by_id(pool: &SqlitePool, id: &str) -> Result<GlossaryTerm, sqlx::Error> {
-    sqlx::query_as::<_, GlossaryTerm>(
-        "SELECT id, source_text, target_text, lang_pair, domain, project_id, \
-                auto_generated, created_at, updated_at \
-         FROM glossary_terms WHERE id = ?",
-    )
+    sqlx::query_as::<_, GlossaryTerm>(&format!(
+        "SELECT {TERM_COLUMNS} FROM glossary_terms WHERE id = ?",
+    ))
     .bind(id)
     .fetch_one(pool)
     .await

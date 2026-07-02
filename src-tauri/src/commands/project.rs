@@ -13,6 +13,7 @@ use crate::{
             detect_engine, find_data_dir, find_vx_ace_data_dir, guess_wolf_version_from_structure,
             Engine,
         },
+        filter,
         mv_mz::extractor,
         vx_ace::extractor as vx_extractor,
         wolf::extractor as wolf_extractor,
@@ -383,18 +384,19 @@ pub async fn update_segment(
     target_text: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<Segment, String> {
-    // Fetch source_text + engine for QA and TM
-    let (source_text, engine): (String, String) = sqlx::query_as::<_, (String, String)>(
-        "SELECT s.source_text, p.engine \
-         FROM segments s \
-         JOIN source_files sf ON s.source_file_id = sf.id \
-         JOIN projects p ON sf.project_id = p.id \
-         WHERE s.id = ?",
-    )
-    .bind(&id)
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| e.to_string())?;
+    // Fetch source_text + engine (QA/TM) + project_id (manifest refresh)
+    let (source_text, engine, project_id): (String, String, String) =
+        sqlx::query_as::<_, (String, String, String)>(
+            "SELECT s.source_text, p.engine, p.id \
+             FROM segments s \
+             JOIN source_files sf ON s.source_file_id = sf.id \
+             JOIN projects p ON sf.project_id = p.id \
+             WHERE s.id = ?",
+        )
+        .bind(&id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // QA check — use the project's engine for correct placeholder patterns.
     let qa_result = qa::check(&source_text, &target_text, &[], &engine);
@@ -418,36 +420,7 @@ pub async fn update_segment(
     let _ = tm::insert(&source_text, &target_text, &engine, "ja-en", &state.db).await;
 
     // Update manifest stats (best-effort — indicative only, never blocks the command)
-    let stats_row = sqlx::query_as::<_, (String, i64, i64, i64, i64)>(
-        "SELECT p.game_path,
-            (SELECT COUNT(*) FROM source_files sf2 WHERE sf2.project_id = p.id),
-            (SELECT COUNT(*) FROM segments s2
-               JOIN source_files sf2 ON s2.source_file_id = sf2.id
-               WHERE sf2.project_id = p.id),
-            (SELECT COUNT(*) FROM segments s2
-               JOIN source_files sf2 ON s2.source_file_id = sf2.id
-               WHERE sf2.project_id = p.id AND s2.status = 'translated'),
-            (SELECT COUNT(*) FROM glossary_terms g
-               WHERE g.project_id = p.id OR g.project_id IS NULL)
-         FROM segments s
-           JOIN source_files sf ON s.source_file_id = sf.id
-           JOIN projects p ON sf.project_id = p.id
-         WHERE s.id = ?",
-    )
-    .bind(&id)
-    .fetch_optional(&state.db)
-    .await;
-    if let Ok(Some((game_path, files, segs, translated, glossary))) = stats_row {
-        let _ = manifest::update_stats(
-            &game_path,
-            manifest::ManifestStats {
-                file_count: files as u32,
-                segment_count: segs as u32,
-                translated_count: translated as u32,
-                glossary_term_count: glossary as u32,
-            },
-        );
-    }
+    manifest::refresh_stats(&state.db, &project_id).await;
 
     sqlx::query_as::<_, Segment>(
         "SELECT id, source_file_id, json_key, source_text, target_text, \
@@ -811,14 +784,7 @@ fn collect_rvdata2_files(data_dir: &Path) -> Result<Vec<RvData2Entry>, std::io::
 /// Returns `"unknown"` for files that should be skipped.
 fn classify_vx_ace_file(file_name: &str) -> &'static str {
     // Map files are Map001.rvdata2 … MapNNN.rvdata2 (but not MapInfos.rvdata2)
-    if file_name.starts_with("Map")
-        && file_name != "MapInfos.rvdata2"
-        && file_name
-            .trim_start_matches("Map")
-            .trim_end_matches(".rvdata2")
-            .parse::<u32>()
-            .is_ok()
-    {
+    if filter::is_map_file(file_name, ".rvdata2") {
         return "vx_map";
     }
 
@@ -883,14 +849,7 @@ fn collect_json_files(
 /// Returns `"unknown"` for files that should be skipped.
 fn classify_mv_mz_file(file_name: &str) -> &'static str {
     // Map files are Map001.json … MapNNN.json (but not MapInfos.json)
-    if file_name.starts_with("Map")
-        && file_name != "MapInfos.json"
-        && file_name
-            .trim_start_matches("Map")
-            .trim_end_matches(".json")
-            .parse::<u32>()
-            .is_ok()
-    {
+    if filter::is_map_file(file_name, ".json") {
         return "map";
     }
 
@@ -913,14 +872,7 @@ fn classify_mv_mz_file(file_name: &str) -> &'static str {
 
 /// Dispatch extraction to the correct function based on file name.
 fn dispatch_extract(file_name: &str, json: &serde_json::Value) -> Vec<extractor::ExtractedSegment> {
-    if file_name.starts_with("Map")
-        && file_name != "MapInfos.json"
-        && file_name
-            .trim_start_matches("Map")
-            .trim_end_matches(".json")
-            .parse::<u32>()
-            .is_ok()
-    {
+    if filter::is_map_file(file_name, ".json") {
         return extractor::extract_map(json);
     }
 

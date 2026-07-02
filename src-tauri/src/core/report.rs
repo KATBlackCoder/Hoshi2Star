@@ -94,15 +94,6 @@ pub async fn collect_qa_details(
 // HTML generation
 // ---------------------------------------------------------------------------
 
-fn error_type_key(err: &QaError) -> &'static str {
-    match err {
-        QaError::MissingPlaceholder { .. } => "missing_placeholder",
-        QaError::LineTooLong { .. } => "line_too_long",
-        QaError::BomDetected => "bom_detected",
-        QaError::GlossaryMismatch { .. } => "glossary_mismatch",
-    }
-}
-
 struct Labels {
     title: &'static str,
     generated: &'static str,
@@ -441,7 +432,7 @@ td{{padding:7px 10px;vertical-align:top}}
         let badge_class = if d.qa_score < 70 { "crit" } else { "warn" };
 
         // data-errors = comma-separated list of unique error type keys
-        let mut error_types: Vec<&str> = d.errors.iter().map(error_type_key).collect();
+        let mut error_types: Vec<&str> = d.errors.iter().map(QaError::type_key).collect();
         error_types.dedup();
         let data_errors = error_types.join(",");
 
@@ -489,7 +480,7 @@ td{{padding:7px 10px;vertical-align:top}}
         // Errors list
         out.push_str("<td><div class=\"err-list\">\n");
         for err in &d.errors {
-            let key = error_type_key(err);
+            let key = err.type_key();
             let label = escape_xml(&err.label(if use_fr { "fr" } else { "en" }));
             let _ = writeln!(
                 out,

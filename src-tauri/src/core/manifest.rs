@@ -112,6 +112,42 @@ pub fn update_stats(game_path: &str, stats: ManifestStats) -> Result<(), io::Err
     }
 }
 
+/// Recompute a project's counts from the DB and write them into its manifest.
+///
+/// Single source of truth for the stats recompute that `update_segment` and the
+/// two translate paths previously copy-pasted. **Best-effort**: any DB or
+/// manifest error is logged-then-swallowed — the on-disk stats are indicative
+/// only and must never fail the caller's command.
+pub async fn refresh_stats(pool: &sqlx::SqlitePool, project_id: &str) {
+    let row = sqlx::query_as::<_, (String, i64, i64, i64, i64)>(
+        "SELECT p.game_path,
+            (SELECT COUNT(*) FROM source_files sf2 WHERE sf2.project_id = p.id),
+            (SELECT COUNT(*) FROM segments s2
+               JOIN source_files sf2 ON s2.source_file_id = sf2.id
+               WHERE sf2.project_id = p.id),
+            (SELECT COUNT(*) FROM segments s2
+               JOIN source_files sf2 ON s2.source_file_id = sf2.id
+               WHERE sf2.project_id = p.id AND s2.status = 'translated'),
+            (SELECT COUNT(*) FROM glossary_terms g
+               WHERE g.project_id = p.id OR g.project_id IS NULL)
+         FROM projects p WHERE p.id = ?",
+    )
+    .bind(project_id)
+    .fetch_optional(pool)
+    .await;
+    if let Ok(Some((game_path, files, segs, translated, glossary))) = row {
+        let _ = update_stats(
+            &game_path,
+            ManifestStats {
+                file_count: files as u32,
+                segment_count: segs as u32,
+                translated_count: translated as u32,
+                glossary_term_count: glossary as u32,
+            },
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

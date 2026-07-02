@@ -102,30 +102,8 @@ pub async fn translate_segments(
                 Some((project_id, engine)) => {
                     resolved_project_id = Some(project_id.clone());
                     project_engine = engine;
-                    let all_terms = glossary::list_for_project(&db, &project_id, lang_pair)
-                        .await
-                        .unwrap_or_default();
-
-                    // Keep only terms whose source appears in at least one segment
-                    let mut relevant: Vec<(String, String)> = all_terms
-                        .iter()
-                        .filter(|t| pairs.iter().any(|(_, src)| src.contains(&t.source_text)))
-                        .take(20)
-                        .map(|t| (t.source_text.clone(), t.target_text.clone()))
-                        .collect();
-
-                    // Fallback: 10 shortest terms (short proper names = less prompt noise)
-                    if relevant.is_empty() {
-                        let mut by_len = all_terms;
-                        by_len.sort_by_key(|t| t.source_text.len());
-                        relevant = by_len
-                            .into_iter()
-                            .take(10)
-                            .map(|t| (t.source_text, t.target_text))
-                            .collect();
-                    }
-
-                    relevant
+                    let sources: Vec<&str> = pairs.iter().map(|(_, src)| src.as_str()).collect();
+                    glossary::relevant_terms(&db, &project_id, lang_pair, &sources).await
                 }
                 None => vec![],
             }
@@ -145,33 +123,7 @@ pub async fn translate_segments(
             Ok(_) => {
                 // Update manifest stats once at end of batch (not per-segment)
                 if let Some(ref pid) = resolved_project_id {
-                    let stats_row = sqlx::query_as::<_, (String, i64, i64, i64, i64)>(
-                        "SELECT p.game_path,
-                            (SELECT COUNT(*) FROM source_files sf2 WHERE sf2.project_id = p.id),
-                            (SELECT COUNT(*) FROM segments s2
-                               JOIN source_files sf2 ON s2.source_file_id = sf2.id
-                               WHERE sf2.project_id = p.id),
-                            (SELECT COUNT(*) FROM segments s2
-                               JOIN source_files sf2 ON s2.source_file_id = sf2.id
-                               WHERE sf2.project_id = p.id AND s2.status = 'translated'),
-                            (SELECT COUNT(*) FROM glossary_terms g
-                               WHERE g.project_id = p.id OR g.project_id IS NULL)
-                         FROM projects p WHERE p.id = ?",
-                    )
-                    .bind(pid)
-                    .fetch_optional(&db)
-                    .await;
-                    if let Ok(Some((game_path, files, segs, translated, glossary))) = stats_row {
-                        let _ = manifest::update_stats(
-                            &game_path,
-                            manifest::ManifestStats {
-                                file_count: files as u32,
-                                segment_count: segs as u32,
-                                translated_count: translated as u32,
-                                glossary_term_count: glossary as u32,
-                            },
-                        );
-                    }
+                    manifest::refresh_stats(&db, pid).await;
                 }
                 // Persist per-file translation duration when a whole file was translated
                 if let Some(ref fid) = file_id {
@@ -302,24 +254,9 @@ pub async fn translate_all_segments(
             }
 
             // Load glossary terms filtered by batch content
-            let all_terms = glossary::list_for_project(&db, &project_id, lang_pair)
-                .await
-                .unwrap_or_default();
-            let mut glossary_terms: Vec<(String, String)> = all_terms
-                .iter()
-                .filter(|t| pairs.iter().any(|(_, src)| src.contains(&t.source_text)))
-                .take(20)
-                .map(|t| (t.source_text.clone(), t.target_text.clone()))
-                .collect();
-            if glossary_terms.is_empty() {
-                let mut by_len = all_terms;
-                by_len.sort_by_key(|t| t.source_text.len());
-                glossary_terms = by_len
-                    .into_iter()
-                    .take(10)
-                    .map(|t| (t.source_text, t.target_text))
-                    .collect();
-            }
+            let sources: Vec<&str> = pairs.iter().map(|(_, src)| src.as_str()).collect();
+            let glossary_terms =
+                glossary::relevant_terms(&db, &project_id, lang_pair, &sources).await;
 
             let context = TranslationContext {
                 source_lang: "ja".to_string(),
@@ -365,33 +302,7 @@ pub async fn translate_all_segments(
         }
 
         // Update manifest stats once at the end
-        let stats_row = sqlx::query_as::<_, (String, i64, i64, i64, i64)>(
-            "SELECT p.game_path,
-                (SELECT COUNT(*) FROM source_files sf2 WHERE sf2.project_id = p.id),
-                (SELECT COUNT(*) FROM segments s2
-                   JOIN source_files sf2 ON s2.source_file_id = sf2.id
-                   WHERE sf2.project_id = p.id),
-                (SELECT COUNT(*) FROM segments s2
-                   JOIN source_files sf2 ON s2.source_file_id = sf2.id
-                   WHERE sf2.project_id = p.id AND s2.status = 'translated'),
-                (SELECT COUNT(*) FROM glossary_terms g
-                   WHERE g.project_id = p.id OR g.project_id IS NULL)
-             FROM projects p WHERE p.id = ?",
-        )
-        .bind(&project_id)
-        .fetch_optional(&db)
-        .await;
-        if let Ok(Some((game_path, files_c, segs, translated, glossary))) = stats_row {
-            let _ = manifest::update_stats(
-                &game_path,
-                manifest::ManifestStats {
-                    file_count: files_c as u32,
-                    segment_count: segs as u32,
-                    translated_count: translated as u32,
-                    glossary_term_count: glossary as u32,
-                },
-            );
-        }
+        manifest::refresh_stats(&db, &project_id).await;
 
         let _ = handle.emit(
             "h2s://llm/completed",
