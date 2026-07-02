@@ -14,7 +14,12 @@
 > - Remédiation : **Phase 9 (perf)** restante — option dans ROADMAP.md, sur signal.
 > - 👉 **EN COURS (hors remédiation) : Feature — Auto-updater** (voir section ci-dessous).
 
-## 🟡 Feature — Auto-updater (tauri-plugin-updater) — PLANIFIÉE
+## ✅ Feature — Auto-updater (tauri-plugin-updater) — TERMINÉE (code)
+
+> **2026-07-02** : code + tests + docs complets sur `feat/auto-updater`, gate vert
+> (typecheck + 34 Vitest + clippy 0 + 367/3 cargo), mergé sur `main`. ADR-007.
+> ⚠️ **Bloquant CI non résolu (action user)** : `gh secret list` est **vide** →
+> poser `TAURI_SIGNING_PRIVATE_KEY` avant tout `v0.4.4`, sinon la release échoue.
 
 > Objectif : au démarrage, vérifier s'il existe une nouvelle version publiée ; si oui,
 > proposer (Oui/Non). **Non** → badge dans le toolbar pour rouvrir le choix ; **Oui** →
@@ -35,35 +40,35 @@
 >   ensuite (0.4.4→0.4.5…).
 
 ### Volet 0 — Prérequis (⚠️ actions UTILISATEUR — bloquantes pour la CI)
-- [ ] **Générer la paire de clés** : `tauri signer generate -w ~/.tauri/hoshi2star.key`
+- [x] **Générer la paire de clés** : `tauri signer generate -w ~/.tauri/hoshi2star.key`
       (à lancer côté user via `! …` ; NE PAS committer la clé privée).
-- [ ] Ajouter les **secrets GitHub** : `TAURI_SIGNING_PRIVATE_KEY` (+ `_PASSWORD` si
-      définie) via `gh secret set` ou l'UI GitHub. Sauvegarder la clé privée hors-CI
-      (perte = plus aucune update possible pour les installs existantes).
-- [ ] Récupérer la **pubkey** générée → à coller dans `tauri.conf.json` (Volet A).
-- [ ] **Décision de design** : endpoint = release GitHub `latest.json`
+- [ ] ⚠️ **NON FAIT — Ajouter les secrets GitHub** : `TAURI_SIGNING_PRIVATE_KEY`
+      (+ `_PASSWORD` si définie) via `gh secret set`. **`gh secret list` est vide
+      au 2026-07-02** → le prochain `v*` échouera tant que ce n'est pas posé.
+- [x] Récupérer la **pubkey** générée → collée dans `tauri.conf.json` (Volet A).
+- [x] **Décision de design** : endpoint = release GitHub `latest.json`
       (`https://github.com/KATBlackCoder/Hoshi2Star/releases/latest/download/latest.json`),
       confirmé. installMode Windows = `passive` (barre seule).
 
 ### Volet A — Config + backend Rust
-- [ ] `Cargo.toml` : `tauri-plugin-updater = "2"` + `tauri-plugin-process = "2"`.
-- [ ] `package.json` : `@tauri-apps/plugin-updater` + `@tauri-apps/plugin-process`.
-- [ ] `lib.rs` (~l.33-35) : `.plugin(tauri_plugin_updater::Builder::new().build())` +
+- [x] `Cargo.toml` : `tauri-plugin-updater = "2"` + `tauri-plugin-process = "2"`.
+- [x] `package.json` : `@tauri-apps/plugin-updater` + `@tauri-apps/plugin-process`.
+- [x] `lib.rs` (~l.33-35) : `.plugin(tauri_plugin_updater::Builder::new().build())` +
       `.plugin(tauri_plugin_process::init())`.
-- [ ] `tauri.conf.json` : ajouter clé `plugins.updater { pubkey, endpoints, windows:{
+- [x] `tauri.conf.json` : ajouter clé `plugins.updater { pubkey, endpoints, windows:{
       installMode:"passive"} }` + `bundle.createUpdaterArtifacts: true`.
-- [ ] `capabilities/default.json` : `updater:default` + `process:allow-relaunch`.
-- [ ] Command `updater_supported() -> bool` (gate deb/rpm) : `cfg!(windows) ||
+- [x] `capabilities/default.json` : `updater:default` + `process:allow-restart`.
+- [x] Command `updater_supported() -> bool` (gate deb/rpm) : `cfg!(windows) ||
       env::var("APPIMAGE").is_ok()`. Enregistrée dans le `generate_handler!` unique.
 
 ### Volet B — CI (release.yml)
-- [ ] Ajouter au step `tauri-apps/tauri-action@v0` les env `TAURI_SIGNING_PRIVATE_KEY`
+- [x] Ajouter au step `tauri-apps/tauri-action@v0` les env `TAURI_SIGNING_PRIVATE_KEY`
       + `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (depuis les secrets). `createUpdaterArtifacts`
       étant dans la conf, l'action générera `.sig` + `latest.json` uploadés sur la release.
 - [ ] (Maintenance liée, hors updater : bumper les actions Node20→récent — logué backlog.)
 
 ### Volet C — Frontend
-- [ ] `src/stores/updater.ts` — slice Zustand, machine à états :
+- [x] `src/stores/updater.ts` — slice Zustand, machine à états :
       `status: idle|checking|available|dismissed|downloading|ready|error`,
       `update: {version,notes}|null`, `downloaded`/`contentLength` (→ %),
       `dismissedVersion` (persisté via tauri-plugin-store, comme settings). Actions :
@@ -71,34 +76,34 @@
       `startDownload()` (callbacks `Started`→contentLength / `Progress`→+chunkLength /
       `Finished`→ready), `dismiss()` (persiste version), `reopen()`, `applyAndRestart()`
       (`relaunch()`).
-- [ ] `src/components/UpdateDialog.tsx` — `AlertDialog` : état `available` (notes +
+- [x] `src/components/UpdateDialog.tsx` — `AlertDialog` : état `available` (notes +
       Oui/Non), état `downloading` (`Progress` shadcn + %), état `ready` (« Redémarrer
       pour appliquer »). Réutilise le pattern AppDialogs.
-- [ ] Badge toolbar `AppToolbar.tsx` — icône (ex. `Download`/`ArrowUpCircle`) visible
+- [x] Badge toolbar `AppToolbar.tsx` — icône (ex. `Download`/`ArrowUpCircle`) visible
       **uniquement** si `status === "dismissed"` (ou update dispo non traitée) ; onClick →
       `reopen()`. Placement **à droite**, à côté des boutons About/Settings (`~l.280-287`).
-- [ ] `App.tsx` / `useAppHandlers.ts` : `checkForUpdate()` async après mount, **non
+- [x] `App.tsx` / `useAppHandlers.ts` : `checkForUpdate()` async après mount, **non
       bloquant**, silencieux sur échec. Rendre `<UpdateDialog/>` via AppDialogs.
 
 ### Volet D — Tests (Vitest, plugin mocké)
-- [ ] `src/stores/updater.test.ts` : `check` trouve une version → `available` ; `dismiss`
+- [x] `src/stores/updater.test.ts` : `check` trouve une version → `available` ; `dismiss`
       → `dismissed` + `dismissedVersion` persistée ; `reopen` → `available` ; progression
       `Started/Progress/Finished` → % correct puis `ready` ; `check` sans update → `idle` ;
       `updater_supported=false` → aucune vérif (UI gatée) ; échec réseau → `error` silencieux.
-- [ ] (Pas de test Rust : `updater_supported` est trivial ; couvert par relecture.)
+- [x] (Pas de test Rust : `updater_supported` est trivial ; couvert par relecture.)
 
 ### Vérification
-- [ ] Gate complet : `pnpm typecheck && pnpm test && cargo clippy -- -D warnings &&
+- [x] Gate complet : `pnpm typecheck && pnpm test && cargo clippy -- -D warnings &&
       cargo test` — vert.
-- [ ] `pnpm tauri dev` : le check ne spamme pas d'erreur en dev (guard/catch).
+- [x] `pnpm tauri dev` : le check ne spamme pas d'erreur en dev (guard/catch).
 - [ ] **Validation réelle end-to-end** différée : ne peut être prouvée qu'après (a) clés+
       secrets en place, (b) une release updater-enabled publiée, (c) une release suivante
       pour déclencher l'update. À tester manuellement sur AppImage + Windows à ce moment-là.
 
 ### Docs
-- [ ] ADR (updater : endpoint GitHub Releases, signature obligatoire, deb/rpm non couverts).
-- [ ] `docs/architecture.md` (nouveau store + commande) + CHANGELOG (Added) + journal.
-- [ ] README (EN/FR) : mention « mises à jour automatiques » dans Features.
+- [x] ADR (updater : endpoint GitHub Releases, signature obligatoire, deb/rpm non couverts).
+- [x] `docs/architecture.md` (nouveau store + commande) + CHANGELOG (Added) + journal.
+- [x] README (EN/FR) : mention « mises à jour automatiques » dans Features.
 
 ## ✅ Phase 8 — Centraliser le dispatch moteur (OCP) — TERMINÉE
 

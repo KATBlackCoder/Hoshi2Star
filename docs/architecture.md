@@ -86,6 +86,7 @@ Tous les `#[tauri::command]` sont déclarés dans des sous-modules et enregistr�
 | `export.rs` | `export_project`, `export_qa_report`, `export_tm`, `export_debug_json`, `debug_inject_file`, `scan_font_status` | Toutes les commandes qui écrivent un fichier sur le disque ou injectent les données du jeu. `debug_inject_file` enforce la complétude avant injection. `scan_font_status` compte les segments déjà préfixés `\f[N]`. `apply_font_prefix` / `persist_font_size` (helpers privés) gèrent le préfixe Wolf RPG taille police. |
 | `qa.rs` (~93 lignes) | `qa_check_segment`, `get_qa_report`, `get_tm_suggestions` | Commandes de lecture QA/TM — pas d'écriture DB. |
 | `glossary.rs` | `get_glossary`, `add_glossary_term`, `update_glossary_term`, `delete_glossary_term`, `extract_glossary_terms`, `extract_wolf_speakers` | CRUD glossaire + extraction LLM des termes depuis Actors/Skills/Items + extraction des noms de personnages Wolf RPG (champ `name` sur types `character`/`actor`/`人物`). |
+| `app.rs` | `updater_supported` | Commandes au niveau app, hors couche métier. `updater_supported() -> bool` (`cfg!(windows) || env APPIMAGE`) gate l'UI d'auto-update aux installs réellement updatables (Windows NSIS + Linux AppImage) ; deb/rpm et dev renvoient `false` (ADR-007). |
 
 ### `core/`
 
@@ -152,6 +153,7 @@ Couche métier pure — pas de `tauri::State`, pas d'`AppHandle`, testable sans 
 | `project.ts` | `projects[]`, `activeProjectId`, `sourceFiles[]`, `pendingGlossaryExtract`, `isExtractingGlossary` | `addProject`, `setActiveProject`, `setSourceFiles`, `removeProject`. Thunks `openProject`, `loadAllProjects`, `deleteProject` (font des `invoke()` directement dans le store). |
 | `llm.ts` | `isTranslating`, `translationProgress`, `providerConfig`, `isCooling`, `cooldownRemaining` | `startTranslation`, `startTranslateAll`, `setupTranslationListeners` (factorisation des 7 listeners en un seul helper) |
 | `settings.ts` | Thème, langue, `providerConfig` persisté via `tauri-plugin-store` dans `settings.json` | `loadSettings`, `saveSettings` |
+| `updater.ts` | Machine à états auto-update : `status: idle\|checking\|available\|downloading\|ready\|dismissed\|error`, `version`/`notes`, `downloaded`/`contentLength` (→ %). `dismissed_version` persisté via `tauri-plugin-store` (`updater.json`) | `checkForUpdate` (guard `updater_supported`, silencieux offline/dev, respecte le rejet sauf version plus récente), `startDownload` (callbacks `Started`/`Progress`/`Finished` → %), `dismiss`/`reopen`, `postpone`, `applyAndRestart` (`relaunch()`). Rendu par `UpdateDialog.tsx` (AlertDialog Oui/Non/redémarrer) + `UpdateBadge.tsx` (icône toolbar visible si `dismissed`). Check déclenché une fois au mount dans `App.tsx`. Voir ADR-007. |
 
 ### `components/editor/`
 
@@ -277,6 +279,8 @@ Trois niveaux, exécutés par le gate de vérification
 | ADR-003 | TM globale à l'installation (pas par projet) — fuzzy cross-projet = différenciateur clé | [docs/adr/ADR-003.md](adr/ADR-003.md) |
 | ADR-004 | MVP limité à RPG Maker MV/MZ (JSON natif) — VX Ace ajouté via marshal-rs, en attente | [docs/adr/ADR-004.md](adr/ADR-004.md) |
 | ADR-005 | `lib.rs` comme entrée app (pas `main.rs`) — requis pour builds mobiles Tauri futurs | [docs/adr/ADR-005.md](adr/ADR-005.md) |
+| ADR-006 | Dispatch moteur par méthodes sur enum `Engine` (pas de trait-objects) — ensemble fermé + complétude compilateur | [docs/adr/ADR-006.md](adr/ADR-006.md) |
+| ADR-007 | Auto-update in-app via `tauri-plugin-updater` (GitHub Releases `latest.json` + signature minisign obligatoire, deb/rpm non couverts) | [docs/adr/ADR-007.md](adr/ADR-007.md) |
 
 ---
 
