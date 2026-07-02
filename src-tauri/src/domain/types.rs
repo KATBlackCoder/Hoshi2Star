@@ -30,8 +30,13 @@ pub struct SourceFile {
     pub file_path: String,
     pub file_type: String,
     pub translation_secs: Option<i64>,
+    /// Segments with `status = 'translated'` (strict — a `needs_review`
+    /// segment has a target but is not counted here).
     #[sqlx(default)]
     pub translated_count: i64,
+    /// Segments with `status = 'needs_review'` (remaining review work).
+    #[sqlx(default)]
+    pub needs_review_count: i64,
     #[sqlx(default)]
     pub total_count: i64,
 }
@@ -109,6 +114,9 @@ pub struct ProjectStats {
     pub untranslated_count: i64,
     pub translated_count: i64,
     pub needs_review_count: i64,
+    /// Segments with `status = 'reviewed'` — with the other three counters,
+    /// the four statuses sum to `total_segments`.
+    pub reviewed_count: i64,
 }
 
 /// Summary of QA errors for a whole project.

@@ -66,7 +66,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project is
 
-**Hoshi2Star** (星 → ★) is a CAT (Computer-Assisted Translation) editor + LLM orchestrator for Japanese RPG fan games. Desktop app built with **Tauri v2** (NOT v1), **React 19**, and **Rust**. Currently in skeleton/template state — real feature implementation starts at phase F1.
+**Hoshi2Star** (星 → ★) is a CAT (Computer-Assisted Translation) editor + LLM orchestrator for Japanese RPG fan games. Desktop app built with **Tauri v2** (NOT v1), **React 19**, and **Rust**. Mature and functional (F4/F5): full LLM pipeline with adaptive retry/split, global TM (exact + fuzzy), QA engine, glossary, 3 supported engines (MV/MZ, Wolf v1/v2/v3, VX Ace ready but disabled), ZIP export.
 
 ---
 
@@ -172,7 +172,7 @@ const result = await invoke<MyType>('my_command', { param: 'value' })
 | `fn cmd(s: &str) -> String` | `fn cmd(s: String) -> Result<String, String>` |
 | Multiple `generate_handler![...]` calls | Single one in `lib.rs` |
 | Sending `\V[12]` placeholders to LLM | Tokenize to `⟦ph_001⟧` first, restore after (ADR-002) |
-| `.unwrap()` outside tests | Custom `H2sError` enum via `thiserror` |
+| `.unwrap()` outside tests | `Result<T, String>` at IPC boundaries + per-module `thiserror` enums |
 
 **Linux GPU workarounds** (CachyOS, NVIDIA):
 - Wayland (session actuelle): `export __NV_DISABLE_EXPLICIT_SYNC=1`

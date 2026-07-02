@@ -79,8 +79,10 @@ pub trait LlmProvider: Send + Sync {
 
 /// Default Ollama URL when none is provided.
 pub const DEFAULT_OLLAMA_URL: &str = "http://localhost:11434";
-/// Default model — consistent with the hoshi-trans reference pipeline.
-pub const DEFAULT_OLLAMA_MODEL: &str = "qwen3:4b-instruct-2507-q4_K_M";
+/// Default model — MUST match `DEFAULT_OLLAMA_MODEL` in
+/// `src/lib/constants.ts` (single user-facing default, mirrored here for
+/// backend fallbacks).
+pub const DEFAULT_OLLAMA_MODEL: &str = "gemma4:e4b";
 /// Default per-request timeout.
 pub const DEFAULT_TIMEOUT_SECS: u64 = 120;
 /// Default number of segments per LLM call (see `TranslationContext::batch_size`).

@@ -12,6 +12,7 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - Add `isExporting` loading state to Export All toolbar button — button disabled with `Loader2` spinner during export, restored on success or error
 
 ### Fixed
+- Fix "translated" meaning two different things across the UI (audit issue #8, Option 2) — `SourceFile.translatedCount` now counts `status = 'translated'` strictly (it previously counted any non-empty target, so a file full of unreviewed LLM fallbacks looked complete in the FileTree while the toolbar said otherwise); new `SourceFile.needsReviewCount` and `ProjectStats.reviewedCount` fields make the four statuses sum to the total, frozen by a DB-backed counter-semantics test
 - Fix half-width katakana counted as full-width in QA line measurement — `is_fullwidth` mapped the whole U+FF00–FFEF block to 2 units; now only the real full-width sub-ranges (U+FF00–FF60, U+FFE0–FFE6) count as 2, so half-width kana text no longer triggers false `LineTooLong` errors
 - Fix QA report "X segments with errors / Y checked" always showing X == Y — `collect_qa_details` now returns the real number of segments examined and the HTML header uses it as denominator
 - Fix dead glossary check in the QA report — `export_qa_report` now loads the project glossary and passes it to the QA engine, so `GlossaryMismatch` errors actually appear in the report (its stat, filter and badge already existed but could never fire)
@@ -27,6 +28,10 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - Fix stale `%` progress badge in toolbar — `SegmentGrid` now reloads `activeProjectStats` on `h2s://llm/completed` alongside segments and source files
 
 ### Changed
+- Show per-file progress counters in the FileTree (`✓ translated · ⚠ needs review`) and hide the debug-inject button until every segment is strictly translated — no more inviting the user to inject unreviewed LLM fallbacks
+- Render the `reviewed` status (blue) in the project list stats bar so the bar sums to 100%
+- Unify the default Ollama model on `gemma4:e4b` — the backend fallback (`q4_K_M`), the settings default (`q8_0`) and the LLM store initial value (`qwen3:4b`) were three different models; single TS source of truth in `src/lib/constants.ts`, mirrored by `DEFAULT_OLLAMA_MODEL` in Rust
+- Align CLAUDE.md/CONTEXT.md with reality: the project is mature (no longer "skeleton state") and the error convention is `Result<T, String>` at IPC boundaries + per-module `thiserror` enums (the prescribed global `H2sError` never existed)
 - Limit MV/MZ font-size prefix to `Map*.json` files only — `scan_font_status` and `export_project` filter to `file_type = "map"` for MV/MZ engine; actors, items, system, etc. are not prefixed
 - Parameterize `fontSizeDialog` i18n strings — `\f[N]` / `\FS[N]` no longer hardcoded; replaced by `{{code}}` interpolation variable; new `hintMvMz` key added (EN + FR)
 
