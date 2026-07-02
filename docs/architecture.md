@@ -96,7 +96,7 @@ Couche métier pure — pas de `tauri::State`, pas d'`AppHandle`, testable sans 
 | `tm.rs` | Translation Memory : insert, `lookup_exact` (hash SHA-256), `lookup_fuzzy` (Levenshtein normalisé, seuil 80 %, max 5 résultats). Export TMX via `generate_tmx()`. TM globale (ADR-003) — une table `tm_entries` par installation, partagée cross-projet. |
 | `qa.rs` | Checks QA sur chaque segment : placeholders manquants (−25 pts), ligne trop longue en pixels (−10 pts), BOM UTF-8 (−15 pts), terme glossaire non respecté (−15 pts). Score plancher 0. Méthode `QaError::label(&self, lang)` pour les labels localisés. |
 | `glossary.rs` | CRUD des termes glossaire. Deux niveaux : global (`project_id IS NULL`) et projet-local. Injection dans le prompt LLM (30 termes max, filtrés par contenu du batch). |
-| `manifest.rs` | Écrit/lit `.hoshi2star.json` à la racine du dossier jeu. Permet la « smart restore » : si manifest + entrée DB correspondent à la réouverture, le projet est chargé sans ré-extraction. Mise à jour automatique des stats après `update_segment` et après chaque traduction de batch. |
+| `manifest.rs` | Écrit/lit `.hoshi2star.json` à la racine du dossier jeu. Permet la « smart restore » : si manifest + entrée DB correspondent à la réouverture, le projet est chargé sans ré-extraction. `refresh_stats(pool, project_id)` est le **point unique** de recalcul des stats projet (best-effort), appelé après `update_segment` et après chaque traduction de batch. |
 | `report.rs` | Génère le rapport QA HTML autonome (CSS + JS inline, aucune dépendance externe). Recalcule les erreurs QA au moment de l'export (pas stockées en DB) pour avoir un rapport frais. Filtre interactif par fichier, score, type d'erreur. |
 
 ### `llm/`
