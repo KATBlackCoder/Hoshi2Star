@@ -18,6 +18,7 @@ import { useEditorStore } from "@/stores/editor";
 import { useLlmStore, useIsTranslating } from "@/stores/llm";
 import { createSegmentColumns, STATUS_STYLES } from "@/features/editor/columns";
 import type {
+  GlossaryExtractionDonePayload,
   GlossaryTerm,
   PaginatedSegments,
   ProjectStats,
@@ -236,7 +237,7 @@ export function SegmentGrid({
   }, [activeProjectId, setGlossaryTerms]);
 
   useEffect(() => {
-    const unlisten = listen<{ projectId: string; terms: GlossaryTerm[] }>(
+    const unlisten = listen<GlossaryExtractionDonePayload>(
       "h2s://glossary/extraction-done",
       (event) => {
         if (event.payload.projectId === activeProjectIdRef.current) {

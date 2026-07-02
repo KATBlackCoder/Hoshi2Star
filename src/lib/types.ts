@@ -143,6 +143,13 @@ export interface GlossaryTerm {
   updatedAt: string;
 }
 
+/** Payload of the `h2s://glossary/extraction-done` event. */
+export interface GlossaryExtractionDonePayload {
+  projectId: string;
+  terms: GlossaryTerm[];
+  error: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // LLM
 // ---------------------------------------------------------------------------

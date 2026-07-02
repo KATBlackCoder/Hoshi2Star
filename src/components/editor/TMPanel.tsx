@@ -1,10 +1,8 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { save } from "@tauri-apps/plugin-dialog";
-import { toast } from "sonner";
 import { BookOpen, Download } from "lucide-react";
+import { useExportToFile } from "@/hooks/useExportToFile";
 import {
   useActiveSegmentId,
   useActiveSegmentSourceText,
@@ -56,7 +54,7 @@ export function TMPanel({ onApply }: TMPanelProps) {
   const { t } = useTranslation();
   const activeSegmentId = useActiveSegmentId();
   const sourceText = useActiveSegmentSourceText();
-  const [isExporting, setIsExporting] = useState(false);
+  const { isExporting, exportToFile } = useExportToFile();
 
   const { data: suggestions = [], isLoading } = useQuery<TmSuggestion[]>({
     queryKey: ["tm-suggestions", sourceText],
@@ -69,24 +67,14 @@ export function TMPanel({ onApply }: TMPanelProps) {
     staleTime: 1000 * 60, // TM changes rarely during a session
   });
 
-  async function handleExport() {
-    let path: string | null;
-    try {
-      path = await save({
-        filters: [{ name: "TMX", extensions: ["tmx"] }],
-      });
-    } catch (e) {
-      toast.error(t("tmPanel.exportError", { error: String(e) }));
-      return;
-    }
-    if (!path) return;
-    setIsExporting(true);
-    invoke("export_tm", { langPair: "ja-en", outputPath: path })
-      .then(() => toast.success(t("tmPanel.exportSuccess")))
-      .catch((e: unknown) =>
-        toast.error(t("tmPanel.exportError", { error: String(e) })),
-      )
-      .finally(() => setIsExporting(false));
+  function handleExport() {
+    void exportToFile({
+      dialog: { filters: [{ name: "TMX", extensions: ["tmx"] }] },
+      command: "export_tm",
+      args: { langPair: "ja-en" },
+      successKey: "tmPanel.exportSuccess",
+      errorKey: "tmPanel.exportError",
+    });
   }
 
   return (

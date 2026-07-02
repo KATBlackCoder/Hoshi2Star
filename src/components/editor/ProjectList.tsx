@@ -22,6 +22,8 @@ import {
 } from "@/stores/project";
 import type { Project, ProjectStats } from "@/lib/types";
 import { engineLabel, relativeDate } from "@/lib/format";
+import { openProjectErrorKey } from "@/lib/projectError";
+import { STATUS_SUMMARY } from "@/lib/statusSummary";
 import { toast } from "sonner";
 
 export function ProjectList() {
@@ -58,11 +60,7 @@ export function ProjectList() {
     try {
       await openProject(project.gamePath);
     } catch (err) {
-      const msg = String(err);
-      const key = msg.includes("could not identify game engine")
-        ? "projectList.engineNotFound"
-        : "projectList.openError";
-      toast.error(t(key));
+      toast.error(t(openProjectErrorKey(err)));
     } finally {
       setIsOpening(null);
     }
@@ -99,11 +97,7 @@ export function ProjectList() {
     try {
       await openProject(selected as string);
     } catch (err) {
-      const msg = String(err);
-      const key = msg.includes("could not identify game engine")
-        ? "projectList.engineNotFound"
-        : "projectList.openError";
-      toast.error(t(key));
+      toast.error(t(openProjectErrorKey(err)));
     } finally {
       setOpeningNew(false);
     }
@@ -269,14 +263,22 @@ function SegmentStatsBar({ stats }: { stats: ProjectStats }) {
         </div>
       </div>
       <div className="flex gap-3 font-mono text-[10px] tabular-nums text-muted-foreground">
-        <span className="text-green-400/80">✓ {translatedCount}</span>
+        <span className={STATUS_SUMMARY.translated.className}>
+          {STATUS_SUMMARY.translated.glyph} {translatedCount}
+        </span>
         {reviewedCount > 0 && (
-          <span className="text-blue-400/80">◎ {reviewedCount}</span>
+          <span className={STATUS_SUMMARY.reviewed.className}>
+            {STATUS_SUMMARY.reviewed.glyph} {reviewedCount}
+          </span>
         )}
         {needsReviewCount > 0 && (
-          <span className="text-amber-400/80">⚠ {needsReviewCount}</span>
+          <span className={STATUS_SUMMARY.needsReview.className}>
+            {STATUS_SUMMARY.needsReview.glyph} {needsReviewCount}
+          </span>
         )}
-        <span>○ {untranslatedCount}</span>
+        <span>
+          {STATUS_SUMMARY.untranslated.glyph} {untranslatedCount}
+        </span>
         <span className="ml-auto">{totalSegments}</span>
       </div>
     </div>
