@@ -5,6 +5,8 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+## [0.4.3] — 2026-07-02
+
 ### Added
 - Add automated test suite (audit remediation Phase 7) — Vitest front-end tests (`vitest.config.ts`, `src/test/setup.ts`, `pnpm test`/`pnpm test:watch` scripts) covering Zustand stores and the components/hooks that lock the Phase 3/5 fixes, plus Rust end-to-end integration tests (`src-tauri/tests/e2e_project_flow.rs`) driving `open_project → update_segment → export_project` through the real command layer for MV and Wolf CommonEvent fixtures (the latter locks the Phase 1 Common Events reinjection); `pnpm test` added to the mandatory verification gate
 - Add compile-time embedded LLM prompt templates — `prompts/translate/default.toml` and `prompts/glossary/default.toml` replace hardcoded Rust strings; new `llm/prompts.rs` module exposes `translate_for()`, `glossary_for()`, `lang_code_to_name()`, and `PromptTemplate::render()`; per-language files (`fr.toml`, `es.toml`, …) can be added without touching provider or glossary code; LLM now receives full language names (`"Japanese"` / `"English"`) instead of BCP-47 codes
@@ -331,6 +333,8 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - TanStack Query for async Tauri invoke() calls
 - GitHub Actions CI/CD for Linux + Windows builds
 
+[0.4.3]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.3
+[0.4.2]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.2
 [0.4.1]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.1
 [0.3.2]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.3.2
 [0.3.1]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.3.1
