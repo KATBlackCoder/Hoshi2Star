@@ -47,5 +47,8 @@ wolfrpg-map-parser = { git = "https://github.com/KATBlackCoder/wolfrpg-map-parse
 [dev-dependencies]
 tempfile = "3"
 httpmock = "0.7"
+tauri = { version = "2", features = ["test"] }
+# Integration tests read the exported archive; not re-exposed from [dependencies].
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 

@@ -7,8 +7,85 @@
 > - Phase 3 : ✅ **terminée & mergée sur `main`** (2026-07-01).
 > - Phase 4 : ✅ **terminée & mergée sur `main`** (2026-07-01).
 > - Phase 5 : ✅ **terminée & mergée sur `main`** (2026-07-02).
-> - 👉 **PROCHAINE : Phase 7 — 🟡 couverture de tests front + intégration**
->   (avant 6 et 8, cf. ordre du plan).
+> - Phase 7 : ✅ **terminée** (2026-07-02) — 23 tests front (Vitest) + 2 tests
+>   d'intégration Rust ; `pnpm test` ajouté au gate. Branche `feat/test-coverage`.
+> - 👉 **PROCHAINE : Phase 6 — refactos DRY** (puis 8, puis 9, cf. ordre du plan).
+
+## ✅ Phase 7 — Couverture de tests front + intégration — TERMINÉE
+
+> Plan §Phase 7. **Vérifié sur le code réel (2026-07-02)** : `package.json` n'a
+> AUCUN script `test` (CLAUDE.md documente pourtant `pnpm test` — mensonge à
+> corriger par l'implémentation) ; pas de `vitest.config.ts` ; `src-tauri/tests/`
+> existe mais est VIDE ; `Cargo.toml` sans feature `test` de tauri ; tous les
+> modules lib.rs sont `pub` (tests d'intégration possibles sans churn).
+> Branche : `feat/test-coverage`. Pas de « test rouge » ici (pas un bugfix) —
+> le critère est : chaque fix des Phases 3/5 verrouillé par un test qui échouerait
+> si on le révertait.
+
+### Volet A — Infra Vitest
+- [ ] `pnpm add -D vitest jsdom @testing-library/react @testing-library/jest-dom
+      @testing-library/user-event`
+- [ ] `vitest.config.ts` (environnement jsdom, setupFiles) — séparé de
+      vite.config.ts (qui porte les réglages Tauri)
+- [ ] `src/test/setup.ts` : jest-dom + init i18n (locale en) + `mockIPC`
+      (`@tauri-apps/api/mocks`) + `vi.mock` de `plugin-store`/`plugin-dialog`
+- [ ] `package.json` : scripts `test` (= `vitest run`) et `test:watch`
+
+### Volet B — Tests stores (Zustand)
+- [ ] `settings.ts` : défauts = `lib/constants` (gemma4:e4b) ; `saveSettings`
+      persiste (mock plugin-store) ET pousse `providerConfig` dans le store llm
+- [ ] `llm.ts` : `setProviderConfig` (merge partiel), `reset`, défauts = constants
+- [ ] `project.ts` : `openProject` (invoke mocké) → projet ajouté + actif +
+      stats fetchées ; erreur → propagée au caller
+- [ ] `editor.ts` : `setActiveSegment` / `setGlossaryTerms` + sélecteurs
+
+### Volet C — Tests composants/hooks (verrouillent les fixes Phases 3/5)
+- [ ] `ProjectList` : `get_project_stats` rejette pour p1, résout pour p2 →
+      la barre de p2 s'affiche quand même (allSettled, Phase 3)
+- [ ] `FileTree` : fichier `⚠ M > 0` → compteurs affichés, PAS de bouton inject ;
+      fichier 100 % translated → `✓ N` + bouton (Option 2, Phase 5)
+- [ ] `SegmentGrid` (mock `@tanstack/react-virtual` → tous les items rendus) :
+      · chargement multi-pages : mock `get_segments` paginé → N appels jusqu'à
+        `total`, footer = total réel (Phase 3)
+      · sélection : cocher 2 lignes → « Traduire 2 lignes » ; taper une recherche
+        → bouton disparu (reset, Phase 3)
+      · `update_segment` rejette → toast d'erreur `saveError` (Phase 3)
+- [ ] `useAppHandlers` (renderHook) : gate export — `untranslatedCount > 0` →
+      dialog `blocked`, sinon `confirm`
+
+### Volet D — Intégration Rust `src-tauri/tests/`
+- [x] `Cargo.toml` `[dev-dependencies]` : `tauri = { version = "2",
+      features = ["test"] }` + `zip` (les tests d'intégration n'héritent pas
+      des `[dependencies]`)
+- [x] `tests/e2e_project_flow.rs` : `mock_builder().manage(AppState).build(
+      mock_context(noop_assets()))` ; **appel direct** des `pub async fn`
+      (`open_project`/`update_segment`/`export_project`) avec un `State` via
+      `Manager::state()` — teste la couche logique, pas la sérialisation IPC ;
+      `mock_context(noop_assets())` évite la dépendance à `dist/` (gitignoré)
+- [x] Scénario MV : `open_project` sur la fixture réelle
+      (`test/性処理係のある学校`, copie de `www/data` seule) → `update_segment`
+      d'1 segment → `export_project` → le ZIP contient la traduction
+- [x] Scénario Wolf CE (**verrouille Phase 1**) : `open_project` sur Honoka
+      (copie `Data/BasicData`+`MapData` + stub `Game.ini`) → traduire 1 segment
+      `wolf_common_events` → `export_project` → `Data/BasicData/CommonEvent.dat`
+      du ZIP contient la traduction (marqueur ASCII, identique en UTF-8 et
+      Shift-JIS)
+- [x] Portabilité (leçon Phase 1) : `if !fixture.exists() { return; }` — skip
+      propre sur un checkout sans fixtures ; isolation via `tempfile::tempdir`
+      (le `.hoshi2star.json` et le `hoshi2star.zip` sont écrits DANS le tempdir →
+      cleanup gratuit au `Drop`, aucune pollution des fixtures)
+
+### Vérification
+- [x] Gate étendu : `pnpm typecheck && pnpm test && cargo clippy -- -D warnings
+      && cargo test` — 23 tests front + 367 unitaires Rust + 2 intégration ✅
+- [x] CLAUDE.md : la ligne `pnpm test # Vitest` devient vraie (script ajouté) ;
+      gate `pnpm test` ajouté à la section vérification de CLAUDE.md
+- [x] docs/architecture.md : nouvelle section « Tests » (pyramide : unitaires
+      inline Rust · intégration tests/ · front Vitest)
+- [x] CHANGELOG.md (Added) + docs/journal/ + tasks/todo.md cochés
+- [ ] Backlog (hors scope) : 8 lints `clippy --all-targets` préexistants dans
+      le code de test `#[cfg(test)]` (`non_snake_case`, `if_same_then_else`) —
+      non couverts par le gate mandaté (sans `--all-targets`)
 
 ## ✅ Phase 5 — Cohérence #8 (Option 2) + alignements doc/valeurs — TERMINÉE
 

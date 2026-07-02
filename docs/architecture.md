@@ -257,6 +257,17 @@ Clic sur un projet dans ProjectList
 
 ---
 
+## Tests
+
+Trois niveaux, exécutés par le gate de vérification
+(`pnpm typecheck && pnpm test && cargo clippy -- -D warnings && cargo test`) :
+
+| Niveau | Emplacement | Portée |
+|--------|-------------|--------|
+| **Unitaires Rust** | `#[cfg(test)] mod tests` inline dans chaque module (`src-tauri/src/**`) | Parsers binaires Wolf (round-trip byte-exact), QA, TM, encodage, détecteur. Les tests contre fixtures réelles font `if !path.exists() { return; }` (fixtures `test/` gitignorées). |
+| **Intégration Rust** | `src-tauri/tests/e2e_project_flow.rs` | Flux bout-en-bout via la vraie couche commande : `open_project → update_segment → export_project`. `mock_builder().manage(AppState).build(mock_context(noop_assets()))` porte l'état ; les `pub async fn` sont appelées directement avec un `State` via `Manager::state()` (pas de sérialisation IPC). Scénarios MV et Wolf CommonEvent (ce dernier verrouille la réinjection des Common Events, cf. Phase 1 remédiation). Isolation par `tempfile::tempdir` — aucune pollution des fixtures. |
+| **Front (Vitest)** | `src/**/*.test.{ts,tsx}` | Stores Zustand, composants/hooks. `@tauri-apps/api/mocks` (`mockIPC`) simule `invoke()` ; jsdom + `@testing-library/react`. Config : `vitest.config.ts` (séparée de `vite.config.ts`), setup global `src/test/setup.ts`. |
+
 ## Décisions d'architecture (ADRs)
 
 | ADR | Décision | Lien |
