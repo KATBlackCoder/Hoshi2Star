@@ -5,6 +5,8 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+## [0.4.6] — 2026-07-04
+
 ### Added
 - Add project-wide segment search (concordance search) — a new search bar in the FILES panel searches every file of the project at once (Enter to run, min 2 chars, scope source/target/both), unlike the grid search which only filters the open file; results replace the grid, grouped by file with separator headers, showing key, source, target, status badge and QA score, every match is loaded in successive 500-row batches (the first batch renders immediately, the rest append in the background with a discreet progress indicator — same pattern as the grid's full-file loading, no truncation); hits are selectable across files (global select-all, per-file tri-state checkbox on each file header, per-segment — all using the shadcn/Radix Checkbox) and "Translate N lines" reuses the existing explicit-ids batch path (cross-file batches confirmed working end-to-end: one LLM batch, project-level stats refresh, results re-run on completion); file groups are collapsible (chevron on each header, selection preserved while collapsed) and a sticky replica of the current file's header stays pinned at the top of the scroll until the next file takes over; clicking a hit navigates to its file in the normal grid with the segment highlighted, unless at least one hit is checked, in which case clicking a row toggles its selection instead. New Rust command `search_segments` (SQL LIKE with escaped wildcards, project-scoped join to `source_files`, batched offset loading), new `search` Zustand store, `ProjectSearchBar` + `GlobalSearchResults` components; 7 Rust + 18 Vitest tests
 
@@ -352,6 +354,7 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - TanStack Query for async Tauri invoke() calls
 - GitHub Actions CI/CD for Linux + Windows builds
 
+[0.4.6]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.6
 [0.4.5]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.5
 [0.4.4]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.4
 [0.4.3]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.3
