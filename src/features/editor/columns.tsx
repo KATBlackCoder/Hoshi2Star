@@ -35,7 +35,7 @@ export const STATUS_STYLES: Record<
   },
 };
 
-const StatusBadge = memo(function StatusBadge({
+export const StatusBadge = memo(function StatusBadge({
   status,
 }: {
   status: SegmentStatus;

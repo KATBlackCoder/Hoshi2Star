@@ -112,6 +112,21 @@ export async function openProject(
   return { project, wasRestored };
 }
 
+// Thunk: reload source files + stats after a batch translation completes.
+// Best-effort: a failed refresh must never surface as an error toast.
+export async function refreshProjectData(projectId: string): Promise<void> {
+  try {
+    const [files, stats] = await Promise.all([
+      invoke<SourceFile[]>("get_source_files", { projectId }),
+      invoke<ProjectStats>("get_project_stats", { projectId }),
+    ]);
+    useProjectStore.getState().setSourceFiles(files);
+    useProjectStore.getState().setActiveProjectStats(stats);
+  } catch {
+    // silent — stale counters are acceptable, a toast here would be noise
+  }
+}
+
 // Thunk: load all known projects from the DB into the store.
 export async function loadAllProjects(): Promise<void> {
   const projects = await invoke<Project[]>("list_projects");

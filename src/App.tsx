@@ -6,7 +6,9 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { FileTree } from "@/components/editor/FileTree";
+import { GlobalSearchResults } from "@/components/editor/GlobalSearchResults";
 import { ProjectList } from "@/components/editor/ProjectList";
+import { ProjectSearchBar } from "@/components/editor/ProjectSearchBar";
 import { SegmentGrid } from "@/components/editor/SegmentGrid";
 import { TMPanel } from "@/components/editor/TMPanel";
 import { QAPanel } from "@/components/editor/QAPanel";
@@ -16,6 +18,7 @@ import { AppDialogs } from "@/components/AppDialogs";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import { useProjectStore, useIsExtractingGlossary } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
+import { useSearchActive } from "@/stores/search";
 import { useSettingsStore } from "@/stores/settings";
 import { useUpdaterStore } from "@/stores/updater";
 import { useAppHandlers } from "@/hooks/useAppHandlers";
@@ -39,6 +42,7 @@ export default function App() {
   );
   const isExtractingGlossary = useIsExtractingGlossary();
   const checkForUpdate = useUpdaterStore((s) => s.checkForUpdate);
+  const searchActive = useSearchActive();
 
   useEffect(() => {
     void loadSettings();
@@ -81,6 +85,7 @@ export default function App() {
         >
           <div className="flex h-full flex-col overflow-hidden border-r">
             <FileTreeHeader />
+            {activeProjectId && <ProjectSearchBar key={activeProjectId} />}
             <div className="flex-1 overflow-hidden">
               <FileTree />
             </div>
@@ -93,7 +98,11 @@ export default function App() {
         <ResizablePanel defaultSize="55%" minSize="40%" collapsible={false}>
           <div className="flex h-full flex-col overflow-hidden">
             {activeProjectId ? (
-              <SegmentGrid highlightPlaceholders />
+              searchActive ? (
+                <GlobalSearchResults />
+              ) : (
+                <SegmentGrid highlightPlaceholders />
+              )
             ) : (
               <ProjectList />
             )}

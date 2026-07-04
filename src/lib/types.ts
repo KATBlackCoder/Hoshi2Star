@@ -79,6 +79,20 @@ export interface PaginatedSegments {
   pageSize: number;
 }
 
+/** Which segment column(s) a project-wide search matches against. */
+export type SearchScope = "both" | "source" | "target";
+
+/** One project-wide search hit — a segment plus its file's name for grouping. */
+export interface SegmentSearchHit extends Segment {
+  fileName: string;
+}
+
+export interface SegmentSearchResult {
+  items: SegmentSearchHit[];
+  /** Real match count — `items` is capped server-side (500). */
+  total: number;
+}
+
 // ---------------------------------------------------------------------------
 // TM
 // ---------------------------------------------------------------------------

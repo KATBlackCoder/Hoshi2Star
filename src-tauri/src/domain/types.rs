@@ -64,6 +64,31 @@ pub struct PaginatedSegments {
     pub page_size: i64,
 }
 
+/// One project-wide search hit: a [`Segment`] row plus its file's name so the
+/// results view can group hits by file without a second lookup.
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct SegmentSearchHit {
+    pub id: String,
+    pub source_file_id: String,
+    pub json_key: String,
+    pub source_text: String,
+    pub target_text: String,
+    pub status: String,
+    pub qa_score: Option<i64>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub file_name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SegmentSearchResult {
+    pub items: Vec<SegmentSearchHit>,
+    /// Real match count — `items` is capped at the requested limit.
+    pub total: i64,
+}
+
 /// LLM provider configuration passed from the frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

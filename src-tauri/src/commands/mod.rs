@@ -6,4 +6,5 @@ pub mod export;
 pub mod glossary;
 pub mod project;
 pub mod qa;
+pub mod search;
 pub mod translate;

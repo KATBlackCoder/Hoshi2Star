@@ -27,6 +27,22 @@
     "debugInjectDone": "Injected: {{path}}",
     "debugInjectError": "Injection failed: {{error}}"
   },
+  "projectSearch": {
+    "placeholder": "Search project… (Enter)",
+    "clear": "Clear search",
+    "scopeBoth": "Source + target",
+    "scopeSource": "Source only",
+    "scopeTarget": "Target only",
+    "loading": "Searching…",
+    "error": "Search failed",
+    "noResults": "No results for \"{{query}}\"",
+    "summary": "{{count}} results in {{files}} files",
+    "loadingProgress": "Loading… {{loaded}} / {{total}}",
+    "selectAll": "Select all results",
+    "selectFile": "Select all in {{fileName}}",
+    "collapseFile": "Collapse {{fileName}}",
+    "expandFile": "Expand {{fileName}}"
+  },
   "fontSizeDialog": {
     "title": "Apply font size",
     "desc": "{{total}} translated segment(s) · {{existing}} already have {{code}}",

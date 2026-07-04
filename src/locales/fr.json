@@ -27,6 +27,22 @@
     "debugInjectDone": "Injecté : {{path}}",
     "debugInjectError": "Échec injection : {{error}}"
   },
+  "projectSearch": {
+    "placeholder": "Rechercher dans le projet… (Entrée)",
+    "clear": "Effacer la recherche",
+    "scopeBoth": "Source + cible",
+    "scopeSource": "Source seule",
+    "scopeTarget": "Cible seule",
+    "loading": "Recherche…",
+    "error": "Échec de la recherche",
+    "noResults": "Aucun résultat pour \"{{query}}\"",
+    "summary": "{{count}} résultats dans {{files}} fichiers",
+    "loadingProgress": "Chargement… {{loaded}} / {{total}}",
+    "selectAll": "Tout sélectionner",
+    "selectFile": "Tout sélectionner dans {{fileName}}",
+    "collapseFile": "Replier {{fileName}}",
+    "expandFile": "Déplier {{fileName}}"
+  },
   "fontSizeDialog": {
     "title": "Appliquer une taille de police",
     "desc": "{{total}} segment(s) traduit(s) · {{existing}} ont déjà un {{code}}",

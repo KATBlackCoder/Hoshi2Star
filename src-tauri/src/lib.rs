@@ -24,6 +24,7 @@ use commands::project::{
     list_projects, open_project, update_segment,
 };
 use commands::qa::{get_qa_report, get_tm_suggestions, qa_check_segment};
+use commands::search::search_segments;
 use commands::translate::{get_ollama_models, translate_all_segments, translate_segments};
 use state::AppState;
 use tauri::Manager;
@@ -56,6 +57,7 @@ pub fn run() {
             open_project,
             get_source_files,
             get_segments,
+            search_segments,
             update_segment,
             export_project,
             translate_segments,
