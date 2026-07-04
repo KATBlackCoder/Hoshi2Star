@@ -92,6 +92,25 @@ Au re-import, comparaison par clé puis par hash :
 - [ ] Config par projet : registre (familier / formel / médiéval / contemporain)
 - [ ] Passe 3 activable/désactivable dans les settings projet
 
+### LLM Layer — Provider OpenAI-compatible (LM Studio, cloud) — différé, sur demande
+
+> Demande communauté (feedback Anime-Sharing, 2026-07-03) : baisser la barrière d'entrée
+> pour les non-devs (LM Studio = UI graphique, pas de config) et permettre le cloud sans GPU.
+> **Décision design** : 2 protocoles seulement côté Rust (Ollama natif + OpenAI-compat) ;
+> les services (LM Studio, OpenAI, DeepSeek, Grok, OpenRouter…) ne sont que des **préréglages
+> de données côté front** (URL préremplie, clé requise ou non). Jamais un provider Rust par service.
+> Local reste la cible principale ; alternative actuelle sans GPU : Ollama sur RunPod (l'URL est déjà configurable).
+
+- [ ] `OpenAiCompatProvider` implémentant le trait `LlmProvider` — `POST {base}/chat/completions`, health via `GET {base}/models`, header `Authorization: Bearer` si clé
+- [ ] `ProviderConfig` : champs `kind: ollama | openai_compat` + `api_key: Option<String>`
+- [ ] Factory `Provider::from_config()` (dispatch enum, cohérent ADR-006) remplaçant les 3 instanciations en dur (`commands/translate.rs:69`, `:202`, `commands/glossary.rs:163`)
+- [ ] Message d'erreur health check paramétré par le nom du provider (plus de "Ollama inaccessible" en dur)
+- [ ] Settings UI : select de préréglages (Ollama / LM Studio / DeepSeek / OpenRouter / Personnalisé…) piloté par une table `PRESETS` front ; champ clé API masqué, toujours optionnel côté validation (401 → message "clé manquante/invalide")
+- [ ] Select de modèles unifié : `/api/tags` (Ollama) ou `/v1/models` (OpenAI-compat), repli saisie libre si listing indisponible
+- [ ] Ne lister que les services testés ; garder "Personnalisé" comme soupape ; exclure les non-compatibles (Anthropic, DeepL = chantiers séparés)
+- [ ] v1 sans tracking des coûts ; optionnel : logger le champ `usage` (tokens) pour stats futures — table de prix = backlog lointain
+- [ ] Clé API : stockage store Tauri v1 (documenter le plaintext) ; migration `keyring`/Stronghold si demandé
+
 ### Monétisation
 
 - [ ] Intégration système de licence (Polar.sh ou LemonSqueezy — one-shot 29 $ + 9 $/6 mois)

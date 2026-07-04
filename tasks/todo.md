@@ -1,5 +1,139 @@
 # Tasks — Hoshi2Star
 
+## ✅ Feature — Recherche globale projet (concordance search) (2026-07-04) — TERMINÉE
+
+> Plan complet : `~/.claude/plans/steady-prancing-bear.md` (approuvé).
+> Barre de recherche dans le panneau FICHIERS → cherche dans TOUS les fichiers du
+> projet (Entrée, min 2 chars, scope both/source/target). Résultats au centre groupés
+> par fichier (headers), sélection cross-fichiers + « Traduire N lignes » (réutilise
+> `translate_segments` ids explicites — retraduit inconditionnellement, badge statut
+> visible), clic ligne → navigation fichier+segment.
+> HORS SCOPE : FTS, édition dans les résultats, scroll-to-segment (follow-up),
+> pagination au-delà du cap 500.
+
+### Volet A — Backend Rust
+- [x] A1 `domain/types.rs` : `SegmentSearchHit` (Segment + file_name) + `SegmentSearchResult`
+- [x] A2 NOUVEAU `commands/search.rs` : `SearchScope` + façade `search_segments` +
+      helper testable `search_project_segments` (LIKE ESCAPE, cap 500, ORDER BY
+      file_name/rowid)
+- [x] A3 `commands/mod.rs` + `generate_handler!` (lib.rs)
+- [x] A4 Tests (6) : scope, wildcards échappés, cap+total, ordre groupé, scoping
+      projet, query courte
+
+### Volet B — Types + Store front
+- [x] B1 `lib/types.ts` : SearchScope, SegmentSearchHit, SegmentSearchResult
+- [x] B2 NOUVEAU `stores/search.ts` : runSearch (garde seq) / rerun / deactivate / clear
+
+### Volet C — UI
+- [x] C1 NOUVEAU `ProjectSearchBar.tsx` (draft local, Entrée, X, Select scope ;
+      reset par remount `key={activeProjectId}` — pas de set-state-in-effect)
+- [x] C2 `App.tsx` : barre sous FileTreeHeader + centre `searchActive ? résultats : grille`
+- [x] C3 `columns.tsx` : exporter `StatusBadge`
+- [x] C4 NOUVEAU `GlobalSearchResults.tsx` (rows union header/hit, virtualizer,
+      sélection locale, toolbar traduire, listeners llm) + C4b thunk
+      `refreshProjectData` (project.ts)
+- [x] C5 i18n en+fr `projectSearch.*`
+
+### Volet D — Tests front
+- [x] D1 `stores/search.test.ts` (5) · D2 `ProjectSearchBar.test.tsx` (3) ·
+      D3 `GlobalSearchResults.test.tsx` (5)
+
+### Volet E — Vérification & clôture
+- [x] Gate complet vert : typecheck ✅ · lint 0 err (8 warn inchangés + 1 classe
+      useVirtualizer assumée) ✅ · 47 Vitest ✅ · clippy 0 ✅ · 387+3 Rust ✅
+- [x] Vérif live MCP (projet réel MV) : « 先生 » → 500/758 en 50 fichiers, headers
+      groupés, sélection Items.json+Map002.json → « Traduire 2 lignes » → 2 segments
+      retraduits même lot (DB), résultats auto-rafraîchis, clic → grille du bon
+      fichier + segment surligné, X → retour grille. Originaux restaurés.
+- [x] CHANGELOG.md (Added) + journal `docs/journal/2026-07-04-global-project-search.md`
+
+### Complément validé user (2026-07-04) — chargement complet au lieu du cap 500 ✅
+- [x] `search.rs` : param `offset` (`SEARCH_BATCH_SIZE`, plus un cap) +
+      test contiguïté inter-lots (`test_offset_batches_are_contiguous`)
+- [x] `search.ts` : boucle multi-lots dans `runSearch` (pattern loadSegments,
+      garde seq existante), résultats affichés progressivement
+- [x] `GlobalSearchResults.tsx` : message « X / Y affichés » → indicateur
+      Loader2 discret (résultats < total) ; reset sélection sur status loading
+      (plus sur [results] — les lots incrémentaux ne wipent plus)
+- [x] i18n : `truncated` → `loadingProgress` (en+fr)
+- [x] Tests D1/D3 ajustés (mock paginé) — gate vert : 388+3 Rust · 48 Vitest ·
+      clippy 0 · lint inchangé
+- [x] Vérif live MCP : « 先生 » → « 758 résultats dans 78 fichiers » (vs 500/50
+      tronqué avant), indicateur disparu, « Tout sélectionner » → « Traduire
+      758 lignes » (décoché sans lancer)
+
+### Complément 2 validé user (2026-07-04) — case « tout le fichier » sur les headers ✅
+- [x] Checkbox tri-état sur chaque ligne d'en-tête de fichier (colonne w-9 alignée
+      avec les cases des lignes) : coche/décoche tous les hits du fichier,
+      indeterminate si sélection partielle ; `hitIdsByFile` (Map) mémoïsée
+- [x] i18n `projectSearch.selectFile` (en+fr, avec {{fileName}} dans le title)
+- [x] Test Vitest tri-état (header → 2 ids du fichier ; 1 hit → indeterminate ;
+      re-clic header → complète ; dé-clic → vide) + indices tests existants ajustés
+- [x] Gate vert : 49 Vitest (+1) · 388+3 Rust · clippy 0 · lint inchangé
+- [x] Vérif live MCP : header Map002.json → « Traduire 12 lignes » ; 1 hit décoché
+      → header indeterminate + « Traduire 11 lignes »
+
+### Complément 3 validé user (2026-07-04) — UX vue résultats (4 modifs) ✅
+- [x] Plier/déplier par fichier : chevron à droite du header, état `collapsed`
+      local (reset sur nouvelle recherche), rows filtre les hits repliés ;
+      sélection indépendante de l'affichage
+- [x] Header sticky : barre superposée en haut du scroll (dérivée de la 1re ligne
+      visible du virtualizer), masquée quand un vrai header est en 1re position ;
+      remplacement instantané (pas d'effet poussé) ; contrôles embarqués
+      (checkbox tri-état + chevron) — composant FileHeader partagé
+- [x] Mode sélection : ≥1 coché → clic ligne = toggle sélection (pas navigation) ;
+      0 coché → clic = navigation (comportement actuel)
+- [x] Checkbox shadcn (Radix) dans la vue résultats uniquement (toolbar, headers,
+      lignes) — `src/components/ui/checkbox.tsx` ajouté via CLI ; tri-état via
+      `checked="indeterminate"` ; SegmentGrid = follow-up
+- [x] i18n : `collapseFile`/`expandFile` (en+fr) ; tests D3 ajustés
+      (aria-checked="mixed", nouveaux tests collapse ×2 + mode sélection ;
+      sticky = vérif live, pas jsdom)
+- [x] Gate complet vert (2026-07-04) : typecheck ✅ · 52 Vitest (+3) ✅ ·
+      clippy 0 ✅ · 388 Rust + 3 intégration ✅ · lint 0 err / 8 warn (inchangé)
+- [x] Vérif live MCP (projet réel MV, « 先生 » → 758 résultats / 78 fichiers) :
+      plier Map002.json → hits masqués, compteur (12) conservé, déplier OK ;
+      scroll mi-fichier → sticky « Map013.json (16) » épinglé, masqué quand un
+      vrai header revient en 1re position ; 1 coché → clic ligne = toggle
+      (« Traduire 2 lignes », pas de navigation) ; 0 coché → clic → grille
+      Map002.json segment 8 surligné + TM exact match
+
+### Follow-up loggé (hors scope)
+- [ ] Scroll-to-segment au chargement de SegmentGrid : après navigation depuis les
+      résultats, la ligne active est surlignée mais peut être hors viewport
+      (scrollToIndex n'existe que dans handleTabNext)
+- [ ] Harmoniser les checkboxes de SegmentGrid (columns.tsx) sur le composant
+      shadcn Checkbox utilisé par la vue résultats (Complément 3)
+
+## ✅ Tokenizer — name box `\n<Name>` : nom traduisible, structure protégée (2026-07-04) — TERMINÉE
+
+> Problème : le Groupe G (`\\n<[^>]+>`) tokenise le code ENTIER → le nom (ハルカ) est
+> opaque pour le LLM et reste en japonais. Solution validée : tokenisation scindée en
+> 2 passes — passe 1 dédiée `RE_NAMEBOX = \\n<([^>]+)>` qui émet `⟦ph_i⟧Nom⟦ph_i+1⟧`
+> (ph_i = `\n<`, ph_i+1 = `>`), passe 2 = regex moteur (Groupe G retiré) qui tokenise
+> le reste, y compris les codes imbriqués dans la name box (`\n<\C[6]ハルカ>`).
+> Garde-fou nouveau risque (LLM inverse/perd les tokens de paire) : contrôle structurel
+> post-restore — nb de matchs `RE_NAMEBOX` dans le texte restauré ≥ nb d'ouvrants `\n<`
+> de la map, sinon `TokenizerError::BrokenNameBox` → retry pipeline existant.
+> Impacts vérifiés : qa.rs (vérifie `\n<`+`>` au lieu du nom JP verbatim — cohérent),
+> filter.rs::needs_translation (segment name-box pur devient traduisible — voulu),
+> pipeline/split (signatures inchangées).
+
+### Implémentation (src-tauri/src/llm/tokenizer.rs)
+- [x] `RE_NAMEBOX` static + passe 1 dans `tokenize` (MvMz + MzOnly, pas Wolf),
+      counter/map partagés avec la passe 2
+- [x] Retirer Groupe G de `RE_MVMZ` et `RE_MZONLY` (mort après passe 1)
+- [x] `TokenizerError::BrokenNameBox` + contrôle structurel dans `restore`
+- [x] Tests 15/16/17 réécrits (comportement scindé) + nouveaux : codes imbriqués,
+      tokens de paire inversés → rejet, name box multiples, MzOnly, Wolf exclu,
+      name-box pur → `needs_translation == true` (filter.rs)
+
+### Vérification
+- [x] Gate complet : `pnpm typecheck && pnpm test && cargo clippy -- -D warnings
+      && cargo test` — vert (typecheck ✅ · 34 Vitest ✅ · clippy 0 ✅ ·
+      381 Rust + 3 intégration ✅)
+- [x] CHANGELOG.md (Fixed) + journal (`docs/journal/2026-07-04-tokenizer-namebox-split.md`)
+
 ## ✅ Backlog trio : TM doublons · QA live glossaire · ESLint 10 (2026-07-04)
 
 > Branche `fix/backlog-tm-qa-lint` · Plan : `~/.claude/plans/fancy-drifting-cocke.md`
