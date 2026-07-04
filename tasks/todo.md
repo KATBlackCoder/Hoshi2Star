@@ -1,5 +1,44 @@
 # Tasks — Hoshi2Star
 
+## ✅ Backlog trio : TM doublons · QA live glossaire · ESLint 10 (2026-07-04)
+
+> Branche `fix/backlog-tm-qa-lint` · Plan : `~/.claude/plans/fancy-drifting-cocke.md`
+> 3 commits : `ead6731` (tm) · `7684831` (qa) · `a98ff8b` (lint).
+
+### FIX 1 — Index UNIQUE TM + upsert
+- [x] Migration `0005_tm_unique.sql` (dédup MAX(rowid) puis CREATE UNIQUE INDEX)
+- [x] `tm::insert` → `ON CONFLICT(source_hash, lang_pair) DO UPDATE` + doc comment
+- [x] 4 tests (double insert → 1 ligne ; id préservé ; fuzzy sans doublon ; lang_pair scopé)
+- [x] Commit `fix(tm): enforce unique (source_hash, lang_pair) — dedup migration + upsert insert`
+
+### FIX 3 — QA live : glossaire + engine
+- [x] `qa_check_segment` async + State + `project_id: Option<String>` ; helper `check_segment_live`
+- [x] Engine : param > DB (`projects.engine`) > `"mv_mz"` ; glossaire via `relevant_terms` (ja-en)
+- [x] QAPanel.tsx : `projectId` dans invoke + queryKey
+- [x] 4 tests commande (mismatch −15 ; terme respecté ; sans project_id ; engine threadé)
+- [x] Commit `fix(qa): thread glossary terms and project engine into live segment check`
+
+### FIX 2 — ESLint 10 flat config
+- [x] `pnpm add -D typescript-eslint @eslint/js globals` (aucun conflit peer-deps)
+- [x] `eslint.config.js` (flat, ignores dist/src-tauri/target/src/components/ui)
+- [x] Script `"lint": "eslint src"` + triage : 3 fixes mécaniques, 2 règles → warn
+- [x] Commit `chore(lint): migrate to ESLint 10 flat config`
+
+### Clôture
+- [x] Gate complet : typecheck + 34 Vitest + clippy -D warnings + 375/3 cargo test
+- [ ] Vérif manuelle FIX 1 : lancer l'app sur la DB dev (migration 0005), requête doublons → 0 ligne
+- [x] CHANGELOG.md + journal
+
+### Follow-ups loggés (hors scope, découverts au triage lint)
+- [ ] Refactor `react-hooks/set-state-in-effect` (4 warn) : effets sync-on-open dans
+      SettingsModal (×2), AppToolbar, GlossaryPanel → dériver l'état ou key-reset
+- [ ] Invalidation du cache `["qa-check", ...]` quand le glossaire est modifié
+      (actuellement : staleTime 300 ms + navigation segment suffisent)
+- [ ] `react-refresh/only-export-components` (3 warn columns.tsx) : séparer cellules
+      et builders de colonnes si on veut un HMR fin
+
+---
+
 > **Remédiation audit 2026-07-01 — avancement**
 > Ordre : 1 → 2 → 3 → 4 → 5 → 7 → 6 → 8 → 9 (`docs/audit-remediation-plan-2026-07-01.md`).
 > - Phase 1 : ✅ **terminée & mergée sur `main`** (2026-07-01).

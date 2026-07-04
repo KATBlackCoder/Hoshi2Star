@@ -93,7 +93,6 @@ const EditableCell = memo(function EditableCell({
     document.activeElement?.id !== `target-input-${rowIndex}`
   ) {
     savedRef.current = initialValue;
-    // eslint-disable-next-line react-compiler/react-compiler -- controlled sync
     setValue(initialValue);
   }
 

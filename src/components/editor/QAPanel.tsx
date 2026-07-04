@@ -135,11 +135,12 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
   // Real-time QA: invoked as a query keyed on source+target text
   // Uses a simple hash to avoid re-running on identical input
   const { data: qaResult } = useQuery<QaResult>({
-    queryKey: ["qa-check", sourceText, targetText],
+    queryKey: ["qa-check", sourceText, targetText, activeProjectId],
     queryFn: () =>
       invoke<QaResult>("qa_check_segment", {
         sourceText: sourceText!,
         targetText: targetText ?? "",
+        projectId: activeProjectId,
       }),
     enabled: !!sourceText,
     staleTime: 300,

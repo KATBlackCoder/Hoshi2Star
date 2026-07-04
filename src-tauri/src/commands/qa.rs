@@ -2,8 +2,10 @@
 
 use std::collections::HashMap;
 
+use sqlx::SqlitePool;
+
 use crate::{
-    core::{qa, tm},
+    core::{glossary, qa, tm},
     domain::types::QaReport,
     state::AppState,
 };
@@ -23,20 +25,58 @@ pub async fn get_tm_suggestions(
 
 /// Run QA checks on a (source, target) pair and return the result.
 ///
-/// `engine` is optional; defaults to `"mv_mz"` when absent.
-/// Does not touch the database — useful for live checking in the UI.
+/// When `project_id` is provided, loads the project glossary (global +
+/// project terms, `ja-en`) and resolves the project engine from the DB so
+/// live QA matches the batch pipeline. Engine precedence: explicit param >
+/// `projects.engine` > `"mv_mz"`.
 #[tauri::command]
-pub fn qa_check_segment(
+pub async fn qa_check_segment(
     source_text: String,
     target_text: String,
     engine: Option<String>,
-) -> qa::QaResult {
-    qa::check(
+    project_id: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<qa::QaResult, String> {
+    Ok(check_segment_live(
+        &state.db,
         &source_text,
         &target_text,
-        &[],
-        engine.as_deref().unwrap_or("mv_mz"),
+        engine.as_deref(),
+        project_id.as_deref(),
     )
+    .await)
+}
+
+/// Testable core of [`qa_check_segment`] (no Tauri `State`). Best-effort:
+/// glossary/engine lookups degrade to defaults on DB errors, never fail QA.
+async fn check_segment_live(
+    db: &SqlitePool,
+    source_text: &str,
+    target_text: &str,
+    engine: Option<&str>,
+    project_id: Option<&str>,
+) -> qa::QaResult {
+    let (glossary_terms, db_engine) = match project_id {
+        Some(pid) => {
+            let db_engine: Option<String> =
+                sqlx::query_scalar("SELECT engine FROM projects WHERE id = ?")
+                    .bind(pid)
+                    .fetch_optional(db)
+                    .await
+                    .ok()
+                    .flatten();
+            let terms = glossary::relevant_terms(db, pid, "ja-en", &[source_text]).await;
+            (terms, db_engine)
+        }
+        None => (Vec::new(), None),
+    };
+
+    let engine = engine
+        .map(str::to_string)
+        .or(db_engine)
+        .unwrap_or_else(|| "mv_mz".to_string());
+
+    qa::check(source_text, target_text, &glossary_terms, &engine)
 }
 
 /// Return a QA summary for all segments in a project.
@@ -99,4 +139,114 @@ pub async fn get_qa_report(
         error_count,
         errors_by_type,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::qa::QaError;
+
+    /// Fresh migrated DB seeded with one project (`p1`, given engine) and one
+    /// project glossary term 魔法使い → Mage (ja-en).
+    async fn seeded_db(engine: &str) -> (SqlitePool, tempfile::NamedTempFile) {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let pool = crate::db::pool::init(tmp.path().to_str().unwrap())
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO projects (id, name, engine, game_path) VALUES ('p1','T',?,'/tmp')",
+        )
+        .bind(engine)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO glossary_terms (id, source_text, target_text, lang_pair, project_id) \
+             VALUES ('g1','魔法使い','Mage','ja-en','p1')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        (pool, tmp)
+    }
+
+    #[tokio::test]
+    async fn test_live_qa_flags_glossary_mismatch() {
+        let (db, _tmp) = seeded_db("mv_mz").await;
+
+        let result = check_segment_live(
+            &db,
+            "魔法使いが現れた",
+            "A wizard appeared",
+            None,
+            Some("p1"),
+        )
+        .await;
+
+        assert_eq!(result.score, 85); // GlossaryMismatch = −15
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QaError::GlossaryMismatch { source_term, expected_target }]
+                if source_term == "魔法使い" && expected_target == "Mage"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_live_qa_glossary_respected_no_error() {
+        let (db, _tmp) = seeded_db("mv_mz").await;
+
+        let result =
+            check_segment_live(&db, "魔法使いが現れた", "A Mage appeared", None, Some("p1")).await;
+
+        assert_eq!(result.score, 100);
+        assert!(result.errors.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_live_qa_without_project_id_skips_glossary() {
+        let (db, _tmp) = seeded_db("mv_mz").await;
+
+        let result =
+            check_segment_live(&db, "魔法使いが現れた", "A wizard appeared", None, None).await;
+
+        assert_eq!(result.score, 100);
+        assert!(result.errors.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_live_qa_engine_resolved_from_project() {
+        let (db, _tmp) = seeded_db("wolf").await;
+
+        // 49 half-width units: over wolf's 520/13 = 40, under MV/MZ's 720/13 ≈ 55.
+        let long_line = "A Mage appeared and it was a very long line here!";
+        assert_eq!(long_line.len(), 49);
+
+        // Engine resolved from projects.engine ('wolf') → line too long.
+        let with_project =
+            check_segment_live(&db, "魔法使いが現れた", long_line, None, Some("p1")).await;
+        assert!(with_project
+            .errors
+            .iter()
+            .any(|e| matches!(e, QaError::LineTooLong { .. })));
+
+        // Explicit param takes precedence over the DB engine → MV/MZ box, no error.
+        let param_override = check_segment_live(
+            &db,
+            "魔法使いが現れた",
+            long_line,
+            Some("mv_mz"),
+            Some("p1"),
+        )
+        .await;
+        assert!(param_override.errors.is_empty());
+
+        // No project_id → mv_mz default, no error.
+        let without_project =
+            check_segment_live(&db, "魔法使いが現れた", long_line, None, None).await;
+        assert!(without_project.errors.is_empty());
+    }
 }

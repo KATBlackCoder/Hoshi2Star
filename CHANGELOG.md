@@ -5,7 +5,12 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
-## [0.4.5] — 2026-07-02
+### Changed
+- Migrate linting to ESLint 10 flat config — new `eslint.config.js` (`@eslint/js` + `typescript-eslint` recommended, react-hooks flat `recommended-latest`, react-refresh vite preset), `pnpm lint` script drops the removed `--ext` flag; shadcn-owned `src/components/ui/` is excluded and the pre-existing `set-state-in-effect` / `only-export-components` findings are downgraded to warnings pending a separate refactor (the previous setup had no config file at all, so `pnpm lint` could not even start)
+
+### Fixed
+- Fix TM saving a duplicate row on every segment save — `idx_tm_hash_lang` was non-unique and `tm::insert` minted a fresh UUID per call, so its `INSERT OR REPLACE` never conflicted; migration `0005` dedups existing rows (newest per `(source_hash, lang_pair)` wins) and recreates the index as `UNIQUE`, and `insert` now upserts via `ON CONFLICT DO UPDATE` (row id preserved), so fuzzy TM suggestions no longer show the same source multiple times
+- Fix live QA check ignoring the glossary and the project engine — `qa_check_segment` received no project context and passed an empty glossary to the QA engine, so `GlossaryMismatch` (−15) never fired while typing and Wolf projects were width-checked against the MV/MZ 720 px box instead of 520 px; the command now takes a `projectId`, loads glossary terms via the same `relevant_terms` helper as the batch pipeline and resolves the engine from `projects.engine` (explicit param > DB > `mv_mz`), with `QAPanel` sending the active project id
 
 ### Changed
 - Bump CI release actions to their Node 24 majors (`actions/checkout@v7`, `actions/setup-node@v6`) to clear the GitHub Actions Node 20 deprecation warning; this release also serves as the first end-to-end validation of the in-app auto-updater (0.4.4 → 0.4.5)
