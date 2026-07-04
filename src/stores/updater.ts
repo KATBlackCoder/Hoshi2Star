@@ -63,7 +63,7 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
 
     set({ status: "checking" });
 
-    let update: Update | null = null;
+    let update: Update | null;
     try {
       update = await check();
     } catch (e) {

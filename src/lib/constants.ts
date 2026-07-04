@@ -9,7 +9,7 @@ export const DEFAULT_BATCH_SIZE = 20;
 // Used in columns.tsx (buildHighlightedNodes).
 // Reset lastIndex before each exec() call since the flag /g is stateful.
 export const PH_RE_SOURCE =
-  /\\[+\-]\w+\[\d+\]|\\[VNPCI]\[\d+\]|\\[G\\$.|!><^{}]|\[%\d+\]/g;
+  /\\[+-]\w+\[\d+\]|\\[VNPCI]\[\d+\]|\\[G\\$.|!><^{}]|\[%\d+\]/g;
 
 /** Returns a fresh RegExp clone so concurrent callers don't share lastIndex. */
 export function clonePH_RE(): RegExp {
