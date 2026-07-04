@@ -106,10 +106,12 @@ pub fn similarity_score(a: &str, b: &str) -> f32 {
 // Database operations
 // ---------------------------------------------------------------------------
 
-/// Insert (or replace) a TM entry.
+/// Insert (or update) a TM entry.
 ///
-/// Uses `INSERT OR REPLACE` so that re-saving a segment updates the
-/// target text without creating a duplicate row.
+/// Upserts on the unique `(source_hash, lang_pair)` key so that re-saving a
+/// segment updates the target text in place (same row `id`) without creating
+/// a duplicate row. `source_text` is refreshed too: the hash is normalised
+/// (trim + lowercase), so the latest raw form wins.
 pub async fn insert(
     source_text: &str,
     target_text: &str,
@@ -121,9 +123,15 @@ pub async fn insert(
     let source_hash = hash_source(source_text);
 
     sqlx::query(
-        "INSERT OR REPLACE INTO tm_entries \
+        "INSERT INTO tm_entries \
              (id, source_hash, source_text, target_text, engine, lang_pair, confidence) \
-         VALUES (?, ?, ?, ?, ?, ?, 1.0)",
+         VALUES (?, ?, ?, ?, ?, ?, 1.0) \
+         ON CONFLICT(source_hash, lang_pair) DO UPDATE SET \
+             source_text = excluded.source_text, \
+             target_text = excluded.target_text, \
+             engine      = excluded.engine, \
+             confidence  = excluded.confidence, \
+             created_at  = datetime('now')",
     )
     .bind(&id)
     .bind(&source_hash)
@@ -340,6 +348,90 @@ mod tests {
         assert!(lookup_exact(&hash, "ja-en", &db).await.unwrap().is_some());
         // ja-fr → not found
         assert!(lookup_exact(&hash, "ja-fr", &db).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_insert_same_source_twice_yields_single_row() {
+        let (db, _file) = test_db().await;
+
+        insert("主人公", "Hero", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert 1");
+        insert("主人公", "Protagonist", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert 2");
+
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tm_entries")
+            .fetch_one(&db)
+            .await
+            .expect("count");
+        assert_eq!(count, 1);
+
+        let entry = lookup_exact(&hash_source("主人公"), "ja-en", &db)
+            .await
+            .expect("lookup")
+            .expect("should find entry");
+        assert_eq!(entry.target_text, "Protagonist");
+    }
+
+    #[tokio::test]
+    async fn test_insert_upsert_preserves_id() {
+        let (db, _file) = test_db().await;
+
+        insert("主人公", "Hero", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert 1");
+        let id_before: String = sqlx::query_scalar("SELECT id FROM tm_entries")
+            .fetch_one(&db)
+            .await
+            .expect("id before");
+
+        insert("主人公", "Protagonist", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert 2");
+        let id_after: String = sqlx::query_scalar("SELECT id FROM tm_entries")
+            .fetch_one(&db)
+            .await
+            .expect("id after");
+
+        // DO UPDATE keeps the row identity (REPLACE would mint a new UUID).
+        assert_eq!(id_before, id_after);
+    }
+
+    #[tokio::test]
+    async fn test_lookup_fuzzy_no_duplicate_suggestions() {
+        let (db, _file) = test_db().await;
+
+        insert("主人公", "Hero", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert 1");
+        insert("主人公", "Protagonist", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert 2");
+
+        let suggestions = lookup_fuzzy("主人公", "ja-en", 0.80, 5, &db)
+            .await
+            .expect("fuzzy");
+        assert_eq!(suggestions.len(), 1);
+        assert_eq!(suggestions[0].entry.target_text, "Protagonist");
+    }
+
+    #[tokio::test]
+    async fn test_same_source_different_lang_pair_two_rows() {
+        let (db, _file) = test_db().await;
+
+        insert("主人公", "Hero", "mv_mz", "ja-en", &db)
+            .await
+            .expect("insert ja-en");
+        insert("主人公", "Héros", "mv_mz", "ja-fr", &db)
+            .await
+            .expect("insert ja-fr");
+
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tm_entries")
+            .fetch_one(&db)
+            .await
+            .expect("count");
+        assert_eq!(count, 2);
     }
 
     #[test]
