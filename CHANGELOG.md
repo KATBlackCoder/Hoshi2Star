@@ -5,6 +5,11 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+## [0.4.7] — 2026-07-04
+
+### Fixed
+- Fix Wolf RPG v3.5 database exports being silently corrupted — `Data/BasicData/DataBase.dat` and `CDataBase.dat` on v3.5 games (e.g. Inko) are LZ4-compressed (version byte `0xC4`), but `serialize_dat` always wrote the plain (uncompressed) layout while preserving the `0xC4` header, producing a file whose header claims LZ4 but whose body is raw bytes; the Wolf RPG Editor runtime then refuses to load the game ("database file may be corrupted or an old version"). `serialize_dat` now recompresses via a new `dat_parser::compress_lz4_dat` (symmetric to the existing decompression path) whenever the original header selected the LZ4 version; new regression test `test_inject_dat_lz4_v3_recompresses` locks the fix. Games already exported with the broken version need a clean (untranslated) copy of these two files restored before re-exporting — Hoshi2Star cannot reconstruct them from translated text alone
+
 ## [0.4.6] — 2026-07-04
 
 ### Added
@@ -354,6 +359,7 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - TanStack Query for async Tauri invoke() calls
 - GitHub Actions CI/CD for Linux + Windows builds
 
+[0.4.7]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.7
 [0.4.6]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.6
 [0.4.5]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.5
 [0.4.4]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.4

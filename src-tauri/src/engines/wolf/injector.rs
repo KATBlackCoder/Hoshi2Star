@@ -360,7 +360,13 @@ fn write_wolf_string(buf: &mut Vec<u8>, encoded: &[u8]) {
 ///
 /// The indicator and version bytes are preserved from `dat_original_header[0]`
 /// and `dat_original_header[10]` so the output is byte-identical when no
-/// translations are applied (round-trip identity guarantee).
+/// translations are applied (round-trip identity guarantee) — except when
+/// `version_byte == DAT_VERSION_LZ4` (Wolf RPG v3.x): the header still
+/// declares LZ4, but the payload (type_count through the terminator) is
+/// recompressed via `dat_parser::compress_lz4_dat` instead of written plain,
+/// since the runtime always LZ4-decompresses bytes 11.. once it sees 0xC4 —
+/// writing a plain payload there produces a "database corrupted or too old"
+/// error even though the content itself is correct.
 fn serialize_dat(
     dat: &DatFile,
     dat_original_header: &[u8],
@@ -374,17 +380,26 @@ fn serialize_dat(
         DB_MAGIC_SJIS
     };
 
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&(dat.types.len() as u32).to_le_bytes());
+
+    for dat_type in &dat.types {
+        serialize_dat_type(&mut payload, dat_type, version, dat.is_utf8)?;
+    }
+
+    payload.push(version_byte);
+
     let mut buf = Vec::new();
     buf.push(indicator);
     buf.extend_from_slice(&magic);
     buf.push(version_byte);
-    buf.extend_from_slice(&(dat.types.len() as u32).to_le_bytes());
 
-    for dat_type in &dat.types {
-        serialize_dat_type(&mut buf, dat_type, version, dat.is_utf8)?;
+    if version_byte == dat_parser::DAT_VERSION_LZ4 {
+        buf.extend_from_slice(&dat_parser::compress_lz4_dat(&payload));
+    } else {
+        buf.extend_from_slice(&payload);
     }
 
-    buf.push(version_byte);
     Ok(buf)
 }
 
@@ -1045,6 +1060,57 @@ mod tests {
         }];
         let result = inject_dat(&project, &dat, &translations, &v2());
         assert!(matches!(result, Err(InjectorError::KeyNotFound(_))));
+    }
+
+    /// Regression for the real-world "database corrupted or too old"
+    /// crash: a v3.5 database (`BasicData/DataBase.dat`, version byte
+    /// `0xC4`) must come back out LZ4-compressed, not plain bytes under an
+    /// unchanged `0xC4` header — the Wolf RPG Editor runtime always
+    /// LZ4-decompresses bytes 11.. once it sees that version byte.
+    #[test]
+    fn test_inject_dat_lz4_v3_recompresses() {
+        const STRING_FIELD_START: u32 = 0x07D0; // dat_parser::STRING_FIELD_START
+
+        // `make_minimal_project_pub` encodes names as Shift-JIS, so the
+        // paired .dat below must use the matching SJIS magic — the LZ4
+        // wrapping being tested here is orthogonal to string encoding.
+        let project = make_minimal_project_pub("キャラ", "名前", "");
+
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&1u32.to_le_bytes()); // type_count
+        payload.extend_from_slice(&DAT_TYPE_SEPARATOR);
+        payload.extend_from_slice(&0u32.to_le_bytes()); // unknown1
+        payload.extend_from_slice(&1u32.to_le_bytes()); // fields_size
+        payload.extend_from_slice(&STRING_FIELD_START.to_le_bytes());
+        payload.extend_from_slice(&1u32.to_le_bytes()); // data_count
+        payload.extend(sjis_string("ハルカ"));
+        payload.push(0xC4); // terminator == version byte
+
+        let compressed = lz4_flex::block::compress(&payload);
+        let mut dat = vec![0x00]; // indicator = unencrypted
+        dat.extend_from_slice(&DB_MAGIC_SJIS);
+        dat.push(0xC4); // version = LZ4 (Wolf RPG v3.x)
+        dat.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        dat.extend_from_slice(&(compressed.len() as u32).to_le_bytes());
+        dat.extend_from_slice(&compressed);
+
+        let translations = vec![WolfTranslation {
+            key: "Database/キャラ/0/0/名前".to_string(),
+            text: "Haruka".to_string(),
+        }];
+        let (new_bytes, result) = inject_dat(&project, &dat, &translations, &v3()).unwrap();
+        assert_eq!(result.updated_count, 1);
+
+        // Header still declares LZ4 (0xC4) — the bytes right after the
+        // header must therefore actually BE an LZ4 block, not the plain
+        // DAT_TYPE_SEPARATOR that a non-recompressing bug would leave there.
+        assert_eq!(new_bytes[10], 0xC4);
+        assert_ne!(&new_bytes[15..19], DAT_TYPE_SEPARATOR.as_slice());
+
+        // The real assertion: re-parsing through the same decompression path
+        // the Wolf RPG Editor runtime uses must succeed and see the update.
+        let reparsed = dat_parser::parse_database(&project, &new_bytes).unwrap();
+        assert_eq!(reparsed.types[0].entries[0].string_values, ["Haruka"]);
     }
 
     // -----------------------------------------------------------------------

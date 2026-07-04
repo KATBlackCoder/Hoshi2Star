@@ -41,7 +41,9 @@ pub const DB_MAGIC_UTF8: [u8; 9] = [0x57, 0x00, 0x00, 0x4F, 0x4C, 0x55, 0x46, 0x
 
 // .dat version byte 10 == 0xC4 means the rest of the file is an LZ4 block
 // (Wolf RPG v3.x), preceded by 4-byte decompressed_size + 4-byte compressed_size.
-const DAT_VERSION_LZ4: u8 = 0xC4;
+/// Public re-export for the injector (`serialize_dat` must recompress when
+/// the original header selected this version, mirroring [`decompress_lz4_dat`]).
+pub(crate) const DAT_VERSION_LZ4: u8 = 0xC4;
 
 // 4-byte separator that precedes each type's data section in the .dat
 pub const DAT_TYPE_SEPARATOR: [u8; 4] = [0xFE, 0xFF, 0xFF, 0xFF];
@@ -453,6 +455,26 @@ fn decompress_lz4_dat(dat_bytes: &[u8]) -> Result<Vec<u8>, DatParseError> {
     }
     lz4_flex::block::decompress(&dat_bytes[19..block_end], decompressed_size)
         .map_err(|e| DatParseError::Lz4Decompress(e.to_string()))
+}
+
+/// Compress a plain `.dat` payload (everything after the 11-byte header —
+/// type_count through the terminator byte) into the LZ4-wrapped body
+/// consumed by [`decompress_lz4_dat`]: `decompressed_size:u32 +
+/// compressed_size:u32 + <LZ4 block>`.
+///
+/// Symmetric counterpart of `decompress_lz4_dat`, used by the injector when
+/// re-serializing a database whose original version byte was
+/// [`DAT_VERSION_LZ4`] — writing the plain payload under an unchanged 0xC4
+/// header (without this step) produces a file the Wolf RPG Editor runtime
+/// reports as corrupted, since it always LZ4-decompresses bytes 11.. once
+/// the header says `0xC4`.
+pub(crate) fn compress_lz4_dat(payload: &[u8]) -> Vec<u8> {
+    let compressed = lz4_flex::block::compress(payload);
+    let mut out = Vec::with_capacity(8 + compressed.len());
+    out.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    out.extend_from_slice(&(compressed.len() as u32).to_le_bytes());
+    out.extend_from_slice(&compressed);
+    out
 }
 
 // ---------------------------------------------------------------------------
