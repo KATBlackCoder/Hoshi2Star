@@ -192,6 +192,14 @@ mod tests {
     }
 
     #[test]
+    fn test_needs_translation_pure_name_box_is_translatable() {
+        // Depuis la tokenisation scindée, seul `\n<`/`>` est opaque : le nom
+        // reste du contenu réel → un segment name-box pur DOIT être traduit.
+        assert!(needs_translation(r"\n<ハルカ>", TokEngine::MvMz));
+        assert!(needs_translation(r"\n<\C[6]ハルカ>", TokEngine::MvMz));
+    }
+
+    #[test]
     fn test_needs_translation_placeholders_wolf() {
         assert!(!needs_translation(r"\cdb[0:1:0]", TokEngine::Wolf));
         assert!(needs_translation("勇者の村", TokEngine::Wolf));

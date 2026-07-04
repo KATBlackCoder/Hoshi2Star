@@ -22,14 +22,21 @@ use std::sync::LazyLock;
 // Regex patterns (compiled once at first use)
 // ---------------------------------------------------------------------------
 
-/// MV/MZ combined: Groupe A + Groupe B + Groupe D (MV `[%n]` form) + Groupe E + Groupe F + Groupe G (plugins).
+/// Groupe G — Yanfly name box `\n<Name>`. Handled in a dedicated FIRST pass:
+/// only the structure (`\n<` and `>`) becomes tokens, the name stays inline so
+/// the LLM can translate it (and glossary terms apply). The main engine regex
+/// then runs on the result, which also tokenizes codes nested inside the name
+/// box (e.g. `\n<\C[6]ハルカ>`).
+static RE_NAMEBOX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\\n<([^>]+)>").expect("RE_NAMEBOX regex must compile"));
+
+/// MV/MZ combined: Groupe A + Groupe B + Groupe D (MV `[%n]` form) + Groupe E + Groupe F (plugins).
 /// NOTE: `\PX/\PY/\FS` (Groupe C) are NOT included — they are MZ-only.
+/// NOTE: Groupe G (`\n<Name>`) is NOT here — consumed by the RE_NAMEBOX pass beforehand.
 static RE_MVMZ: LazyLock<Regex> = LazyLock::new(|| {
     // Inside a character class [..], only \\ needs escaping — other chars are literal.
     // Characters matched after the leading backslash: G \ $ . | ! > < ^ { } #
     // Groupe E MUST come before Groupe A to avoid partial matches on \+word.
-    // Groupe G MUST come before Groupe A/F — \n<Name> uses angle brackets, not square brackets,
-    // so there is no actual regex conflict with A/F, but ordering makes intent explicit.
     // Groupe F MUST come before Groupe A — multi-letter plugin codes (\FF[a_0_001], \AA[FF])
     // that carry an alphanumeric argument not matched by Groupe A's \d+ restriction.
     // \n (literal newline U+000A) is tokenized last — preserves structural line breaks
@@ -37,7 +44,6 @@ static RE_MVMZ: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?x)
           \\[+\-]\w+\[\d+\]         # Groupe E — plugin codes (\+switch[n], \-var[n], …)
-        | \\n<[^>]+>                # Groupe G — Yanfly name box (\n<Name>)
         | \\[A-Za-z]{1,3}\[[A-Za-z0-9_]+\]  # Groupe F — plugin alphanum codes (\FF[a_0_001], \AA[FF])
         | \\[VNPCIvnpci]\[\d+\]    # Groupe A — codes avec argument numérique (maj + min)
         | \\[G\\$.|!><^{}\#]        # Groupe B — codes sans argument (incl. \# scene titles)
@@ -48,15 +54,14 @@ static RE_MVMZ: LazyLock<Regex> = LazyLock::new(|| {
     .expect("RE_MVMZ regex must compile")
 });
 
-/// MZ-only: Groupe C (before A!) + Groupe A + Groupe B + Groupe D (MZ bare `%n` form) + Groupe E + Groupe F + Groupe G.
+/// MZ-only: Groupe C (before A!) + Groupe A + Groupe B + Groupe D (MZ bare `%n` form) + Groupe E + Groupe F.
 /// Groupe C MUST come before Groupe A to prevent `\P` from consuming `\PX`/`\PY`/`\FS`.
-/// Groupe G MUST come before Groupe A/F — see RE_MVMZ comment.
 /// Groupe F comes after Groupe C (so \PX[100] is captured by C first) but before Groupe A.
+/// NOTE: Groupe G (`\n<Name>`) is NOT here — consumed by the RE_NAMEBOX pass beforehand.
 static RE_MZONLY: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?x)
           \\[+\-]\w+\[\d+\]                # Groupe E — plugin codes (\+switch[n], …)
-        | \\n<[^>]+>                       # Groupe G — Yanfly name box (\n<Name>)
         | \\(?:PX|PY|FS|px|py|fs)\[\d+\]  # Groupe C — MZ position/font codes (avant A!)
         | \\[A-Za-z]{1,3}\[[A-Za-z0-9_]+\]  # Groupe F — plugin alphanum codes (\FF[a_0_001], \AA[FF])
         | \\[VNPCIvnpci]\[\d+\]            # Groupe A — codes avec argument numérique (maj + min)
@@ -118,6 +123,10 @@ pub enum TokenizerError {
     MissingPlaceholder { uuid: String, original: String },
     #[error("LLM response contains duplicate placeholder token '{uuid}'")]
     DuplicatePlaceholder { uuid: String },
+    #[error(
+        "restored text has {found} intact '\\n<…>' name box(es) but {expected} were tokenized — the LLM reordered or split the pair tokens"
+    )]
+    BrokenNameBox { expected: usize, found: usize },
 }
 
 // ---------------------------------------------------------------------------
@@ -129,20 +138,42 @@ pub struct Tokenizer;
 impl Tokenizer {
     /// Replace all placeholders in `text` with opaque tokens `⟦ph_0⟧`, `⟦ph_1⟧`, …
     ///
+    /// For MV/MZ, a first pass splits Yanfly name boxes: `\n<ハルカ>` becomes
+    /// `⟦ph_0⟧ハルカ⟦ph_1⟧` (ph_0 = `\n<`, ph_1 = `>`) so the name itself stays
+    /// visible to the LLM and gets translated. The engine regex then tokenizes
+    /// everything else, including codes nested inside the name box.
+    ///
     /// Returns a `Tokenized` value containing the modified text and the
     /// token→original map needed for `restore`.
     pub fn tokenize(text: &str, engine: Engine) -> Tokenized {
+        let mut map = PlaceholderMap::new();
+        let mut counter = 0usize;
+
+        // Pass 1 — name box structure only (name left inline, translatable).
+        let pass1 = match engine {
+            Engine::MvMz | Engine::MzOnly => RE_NAMEBOX
+                .replace_all(text, |caps: &regex::Captures| {
+                    let open = format!("⟦ph_{counter}⟧");
+                    counter += 1;
+                    let close = format!("⟦ph_{counter}⟧");
+                    counter += 1;
+                    map.insert(open.clone(), r"\n<".to_string());
+                    map.insert(close.clone(), ">".to_string());
+                    format!("{open}{}{close}", &caps[1])
+                })
+                .into_owned(),
+            Engine::Wolf => text.to_string(),
+        };
+
+        // Pass 2 — engine placeholder patterns on the remaining text.
         let re = match engine {
             Engine::MvMz => &*RE_MVMZ,
             Engine::MzOnly => &*RE_MZONLY,
             Engine::Wolf => &*crate::engines::wolf::placeholders::RE_WOLF,
         };
 
-        let mut map = PlaceholderMap::new();
-        let mut counter = 0usize;
-
         let tokenized_text = re
-            .replace_all(text, |caps: &regex::Captures| {
+            .replace_all(&pass1, |caps: &regex::Captures| {
                 let original = caps[0].to_string();
                 let token = format!("⟦ph_{counter}⟧");
                 counter += 1;
@@ -185,6 +216,10 @@ impl Tokenizer {
     /// Restore the original placeholders in a tokenized LLM response.
     ///
     /// Calls `validate` first — returns an error if any token is missing or duplicated.
+    /// Then checks name box structure: `validate` only guarantees presence/uniqueness,
+    /// not ordering, so a response with swapped pair tokens (`⟦close⟧Name⟦open⟧`)
+    /// would restore to `>Name\n<`. Such a response is rejected with `BrokenNameBox`
+    /// so the segment goes through the normal retry path.
     pub fn restore(tokenized: &str, map: &PlaceholderMap) -> Result<String, TokenizerError> {
         Self::validate(tokenized, map)?;
         let mut result = tokenized.to_string();
@@ -193,6 +228,14 @@ impl Tokenizer {
         entries.sort_by_key(|(k, _)| k.as_str());
         for (token, original) in entries {
             result = result.replace(token.as_str(), original.as_str());
+        }
+
+        let expected = map.values().filter(|v| v.as_str() == r"\n<").count();
+        if expected > 0 {
+            let found = RE_NAMEBOX.find_iter(&result).count();
+            if found < expected {
+                return Err(TokenizerError::BrokenNameBox { expected, found });
+            }
         }
         Ok(result)
     }
@@ -507,20 +550,22 @@ mod tests {
     // Groupe G — Yanfly name box (\n<Name>)
     // ---------------------------------------------------------------------------
 
-    // 15. \n<Name> est tokenisé comme un placeholder opaque
+    // 15. \n<Name> est scindé : structure tokenisée, nom laissé traduisible
     #[test]
     fn test_groupe_g_name_box_tokenized() {
         let result = Tokenizer::tokenize(r"\n<ハルカ>", Engine::MvMz);
-        assert_eq!(result.text, "⟦ph_0⟧");
-        assert_eq!(result.map.get("⟦ph_0⟧").unwrap(), r"\n<ハルカ>");
+        assert_eq!(result.text, "⟦ph_0⟧ハルカ⟦ph_1⟧");
+        assert_eq!(result.map.get("⟦ph_0⟧").unwrap(), r"\n<");
+        assert_eq!(result.map.get("⟦ph_1⟧").unwrap(), ">");
     }
 
-    // 16. \n<Name> + dialogue — code protégé, texte traduit normalement
+    // 16. \n<Name> + dialogue — structure protégée, nom ET dialogue traduisibles
     #[test]
     fn test_groupe_g_name_box_round_trip() {
         let original = r"\n<ハルカ>「はぁ…はぁ…」";
         let tok = Tokenizer::tokenize(original, Engine::MvMz);
-        assert_eq!(tok.map.len(), 1, "only the name box code is a token");
+        assert_eq!(tok.map.len(), 2, "pair tokens: `\\n<` open + `>` close");
+        assert!(tok.text.contains("ハルカ"), "name must stay translatable");
         assert!(
             tok.text.contains("「はぁ…はぁ…」"),
             "dialogue text must remain"
@@ -532,19 +577,93 @@ mod tests {
     // 17. \n<Name> ne crée pas de conflit avec \n[N] (Groupe A)
     #[test]
     fn test_groupe_g_no_conflict_with_groupe_a() {
-        // \n[1] → Groupe A ; \n<ハルカ> → Groupe G — deux tokens distincts
+        // \n[1] → Groupe A ; \n<ハルカ> → paire name box — trois tokens
         let original = r"\n[1] dit \n<ハルカ>「…」";
         let tok = Tokenizer::tokenize(original, Engine::MvMz);
         assert_eq!(
             tok.map.len(),
-            2,
-            "\\n[1] and \\n<Name> are two distinct tokens"
+            3,
+            "\\n[1] (Groupe A) + name box pair = three tokens"
         );
         let values: Vec<&str> = tok.map.values().map(String::as_str).collect();
         assert!(values.contains(&r"\n[1]"));
-        assert!(values.contains(&r"\n<ハルカ>"));
+        assert!(values.contains(&r"\n<"));
+        assert!(values.contains(&">"));
+        assert!(tok.text.contains("ハルカ"), "name must stay translatable");
         let restored = Tokenizer::restore(&tok.text, &tok.map).unwrap();
         assert_eq!(restored, original);
+    }
+
+    // 17b. Codes imbriqués dans la name box (\n<\C[6]ハルカ>) — tokenisés par la passe 2
+    #[test]
+    fn test_groupe_g_nested_codes_inside_name_box() {
+        let original = r"\n<\C[6]ハルカ>「おはよう」";
+        let tok = Tokenizer::tokenize(original, Engine::MvMz);
+        let values: Vec<&str> = tok.map.values().map(String::as_str).collect();
+        assert!(values.contains(&r"\n<"));
+        assert!(values.contains(&">"));
+        assert!(values.contains(&r"\C[6]"), "nested code must be tokenized");
+        assert!(tok.text.contains("ハルカ"), "name must stay translatable");
+        let restored = Tokenizer::restore(&tok.text, &tok.map).unwrap();
+        assert_eq!(restored, original);
+    }
+
+    // 17c. Name boxes multiples — chaque paire a ses propres tokens
+    #[test]
+    fn test_groupe_g_multiple_name_boxes() {
+        let original = "\\n<ハルカ>「おはよう」\n\\n<ミク>「うん」";
+        let tok = Tokenizer::tokenize(original, Engine::MvMz);
+        let opens = tok.map.values().filter(|v| v.as_str() == r"\n<").count();
+        let closes = tok.map.values().filter(|v| v.as_str() == ">").count();
+        assert_eq!(opens, 2, "two open tokens");
+        assert_eq!(closes, 2, "two close tokens");
+        assert!(tok.text.contains("ハルカ") && tok.text.contains("ミク"));
+        let restored = Tokenizer::restore(&tok.text, &tok.map).unwrap();
+        assert_eq!(restored, original);
+    }
+
+    // 17d. MzOnly — la passe name box s'applique aussi
+    #[test]
+    fn test_groupe_g_name_box_mzonly() {
+        let original = r"\n<ハルカ>\PX[100]「…」";
+        let tok = Tokenizer::tokenize(original, Engine::MzOnly);
+        let values: Vec<&str> = tok.map.values().map(String::as_str).collect();
+        assert!(values.contains(&r"\n<"));
+        assert!(values.contains(&">"));
+        assert!(values.contains(&r"\PX[100]"), "Groupe C still tokenized");
+        assert!(tok.text.contains("ハルカ"));
+        let restored = Tokenizer::restore(&tok.text, &tok.map).unwrap();
+        assert_eq!(restored, original);
+    }
+
+    // 17e. Tokens de paire inversés par le LLM → BrokenNameBox (retry pipeline)
+    #[test]
+    fn test_groupe_g_swapped_pair_tokens_rejected() {
+        let tok = Tokenizer::tokenize(r"\n<ハルカ>", Engine::MvMz);
+        // validate() passe (tokens présents, uniques) mais la structure est cassée :
+        // ⟦close⟧Haruka⟦open⟧ restaurerait `>Haruka\n<`.
+        let swapped = "⟦ph_1⟧Haruka⟦ph_0⟧";
+        let err = Tokenizer::restore(swapped, &tok.map).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                TokenizerError::BrokenNameBox {
+                    expected: 1,
+                    found: 0
+                }
+            ),
+            "swapped pair must be rejected, got: {err:?}"
+        );
+    }
+
+    // 17f. Wolf — pas de passe name box (\n<…> n'est pas un code Wolf)
+    #[test]
+    fn test_groupe_g_not_applied_for_wolf() {
+        let tok = Tokenizer::tokenize(r"\n<ハルカ>", Engine::Wolf);
+        assert!(
+            !tok.map.values().any(|v| v == r"\n<"),
+            "Wolf must not get the name box split pass"
+        );
     }
 
     // ---------------------------------------------------------------------------
