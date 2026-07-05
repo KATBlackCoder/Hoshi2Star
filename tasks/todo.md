@@ -1,5 +1,25 @@
 # Tasks — Hoshi2Star
 
+## ✅ Fix — Wolf : ordre @N/taille de police (2026-07-05) — TERMINÉE
+
+> 3e bug Wolf de la journée, suite directe LZ4 (v0.4.7) + encodage (v0.4.8).
+> L'utilisateur signale (captures avant/après) que le nom + portrait du
+> personnage disparaissent dans certains dialogues, remplacés par le texte
+> littéral « @2 » affiché. Cause : `apply_font_prefix` collait toujours
+> `\f[N]` en position 0, poussant le marqueur de personnage Wolf `@N\n` hors
+> de tête de chaîne — le moteur ne le reconnaît plus. Journal :
+> `docs/journal/2026-07-05-wolf-font-prefix-speaker-order.md`.
+
+- [x] `export.rs::RE_WOLF_SPEAKER_PREFIX` + `split_wolf_speaker_prefix` —
+      sépare un `@N\n` en tête avant d'insérer/détecter le code de police
+- [x] `apply_font_prefix` (wolf) : marqueur + code + reste, jamais code + marqueur
+- [x] `scan_font_status`/`strip_font_prefix` mis à jour pour rester cohérents
+- [x] Gate complet : clippy 0 ✅ · **402 Rust (+8)** ✅ (8 nouveaux tests)
+- [x] Vérif live end-to-end (MCP Tauri, réapplication police 23 sur le
+      projet réel) : `CommonEvent.dat` frais → `@2\n\f[23]"Haa..."` correct
+- [x] CHANGELOG.md (Unreleased → Fixed) + journal
+- [ ] Commit/push/release : confirmé par l'utilisateur, en cours
+
 ## ✅ Fix — Wolf v3.x unpacked : version guess + encoding mismatch (2026-07-05) — TERMINÉE
 
 > Suite directe du fix LZ4 (v0.4.7) : l'utilisateur a restauré une copie de secours
