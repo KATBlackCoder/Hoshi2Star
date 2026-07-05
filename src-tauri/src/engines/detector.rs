@@ -208,9 +208,39 @@ pub fn find_wolf_data_dir(game_dir: &Path) -> Option<std::path::PathBuf> {
 /// Detect the Wolf RPG version by reading the CodePage field from the first `.wolf` archive.
 ///
 /// Tries plaintext headers first (e.g. Honoka), then cycles through known XOR keys.
-/// Falls back to v2.0 (Shift-JIS) on any failure.
+/// Falls back to sniffing a loose `.dat`'s own magic byte (games distributed
+/// unpacked, with no `.wolf`/`Data.wolf` to read a CodePage from), and only
+/// then to the hardcoded v2.0 (Shift-JIS) default.
 pub fn guess_wolf_version_from_structure(game_dir: &Path) -> WolfVersion {
-    try_detect_wolf_version_from_dxa(game_dir).unwrap_or(WolfVersion { major: 2, minor: 0 })
+    try_detect_wolf_version_from_dxa(game_dir)
+        .or_else(|| guess_wolf_version_from_loose_dat(game_dir))
+        .unwrap_or(WolfVersion { major: 2, minor: 0 })
+}
+
+/// Fallback for games with no `.wolf` archive to sniff: read the always-present
+/// `BasicData/SysDatabase.dat`'s own 9-byte magic (byte 5 = `0x00` Shift-JIS /
+/// `0x55` UTF-8 — the same signal [`super::wolf::dat_parser::parse_database`]
+/// uses per-file). Without this, an unpacked v3.x/UTF-8 project silently fell
+/// back to the v2.0/Shift-JIS default, causing `encode_for_wolf` to
+/// Shift-JIS-encode any non-ASCII translated character into a database whose
+/// header still declares UTF-8 (e.g. a full-width `．` written as `81 44`
+/// under a `DB_MAGIC_UTF8` header) — a mismatch the Wolf RPG Editor runtime
+/// cannot recover from.
+fn guess_wolf_version_from_loose_dat(game_dir: &Path) -> Option<WolfVersion> {
+    use crate::engines::wolf::dat_parser::{DB_MAGIC_SJIS, DB_MAGIC_UTF8};
+
+    let data_dir = find_wolf_data_dir(game_dir)?;
+    let bytes = std::fs::read(data_dir.join("BasicData").join("SysDatabase.dat")).ok()?;
+    if bytes.len() < 10 {
+        return None;
+    }
+    if bytes[1..10] == DB_MAGIC_UTF8 {
+        Some(WolfVersion { major: 3, minor: 0 })
+    } else if bytes[1..10] == DB_MAGIC_SJIS {
+        Some(WolfVersion { major: 2, minor: 0 })
+    } else {
+        None
+    }
 }
 
 fn find_first_wolf_file(game_dir: &Path) -> Option<std::path::PathBuf> {
@@ -575,5 +605,56 @@ mod tests {
 
         let result = find_wolf_data_dir(dir.path()).unwrap();
         assert_eq!(result, dir.path().join("data"));
+    }
+
+    /// Regression: an unpacked (no `.wolf` archive) v3.x/UTF-8 game must not
+    /// silently fall back to v2.0/Shift-JIS — that mismatch is what caused
+    /// `encode_for_wolf` to Shift-JIS-encode non-ASCII translated characters
+    /// into a database whose header still declared UTF-8.
+    #[test]
+    fn test_guess_wolf_version_loose_utf8_database() {
+        use crate::engines::wolf::dat_parser::DB_MAGIC_UTF8;
+
+        let dir = tempfile::tempdir().unwrap();
+        let basic_data = dir.path().join("Data").join("BasicData");
+        std::fs::create_dir_all(&basic_data).unwrap();
+
+        let mut sys_db = vec![0x00]; // indicator = unencrypted
+        sys_db.extend_from_slice(&DB_MAGIC_UTF8);
+        sys_db.push(0xC1); // version (content irrelevant to detection)
+        std::fs::write(basic_data.join("SysDatabase.dat"), sys_db).unwrap();
+
+        assert_eq!(
+            guess_wolf_version_from_structure(dir.path()),
+            WolfVersion { major: 3, minor: 0 }
+        );
+    }
+
+    #[test]
+    fn test_guess_wolf_version_loose_sjis_database() {
+        use crate::engines::wolf::dat_parser::DB_MAGIC_SJIS;
+
+        let dir = tempfile::tempdir().unwrap();
+        let basic_data = dir.path().join("Data").join("BasicData");
+        std::fs::create_dir_all(&basic_data).unwrap();
+
+        let mut sys_db = vec![0x00];
+        sys_db.extend_from_slice(&DB_MAGIC_SJIS);
+        sys_db.push(0xC1);
+        std::fs::write(basic_data.join("SysDatabase.dat"), sys_db).unwrap();
+
+        assert_eq!(
+            guess_wolf_version_from_structure(dir.path()),
+            WolfVersion { major: 2, minor: 0 }
+        );
+    }
+
+    #[test]
+    fn test_guess_wolf_version_no_signal_defaults_to_v2() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            guess_wolf_version_from_structure(dir.path()),
+            WolfVersion { major: 2, minor: 0 }
+        );
     }
 }

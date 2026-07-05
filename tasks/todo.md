@@ -1,5 +1,35 @@
 # Tasks — Hoshi2Star
 
+## ✅ Fix — Wolf v3.x unpacked : version guess + encoding mismatch (2026-07-05) — TERMINÉE
+
+> Suite directe du fix LZ4 (v0.4.7) : l'utilisateur a restauré une copie de secours
+> de `DataBase.dat`/`CDataBase.dat`, puis un nouvel export échouait avec
+> « dat parse error: encoding error: invalid utf-8 sequence of 1 bytes from index 14 ».
+> Cause : `guess_wolf_version_from_structure` ne sait détecter la version que via une
+> archive `.wolf` — un jeu distribué sans archive (Data/ en clair, cas de Densyanai_Inko)
+> retombait sur le défaut v2.0/SJIS même si ses `.dat` sont réellement v3.5/UTF-8 ;
+> `serialize_dat_type` utilisait ce défaut erroné au lieu du `is_utf8` par fichier déjà
+> calculé (mais ignoré), Shift-JIS-encodant tout caractère non-ASCII traduit dans une
+> base UTF-8. Journal : `docs/journal/2026-07-05-wolf-unpacked-version-encoding.md`.
+
+- [x] `detector.rs::guess_wolf_version_from_loose_dat` — fallback sondant le magic de
+      `BasicData/SysDatabase.dat` avant le défaut v2.0 codé en dur (3 tests)
+- [x] `injector.rs::encode_for_wolf(text, is_utf8: bool)` (au lieu de `&WolfVersion`) ;
+      `serialize_dat_type` encode depuis `dat.is_utf8` (par fichier) au lieu du `version`
+      externe ; `inject_dat` garde `_version` (renommé, inutilisé) pour la symétrie de
+      signature avec `inject_map`/`inject_common_events` (1 test)
+- [x] `dat_parser.rs::read_wolf_string` — repli Shift-JIS quand le décodage UTF-8 échoue
+      sur une base déclarée UTF-8 : répare à la lecture les fichiers déjà corrompus par ce
+      bug (le prochain export réussi les réécrit proprement en UTF-8) (1 test)
+- [x] Gate complet : typecheck ✅ · 52 Vitest ✅ · clippy 0 ✅ · **394 Rust (+6)** ✅,
+      dont `test_real_inko_database_segments` qui échouait sur le fichier réel de
+      l'utilisateur avant ce fix et passe maintenant
+- [x] Vérif live end-to-end (MCP Tauri, projet réel) : « Tout exporter » sans erreur,
+      zip généré, re-décodage du `DataBase.dat` frais → `使用時文章[戦闘]` de アイスエッジ
+      = `"cast Ice．Edge!"` (point plein cadratin correctement UTF-8, mojibake disparu)
+- [x] CHANGELOG.md (Unreleased → Fixed) + journal
+- [ ] Commit/push/release : en attente de confirmation utilisateur
+
 ## ✅ Feature — Recherche globale projet (concordance search) (2026-07-04) — TERMINÉE
 
 > Plan complet : `~/.claude/plans/steady-prancing-bear.md` (approuvé).

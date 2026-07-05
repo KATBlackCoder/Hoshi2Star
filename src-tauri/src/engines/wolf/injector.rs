@@ -100,8 +100,8 @@ pub fn injection_bucket(segment_key: &str) -> Option<String> {
 // Step 3 — encode_for_wolf
 // ---------------------------------------------------------------------------
 
-fn encode_for_wolf(text: &str, version: &WolfVersion) -> Result<Vec<u8>, InjectorError> {
-    if version.is_utf8() {
+fn encode_for_wolf(text: &str, is_utf8: bool) -> Result<Vec<u8>, InjectorError> {
+    if is_utf8 {
         Ok(text.as_bytes().to_vec())
     } else {
         encoding::encode_shiftjis(text).map_err(InjectorError::Encoding)
@@ -200,9 +200,9 @@ fn patch_mps_strings(
                         let key = format!(
                             "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}"
                         );
-                        let src = encode_for_wolf(text, version)?;
+                        let src = encode_for_wolf(text, version.is_utf8())?;
                         let dst = match translations.get(key.as_str()) {
-                            Some(&t) => encode_for_wolf(t, version)?,
+                            Some(&t) => encode_for_wolf(t, version.is_utf8())?,
                             None => src.clone(),
                         };
                         replacements.push((src, dst));
@@ -215,9 +215,9 @@ fn patch_mps_strings(
                             let key = format!(
                                 "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}/choices/{choice_idx}"
                             );
-                            let src = encode_for_wolf(choice, version)?;
+                            let src = encode_for_wolf(choice, version.is_utf8())?;
                             let dst = match translations.get(key.as_str()) {
-                                Some(&t) => encode_for_wolf(t, version)?,
+                                Some(&t) => encode_for_wolf(t, version.is_utf8())?,
                                 None => src.clone(),
                             };
                             replacements.push((src, dst));
@@ -367,11 +367,7 @@ fn write_wolf_string(buf: &mut Vec<u8>, encoded: &[u8]) {
 /// since the runtime always LZ4-decompresses bytes 11.. once it sees 0xC4 —
 /// writing a plain payload there produces a "database corrupted or too old"
 /// error even though the content itself is correct.
-fn serialize_dat(
-    dat: &DatFile,
-    dat_original_header: &[u8],
-    version: &WolfVersion,
-) -> Result<Vec<u8>, InjectorError> {
+fn serialize_dat(dat: &DatFile, dat_original_header: &[u8]) -> Result<Vec<u8>, InjectorError> {
     let indicator = dat_original_header[0];
     let version_byte = dat_original_header[10];
     let magic = if dat.is_utf8 {
@@ -384,7 +380,7 @@ fn serialize_dat(
     payload.extend_from_slice(&(dat.types.len() as u32).to_le_bytes());
 
     for dat_type in &dat.types {
-        serialize_dat_type(&mut payload, dat_type, version, dat.is_utf8)?;
+        serialize_dat_type(&mut payload, dat_type, dat.is_utf8)?;
     }
 
     payload.push(version_byte);
@@ -403,11 +399,16 @@ fn serialize_dat(
     Ok(buf)
 }
 
+/// `is_utf8` drives string encoding directly from the `.dat`'s own magic
+/// byte (see [`serialize_dat`]) rather than from the externally-guessed
+/// `WolfVersion` — a game with no `.wolf` archive to sniff a CodePage from
+/// previously defaulted that guess to v2.0/Shift-JIS even when a specific
+/// database was genuinely UTF-8, silently corrupting any non-ASCII
+/// translated character while the header still declared UTF-8.
 fn serialize_dat_type(
     buf: &mut Vec<u8>,
     dat_type: &DatType,
-    version: &WolfVersion,
-    _is_utf8: bool,
+    is_utf8: bool,
 ) -> Result<(), InjectorError> {
     buf.extend_from_slice(&DAT_TYPE_SEPARATOR);
 
@@ -447,7 +448,7 @@ fn serialize_dat_type(
         }
         for i in 0..str_cnt {
             let s = entry.string_values.get(i).map(String::as_str).unwrap_or("");
-            let encoded = encode_for_wolf(s, version)?;
+            let encoded = encode_for_wolf(s, is_utf8)?;
             write_wolf_string(buf, &encoded);
         }
     }
@@ -459,11 +460,18 @@ fn serialize_dat_type(
 ///
 /// Takes both `.project` (schema, read-only) and `.dat` (values to modify).
 /// Returns only the new `.dat` bytes — the `.project` is never modified.
+///
+/// `_version` is accepted (unused) only so this function keeps the same
+/// signature as [`inject_map`]/[`inject_common_events`] for the [`inject_all`]
+/// dispatch loop: unlike `.mps`/`CommonEvent.dat`, a database's own magic byte
+/// (`dat.is_utf8`, threaded through to [`serialize_dat_type`]) already says
+/// definitively whether it's Shift-JIS or UTF-8, so the externally-guessed
+/// game version is not needed here.
 pub fn inject_dat(
     project_bytes: &[u8],
     dat_bytes: &[u8],
     translations: &[WolfTranslation],
-    version: &WolfVersion,
+    _version: &WolfVersion,
 ) -> Result<(Vec<u8>, InjectionResult), InjectorError> {
     let mut db = dat_parser::parse_database(project_bytes, dat_bytes)
         .map_err(|e| InjectorError::DatParse(e.to_string()))?;
@@ -524,7 +532,7 @@ pub fn inject_dat(
         updated += 1;
     }
 
-    let new_bytes = serialize_dat(&db, dat_bytes, version)?;
+    let new_bytes = serialize_dat(&db, dat_bytes)?;
 
     Ok((
         new_bytes,
@@ -609,9 +617,9 @@ fn patch_common_events_strings(
                         continue;
                     }
                     let key = format!("CommonEvents/{event_name}/{event_idx}/{cmd_idx}");
-                    let src = encode_for_wolf(text, version)?;
+                    let src = encode_for_wolf(text, version.is_utf8())?;
                     let dst = match translations.get(key.as_str()) {
-                        Some(&t) => encode_for_wolf(t, version)?,
+                        Some(&t) => encode_for_wolf(t, version.is_utf8())?,
                         None => src.clone(),
                     };
                     replacements.push((src, dst));
@@ -624,9 +632,9 @@ fn patch_common_events_strings(
                         let key = format!(
                             "CommonEvents/{event_name}/{event_idx}/{cmd_idx}/choices/{choice_idx}"
                         );
-                        let src = encode_for_wolf(choice, version)?;
+                        let src = encode_for_wolf(choice, version.is_utf8())?;
                         let dst = match translations.get(key.as_str()) {
-                            Some(&t) => encode_for_wolf(t, version)?,
+                            Some(&t) => encode_for_wolf(t, version.is_utf8())?,
                             None => src.clone(),
                         };
                         replacements.push((src, dst));
@@ -926,7 +934,7 @@ mod tests {
 
     #[test]
     fn test_encode_french_accents_in_v2() {
-        let result = encode_for_wolf("café", &v2());
+        let result = encode_for_wolf("café", v2().is_utf8());
         assert!(
             matches!(result, Err(InjectorError::Encoding(_))),
             "accented chars must fail for Wolf v2 (Shift-JIS)"
@@ -935,15 +943,15 @@ mod tests {
 
     #[test]
     fn test_encode_french_accents_in_v3() {
-        let result = encode_for_wolf("café", &v3());
+        let result = encode_for_wolf("café", v3().is_utf8());
         assert!(result.is_ok(), "UTF-8 v3 should accept accented chars");
         assert_eq!(result.unwrap(), "café".as_bytes());
     }
 
     #[test]
     fn test_encode_ascii_both_versions() {
-        assert!(encode_for_wolf("Hello", &v2()).is_ok());
-        assert!(encode_for_wolf("Hello", &v3()).is_ok());
+        assert!(encode_for_wolf("Hello", v2().is_utf8()).is_ok());
+        assert!(encode_for_wolf("Hello", v3().is_utf8()).is_ok());
     }
 
     // -----------------------------------------------------------------------
@@ -1060,6 +1068,48 @@ mod tests {
         }];
         let result = inject_dat(&project, &dat, &translations, &v2());
         assert!(matches!(result, Err(InjectorError::KeyNotFound(_))));
+    }
+
+    /// Regression for a real-world silent-corruption case: a UTF-8 database
+    /// (games with no `.wolf`/`Data.wolf` archive to sniff a CodePage from
+    /// used to fall back to guessing v2.0/Shift-JIS game-wide) must encode
+    /// non-ASCII translated text as UTF-8 from its own `.dat` magic byte,
+    /// never from the externally-guessed (and here deliberately wrong)
+    /// `WolfVersion` — otherwise a full-width `．` (U+FF0E) gets written as
+    /// Shift-JIS bytes `81 44` under a header that still declares UTF-8,
+    /// which the Wolf RPG Editor runtime cannot parse back.
+    #[test]
+    fn test_inject_dat_utf8_file_ignores_wrong_external_version() {
+        const STRING_FIELD_START: u32 = 0x07D0; // dat_parser::STRING_FIELD_START
+
+        let project = make_minimal_project_pub("Type", "name", "entry");
+
+        let version_byte: u8 = 0xC1;
+        let mut dat = vec![0x00]; // indicator = unencrypted
+        dat.extend_from_slice(&DB_MAGIC_UTF8);
+        dat.push(version_byte);
+        dat.extend_from_slice(&1u32.to_le_bytes()); // type_count = 1
+        dat.extend_from_slice(&DAT_TYPE_SEPARATOR);
+        dat.extend_from_slice(&0u32.to_le_bytes()); // unknown1
+        dat.extend_from_slice(&1u32.to_le_bytes()); // fields_size = 1
+        dat.extend_from_slice(&STRING_FIELD_START.to_le_bytes());
+        dat.extend_from_slice(&1u32.to_le_bytes()); // data_count = 1
+        dat.extend_from_slice(&2u32.to_le_bytes()); // "x\0"
+        dat.extend_from_slice(b"x\0");
+        dat.push(version_byte); // terminator
+
+        let translations = vec![WolfTranslation {
+            key: "Database/Type/0/0/name".to_string(),
+            text: "cast Ice．Edge!".to_string(), // U+FF0E, non-ASCII
+        }];
+
+        // v2() (Shift-JIS) stands in for the wrong game-wide guess an
+        // unpacked v3.x distribution used to produce — it must be ignored.
+        let (new_bytes, result) = inject_dat(&project, &dat, &translations, &v2()).unwrap();
+        assert_eq!(result.updated_count, 1);
+
+        let db = dat_parser::parse_database(&project, &new_bytes).unwrap();
+        assert_eq!(db.types[0].entries[0].string_values[0], "cast Ice．Edge!");
     }
 
     /// Regression for the real-world "database corrupted or too old"

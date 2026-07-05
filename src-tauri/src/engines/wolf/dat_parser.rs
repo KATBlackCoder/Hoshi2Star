@@ -197,7 +197,18 @@ fn read_wolf_string(c: &mut Cursor<&[u8]>, is_utf8: bool) -> Result<String, DatP
         &bytes[..]
     };
     if is_utf8 {
-        String::from_utf8(text.to_vec()).map_err(|e| DatParseError::Encoding(e.to_string()))
+        String::from_utf8(text.to_vec()).or_else(|e| {
+            // A now-fixed injector bug (serialize_dat_type trusting an
+            // externally-guessed WolfVersion instead of this file's own
+            // magic byte) could Shift-JIS-encode a translated string into a
+            // database whose header stayed UTF-8. Falling back to Shift-JIS
+            // here exactly reverses that specific mistake — decode_shiftjis
+            // still fails on bytes that aren't genuinely valid Shift-JIS
+            // (had_errors), so this can't mask unrelated corruption — and
+            // the next successful export re-writes the string correctly,
+            // healing the file for good.
+            encoding::decode_shiftjis(text).map_err(|_| DatParseError::Encoding(e.to_string()))
+        })
     } else {
         encoding::decode_shiftjis(text).map_err(DatParseError::Encoding)
     }
@@ -631,6 +642,32 @@ mod tests {
         b.extend(sjis_string(string_value));
         b.push(version); // terminator
         b
+    }
+
+    /// Regression: a UTF-8 database (`DB_MAGIC_UTF8`) may contain a string
+    /// that an earlier, now-fixed injector bug Shift-JIS-encoded by mistake
+    /// (see `injector::serialize_dat_type`). Real-world case: a full-width
+    /// `．` (U+FF0E) written as Shift-JIS `81 44` instead of UTF-8 `EF BC 8E`.
+    /// `read_wolf_string` must recover the original text via a Shift-JIS
+    /// fallback rather than failing the whole database.
+    #[test]
+    fn test_parse_database_utf8_file_recovers_mis_encoded_sjis_string() {
+        let project = make_minimal_project("Type", "name", "");
+        let version: u8 = 0xC1;
+        let mut dat = vec![0x00]; // indicator = unencrypted
+        dat.extend_from_slice(&DB_MAGIC_UTF8);
+        dat.push(version);
+        dat.extend_from_slice(&1u32.to_le_bytes()); // type_count
+        dat.extend_from_slice(&DAT_TYPE_SEPARATOR);
+        dat.extend_from_slice(&0u32.to_le_bytes()); // unknown1
+        dat.extend_from_slice(&1u32.to_le_bytes()); // fields_size = 1
+        dat.extend_from_slice(&STRING_FIELD_START.to_le_bytes());
+        dat.extend_from_slice(&1u32.to_le_bytes()); // data_count = 1
+        dat.extend(sjis_string("cast Ice．Edge!")); // mis-encoded on write
+        dat.push(version);
+
+        let db = parse_database(&project, &dat).unwrap();
+        assert_eq!(db.types[0].entries[0].string_values[0], "cast Ice．Edge!");
     }
 
     #[test]

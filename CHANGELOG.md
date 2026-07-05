@@ -5,6 +5,9 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+### Fixed
+- Fix Wolf RPG v3.x unpacked distributions (no `.wolf`/`Data.wolf` archive) silently mis-encoding translated database text — `guess_wolf_version_from_structure` could only detect the game's encoding by sniffing a `.wolf` archive's CodePage field, so any game shipped as loose `Data/` files (no archive at all) fell back to the hardcoded v2.0/Shift-JIS default even when its own database files were genuinely UTF-8 (v3.5); `serialize_dat_type` then trusted that wrong externally-guessed version instead of the `.dat`'s own magic byte when encoding string content, so any non-ASCII translated character (e.g. a full-width `．`) was written as Shift-JIS bytes into a database whose header still declared UTF-8, which the Wolf RPG Editor runtime cannot parse ("dat parse error: encoding error: invalid utf-8 sequence…"). `guess_wolf_version_from_structure` now falls back to sniffing `BasicData/SysDatabase.dat`'s own magic byte before defaulting to v2.0, and `serialize_dat_type` now encodes database strings from the `.dat`'s own `is_utf8` flag instead of the externally-guessed version; `read_wolf_string` also gained a Shift-JIS fallback when a UTF-8-declared string fails to decode, so databases already corrupted by this bug are read (and thus repaired on the very next successful export) instead of blocking the whole export. New regression tests `test_guess_wolf_version_loose_utf8_database`/`_loose_sjis_database`/`_no_signal_defaults_to_v2`, `test_inject_dat_utf8_file_ignores_wrong_external_version`, `test_parse_database_utf8_file_recovers_mis_encoded_sjis_string`
+
 ## [0.4.7] — 2026-07-04
 
 ### Fixed
