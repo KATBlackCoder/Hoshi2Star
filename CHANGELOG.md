@@ -5,6 +5,8 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+## [0.4.9] — 2026-07-05
+
 ### Fixed
 - Fix Wolf RPG name/face box disappearing on messages with a font-size code applied — Wolf's built-in speaker lookup requires a message to literally start with `@N\n` (see the v0.4.6 tokenizer note on this marker) to show the name box and portrait, but `apply_font_prefix` always prepended `\f[N]` at position 0, pushing the marker out of the leading spot (`\f[23]@2\n...` instead of `@2\n\f[23]...`); the engine then no longer recognizes it and displays `@2` as literal text with no name/portrait. `apply_font_prefix` now inserts the font code after a leading `@N\n` speaker prefix instead of before it, and `scan_font_status`/`strip_font_prefix` were updated the same way so existing-prefix detection and cleanup stay consistent. The database itself was never affected (only previously exported binaries were) — a fresh export with this fix produces correct output. 8 new regression tests
 
@@ -367,6 +369,7 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - TanStack Query for async Tauri invoke() calls
 - GitHub Actions CI/CD for Linux + Windows builds
 
+[0.4.9]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.9
 [0.4.8]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.8
 [0.4.7]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.7
 [0.4.6]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.6
