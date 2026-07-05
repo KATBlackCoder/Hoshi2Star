@@ -35,6 +35,24 @@ static RE_FONT_PREFIX_WOLF: LazyLock<Regex> =
 static RE_FONT_PREFIX_MVMZ: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\\FS\[\d+\]").expect("RE_FONT_PREFIX_MVMZ must compile"));
 
+/// Wolf RPG v3 speaker sprite index prefix: `@N\n` (leading only — see
+/// `wolf::placeholders::RE_WOLF`). The engine's built-in name/face lookup
+/// requires this to be the true first characters of the message, so the
+/// font-size code must always be inserted after it, never before: prepending
+/// `\f[N]` unconditionally used to push `@N\n` out of the leading position,
+/// silently disabling the name/face box for every prefixed line.
+static RE_WOLF_SPEAKER_PREFIX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^@\d+\n").expect("RE_WOLF_SPEAKER_PREFIX must compile"));
+
+/// Split off a leading Wolf speaker prefix (`@N\n`), if any, so font-size
+/// detection/insertion/stripping all operate on the text that follows it.
+fn split_wolf_speaker_prefix(text: &str) -> (&str, &str) {
+    match RE_WOLF_SPEAKER_PREFIX.find(text) {
+        Some(m) => (m.as_str(), &text[m.end()..]),
+        None => ("", text),
+    }
+}
+
 fn font_prefix_code(engine: &str, n: u32) -> String {
     if engine == "wolf" {
         format!("\\f[{n}]")
@@ -51,19 +69,25 @@ fn font_prefix_re(engine: &str) -> &'static Regex {
     }
 }
 
-/// Prepend the engine-appropriate font-size code to `text`, or replace the
-/// existing prefix when `replace_existing` is true.
+/// Prepend the engine-appropriate font-size code to `text` (after any Wolf
+/// speaker prefix, see [`RE_WOLF_SPEAKER_PREFIX`]), or replace the existing
+/// prefix when `replace_existing` is true.
 fn apply_font_prefix(text: &str, n: u32, replace_existing: bool, engine: &str) -> String {
+    let (speaker_prefix, rest) = if engine == "wolf" {
+        split_wolf_speaker_prefix(text)
+    } else {
+        ("", text)
+    };
     let re = font_prefix_re(engine);
     let code = font_prefix_code(engine, n);
-    if re.is_match(text) {
+    if re.is_match(rest) {
         if replace_existing {
-            re.replace(text, code.as_str()).into_owned()
+            format!("{speaker_prefix}{}", re.replace(rest, code.as_str()))
         } else {
             text.to_string()
         }
     } else {
-        format!("{code}{text}")
+        format!("{speaker_prefix}{code}{rest}")
     }
 }
 
@@ -141,9 +165,14 @@ pub async fn scan_font_status(
 
     let total_translated = texts.len() as i64;
     // Count any font prefix regardless of type — catches cross-engine leftovers.
+    // Skip past a leading Wolf speaker prefix first: the font code lives
+    // after it, not at position 0, once apply_font_prefix has run.
     let existing_font_count = texts
         .iter()
-        .filter(|t| RE_FONT_PREFIX_WOLF.is_match(t) || RE_FONT_PREFIX_MVMZ.is_match(t))
+        .filter(|t| {
+            let rest = split_wolf_speaker_prefix(t).1;
+            RE_FONT_PREFIX_WOLF.is_match(rest) || RE_FONT_PREFIX_MVMZ.is_match(rest)
+        })
         .count() as i64;
 
     Ok(FontScanResult {
@@ -153,10 +182,13 @@ pub async fn scan_font_status(
     })
 }
 
-/// Strip any wolf (`\f[N]`) or mv_mz (`\FS[N]`) font-size prefix from `text`.
+/// Strip any wolf (`\f[N]`) or mv_mz (`\FS[N]`) font-size prefix from `text`,
+/// preserving a leading Wolf speaker prefix (`@N\n`) if present.
 fn strip_font_prefix(text: &str) -> String {
-    let s = RE_FONT_PREFIX_WOLF.replace(text, "");
-    RE_FONT_PREFIX_MVMZ.replace(s.as_ref(), "").into_owned()
+    let (speaker_prefix, rest) = split_wolf_speaker_prefix(text);
+    let s = RE_FONT_PREFIX_WOLF.replace(rest, "");
+    let s = RE_FONT_PREFIX_MVMZ.replace(s.as_ref(), "");
+    format!("{speaker_prefix}{s}")
 }
 
 /// Remove existing font-size prefixes from every segment in the project.
@@ -614,4 +646,72 @@ pub async fn export_debug_json(
         .map_err(|e| e.to_string())?;
 
     Ok(output_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression for a real-world silent break: a Wolf v3 message starting
+    /// with the `@N\n` speaker prefix (name/face box lookup) must keep that
+    /// prefix as the true first characters — the font-size code goes after
+    /// it, not before, or the engine never recognizes the speaker marker and
+    /// displays "@2" as literal text with no name/face box.
+    #[test]
+    fn test_apply_font_prefix_wolf_after_speaker_prefix() {
+        let text = "@2\n\"Haa... I couldn't figure anything out today either...\"";
+        let result = apply_font_prefix(text, 23, false, "wolf");
+        assert_eq!(
+            result,
+            "@2\n\\f[23]\"Haa... I couldn't figure anything out today either...\""
+        );
+    }
+
+    #[test]
+    fn test_apply_font_prefix_wolf_no_speaker_prefix() {
+        // Unchanged behavior when there's no leading @N\n to preserve.
+        let result = apply_font_prefix("Hello there.", 18, false, "wolf");
+        assert_eq!(result, "\\f[18]Hello there.");
+    }
+
+    #[test]
+    fn test_apply_font_prefix_mvmz_unaffected() {
+        // "@2\n..." is not a speaker prefix outside Wolf — must not be split.
+        let result = apply_font_prefix("@2\nHello", 18, false, "mv_mz");
+        assert_eq!(result, "\\FS[18]@2\nHello");
+    }
+
+    #[test]
+    fn test_apply_font_prefix_wolf_replace_existing_after_speaker_prefix() {
+        let text = "@2\n\\f[18]Hello there.";
+        let result = apply_font_prefix(text, 23, true, "wolf");
+        assert_eq!(result, "@2\n\\f[23]Hello there.");
+    }
+
+    #[test]
+    fn test_apply_font_prefix_wolf_keep_existing_after_speaker_prefix() {
+        // replace_existing = false and a font code is already present: no-op.
+        let text = "@2\n\\f[18]Hello there.";
+        let result = apply_font_prefix(text, 23, false, "wolf");
+        assert_eq!(result, text);
+    }
+
+    #[test]
+    fn test_strip_font_prefix_preserves_wolf_speaker_prefix() {
+        let text = "@2\n\\f[23]Hello there.";
+        assert_eq!(strip_font_prefix(text), "@2\nHello there.");
+    }
+
+    #[test]
+    fn test_strip_font_prefix_no_speaker_prefix() {
+        assert_eq!(strip_font_prefix("\\f[23]Hello"), "Hello");
+        assert_eq!(strip_font_prefix("\\FS[23]Hello"), "Hello");
+    }
+
+    #[test]
+    fn test_split_wolf_speaker_prefix() {
+        assert_eq!(split_wolf_speaker_prefix("@2\nHello"), ("@2\n", "Hello"));
+        assert_eq!(split_wolf_speaker_prefix("@10\nHello"), ("@10\n", "Hello"));
+        assert_eq!(split_wolf_speaker_prefix("Hello"), ("", "Hello"));
+    }
 }
