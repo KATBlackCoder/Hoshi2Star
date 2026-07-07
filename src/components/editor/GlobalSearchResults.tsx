@@ -420,7 +420,7 @@ export function GlobalSearchResults() {
                       {hit.targetText}
                     </span>
                   </div>
-                  <div className="flex w-24 shrink-0 items-center px-3 py-2">
+                  <div className="flex w-28 shrink-0 items-center px-3 py-2">
                     <StatusBadge status={hit.status} />
                   </div>
                   <div className="flex w-14 shrink-0 items-center justify-center px-3 py-2">

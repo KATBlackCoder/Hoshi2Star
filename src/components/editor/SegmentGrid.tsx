@@ -407,12 +407,12 @@ export function SegmentGrid({
               className={cn(
                 "flex items-center px-3 py-2 select-none",
                 header.id === "select" && "w-9 shrink-0 justify-center",
-                header.id === "index" && "w-14 shrink-0",
+                header.id === "index" && "w-14 shrink-0 justify-end",
                 header.id === "sourceText" && "flex-1 min-w-0",
                 header.id === "targetText" && "flex-1 min-w-0",
-                header.id === "status" && "w-24 shrink-0",
+                header.id === "status" && "w-28 shrink-0",
                 header.id === "qaScore" && "w-14 shrink-0",
-                header.id === "actions" && "w-9 shrink-0",
+                header.id === "actions" && "w-12 shrink-0",
               )}
             >
               {flexRender(header.column.columnDef.header, header.getContext())}
@@ -514,11 +514,11 @@ export function SegmentGrid({
                       cell.column.id === "sourceText" && "flex-1 min-w-0",
                       cell.column.id === "targetText" && "flex-1 min-w-0",
                       cell.column.id === "status" &&
-                        "w-24 shrink-0 items-center",
+                        "w-28 shrink-0 items-center",
                       cell.column.id === "qaScore" &&
                         "w-14 shrink-0 justify-center items-center",
                       cell.column.id === "actions" &&
-                        "w-9 shrink-0 justify-center items-center",
+                        "w-12 shrink-0 justify-center items-center",
                     )}
                   >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}

@@ -45,12 +45,12 @@ export const StatusBadge = memo(function StatusBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 text-xs font-medium",
+        "inline-flex min-w-0 max-w-full items-center gap-1.5 text-xs font-medium",
         style.label,
       )}
     >
       <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", style.dot)} />
-      {t(`segmentGrid.status.${status}`)}
+      <span className="truncate">{t(`segmentGrid.status.${status}`)}</span>
     </span>
   );
 });
@@ -155,7 +155,11 @@ const SourceCell = memo(function SourceCell({ text }: { text: string }) {
       ),
     [text, terms, engine],
   );
-  return <p className="text-xs leading-relaxed whitespace-pre-wrap">{nodes}</p>;
+  return (
+    <p className="text-xs leading-relaxed whitespace-pre-wrap break-words min-w-0 max-w-full">
+      {nodes}
+    </p>
+  );
 });
 
 // ---------------------------------------------------------------------------
