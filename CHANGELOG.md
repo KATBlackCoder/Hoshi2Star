@@ -5,6 +5,8 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+## [0.4.10] — 2026-07-07
+
 ### Added
 - Add `.h2s` exchange packs — share a project's full translation state (segments + statuses + project glossary, TM opt-in) so another Hoshi2Star user can resume the translation on their own copy of the game, without ever distributing game files. Export via a new "Share project (.h2s)" toolbar button (ZIP with `manifest.json`/`segments.json`/`glossary.json`/`tm.json`, only non-empty targets included); import via a new toolbar button running a mandatory dry-run first (segments classified applicable / identical / conflict / source-changed / orphan, matched by `(fileName, jsonKey)` with ordinal pairing for duplicate keys — never by local UUIDs), then a wizard to pick the collision policy (fill empty only — default, overwrite except reviewed, overwrite all with strong confirmation) plus opt-ins for source-changed segments (forced to `needs_review`), glossary terms (imported as project terms, local terms win on conflict) and TM entries (never overwrite local ones); everything is applied in a single SQLite transaction after an automatic backup pack is written to `<app-data>/backups/`, and incompatible files are refused with dedicated messages (not a pack / newer format version / engine mismatch / language-pair mismatch). Rejects zip bombs (256 MB cap, in-memory reads of known entries only) and ignores unknown JSON fields for forward compatibility. New Rust module `core/h2s_pack.rs` + commands `export_h2s_pack`/`preview_h2s_import`/`apply_h2s_import`, new `PackExportDialog`/`PackImportWizard` components, `h2s://project/import-done` refresh event; 16 Rust + 3 Vitest tests
 
@@ -370,6 +372,7 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - TanStack Query for async Tauri invoke() calls
 - GitHub Actions CI/CD for Linux + Windows builds
 
+[0.4.10]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.10
 [0.4.9]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.9
 [0.4.8]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.8
 [0.4.7]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.7
