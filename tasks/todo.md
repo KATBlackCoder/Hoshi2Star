@@ -116,7 +116,9 @@ différente) → conserver l'existant + le signaler dans le rapport.
       → refus engineMismatch (pack Wolf sur projet MV) et notAPack (package.json) ;
       dialog export vérifié à l'écran
 - [x] CHANGELOG.md (Added) + journal `docs/journal/2026-07-07-h2s-exchange-pack.md`
-- [ ] Commit/push/release : en attente de confirmation utilisateur
+- [x] Commit/push/release : `71a6111` (feat) + `8b92dbe` (fix ui badge) +
+      `f5e301b` (docs) + `0a42ff0` (bump), tag `v0.4.10`, CI verte,
+      **release v0.4.10 publiée** (latest.json → 0.4.10) le 2026-07-07
 
 ---
 
