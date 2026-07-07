@@ -1,5 +1,125 @@
 # Tasks — Hoshi2Star
 
+## ✅ Feature — Pack d'échange `.h2s` (partage/reprise de projet) (2026-07-07) — TERMINÉE (code + vérif live), commit/release en attente
+
+> Objectif : permettre à un traducteur de partager l'état complet de sa
+> traduction (segments + statuts + glossaire ± TM) pour qu'un autre
+> utilisateur de Hoshi2Star **reprenne là où il s'est arrêté**, sans jamais
+> distribuer les fichiers du jeu. C'est le « format .h2s » prévu de longue
+> date dans la couche Export (CLAUDE.md). Le `.hoshi2star.json` n'est qu'un
+> marqueur informatif — aucune traduction dedans.
+
+### Format du fichier
+
+`<Jeu>.h2s` = archive ZIP contenant exactement :
+
+| Entrée | Statut | Contenu |
+|---|---|---|
+| `manifest.json` | obligatoire | `formatVersion` (int, =1), `appVersion`, `engine`, `gameTitle`, `langPair`, `createdAt`, `senderProjectId`, par fichier : `{fileName, fileType, segmentCount, translatedCount}` |
+| `segments.json` | obligatoire | tableau `{fileName, jsonKey, sourceText, targetText, status, qaScore}` — **uniquement les segments à cible non vide** (élimine le risque « écraser avec du vide », réduit la taille) |
+| `glossary.json` | optionnel | termes projet + termes globaux utilisés, tous réimportés comme termes **projet** chez le destinataire (ne pas polluer son glossaire global) |
+| `tm.tmx` | optionnel | opt-in à l'export (checkbox) ; import via l'upsert `ON CONFLICT` existant (migration 0005) |
+
+Identité d'un segment entre deux machines : **`(fileName, jsonKey, sourceText)`** —
+jamais les IDs (UUID locaux à chaque base). Vérifié sur la base dev réelle
+(3 projets, >24k segments) : `(source_file_id, json_key)` unique partout,
+mais AUCUNE contrainte UNIQUE ne le garantit → le matching doit rester
+déterministe en présence de doublons (appariement ordinal : n-ième
+occurrence ↔ n-ième occurrence).
+
+### Validations à l'import (dans cet ordre, messages i18n dédiés)
+
+1. ZIP lisible + `manifest.json` présent → sinon « Ce fichier n'est pas un
+   pack Hoshi2Star » (cas fréquent : l'utilisateur choisit le ZIP
+   `export_project` destiné aux joueurs).
+2. `formatVersion` ≤ version supportée → sinon « pack créé avec une version
+   plus récente de Hoshi2Star, mettez à jour ».
+3. `engine` ≠ moteur du projet actif → **refus sec** (pack Wolf sur projet MV/MZ).
+4. `langPair` ≠ → refus sec.
+5. `gameTitle` ≠ → avertissement non bloquant (dossiers renommés, versions).
+6. Anti-zip-bomb : lire uniquement les 3 entrées connues, en mémoire, taille
+   décompressée plafonnée (256 Mo), jamais d'extraction sur disque avec les
+   chemins de l'archive.
+7. Aucun projet ouvert → « Ouvrez d'abord votre copie du jeu » (l'import
+   n'extrait rien : les segments locaux doivent déjà exister).
+
+### Dry-run OBLIGATOIRE (préviz avant toute écriture)
+
+Chaque segment du pack est classé :
+- ✅ **applicable** — `(fileName, jsonKey)` trouvé, `sourceText` identique, politique OK
+- ⚠️ **conflit local** — cible locale non vide et différente → selon politique choisie
+- ⚠️ **source modifiée** — clé trouvée mais `sourceText` différent (jeu mis à
+  jour) → jamais appliqué par défaut ; option « appliquer en needs_review »
+- ❌ **orphelin** — fichier ou clé introuvable → compté, listé dans le rapport
+
+### Politique de collision (choix utilisateur, défaut = le plus sûr)
+
+1. **Compléter** (défaut) : n'écrit que si le segment local est `untranslated`/cible vide
+2. **Écraser sauf révisés** : remplace `translated`/`needs_review`, préserve `reviewed`
+3. **Tout écraser** : confirmation forte requise
+
+Statuts importés conservés (c'est le cœur de la « reprise ») ; `qaScore`
+importé à titre indicatif, la QA live recalcule de toute façon.
+
+### Sécurité / robustesse
+
+- Application dans **une seule transaction SQLite** : tout ou rien.
+- **Backup automatique avant import** : l'app exporte d'abord l'état courant
+  dans `backup-avant-import-<date>.h2s` (app data dir) → annulation = réimport
+  de ce backup en mode « Tout écraser ». (Pas d'undo en base sinon.)
+- serde sur structures typées, champs inconnus ignorés (compat versions futures).
+- Textes du pack = non fiables : échappés dans l'UI du rapport, repassent par
+  le pipeline tokenizer/QA normal.
+- Import idempotent : réimporter 2× le même pack en « Compléter » → 0 écrit.
+- Pack tronqué (transfert interrompu) → CRC ZIP + parse strict → erreur propre.
+- Réimport dans le projet d'origine = légitime (backup/restauration).
+
+### Glossaire
+
+Dédup par `(sourceText, targetText)` ; conflit (même source, cible
+différente) → conserver l'existant + le signaler dans le rapport.
+
+### UX
+
+- Export : bouton « Partager le projet (.h2s) » barre projet → dialog save → toast.
+- Import : wizard 3 étapes — fichier → rapport dry-run + choix de politique →
+  rapport final « X appliqués / Y conflits / Z source modifiée / W orphelins ».
+- Événement `h2s://project/import-done` ; i18n FR/EN complet.
+
+### Implémentation
+
+- [x] `core/h2s_pack.rs` — types serde + writer/reader ZIP (anti-zip-bomb 256 Mo,
+      entrées connues seules, jamais d'extraction disque) + 8 tests round-trip
+- [x] `commands/pack.rs` (module dédié plutôt qu'export.rs/project.rs) :
+      `export_h2s_pack` (+ option TM), `preview_h2s_import` (dry-run typé
+      `ImportBlocker`), `apply_h2s_import` (transaction unique + backup auto
+      `<app_data>/backups/backup-avant-import-<date>.h2s` + événement
+      `h2s://project/import-done`) — enregistrés dans le `generate_handler!`
+- [x] UI : `PackExportDialog` (checkbox TM), `PackImportWizard` (rapport dry-run +
+      Select politique + confirmation forte « tout écraser » + cases source
+      modifiée/glossaire/TM + rapport final), 2 boutons toolbar (Share2 /
+      PackageOpen), listener refresh SegmentGrid sur import-done, i18n FR/EN
+      complet (`pack.*`), types TS (`ImportPreview`/`ImportReport`/…)
+- [x] Tests (8 + 8) : round-trip, champs inconnus ignorés, ZIP invalide/sans
+      manifest, formatVersion futur, doublons de clé (appariement ordinal),
+      3 politiques, source modifiée, idempotence « Compléter », glossaire
+      dédup/conflits, TM jamais écrasée
+- [x] Tests Vitest wizard (3) : dry-run → apply fill → rapport ; « tout écraser »
+      bloqué sans confirmation (stubs jsdom hasPointerCapture/scrollIntoView pour
+      Radix Select) ; blocker moteur → message dédié
+- [x] Gate complet : typecheck ✅ · **55 Vitest (+3)** ✅ · lint 0 err (8 warn
+      inchangés) ✅ · clippy 0 ✅ · **418 Rust (+16) + 3 intégration** ✅
+- [x] Vérif live MCP (projet Wolf réel Inko, 1948 seg) : export réel (ZIP inspecté)
+      → wipe cible → preview 1 applicable/1947 identiques → apply fill → segment
+      restauré + backup écrit → idempotence (0 appliqué) → fill préserve un conflit
+      local + grille rafraîchie sur import-done → overwrite_except_reviewed restaure
+      → refus engineMismatch (pack Wolf sur projet MV) et notAPack (package.json) ;
+      dialog export vérifié à l'écran
+- [x] CHANGELOG.md (Added) + journal `docs/journal/2026-07-07-h2s-exchange-pack.md`
+- [ ] Commit/push/release : en attente de confirmation utilisateur
+
+---
+
 ## ✅ Fix — Wolf : ordre @N/taille de police (2026-07-05) — TERMINÉE
 
 > 3e bug Wolf de la journée, suite directe LZ4 (v0.4.7) + encodage (v0.4.8).
