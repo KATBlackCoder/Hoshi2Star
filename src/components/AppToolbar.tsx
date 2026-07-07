@@ -14,8 +14,10 @@ import {
   Info,
   Languages,
   Loader2,
+  PackageOpen,
   Play,
   Settings,
+  Share2,
   Snowflake,
 } from "lucide-react";
 import {
@@ -32,6 +34,9 @@ import {
   useCooldownRemaining,
 } from "@/stores/llm";
 import { UpdateBadge } from "@/components/UpdateBadge";
+import { PackExportDialog } from "@/components/PackExportDialog";
+import { PackImportWizard } from "@/components/PackImportWizard";
+import type { ImportPreview } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Translation timer
@@ -151,6 +156,12 @@ export function AppToolbar({
 }: AppToolbarProps) {
   const { t } = useTranslation();
   const [isOpening, setIsOpening] = useState(false);
+  const [showPackExport, setShowPackExport] = useState(false);
+  const [isPreviewingPack, setIsPreviewingPack] = useState(false);
+  const [packImport, setPackImport] = useState<{
+    packPath: string;
+    preview: ImportPreview;
+  } | null>(null);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const activeProject = useProjectStore((s) =>
     s.projects.find((p) => p.id === s.activeProjectId),
@@ -175,6 +186,31 @@ export function AppToolbar({
       toast.error(t(openProjectErrorKey(err)));
     } finally {
       setIsOpening(false);
+    }
+  }
+
+  // Import a .h2s pack: pick the file, run the mandatory dry-run, then hand
+  // the preview to the wizard (which owns policy choice + apply + report).
+  async function handleImportPack() {
+    if (!activeProjectId) return;
+    const selected = await open({
+      multiple: false,
+      title: t("pack.importPick"),
+      filters: [{ name: "Hoshi2Star pack", extensions: ["h2s"] }],
+    });
+    if (!selected) return;
+    setIsPreviewingPack(true);
+    try {
+      const preview = await invoke<ImportPreview>("preview_h2s_import", {
+        projectId: activeProjectId,
+        packPath: selected as string,
+        langPair: "ja-en",
+      });
+      setPackImport({ packPath: selected as string, preview });
+    } catch (err) {
+      toast.error(t("pack.importError", { error: String(err) }));
+    } finally {
+      setIsPreviewingPack(false);
     }
   }
 
@@ -257,6 +293,35 @@ export function AppToolbar({
         </Button>
       )}
 
+      {activeProjectId && (
+        <>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 w-7 p-0"
+            title={t("pack.shareButton")}
+            onClick={() => setShowPackExport(true)}
+            disabled={isTranslating}
+          >
+            <Share2 className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 w-7 p-0"
+            title={t("pack.importButton")}
+            onClick={() => void handleImportPack()}
+            disabled={isTranslating || isPreviewingPack}
+          >
+            {isPreviewingPack ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <PackageOpen className="h-3.5 w-3.5" />
+            )}
+          </Button>
+        </>
+      )}
+
       {activeProjectId && activeProject && (
         <span className="ml-1 flex min-w-0 items-center gap-1.5 rounded-full border bg-card/60 px-2.5 py-0.5 text-xs text-muted-foreground">
           <span className="truncate">{activeProject.name}</span>
@@ -329,6 +394,23 @@ export function AppToolbar({
       >
         <Settings className="h-4 w-4" />
       </Button>
+
+      {activeProjectId && activeProject && (
+        <PackExportDialog
+          open={showPackExport}
+          projectId={activeProjectId}
+          projectName={activeProject.name}
+          onClose={() => setShowPackExport(false)}
+        />
+      )}
+      {activeProjectId && packImport && (
+        <PackImportWizard
+          projectId={activeProjectId}
+          packPath={packImport.packPath}
+          preview={packImport.preview}
+          onClose={() => setPackImport(null)}
+        />
+      )}
     </div>
   );
 }

@@ -208,17 +208,21 @@ export function SegmentGrid({
     };
   }, []);
 
-  // Re-fetch segments + source files when LLM pipeline completes
+  // Re-fetch segments + source files when the LLM pipeline completes or a
+  // .h2s pack import rewrites segments across the whole project
   useEffect(() => {
-    const unlisten = listen("h2s://llm/completed", () => {
+    const refresh = () => {
       const pid = activeProjectIdRef.current;
       const fid = activeFileIdRef.current;
       if (pid && fid) loadSegments(pid, fid);
       if (pid) reloadSourceFiles(pid);
       if (pid) reloadProjectStats(pid);
-    });
+    };
+    const unlistenLlm = listen("h2s://llm/completed", refresh);
+    const unlistenImport = listen("h2s://project/import-done", refresh);
     return () => {
-      void unlisten.then((fn) => fn());
+      void unlistenLlm.then((fn) => fn());
+      void unlistenImport.then((fn) => fn());
     };
   }, [loadSegments, reloadSourceFiles, reloadProjectStats]);
 

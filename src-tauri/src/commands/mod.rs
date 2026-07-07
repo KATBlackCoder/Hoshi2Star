@@ -4,6 +4,7 @@
 pub mod app;
 pub mod export;
 pub mod glossary;
+pub mod pack;
 pub mod project;
 pub mod qa;
 pub mod search;

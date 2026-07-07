@@ -165,6 +165,61 @@ export interface GlossaryExtractionDonePayload {
 }
 
 // ---------------------------------------------------------------------------
+// .h2s exchange pack (share/resume a translation)
+// ---------------------------------------------------------------------------
+
+export interface PackExportSummary {
+  segmentCount: number;
+  fileCount: number;
+  glossaryCount: number;
+  tmCount: number;
+}
+
+/** Hard reason why a pack cannot be imported (typed by the backend). */
+export type ImportBlocker =
+  | { type: "notAPack" }
+  | { type: "unsupportedVersion"; version: number }
+  | { type: "engineMismatch"; packEngine: string; projectEngine: string }
+  | { type: "langPairMismatch"; packLangPair: string; projectLangPair: string }
+  | { type: "invalidPack"; detail: string };
+
+/** Dry-run result of `preview_h2s_import` — nothing has been written. */
+export interface ImportPreview {
+  blocker: ImportBlocker | null;
+  packGameTitle: string;
+  packAppVersion: string;
+  packCreatedAt: string;
+  titleMismatch: boolean;
+  applicable: number;
+  identical: number;
+  conflicts: number;
+  sourceChanged: number;
+  orphans: number;
+  glossaryCount: number;
+  tmCount: number;
+}
+
+/** Collision policy of `apply_h2s_import`. */
+export type ImportPolicy =
+  | "fill"
+  | "overwrite_except_reviewed"
+  | "overwrite_all";
+
+/** Final report of `apply_h2s_import` (also the `h2s://project/import-done` payload). */
+export interface ImportReport {
+  applied: number;
+  appliedSourceChanged: number;
+  skippedConflicts: number;
+  skippedSourceChanged: number;
+  identical: number;
+  orphans: number;
+  glossaryAdded: number;
+  glossaryConflicts: number;
+  tmAdded: number;
+  backupPath: string;
+}
+
+// ---------------------------------------------------------------------------
 // LLM
 // ---------------------------------------------------------------------------
 

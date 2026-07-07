@@ -19,6 +19,7 @@ use commands::glossary::{
     add_glossary_term, delete_glossary_term, extract_glossary_terms, extract_wolf_speakers,
     get_glossary, update_glossary_term,
 };
+use commands::pack::{apply_h2s_import, export_h2s_pack, preview_h2s_import};
 use commands::project::{
     debug_dump_segments, delete_project, get_project_stats, get_segments, get_source_files,
     list_projects, open_project, update_segment,
@@ -83,6 +84,9 @@ pub fn run() {
             scan_font_status,
             strip_font_prefixes,
             updater_supported,
+            export_h2s_pack,
+            preview_h2s_import,
+            apply_h2s_import,
         ]);
 
     #[cfg(debug_assertions)]
