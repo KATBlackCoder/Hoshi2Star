@@ -189,6 +189,7 @@ export function GlobalSearchResults() {
     fileId: string,
     fileName: string,
     count: number,
+    sticky = false,
   ) {
     const fileIds = hitIdsByFile.get(fileId) ?? [];
     const allFileSelected =
@@ -196,7 +197,12 @@ export function GlobalSearchResults() {
     const someFileSelected = fileIds.some((id) => selected[id]);
     const isCollapsed = collapsed[fileId] ?? false;
     return (
-      <div className="flex items-center border-b bg-muted/40 py-1 text-xs font-semibold">
+      <div
+        className={cn(
+          "flex items-center bg-muted/40 py-1 text-xs font-semibold",
+          sticky ? "shadow-sm" : "border-b",
+        )}
+      >
         {/* Same w-9 column as hit rows so the checkboxes align. */}
         <div className="flex w-9 shrink-0 items-center justify-center px-3">
           <Checkbox
@@ -306,7 +312,7 @@ export function GlobalSearchResults() {
             )
           }
         />
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted-foreground tabular-nums">
           {t("projectSearch.summary", {
             count: total,
             files: fileCount,
@@ -343,12 +349,13 @@ export function GlobalSearchResults() {
         {stickyHeader && (
           <div
             data-testid="sticky-file-header"
-            className="absolute inset-x-0 top-0 z-10 bg-background shadow-sm"
+            className="absolute inset-x-0 top-0 z-10 bg-background"
           >
             {renderFileHeaderContent(
               stickyHeader.fileId,
               stickyHeader.fileName,
               stickyHeader.count,
+              true,
             )}
           </div>
         )}

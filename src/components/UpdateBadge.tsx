@@ -19,7 +19,7 @@ export function UpdateBadge() {
     <Button
       size="sm"
       variant="ghost"
-      className="h-7 w-7 p-0 text-amber-400 hover:text-amber-300"
+      className="hit-area-40 relative h-7 w-7 p-0 text-amber-400 hover:text-amber-300"
       title={t("updater.badge")}
       onClick={reopen}
     >

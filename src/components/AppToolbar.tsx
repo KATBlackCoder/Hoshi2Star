@@ -108,7 +108,7 @@ function ConstellationProgress({ progress }: { progress: number }) {
     <div className="relative h-[22px] w-[170px]">
       <div className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-primary/15" />
       <div
-        className="absolute left-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-gradient-to-r from-primary to-star shadow-[0_0_8px_var(--star)] transition-all duration-300"
+        className="absolute left-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-gradient-to-r from-primary to-star shadow-[0_0_8px_var(--star)] transition-[width] duration-300"
         style={{ width: `${progress}%` }}
       />
       {CONSTELLATION_NODES.map((pos) => (
@@ -124,7 +124,7 @@ function ConstellationProgress({ progress }: { progress: number }) {
         />
       ))}
       <div
-        className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 animate-pulse text-[13px] text-star [text-shadow:0_0_10px_var(--star)] transition-all duration-300"
+        className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 animate-pulse text-[13px] text-star [text-shadow:0_0_10px_var(--star)] transition-[left] duration-300"
         style={{ left: `${progress}%` }}
       >
         ★
@@ -298,7 +298,7 @@ export function AppToolbar({
           <Button
             size="sm"
             variant="outline"
-            className="h-7 w-7 p-0"
+            className="hit-area-40 relative h-7 w-7 p-0"
             title={t("pack.shareButton")}
             onClick={() => setShowPackExport(true)}
             disabled={isTranslating}
@@ -308,7 +308,7 @@ export function AppToolbar({
           <Button
             size="sm"
             variant="outline"
-            className="h-7 w-7 p-0"
+            className="hit-area-40 relative h-7 w-7 p-0"
             title={t("pack.importButton")}
             onClick={() => void handleImportPack()}
             disabled={isTranslating || isPreviewingPack}
@@ -356,7 +356,7 @@ export function AppToolbar({
       <Button
         size="sm"
         variant="ghost"
-        className="h-7 w-7 p-0"
+        className="hit-area-40 relative h-7 w-7 p-0"
         onClick={onOpenAbout}
         title={t("about.title")}
       >
@@ -366,7 +366,7 @@ export function AppToolbar({
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 w-7 p-0 text-muted-foreground hover:text-amber-400"
+          className="hit-area-40 relative h-7 w-7 p-0 text-muted-foreground hover:text-amber-400"
           title="Debug — dump extracted segments to JSON"
           onClick={() => {
             void invoke<string>("debug_dump_segments", {
@@ -388,7 +388,7 @@ export function AppToolbar({
       <Button
         size="sm"
         variant="ghost"
-        className="h-7 w-7 p-0"
+        className="hit-area-40 relative h-7 w-7 p-0"
         onClick={onOpenSettings}
         title={t("settings.title")}
       >

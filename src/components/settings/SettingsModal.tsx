@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { Moon, Sun, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -37,6 +38,28 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [models, setModels] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
+
+  const [mounted, setMounted] = useState(open);
+  const [visible, setVisible] = useState(false);
+  const rafRef = useRef(0);
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      // Double rAF: the first guarantees the "hidden" state actually paints
+      // before we flip to visible, so the CSS transition has a start frame
+      // to animate from instead of jumping straight to its end state.
+      const raf1 = requestAnimationFrame(() => {
+        const raf2 = requestAnimationFrame(() => setVisible(true));
+        rafRef.current = raf2;
+      });
+      rafRef.current = raf1;
+      return () => cancelAnimationFrame(rafRef.current);
+    }
+    setVisible(false);
+    const timeout = setTimeout(() => setMounted(false), 150);
+    return () => clearTimeout(timeout);
+  }, [open]);
 
   // Re-sync local draft/original from the store every time the modal opens —
   // `currentSettings` may have changed (loadSettings resolved, or a previous
@@ -79,7 +102,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  if (!open) return null;
+  if (!mounted) return null;
 
   function handleCancel() {
     applyThemeToDom(originalSettings.theme);
@@ -99,12 +122,28 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-[420px] rounded-lg border bg-background p-5 shadow-xl">
+    <div
+      className={cn(
+        "fixed inset-0 z-50 flex items-center justify-center bg-black/50 transition-opacity duration-150",
+        visible ? "opacity-100" : "opacity-0",
+      )}
+    >
+      <div
+        className={cn(
+          "w-[420px] rounded-lg border bg-background p-5 shadow-xl transition-[opacity,transform] duration-150",
+          visible
+            ? "opacity-100 scale-100"
+            : "opacity-0 scale-95 translate-y-1",
+        )}
+      >
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold">{t("settings.title")}</h2>
-          <button type="button" onClick={handleCancel}>
+          <button
+            type="button"
+            className="hit-area-40 relative active:scale-[0.96] transition-transform"
+            onClick={handleCancel}
+          >
             <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
           </button>
         </div>

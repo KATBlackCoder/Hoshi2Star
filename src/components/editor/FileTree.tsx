@@ -188,7 +188,7 @@ export function FileTree() {
                 onKeyDown={(e) => e.key === "Enter" && setActiveFile(file.id)}
                 className={cn(
                   "group flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs",
-                  "hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer",
+                  "hover:bg-accent hover:text-accent-foreground transition-[background-color,color,transform] cursor-pointer active:scale-[0.96]",
                   activeFileId === file.id &&
                     "bg-accent text-accent-foreground font-medium",
                 )}
@@ -226,7 +226,7 @@ export function FileTree() {
                   <button
                     type="button"
                     className={cn(
-                      "shrink-0 p-0.5 rounded transition-opacity text-violet-400 hover:text-violet-300",
+                      "shrink-0 p-1 rounded transition-[opacity,color,transform] text-violet-400 hover:text-violet-300 active:scale-[0.96]",
                       "opacity-0 group-hover:opacity-100",
                     )}
                     onClick={(e) => {

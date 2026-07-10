@@ -561,7 +561,7 @@ export function SegmentGrid({
                   <span
                     key={status}
                     className={cn(
-                      "inline-flex items-center gap-1.5 font-medium",
+                      "inline-flex items-center gap-1.5 font-medium tabular-nums",
                       STATUS_STYLES[status].label,
                     )}
                   >

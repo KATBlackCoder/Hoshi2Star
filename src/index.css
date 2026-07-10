@@ -136,6 +136,7 @@
     }
   body {
     @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
     }
   html {
     @apply font-sans;
@@ -153,4 +154,16 @@
       radial-gradient(ellipse 80% 60% at 50% -10%, oklch(0.21 0.045 277) 0%, oklch(0.17 0.03 277) 55%, oklch(0.14 0.028 277) 100%);
     background-attachment: fixed;
     }
+}
+
+@layer utilities {
+  /* Extends a small control's clickable area to 40x40px without changing its visual size. */
+  .hit-area-40::before {
+    content: "";
+    position: absolute;
+    inset: 50%;
+    width: max(100%, 40px);
+    height: max(100%, 40px);
+    transform: translate(-50%, -50%);
+  }
 }

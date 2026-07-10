@@ -171,7 +171,7 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
           <Button
             variant="ghost"
             size="icon"
-            className="h-5 w-5 ml-auto"
+            className="hit-area-40 relative h-5 w-5 ml-auto"
             onClick={handleExport}
             disabled={isExporting}
             title={t("qaPanel.export")}

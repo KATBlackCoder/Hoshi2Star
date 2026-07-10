@@ -104,7 +104,7 @@ function EditRow({ term, onSave, onCancel }: EditRowProps) {
       </Select>
       <button
         type="button"
-        className="shrink-0 p-0.5 text-green-500 hover:text-green-400"
+        className="shrink-0 rounded p-1 text-green-500 transition-[color,transform] hover:text-green-400 active:scale-[0.96]"
         onClick={() => onSave(term.id, source, target, domain)}
         aria-label="Save"
       >
@@ -112,7 +112,7 @@ function EditRow({ term, onSave, onCancel }: EditRowProps) {
       </button>
       <button
         type="button"
-        className="shrink-0 p-0.5 text-muted-foreground hover:text-foreground"
+        className="shrink-0 rounded p-1 text-muted-foreground transition-[color,transform] hover:text-foreground active:scale-[0.96]"
         onClick={onCancel}
         aria-label="Cancel"
       >
@@ -184,7 +184,7 @@ function AddForm({ langPair, projectId, onAdd, onCancel }: AddFormProps) {
       </Select>
       <button
         type="button"
-        className="shrink-0 p-0.5 text-green-500 hover:text-green-400"
+        className="shrink-0 rounded p-1 text-green-500 transition-[color,transform] hover:text-green-400 active:scale-[0.96]"
         onClick={handleSubmit}
         aria-label="Add"
       >
@@ -192,7 +192,7 @@ function AddForm({ langPair, projectId, onAdd, onCancel }: AddFormProps) {
       </button>
       <button
         type="button"
-        className="shrink-0 p-0.5 text-muted-foreground hover:text-foreground"
+        className="shrink-0 rounded p-1 text-muted-foreground transition-[color,transform] hover:text-foreground active:scale-[0.96]"
         onClick={onCancel}
         aria-label="Cancel"
       >
@@ -353,7 +353,7 @@ export function GlossaryPanel({ projectId, langPair }: GlossaryPanelProps) {
           <BookMarked className="h-3 w-3" />
           <span>{t("glossaryPanel.title")}</span>
           {terms.length > 0 && (
-            <span className="text-[10px] text-muted-foreground/60">
+            <span className="text-[10px] text-muted-foreground/60 tabular-nums">
               ({terms.length})
             </span>
           )}
@@ -470,7 +470,7 @@ export function GlossaryPanel({ projectId, langPair }: GlossaryPanelProps) {
                 <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
                     type="button"
-                    className="p-0.5 text-muted-foreground hover:text-foreground"
+                    className="rounded p-1 text-muted-foreground transition-[color,transform] hover:text-foreground active:scale-[0.96]"
                     onClick={() => setEditingId(term.id)}
                     aria-label="Edit"
                   >
@@ -480,7 +480,7 @@ export function GlossaryPanel({ projectId, langPair }: GlossaryPanelProps) {
                     <AlertDialogTrigger asChild>
                       <button
                         type="button"
-                        className="p-0.5 text-muted-foreground hover:text-destructive"
+                        className="rounded p-1 text-muted-foreground transition-[color,transform] hover:text-destructive active:scale-[0.96]"
                         aria-label="Delete"
                       >
                         <Trash2 className="h-3 w-3" />

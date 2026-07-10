@@ -72,7 +72,7 @@ export function UpdateDialog() {
             <div className="flex flex-col gap-1.5 py-1">
               <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                 <div
-                  className="h-full bg-primary transition-all"
+                  className="h-full bg-primary transition-[width]"
                   style={{ width: `${progress}%` }}
                 />
               </div>

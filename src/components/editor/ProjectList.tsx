@@ -151,7 +151,7 @@ export function ProjectList() {
               return (
                 <div
                   key={project.id}
-                  className="group flex flex-col gap-1.5 rounded-lg border bg-card px-3 py-2.5 hover:bg-accent/30 transition-colors cursor-pointer"
+                  className="group flex flex-col gap-1.5 rounded-lg border bg-card px-3 py-2.5 hover:bg-accent/30 transition-[background-color,transform] cursor-pointer active:scale-[0.96]"
                   onClick={() => void handleResume(project)}
                 >
                   <div className="flex items-center gap-3">
@@ -191,7 +191,7 @@ export function ProjectList() {
 
                     <button
                       type="button"
-                      className="shrink-0 flex h-6 w-6 items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive text-muted-foreground transition-all"
+                      className="hit-area-40 relative shrink-0 flex h-6 w-6 items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive text-muted-foreground transition-[color,background-color,opacity,transform] active:scale-[0.96]"
                       disabled={isDeleting === project.id}
                       title={t("projectList.delete")}
                       onClick={(e) => requestDelete(project, e)}
@@ -249,15 +249,15 @@ function SegmentStatsBar({ stats }: { stats: ProjectStats }) {
       <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
         <div className="flex h-full">
           <div
-            className="bg-green-500/60 transition-all"
+            className="bg-green-500/60 transition-[width]"
             style={{ width: `${translatedPct}%` }}
           />
           <div
-            className="bg-blue-400/60 transition-all"
+            className="bg-blue-400/60 transition-[width]"
             style={{ width: `${reviewedPct}%` }}
           />
           <div
-            className="bg-amber-400/60 transition-all"
+            className="bg-amber-400/60 transition-[width]"
             style={{ width: `${reviewPct}%` }}
           />
         </div>

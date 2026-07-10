@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Copy, ExternalLink, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 const BTC_ADDRESS = "bc1qmr578evx5fzwyr754a00j9hkekd2gzpvs8zxzz";
@@ -39,7 +40,7 @@ function CopyAddressRow({
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 w-7 shrink-0 p-0"
+          className="hit-area-40 relative h-7 w-7 shrink-0 p-0"
           onClick={() => void handleCopy()}
           title={copyLabel}
         >
@@ -53,29 +54,61 @@ function CopyAddressRow({
 export function AboutModal({ open: isOpen, onClose }: AboutModalProps) {
   const { t } = useTranslation();
   const [version, setVersion] = useState<string>("");
+  const [mounted, setMounted] = useState(isOpen);
+  const [visible, setVisible] = useState(false);
+  const rafRef = useRef(0);
 
   useEffect(() => {
     if (isOpen) {
       void getVersion().then(setVersion);
+      setMounted(true);
+      // Double rAF: the first guarantees the "hidden" state actually paints
+      // before we flip to visible, so the CSS transition has a start frame
+      // to animate from instead of jumping straight to its end state.
+      const raf1 = requestAnimationFrame(() => {
+        const raf2 = requestAnimationFrame(() => setVisible(true));
+        rafRef.current = raf2;
+      });
+      rafRef.current = raf1;
+      return () => cancelAnimationFrame(rafRef.current);
     }
+    setVisible(false);
+    const timeout = setTimeout(() => setMounted(false), 150);
+    return () => clearTimeout(timeout);
   }, [isOpen]);
 
-  if (!isOpen) return null;
+  if (!mounted) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-105 rounded-lg border bg-background p-5 shadow-xl">
+    <div
+      className={cn(
+        "fixed inset-0 z-50 flex items-center justify-center bg-black/50 transition-opacity duration-150",
+        visible ? "opacity-100" : "opacity-0",
+      )}
+    >
+      <div
+        className={cn(
+          "w-105 rounded-lg border bg-background p-5 shadow-xl transition-[opacity,transform] duration-150",
+          visible
+            ? "opacity-100 scale-100"
+            : "opacity-0 scale-95 translate-y-1",
+        )}
+      >
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-baseline gap-2">
             <h2 className="text-sm font-semibold">Hoshi2Star ★</h2>
             {version && (
-              <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+              <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
                 v{version}
               </span>
             )}
           </div>
-          <button type="button" onClick={onClose}>
+          <button
+            type="button"
+            className="hit-area-40 relative active:scale-[0.96] transition-transform"
+            onClick={onClose}
+          >
             <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
           </button>
         </div>

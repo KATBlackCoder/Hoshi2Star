@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   AlertDialog,
   AlertDialogContent,
+  AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
@@ -35,15 +36,14 @@ export function FontSizeDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{t("fontSizeDialog.title")}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {t("fontSizeDialog.desc", {
+              total: scan.totalTranslated,
+              existing: scan.existingFontCount,
+              code,
+            })}
+          </AlertDialogDescription>
         </AlertDialogHeader>
-
-        <p className="text-sm text-muted-foreground">
-          {t("fontSizeDialog.desc", {
-            total: scan.totalTranslated,
-            existing: scan.existingFontCount,
-            code,
-          })}
-        </p>
 
         <div className="flex items-center gap-3 mt-2">
           <span className="shrink-0 text-sm">

@@ -88,7 +88,7 @@ export function TMPanel({ onApply }: TMPanelProps) {
           onClick={handleExport}
           disabled={isExporting}
           title={t("tmPanel.export")}
-          className="rounded p-0.5 hover:bg-accent/40 disabled:opacity-50 transition-colors"
+          className="hit-area-40 relative rounded p-0.5 hover:bg-accent/40 disabled:opacity-50 transition-colors"
         >
           <Download className="h-3 w-3" />
         </button>
@@ -118,7 +118,7 @@ export function TMPanel({ onApply }: TMPanelProps) {
             key={suggestion.entry.id}
             type="button"
             onClick={() => onApply?.(suggestion.entry.targetText)}
-            className="mb-1.5 w-full rounded border border-border/50 bg-muted/20 p-2 text-left hover:bg-accent/40 transition-colors"
+            className="mb-1.5 w-full rounded border border-border/50 bg-muted/20 p-2 text-left hover:bg-accent/40 transition-[background-color,transform] active:scale-[0.96]"
           >
             <div className="mb-1 flex items-center justify-between gap-2">
               <span className="truncate text-[10px] text-muted-foreground">
