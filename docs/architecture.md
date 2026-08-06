@@ -138,8 +138,8 @@ Couche métier pure — pas de `tauri::State`, pas d'`AppHandle`, testable sans 
 
 | Fichier | Rôle |
 |---------|------|
-| `pool.rs` | Initialise le `SqlitePool` avec `SqlitePoolOptions` (max 5 connexions, foreign keys ON). Lance `sqlx::migrate!("./migrations")` au démarrage — les migrations sont embarquées dans le binaire. |
-| `migrations/` | 4 fichiers SQL : `0001_initial.sql` (projects, source_files, segments), `0002_tm.sql` (tm_entries), `0003_glossary.sql` (glossary_terms), `0004_source_files_translation_secs.sql` (colonne durée de traduction). |
+| `pool.rs` | Initialise le `SqlitePool` avec `SqlitePoolOptions` (max 5 connexions, foreign keys ON), puis applique les migrations SQL embarquées. Une réparation transactionnelle et idempotente vérifie ensuite `pragma_table_info('source_files')` et ajoute la colonne nullable `translation_secs` uniquement si elle manque. Sont supportées les bases neuves, les snapshots antérieurs à `0004`, les bases dont le ledger SQLx indique `0004` ou plus mais dont la colonne manque, et les bases courantes déjà conformes. La réparation ne réécrit aucune ligne existante ; en cas d'échec elle effectue un rollback et l'erreur demande de sauvegarder le fichier avant de réessayer. Les réglages Tauri étant stockés hors de cette base, ils ne sont pas touchés. |
+| `migrations/` | 5 fichiers SQL immuables : `0001_initial.sql` (projects, source_files, segments), `0002_tm.sql` (tm_entries), `0003_glossary.sql` (glossary_terms), `0004_source_files_translation_secs.sql` (colonne durée de traduction), `0005_tm_unique.sql` (déduplication et unicité de la TM). Les migrations déjà publiées ne sont ni supprimées ni réécrites afin de préserver leurs checksums SQLx. |
 
 ---
 
