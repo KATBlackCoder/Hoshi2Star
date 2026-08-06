@@ -41,7 +41,8 @@ async fn repair_translation_secs(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         Ok(()) => tx.commit().await.map_err(|source| {
             sqlx::Error::Protocol(format!(
                 "failed to commit the source_files.translation_secs repair; \
-                 the database was not reset: {source}"
+                 the database was not reset. Back up the database file and retry. \
+                 Cause: {source}"
             ))
         }),
         Err(source) => {
@@ -49,11 +50,13 @@ async fn repair_translation_secs(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             let detail = match rollback {
                 Ok(()) => format!(
                     "failed to repair source_files.translation_secs; the repair \
-                     transaction was rolled back and existing data was preserved: {source}"
+                     transaction was rolled back and existing data was preserved. \
+                     Back up the database file and retry. Cause: {source}"
                 ),
                 Err(rollback_error) => format!(
                     "failed to repair source_files.translation_secs: {source}; \
-                     rollback also failed: {rollback_error}"
+                     rollback also failed: {rollback_error}. Back up the database \
+                     file before retrying"
                 ),
             };
             Err(sqlx::Error::Protocol(detail))
@@ -108,15 +111,64 @@ mod tests {
             .unwrap()
     }
 
-    async fn historical_pool(path: &str, migration_count: usize) -> SqlitePool {
+    async fn pre_0004_pool(path: &str) -> SqlitePool {
         let pool = connect_pool(path).await;
+        sqlx::raw_sql(include_str!("../../tests/fixtures/sqlite_pre_0004.sql"))
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        pool
+    }
+
+    async fn pre_0005_pool(path: &str) -> SqlitePool {
+        let pool = pre_0004_pool(path).await;
         let mut conn = pool.acquire().await.unwrap();
-        conn.ensure_migrations_table().await.unwrap();
-        for migration in MIGRATOR.iter().take(migration_count) {
-            conn.apply(migration).await.unwrap();
-        }
+        conn.apply(
+            MIGRATOR
+                .iter()
+                .find(|migration| migration.version == 4)
+                .unwrap(),
+        )
+        .await
+        .unwrap();
         drop(conn);
         pool
+    }
+
+    async fn connect_read_only_pool(path: &str) -> SqlitePool {
+        let opts = SqliteConnectOptions::from_str(&format!("sqlite://{path}"))
+            .unwrap()
+            .read_only(true)
+            .foreign_keys(true);
+        SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(opts)
+            .await
+            .unwrap()
+    }
+
+    type LedgerEntry = (i64, String, String, i64, Vec<u8>, i64);
+
+    async fn migration_ledger(pool: &SqlitePool) -> Vec<LedgerEntry> {
+        sqlx::query_as(
+            "SELECT version, description, CAST(installed_on AS TEXT), \
+                    CAST(success AS INTEGER), checksum, execution_time \
+             FROM _sqlx_migrations ORDER BY version",
+        )
+        .fetch_all(pool)
+        .await
+        .unwrap()
+    }
+
+    async fn schema_snapshot(pool: &SqlitePool) -> Vec<(String, String, String)> {
+        sqlx::query_as(
+            "SELECT type, name, sql FROM sqlite_master \
+             WHERE sql IS NOT NULL ORDER BY type, name",
+        )
+        .fetch_all(pool)
+        .await
+        .unwrap()
     }
 
     async fn has_translation_secs(pool: &SqlitePool) -> bool {
@@ -236,7 +288,7 @@ mod tests {
     async fn upgrades_pre_translation_secs_database() {
         let tmp = NamedTempFile::new().unwrap();
         let path = tmp.path().to_str().unwrap().to_string();
-        let pool = historical_pool(&path, 3).await;
+        let pool = pre_0004_pool(&path).await;
         seed_representative_data(&pool).await;
         assert!(!has_translation_secs(&pool).await);
         pool.close().await;
@@ -251,6 +303,57 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(versions, vec![1, 2, 3, 4, 5]);
+    }
+
+    /// A write failure inside the repair must roll back only that transaction,
+    /// retain the SQLx cause, and leave both user data and migration history
+    /// byte-for-byte unchanged.
+    #[tokio::test]
+    async fn repair_failure_is_actionable_and_rolls_back_everything() {
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        let pool = pre_0004_pool(&path).await;
+        seed_representative_data(&pool).await;
+        assert!(!has_translation_secs(&pool).await);
+        let ledger_before = migration_ledger(&pool).await;
+        let schema_before = schema_snapshot(&pool).await;
+        pool.close().await;
+
+        let read_only = connect_read_only_pool(&path).await;
+        let error = repair_translation_secs(&read_only)
+            .await
+            .expect_err("ALTER TABLE must fail on a read-only database");
+        let message = error.to_string();
+        assert!(
+            message.contains("repair transaction was rolled back"),
+            "the repair error branch was not observed: {message}"
+        );
+        assert!(
+            message.contains("attempt to write a readonly database"),
+            "the underlying SQLx/SQLite cause was lost: {message}"
+        );
+        assert!(
+            message.contains("Back up the database file and retry"),
+            "recovery guidance is missing: {message}"
+        );
+        read_only.close().await;
+
+        let verification = connect_pool(&path).await;
+        assert!(!has_translation_secs(&verification).await);
+        assert_representative_data_is_preserved(&verification).await;
+        assert_eq!(migration_ledger(&verification).await, ledger_before);
+        assert_eq!(schema_snapshot(&verification).await, schema_before);
+
+        let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
+            .fetch_one(&verification)
+            .await
+            .unwrap();
+        let foreign_key_violations = sqlx::query("PRAGMA foreign_key_check")
+            .fetch_all(&verification)
+            .await
+            .unwrap();
+        assert_eq!(integrity, "ok");
+        assert!(foreign_key_violations.is_empty());
     }
 
     /// Current databases are a no-op: startup neither duplicates the column nor
@@ -296,7 +399,7 @@ mod tests {
     async fn failed_migration_is_actionable_and_preserves_database() {
         let tmp = NamedTempFile::new().unwrap();
         let path = tmp.path().to_str().unwrap().to_string();
-        let pool = historical_pool(&path, 4).await;
+        let pool = pre_0005_pool(&path).await;
 
         for (id, target) in [("tm1", "Hero"), ("tm2", "Champion")] {
             sqlx::query(
