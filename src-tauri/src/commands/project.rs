@@ -3,7 +3,9 @@
 //! All commands are `async`, return `Result<T, String>`, and receive the
 //! database pool through `tauri::State<'_, AppState>`.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use sqlx::{QueryBuilder, Sqlite};
 
 use crate::{
     core::{manifest, qa, tm},
@@ -18,6 +20,25 @@ use crate::{
     state::AppState,
 };
 
+const DEFAULT_SOURCE_LANG: &str = "ja";
+const DEFAULT_TARGET_LANG: &str = "fr";
+
+/// Normalize a compact BCP-47 language code at the Tauri boundary.
+pub(crate) fn normalize_language(value: Option<String>, fallback: &str) -> Result<String, String> {
+    let code = value.unwrap_or_else(|| fallback.to_string());
+    let code = code.trim().to_ascii_lowercase();
+    let valid = (2..=15).contains(&code.len())
+        && code
+            .split('-')
+            .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_alphanumeric()));
+
+    if valid {
+        Ok(code)
+    } else {
+        Err(format!("invalid language code: {code}"))
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
@@ -30,6 +51,8 @@ use crate::{
 #[tauri::command]
 pub async fn open_project(
     path: String,
+    source_lang: Option<String>,
+    target_lang: Option<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<OpenProjectResult, String> {
     // 0. Smart restore: check manifest before doing any engine detection
@@ -48,7 +71,10 @@ pub async fn open_project(
                     log::warn!("manifest update failed for {path}: {e}");
                 }
                 let project = sqlx::query_as::<_, Project>(
-                    "SELECT id, name, engine, game_path, created_at, updated_at \
+                    "SELECT id, name, engine, game_path, \
+                            COALESCE(source_language, 'ja') AS source_lang, \
+                            COALESCE(target_language, 'en') AS target_lang, \
+                            created_at, updated_at \
                      FROM projects WHERE id = ?",
                 )
                 .bind(&mf.project_id)
@@ -70,44 +96,77 @@ pub async fn open_project(
         }
     }
 
-    let game_dir = Path::new(&path);
+    // Historical projects keep their DB pair through the restore path above.
+    // Only a newly extracted project consumes the current defaults/settings.
+    let source_lang = normalize_language(source_lang, DEFAULT_SOURCE_LANG)?;
+    let target_lang = normalize_language(target_lang, DEFAULT_TARGET_LANG)?;
 
-    // 1. Detect engine
-    let engine = detect_engine(game_dir).map_err(|e| e.to_string())?;
+    // 1–3. Detection and metadata reads use synchronous filesystem/JSON APIs;
+    // keep them off Tauri's async runtime threads.
+    let setup_path = path.clone();
+    let (engine, data_dir, game_title) = tokio::task::spawn_blocking(move || {
+        let game_dir = PathBuf::from(&setup_path);
+        let engine = detect_engine(&game_dir).map_err(|e| e.to_string())?;
+        let data_dir = engine.data_dir(&game_dir)?;
+        let game_title = engine.game_title(&game_dir, &data_dir).unwrap_or_else(|| {
+            game_dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Unknown")
+                .to_string()
+        });
+        Ok::<_, String>((engine, data_dir, game_title))
+    })
+    .await
+    .map_err(|error| format!("project detection worker failed: {error}"))??;
     let engine_str = engine.db_str();
-
-    // 2. Locate data directory (Wolf uses the game root directly).
-    let data_dir = engine.data_dir(game_dir)?;
-
-    // 3. Read game title (falls back to the folder name when absent).
-    let game_title = engine.game_title(game_dir, &data_dir).unwrap_or_else(|| {
-        game_dir
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("Unknown")
-            .to_string()
-    });
 
     // 4. All inserts wrapped in a single transaction for performance
     let mut tx = state.db.begin().await.map_err(|e| e.to_string())?;
 
     let project_id = preserved_project_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-    sqlx::query("INSERT INTO projects (id, name, engine, game_path) VALUES (?, ?, ?, ?)")
-        .bind(&project_id)
-        .bind(&game_title)
-        .bind(engine_str)
-        .bind(&path)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    sqlx::query(
+        "INSERT INTO projects \
+         (id, name, engine, game_path, source_language, target_language) \
+         VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&project_id)
+    .bind(&game_title)
+    .bind(engine_str)
+    .bind(&path)
+    .bind(&source_lang)
+    .bind(&target_lang)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
 
     // 5. Walk data directory: extract (shared with debug_dump_segments), then
     //    insert source_files + segments inside the single transaction.
     let mut file_count: u32 = 0;
     let mut segment_count: u32 = 0;
 
-    for file in extract_project(&engine, game_dir, &data_dir)? {
+    // The blocking producer parses at most a small bounded number of files
+    // ahead of SQLite. MV/MZ JSON values are dropped immediately after each
+    // file is converted to segments instead of retaining the whole game tree.
+    let (file_sender, mut file_receiver) = tokio::sync::mpsc::channel(2);
+    let producer_engine = engine.clone();
+    let producer_game_dir = PathBuf::from(&path);
+    let producer_data_dir = data_dir.clone();
+    let extraction_worker = tokio::task::spawn_blocking(move || {
+        visit_extracted_files(
+            &producer_engine,
+            &producer_game_dir,
+            &producer_data_dir,
+            |file| {
+                file_sender
+                    .blocking_send(file)
+                    .map_err(|_| "extraction consumer closed".to_string())
+            },
+        )
+    });
+
+    while let Some(file) = file_receiver.recv().await {
         let file_id = uuid::Uuid::new_v4().to_string();
         insert_source_file(
             &mut tx,
@@ -121,14 +180,15 @@ pub async fn open_project(
         .map_err(|e| e.to_string())?;
         file_count += 1;
 
-        for seg in &file.segments {
-            let seg_id = uuid::Uuid::new_v4().to_string();
-            insert_segment(&mut tx, &seg_id, &file_id, &seg.key, &seg.source_text)
-                .await
-                .map_err(|e| e.to_string())?;
-            segment_count += 1;
-        }
+        insert_segments(&mut tx, &file_id, &file.segments)
+            .await
+            .map_err(|e| e.to_string())?;
+        segment_count = segment_count.saturating_add(file.segments.len() as u32);
     }
+
+    extraction_worker
+        .await
+        .map_err(|error| format!("extraction worker failed: {error}"))??;
 
     tx.commit().await.map_err(|e| e.to_string())?;
 
@@ -151,7 +211,10 @@ pub async fn open_project(
 
     // 6. Fetch the newly created project row (includes DB-generated timestamps)
     let project = sqlx::query_as::<_, Project>(
-        "SELECT id, name, engine, game_path, created_at, updated_at \
+        "SELECT id, name, engine, game_path, \
+                COALESCE(source_language, 'ja') AS source_lang, \
+                COALESCE(target_language, 'en') AS target_lang, \
+                created_at, updated_at \
          FROM projects WHERE id = ?",
     )
     .bind(&project_id)
@@ -234,7 +297,8 @@ pub async fn get_segments(
     let offset = page * page_size;
     let items = sqlx::query_as::<_, Segment>(
         "SELECT id, source_file_id, json_key, source_text, target_text, \
-                status, qa_score, created_at, updated_at \
+                segment_kind, scene_id, sequence_index, speaker, branch_path, \
+                context_json, status, qa_score, created_at, updated_at \
          FROM segments WHERE source_file_id = ? \
          ORDER BY rowid LIMIT ? OFFSET ?",
     )
@@ -255,9 +319,10 @@ pub async fn get_segments(
 
 /// Save a manual translation for a segment.
 ///
-/// 1. Runs QA checks (placeholders, line length, BOM) and stores the score.
-/// 2. Inserts the (source, target) pair into the global TM (lang_pair: "ja-en").
-/// 3. Sets `status = 'translated'` and updates `updated_at`.
+/// 1. An empty/whitespace target clears the translation and restores
+///    `status = 'untranslated'` without polluting the TM.
+/// 2. Otherwise runs QA checks and stores the score.
+/// 3. Inserts the (source, target) pair into the global TM for the project language pair.
 ///
 /// Returns the updated `Segment` row (includes fresh `qa_score`).
 #[tauri::command]
@@ -266,47 +331,68 @@ pub async fn update_segment(
     target_text: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<Segment, String> {
-    // Fetch source_text + engine (QA/TM) + project_id (manifest refresh)
-    let (source_text, engine, project_id): (String, String, String) =
-        sqlx::query_as::<_, (String, String, String)>(
-            "SELECT s.source_text, p.engine, p.id \
+    // Fetch source_text + project context for QA, TM and manifest refresh.
+    let (source_text, engine, project_id, source_lang, target_lang): (
+        String,
+        String,
+        String,
+        String,
+        String,
+    ) = sqlx::query_as::<_, (String, String, String, String, String)>(
+        "SELECT s.source_text, p.engine, p.id, \
+                COALESCE(p.source_language, 'ja'), \
+                COALESCE(p.target_language, 'en') \
              FROM segments s \
              JOIN source_files sf ON s.source_file_id = sf.id \
              JOIN projects p ON sf.project_id = p.id \
              WHERE s.id = ?",
-        )
-        .bind(&id)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| e.to_string())?;
+    )
+    .bind(&id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| e.to_string())?;
 
-    // QA check — use the project's engine for correct placeholder patterns.
-    let qa_result = qa::check(&source_text, &target_text, &[], &engine);
-    let qa_score = qa_result.score as i64;
+    let is_empty = target_text.trim().is_empty();
+    let (stored_target, status, qa_score) = if is_empty {
+        ("", "untranslated", None)
+    } else {
+        // QA check — use the project's engine for correct placeholder patterns.
+        let qa_result = qa::check(&source_text, &target_text, &[], &engine);
+        (
+            target_text.as_str(),
+            "translated",
+            Some(qa_result.score as i64),
+        )
+    };
 
     // Update DB with new translation + QA score
     sqlx::query(
         "UPDATE segments \
-         SET target_text = ?, status = 'translated', qa_score = ?, \
+         SET target_text = ?, status = ?, qa_score = ?, \
              updated_at = datetime('now') \
          WHERE id = ?",
     )
-    .bind(&target_text)
+    .bind(stored_target)
+    .bind(status)
     .bind(qa_score)
     .bind(&id)
     .execute(&state.db)
     .await
     .map_err(|e| e.to_string())?;
 
-    // Insert into TM (best-effort — never fail the command if TM insert fails)
-    let _ = tm::insert(&source_text, &target_text, &engine, "ja-en", &state.db).await;
+    // Insert into TM (best-effort — never fail the command if TM insert fails).
+    if !is_empty {
+        let lang_pair = format!("{source_lang}-{target_lang}");
+        let _ = tm::insert(&source_text, &target_text, &engine, &lang_pair, &state.db).await;
+    }
 
     // Update manifest stats (best-effort — indicative only, never blocks the command)
     manifest::refresh_stats(&state.db, &project_id).await;
 
     sqlx::query_as::<_, Segment>(
         "SELECT id, source_file_id, json_key, source_text, target_text, \
-                status, qa_score, created_at, updated_at \
+                segment_kind, scene_id, sequence_index, speaker, branch_path, \
+                context_json, status, qa_score, created_at, updated_at \
          FROM segments WHERE id = ?",
     )
     .bind(&id)
@@ -380,7 +466,10 @@ async fn fetch_project_stats(
 #[tauri::command]
 pub async fn list_projects(state: tauri::State<'_, AppState>) -> Result<Vec<Project>, String> {
     sqlx::query_as::<_, Project>(
-        "SELECT id, name, engine, game_path, created_at, updated_at \
+        "SELECT id, name, engine, game_path, \
+                COALESCE(source_language, 'ja') AS source_lang, \
+                COALESCE(target_language, 'en') AS target_lang, \
+                created_at, updated_at \
          FROM projects ORDER BY updated_at DESC",
     )
     .fetch_all(&state.db)
@@ -425,13 +514,25 @@ pub async fn delete_project(
 /// to identify which texts need translation vs which can be skipped.
 #[tauri::command]
 pub async fn debug_dump_segments(game_path: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || debug_dump_segments_blocking(game_path))
+        .await
+        .map_err(|error| format!("debug extraction worker failed: {error}"))?
+}
+
+fn debug_dump_segments_blocking(game_path: String) -> Result<String, String> {
     use std::collections::HashMap;
 
     #[derive(serde::Serialize)]
     struct DebugSegment {
         key: String,
         source_text: String,
-        kind: String,
+        #[serde(rename = "kind")]
+        segment_kind: String,
+        scene_id: Option<String>,
+        sequence_index: Option<i64>,
+        speaker: Option<String>,
+        branch_path: Option<String>,
+        context_json: Option<String>,
     }
 
     #[derive(serde::Serialize)]
@@ -467,7 +568,12 @@ pub async fn debug_dump_segments(game_path: String) -> Result<String, String> {
                 .map(|s| DebugSegment {
                     key: s.key,
                     source_text: s.source_text,
-                    kind: s.kind,
+                    segment_kind: s.segment_kind,
+                    scene_id: s.scene_id,
+                    sequence_index: s.sequence_index,
+                    speaker: s.speaker,
+                    branch_path: s.branch_path,
+                    context_json: s.context_json,
                 })
                 .collect();
             DebugFileEntry {
@@ -483,7 +589,7 @@ pub async fn debug_dump_segments(game_path: String) -> Result<String, String> {
     let mut by_kind: HashMap<String, usize> = HashMap::new();
     for f in &dump_files {
         for s in &f.segments {
-            *by_kind.entry(s.kind.clone()).or_insert(0) += 1;
+            *by_kind.entry(s.segment_kind.clone()).or_insert(0) += 1;
         }
     }
 
@@ -570,12 +676,12 @@ fn classify_vx_ace_file(file_name: &str) -> &'static str {
     }
 }
 
-/// Collect all relevant JSON files from the MV/MZ data directory.
-///
-/// Returns `(file_name, absolute_file_path, file_type, parsed_json)`.
-fn collect_json_files(
-    data_dir: &Path,
-) -> Result<Vec<(String, String, String, serde_json::Value)>, std::io::Error> {
+/// Collect sorted MV/MZ file metadata without reading or parsing file bodies.
+/// Each JSON document is loaded later, immediately before extraction, so only
+/// one parsed tree needs to be resident at a time.
+type JsonFileEntry = (String, PathBuf, String);
+
+fn collect_json_file_entries(data_dir: &Path) -> Result<Vec<JsonFileEntry>, std::io::Error> {
     let mut results = Vec::new();
 
     let entries = std::fs::read_dir(data_dir)?;
@@ -590,17 +696,7 @@ fn collect_json_files(
             continue;
         }
 
-        let file_path = entry.path().to_string_lossy().to_string();
-        let content = match std::fs::read_to_string(entry.path()) {
-            Ok(c) => c,
-            Err(_) => continue, // skip unreadable files
-        };
-        let json: serde_json::Value = match serde_json::from_str(&content) {
-            Ok(v) => v,
-            Err(_) => continue, // skip invalid JSON
-        };
-
-        results.push((file_name, file_path, file_type.to_string(), json));
+        results.push((file_name, entry.path(), file_type.to_string()));
     }
 
     // Deterministic order: sort by file name
@@ -638,21 +734,21 @@ fn classify_mv_mz_file(file_name: &str) -> &'static str {
 /// Dispatch extraction to the correct function based on file name.
 fn dispatch_extract(file_name: &str, json: &serde_json::Value) -> Vec<extractor::ExtractedSegment> {
     if filter::is_map_file(file_name, ".json") {
-        return extractor::extract_map(json);
+        return extractor::extract_map_with_source(file_name, json);
     }
 
     match file_name {
         "Actors.json" => extractor::extract_actors(json),
         "Armors.json" => extractor::extract_armors(json),
         "Classes.json" => extractor::extract_classes(json),
-        "CommonEvents.json" => extractor::extract_common_events(json),
+        "CommonEvents.json" => extractor::extract_common_events_with_source(file_name, json),
         "Enemies.json" => extractor::extract_enemies(json),
         "Items.json" => extractor::extract_items(json),
         "MapInfos.json" => extractor::extract_map_infos(json),
         "Skills.json" => extractor::extract_skills(json),
         "States.json" => extractor::extract_states(json),
         "System.json" => extractor::extract_system(json),
-        "Troops.json" => extractor::extract_troops(json),
+        "Troops.json" => extractor::extract_troops_with_source(file_name, json),
         "Weapons.json" => extractor::extract_weapons(json),
         _ => vec![],
     }
@@ -662,21 +758,42 @@ fn dispatch_extract(file_name: &str, json: &serde_json::Value) -> Vec<extractor:
 // Shared extraction (open_project + debug_dump_segments)
 // ---------------------------------------------------------------------------
 
-/// One extracted segment, normalized across engines. `kind` is the engine-
-/// specific debug label; only `debug_dump_segments` consumes it (open_project
-/// discards it).
-struct ExtractedFileSeg {
-    key: String,
-    source_text: String,
-    kind: String,
+/// One extracted segment normalized for persistence.
+///
+/// MV/MZ currently owns the only implemented context adapter. Every other
+/// engine remains `unknown`/`None` until it implements its own logic.
+pub(crate) struct ExtractedFileSeg {
+    pub(crate) key: String,
+    pub(crate) source_text: String,
+    pub(crate) segment_kind: String,
+    pub(crate) scene_id: Option<String>,
+    pub(crate) sequence_index: Option<i64>,
+    pub(crate) speaker: Option<String>,
+    pub(crate) branch_path: Option<String>,
+    pub(crate) context_json: Option<String>,
+}
+
+impl ExtractedFileSeg {
+    fn without_context(key: String, source_text: String) -> Self {
+        Self {
+            key,
+            source_text,
+            segment_kind: "unknown".to_string(),
+            scene_id: None,
+            sequence_index: None,
+            speaker: None,
+            branch_path: None,
+            context_json: None,
+        }
+    }
 }
 
 /// One extracted source file, normalized across engines.
-struct ExtractedFile {
-    file_name: String,
-    file_path: String,
-    file_type: String,
-    segments: Vec<ExtractedFileSeg>,
+pub(crate) struct ExtractedFile {
+    pub(crate) file_name: String,
+    pub(crate) file_path: String,
+    pub(crate) file_type: String,
+    pub(crate) segments: Vec<ExtractedFileSeg>,
 }
 
 /// Extract every source file + segment for `engine` from `game_dir`, normalized
@@ -691,28 +808,67 @@ fn extract_project(
     game_dir: &Path,
     data_dir: &Path,
 ) -> Result<Vec<ExtractedFile>, String> {
-    use crate::engines::wolf::extractor::WolfSegmentKind;
-
     let mut files = Vec::new();
+    visit_extracted_files(engine, game_dir, data_dir, |file| {
+        files.push(file);
+        Ok(())
+    })?;
+    Ok(files)
+}
+
+/// Visit extracted files in deterministic order. The callback makes the same
+/// extractor usable by the bounded open-project producer and by diagnostics
+/// that intentionally collect a complete dump.
+pub(crate) fn visit_extracted_files<F>(
+    engine: &Engine,
+    game_dir: &Path,
+    data_dir: &Path,
+    mut visit: F,
+) -> Result<(), String>
+where
+    F: FnMut(ExtractedFile) -> Result<(), String>,
+{
     match engine {
         Engine::MvMz => {
-            for (file_name, file_path, file_type, json_value) in
-                collect_json_files(data_dir).map_err(|e| e.to_string())?
+            for (file_name, source_path, file_type) in
+                collect_json_file_entries(data_dir).map_err(|e| e.to_string())?
             {
+                let content = match std::fs::read_to_string(&source_path) {
+                    Ok(content) => content,
+                    Err(error) => {
+                        log::warn!(
+                            "skipping unreadable JSON {}: {error}",
+                            source_path.display()
+                        );
+                        continue;
+                    }
+                };
+                let json_value: serde_json::Value = match serde_json::from_str(&content) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        log::warn!("skipping invalid JSON {}: {error}", source_path.display());
+                        continue;
+                    }
+                };
                 let segments = dispatch_extract(&file_name, &json_value)
                     .into_iter()
                     .map(|s| ExtractedFileSeg {
                         key: s.key,
                         source_text: s.source,
-                        kind: format!("{:?}", s.kind),
+                        segment_kind: s.kind.as_str().to_string(),
+                        scene_id: s.context.scene_id,
+                        sequence_index: s.context.sequence_index,
+                        speaker: s.context.speaker,
+                        branch_path: s.context.branch_path,
+                        context_json: s.context.context_json,
                     })
                     .collect();
-                files.push(ExtractedFile {
+                visit(ExtractedFile {
                     file_name,
-                    file_path,
+                    file_path: source_path.to_string_lossy().to_string(),
                     file_type,
                     segments,
-                });
+                })?;
             }
         }
         Engine::VxAce => {
@@ -721,18 +877,14 @@ fn extract_project(
             {
                 let segments = vx_extractor::extract_from_bytes(&file_name, &bytes)
                     .into_iter()
-                    .map(|s| ExtractedFileSeg {
-                        key: s.key,
-                        source_text: s.source,
-                        kind: format!("{:?}", s.kind),
-                    })
+                    .map(|s| ExtractedFileSeg::without_context(s.key, s.source))
                     .collect();
-                files.push(ExtractedFile {
+                visit(ExtractedFile {
                     file_name,
                     file_path,
                     file_type,
                     segments,
-                });
+                })?;
             }
         }
         Engine::Wolf => {
@@ -755,31 +907,22 @@ fn extract_project(
                     .to_string();
                 let segments = segs
                     .into_iter()
-                    .map(|s| ExtractedFileSeg {
-                        kind: match &s.kind {
-                            WolfSegmentKind::MapMessage { .. } => "map_message",
-                            WolfSegmentKind::DatabaseField { .. } => "database_field",
-                            WolfSegmentKind::CommonEventMessage { .. } => "common_event_message",
-                        }
-                        .to_string(),
-                        key: s.key,
-                        source_text: s.source_text,
-                    })
+                    .map(|s| ExtractedFileSeg::without_context(s.key, s.source_text))
                     .collect();
-                files.push(ExtractedFile {
+                visit(ExtractedFile {
                     file_name,
                     file_path,
                     file_type,
                     segments,
-                });
+                })?;
             }
         }
     }
-    Ok(files)
+    Ok(())
 }
 
 /// Insert one `source_files` row inside the open-project transaction.
-async fn insert_source_file(
+pub(crate) async fn insert_source_file(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     file_id: &str,
     project_id: &str,
@@ -801,25 +944,34 @@ async fn insert_source_file(
     .map(|_| ())
 }
 
-/// Insert one `segments` row inside the open-project transaction.
-async fn insert_segment(
+/// Insert segment rows in chunks that stay below SQLite's default 999 bind
+/// parameter limit (90 rows × 10 values = 900 binds).
+pub(crate) async fn insert_segments(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
-    seg_id: &str,
     file_id: &str,
-    json_key: &str,
-    source_text: &str,
+    segments: &[ExtractedFileSeg],
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "INSERT INTO segments (id, source_file_id, json_key, source_text) \
-         VALUES (?, ?, ?, ?)",
-    )
-    .bind(seg_id)
-    .bind(file_id)
-    .bind(json_key)
-    .bind(source_text)
-    .execute(&mut **tx)
-    .await
-    .map(|_| ())
+    for chunk in segments.chunks(90) {
+        let mut query = QueryBuilder::<Sqlite>::new(
+            "INSERT INTO segments \
+             (id, source_file_id, json_key, source_text, segment_kind, scene_id, \
+              sequence_index, speaker, branch_path, context_json) ",
+        );
+        query.push_values(chunk, |mut row, segment| {
+            row.push_bind(uuid::Uuid::new_v4().to_string())
+                .push_bind(file_id)
+                .push_bind(&segment.key)
+                .push_bind(&segment.source_text)
+                .push_bind(&segment.segment_kind)
+                .push_bind(&segment.scene_id)
+                .push_bind(segment.sequence_index)
+                .push_bind(&segment.speaker)
+                .push_bind(&segment.branch_path)
+                .push_bind(&segment.context_json);
+        });
+        query.build().execute(&mut **tx).await?;
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -829,6 +981,25 @@ async fn insert_segment(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_normalize_language_accepts_bcp47_like_codes() {
+        assert_eq!(
+            normalize_language(Some(" PT-BR ".to_string()), "ja").unwrap(),
+            "pt-br"
+        );
+        assert_eq!(normalize_language(None, "fr").unwrap(), "fr");
+    }
+
+    #[test]
+    fn test_normalize_language_rejects_invalid_codes() {
+        for code in ["", "f", "fr_FR", "-fr", "fr-", "fr--ca", "français"] {
+            assert!(
+                normalize_language(Some(code.to_string()), "ja").is_err(),
+                "{code} should be rejected"
+            );
+        }
+    }
 
     // --- Phase 5 (audit 2026-07-01): counter semantics, one segment per status ---
 
@@ -944,6 +1115,76 @@ mod tests {
         let segs = dispatch_extract("Map001.json", &json);
         assert_eq!(segs.len(), 1);
         assert_eq!(segs[0].source, "セリフ");
+        assert_eq!(segs[0].kind.as_str(), "dialogue");
+        assert_eq!(
+            segs[0].context.scene_id.as_deref(),
+            Some("Map001.json:event:1:page:0")
+        );
+        assert_eq!(segs[0].context.sequence_index, Some(0));
+    }
+
+    #[test]
+    fn test_non_mv_mz_normalization_is_explicitly_context_free() {
+        let segment = ExtractedFileSeg::without_context("/key".into(), "text".into());
+
+        assert_eq!(segment.segment_kind, "unknown");
+        assert_eq!(segment.scene_id, None);
+        assert_eq!(segment.sequence_index, None);
+        assert_eq!(segment.speaker, None);
+        assert_eq!(segment.branch_path, None);
+        assert_eq!(segment.context_json, None);
+    }
+
+    #[tokio::test]
+    async fn test_insert_segments_persists_complete_context_contract() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let pool = crate::db::pool::init(tmp.path().to_str().unwrap())
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO projects (id, name, engine, game_path) \
+             VALUES ('p1','T','mv_mz','/tmp')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO source_files \
+             (id, project_id, file_name, file_path, file_type) \
+             VALUES ('f1','p1','Map001.json','/tmp/Map001.json','map')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let segments = vec![ExtractedFileSeg {
+            key: "/events/1/pages/0/list/1/parameters/0".into(),
+            source_text: "出発します！".into(),
+            segment_kind: "dialogue".into(),
+            scene_id: Some("Map001.json:event:1:page:0".into()),
+            sequence_index: Some(1),
+            speaker: Some("勇者".into()),
+            branch_path: Some("if:0".into()),
+            context_json: Some(r#"{"schemaVersion":1}"#.into()),
+        }];
+        let mut tx = pool.begin().await.unwrap();
+        insert_segments(&mut tx, "f1", &segments).await.unwrap();
+        tx.commit().await.unwrap();
+
+        let row: (String, String, i64, String, String, String) = sqlx::query_as(
+            "SELECT segment_kind, scene_id, sequence_index, speaker, branch_path, context_json \
+             FROM segments WHERE source_file_id = 'f1'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(row.0, "dialogue");
+        assert_eq!(row.1, "Map001.json:event:1:page:0");
+        assert_eq!(row.2, 1);
+        assert_eq!(row.3, "勇者");
+        assert_eq!(row.4, "if:0");
+        assert_eq!(row.5, r#"{"schemaVersion":1}"#);
     }
 
     // --- VX Ace classify ---

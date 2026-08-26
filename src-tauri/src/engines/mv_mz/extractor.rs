@@ -14,6 +14,8 @@ use serde_json::Value;
 pub enum SegmentKind {
     /// Dialogue text line (event code 401 — Show Text continuation)
     Dialogue,
+    /// Scrolling text line (event code 405 — Scroll Text continuation)
+    ScrollingText,
     /// Speaker name in MZ Show Text header (event code 101, params[4])
     Speaker,
     /// Choice option text (event code 102, params[0][n])
@@ -36,7 +38,51 @@ pub enum SegmentKind {
     CommonEventName,
     /// Currency unit, battle commands, param names, terms messages
     SystemTerm,
+    /// Player-facing text owned by a narrowly supported plugin command.
+    PluginText,
     GameTitle,
+}
+
+impl SegmentKind {
+    /// Stable persistence label. Debug formatting is not an API contract.
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Dialogue => "dialogue",
+            Self::ScrollingText => "scrolling_text",
+            Self::Speaker => "speaker",
+            Self::Choice => "choice",
+            Self::ActorName => "actor_name",
+            Self::ActorNickname => "actor_nickname",
+            Self::ActorProfile => "actor_profile",
+            Self::ClassName => "class_name",
+            Self::ItemName => "item_name",
+            Self::ItemDescription => "item_description",
+            Self::SkillName => "skill_name",
+            Self::SkillDescription => "skill_description",
+            Self::SkillMessage => "skill_message",
+            Self::EnemyName => "enemy_name",
+            Self::StateName => "state_name",
+            Self::StateMessage => "state_message",
+            Self::MapName => "map_name",
+            Self::CommonEventName => "common_event_name",
+            Self::SystemTerm => "system_term",
+            Self::PluginText => "plugin_text",
+            Self::GameTitle => "game_title",
+        }
+    }
+}
+
+/// Engine-owned context facts for one MV/MZ segment.
+///
+/// Neighbouring strings are intentionally not duplicated here. The core can
+/// later retrieve them with `(scene_id, sequence_index)`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SegmentContext {
+    pub scene_id: Option<String>,
+    pub sequence_index: Option<i64>,
+    pub speaker: Option<String>,
+    pub branch_path: Option<String>,
+    pub context_json: Option<String>,
 }
 
 /// A single extracted translatable text unit.
@@ -49,6 +95,8 @@ pub struct ExtractedSegment {
     pub source: String,
     /// Semantic kind for CAT context.
     pub kind: SegmentKind,
+    /// Facts emitted by the MV/MZ extractor. Other engines own other schemas.
+    pub context: SegmentContext,
 }
 
 impl ExtractedSegment {
@@ -57,6 +105,21 @@ impl ExtractedSegment {
             key: key.into(),
             source: source.into(),
             kind,
+            context: SegmentContext::default(),
+        }
+    }
+
+    fn with_context(
+        key: impl Into<String>,
+        source: impl Into<String>,
+        kind: SegmentKind,
+        context: SegmentContext,
+    ) -> Self {
+        Self {
+            key: key.into(),
+            source: source.into(),
+            kind,
+            context,
         }
     }
 }
@@ -69,6 +132,11 @@ impl ExtractedSegment {
 ///
 /// Handles event codes: 101 (MZ speaker name), 401 (dialogue), 102 (choices).
 pub fn extract_map(json: &Value) -> Vec<ExtractedSegment> {
+    extract_map_with_source("Map.json", json)
+}
+
+/// Filename-aware map extraction used by project persistence.
+pub fn extract_map_with_source(file_name: &str, json: &Value) -> Vec<ExtractedSegment> {
     let mut segments = Vec::new();
     let events = match json.get("events").and_then(Value::as_array) {
         Some(e) => e,
@@ -87,6 +155,7 @@ pub fn extract_map(json: &Value) -> Vec<ExtractedSegment> {
             extract_event_list(
                 list,
                 &format!("/events/{ei}/pages/{pi}/list"),
+                &format!("{file_name}:event:{ei}:page:{pi}"),
                 &mut segments,
             );
         }
@@ -98,6 +167,10 @@ pub fn extract_map(json: &Value) -> Vec<ExtractedSegment> {
 ///
 /// Structure: `[null, {id, name, list: [...commands...], ...}, ...]`
 pub fn extract_common_events(json: &Value) -> Vec<ExtractedSegment> {
+    extract_common_events_with_source("CommonEvents.json", json)
+}
+
+pub fn extract_common_events_with_source(file_name: &str, json: &Value) -> Vec<ExtractedSegment> {
     let mut segments = Vec::new();
     let events = match json.as_array() {
         Some(e) => e,
@@ -112,7 +185,12 @@ pub fn extract_common_events(json: &Value) -> Vec<ExtractedSegment> {
             Some(l) => l,
             None => continue,
         };
-        extract_event_list(list, &format!("/{ei}/list"), &mut segments);
+        extract_event_list(
+            list,
+            &format!("/{ei}/list"),
+            &format!("{file_name}:event:{ei}"),
+            &mut segments,
+        );
     }
     segments
 }
@@ -121,6 +199,10 @@ pub fn extract_common_events(json: &Value) -> Vec<ExtractedSegment> {
 ///
 /// Structure: `[null, {id, name, pages: [{list: [...]}], ...}, ...]`
 pub fn extract_troops(json: &Value) -> Vec<ExtractedSegment> {
+    extract_troops_with_source("Troops.json", json)
+}
+
+pub fn extract_troops_with_source(file_name: &str, json: &Value) -> Vec<ExtractedSegment> {
     let mut segments = Vec::new();
     let troops = match json.as_array() {
         Some(t) => t,
@@ -139,7 +221,12 @@ pub fn extract_troops(json: &Value) -> Vec<ExtractedSegment> {
                 Some(l) => l,
                 None => continue,
             };
-            extract_event_list(list, &format!("/{ti}/pages/{pi}/list"), &mut segments);
+            extract_event_list(
+                list,
+                &format!("/{ti}/pages/{pi}/list"),
+                &format!("{file_name}:troop:{ti}:page:{pi}"),
+                &mut segments,
+            );
         }
     }
     segments
@@ -286,10 +373,9 @@ pub fn extract_system(json: &Value) -> Vec<ExtractedSegment> {
 
     if let Some(title) = json.get("gameTitle").and_then(Value::as_str) {
         if !title.trim().is_empty() {
-            let branded = format!("{title} by Hoshi2Star");
             segments.push(ExtractedSegment::new(
                 "/gameTitle",
-                branded,
+                title,
                 SegmentKind::GameTitle,
             ));
         }
@@ -404,7 +490,16 @@ fn extract_simple_array(json: &Value, fields: &[(&str, SegmentKind)]) -> Vec<Ext
 ///
 /// `list_path` is the JSON Pointer prefix for this list,
 /// e.g. `"/events/1/pages/0/list"`.
-fn extract_event_list(list: &[Value], list_path: &str, segments: &mut Vec<ExtractedSegment>) {
+fn extract_event_list(
+    list: &[Value],
+    list_path: &str,
+    scene_id: &str,
+    segments: &mut Vec<ExtractedSegment>,
+) {
+    let mut sequence_index = 0_i64;
+    let mut speaker: Option<String> = None;
+    let mut branches = BranchTracker::default();
+
     for (li, cmd) in list.iter().enumerate() {
         let code = match cmd.get("code").and_then(Value::as_i64) {
             Some(c) => c,
@@ -414,29 +509,69 @@ fn extract_event_list(list: &[Value], list_path: &str, segments: &mut Vec<Extrac
             Some(p) => p,
             None => continue,
         };
+        let indent = cmd.get("indent").and_then(Value::as_i64).unwrap_or(0);
+        branches.observe(code, indent, li, params);
+        let branch_path = branches.path_for(indent);
+
+        let context = |speaker: Option<String>, sequence_index: i64| SegmentContext {
+            scene_id: Some(scene_id.to_string()),
+            sequence_index: Some(sequence_index),
+            speaker,
+            branch_path: branch_path.clone(),
+            context_json: Some(
+                serde_json::json!({
+                    "schemaVersion": 1,
+                    "engine": "rpg_maker_mv_mz",
+                    "commandIndex": li,
+                    "indent": indent
+                })
+                .to_string(),
+            ),
+        };
 
         match code {
             // Show Text header — in MZ, params[4] = speaker name
             101 => {
                 if let Some(name) = params.get(4).and_then(Value::as_str) {
+                    speaker = (!name.trim().is_empty()).then(|| name.to_string());
                     if filter::needs_translation(name, TokEngine::MvMz) {
-                        segments.push(ExtractedSegment::new(
+                        segments.push(ExtractedSegment::with_context(
                             format!("{list_path}/{li}/parameters/4"),
                             name,
                             SegmentKind::Speaker,
+                            context(speaker.clone(), sequence_index),
                         ));
+                        sequence_index += 1;
                     }
+                } else {
+                    speaker = None;
                 }
             }
             // Show Text continuation — one line of dialogue
             401 => {
                 if let Some(text) = params.first().and_then(Value::as_str) {
                     if filter::needs_translation(text, TokEngine::MvMz) {
-                        segments.push(ExtractedSegment::new(
+                        segments.push(ExtractedSegment::with_context(
                             format!("{list_path}/{li}/parameters/0"),
                             text,
                             SegmentKind::Dialogue,
+                            context(speaker.clone(), sequence_index),
                         ));
+                        sequence_index += 1;
+                    }
+                }
+            }
+            // Scroll Text continuation — one player-visible line.
+            405 => {
+                if let Some(text) = params.first().and_then(Value::as_str) {
+                    if filter::needs_translation(text, TokEngine::MvMz) {
+                        segments.push(ExtractedSegment::with_context(
+                            format!("{list_path}/{li}/parameters/0"),
+                            text,
+                            SegmentKind::ScrollingText,
+                            context(None, sequence_index),
+                        ));
+                        sequence_index += 1;
                     }
                 }
             }
@@ -446,18 +581,98 @@ fn extract_event_list(list: &[Value], list_path: &str, segments: &mut Vec<Extrac
                     for (ci, choice) in choices.iter().enumerate() {
                         if let Some(text) = choice.as_str() {
                             if filter::needs_translation(text, TokEngine::MvMz) {
-                                segments.push(ExtractedSegment::new(
+                                segments.push(ExtractedSegment::with_context(
                                     format!("{list_path}/{li}/parameters/0/{ci}"),
                                     text,
                                     SegmentKind::Choice,
+                                    context(None, sequence_index),
                                 ));
+                                sequence_index += 1;
                             }
                         }
                     }
                 }
             }
+            // MZ's bundled TextPicture plugin displays its `text` argument in
+            // game. Keep this deliberately narrow: command labels and arbitrary
+            // plugin arguments are editor/internal data, not safe translation
+            // candidates.
+            357 if params.first().and_then(Value::as_str) == Some("TextPicture")
+                && params.get(1).and_then(Value::as_str) == Some("set") =>
+            {
+                if let Some(text) = params
+                    .get(3)
+                    .and_then(Value::as_object)
+                    .and_then(|args| args.get("text"))
+                    .and_then(Value::as_str)
+                {
+                    if filter::needs_translation(text, TokEngine::MvMz) {
+                        segments.push(ExtractedSegment::with_context(
+                            format!("{list_path}/{li}/parameters/3/text"),
+                            text,
+                            SegmentKind::PluginText,
+                            context(None, sequence_index),
+                        ));
+                        sequence_index += 1;
+                    }
+                }
+            }
             _ => {}
         }
+
+        if !matches!(code, 101 | 401) {
+            speaker = None;
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BranchMarker {
+    indent: i64,
+    label: String,
+}
+
+#[derive(Debug, Default)]
+struct BranchTracker {
+    markers: Vec<BranchMarker>,
+}
+
+impl BranchTracker {
+    fn observe(&mut self, code: i64, indent: i64, command_index: usize, params: &[Value]) {
+        match code {
+            // End Choice / End Conditional / Repeat Above / End Battle.
+            404 | 412 | 413 | 604 => self.markers.retain(|marker| marker.indent < indent),
+            // Conditional and loop bodies start immediately after the opener.
+            111 => self.replace_at(indent, format!("if:{command_index}")),
+            112 => self.replace_at(indent, format!("loop:{command_index}")),
+            // Choice arms, else, and battle-result arms replace siblings at
+            // the same indentation level.
+            402 => {
+                let choice = params.first().and_then(Value::as_i64).unwrap_or(-1);
+                self.replace_at(indent, format!("choice:{choice}:{command_index}"));
+            }
+            403 => self.replace_at(indent, format!("choice_cancel:{command_index}")),
+            411 => self.replace_at(indent, format!("else:{command_index}")),
+            601 => self.replace_at(indent, format!("battle_win:{command_index}")),
+            602 => self.replace_at(indent, format!("battle_escape:{command_index}")),
+            603 => self.replace_at(indent, format!("battle_lose:{command_index}")),
+            _ => {}
+        }
+    }
+
+    fn replace_at(&mut self, indent: i64, label: String) {
+        self.markers.retain(|marker| marker.indent < indent);
+        self.markers.push(BranchMarker { indent, label });
+    }
+
+    fn path_for(&self, command_indent: i64) -> Option<String> {
+        let labels: Vec<&str> = self
+            .markers
+            .iter()
+            .filter(|marker| marker.indent < command_indent)
+            .map(|marker| marker.label.as_str())
+            .collect();
+        (!labels.is_empty()).then(|| labels.join("/"))
     }
 }
 
@@ -513,6 +728,12 @@ mod tests {
         assert_eq!(segs[0].kind, SegmentKind::Speaker);
         assert_eq!(segs[1].source, "出発します！");
         assert_eq!(segs[1].kind, SegmentKind::Dialogue);
+        assert_eq!(segs[1].context.speaker.as_deref(), Some("勇者"));
+        assert_eq!(segs[1].context.sequence_index, Some(1));
+        assert_eq!(
+            segs[1].context.scene_id.as_deref(),
+            Some("Map.json:event:1:page:0")
+        );
     }
 
     #[test]
@@ -532,6 +753,74 @@ mod tests {
         let segs = extract_map(&json);
         assert_eq!(segs.len(), 1);
         assert_eq!(segs[0].kind, SegmentKind::Dialogue);
+        assert_eq!(segs[0].context.speaker, None);
+        assert_eq!(segs[0].context.sequence_index, Some(0));
+    }
+
+    #[test]
+    fn test_event_pages_have_distinct_filename_aware_scenes() {
+        let json = json!({
+            "events": [null, {
+                "id": 1,
+                "pages": [
+                    { "list": [{ "code": 401, "indent": 0, "parameters": ["一"] }] },
+                    { "list": [{ "code": 401, "indent": 0, "parameters": ["二"] }] }
+                ]
+            }]
+        });
+
+        let segs = extract_map_with_source("Map008.json", &json);
+
+        assert_eq!(segs.len(), 2);
+        assert_eq!(
+            segs[0].context.scene_id.as_deref(),
+            Some("Map008.json:event:1:page:0")
+        );
+        assert_eq!(
+            segs[1].context.scene_id.as_deref(),
+            Some("Map008.json:event:1:page:1")
+        );
+        assert_eq!(segs[0].context.sequence_index, Some(0));
+        assert_eq!(segs[1].context.sequence_index, Some(0));
+    }
+
+    #[test]
+    fn test_branch_paths_follow_mv_mz_arms_without_leaking() {
+        let json = json!({
+            "events": [null, {
+                "id": 1,
+                "pages": [{
+                    "list": [
+                        { "code": 102, "indent": 0, "parameters": [["はい", "いいえ"], 0, 0, 0, 0] },
+                        { "code": 402, "indent": 0, "parameters": [0, "はい"] },
+                        { "code": 401, "indent": 1, "parameters": ["選択した"] },
+                        { "code": 402, "indent": 0, "parameters": [1, "いいえ"] },
+                        { "code": 401, "indent": 1, "parameters": ["断った"] },
+                        { "code": 404, "indent": 0, "parameters": [] },
+                        { "code": 401, "indent": 0, "parameters": ["終了"] }
+                    ]
+                }]
+            }]
+        });
+
+        let segs = extract_map(&json);
+
+        assert_eq!(segs.len(), 5);
+        assert_eq!(segs[2].context.branch_path.as_deref(), Some("choice:0:1"));
+        assert_eq!(segs[3].context.branch_path.as_deref(), Some("choice:1:3"));
+        assert_eq!(segs[4].context.branch_path, None);
+    }
+
+    #[test]
+    fn test_static_database_segments_keep_kind_without_scene_context() {
+        let segs = extract_actors(&json!([
+            null,
+            { "id": 1, "name": "主人公", "nickname": "", "profile": "" }
+        ]));
+
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].kind.as_str(), "actor_name");
+        assert_eq!(segs[0].context, SegmentContext::default());
     }
 
     #[test]
@@ -661,7 +950,7 @@ mod tests {
         let segs = extract_system(&json);
         // gameTitle + currencyUnit + 2 basic + 2 commands + 2 params + 1 message = 9
         assert_eq!(segs.len(), 9);
-        assert_eq!(segs[0].source, "勇者の物語 by Hoshi2Star");
+        assert_eq!(segs[0].source, "勇者の物語");
         assert_eq!(segs[0].kind, SegmentKind::GameTitle);
         assert_eq!(segs[1].source, "G");
         assert_eq!(segs[1].kind, SegmentKind::SystemTerm);
@@ -684,6 +973,10 @@ mod tests {
         assert_eq!(segs.len(), 1);
         assert_eq!(segs[0].source, "共通イベントのセリフ");
         assert_eq!(segs[0].kind, SegmentKind::Dialogue);
+        assert_eq!(
+            segs[0].context.scene_id.as_deref(),
+            Some("CommonEvents.json:event:1")
+        );
     }
 
     #[test]
@@ -713,6 +1006,70 @@ mod tests {
         assert_eq!(segs.len(), 1);
         assert_eq!(segs[0].source, "スライムの鳴き声！");
         assert_eq!(segs[0].key, "/1/pages/0/list/0/parameters/0");
+        assert_eq!(
+            segs[0].context.scene_id.as_deref(),
+            Some("Troops.json:troop:1:page:0")
+        );
+    }
+
+    #[test]
+    fn test_extract_scrolling_text() {
+        let json = json!({
+            "events": [null, {
+                "id": 1,
+                "pages": [{
+                    "list": [
+                        { "code": 105, "parameters": [2, false] },
+                        { "code": 405, "parameters": ["昔々、あるところに…"] }
+                    ]
+                }]
+            }]
+        });
+
+        let segs = extract_map(&json);
+
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].source, "昔々、あるところに…");
+        assert_eq!(segs[0].kind, SegmentKind::ScrollingText);
+        assert_eq!(segs[0].key, "/events/1/pages/0/list/1/parameters/0");
+    }
+
+    #[test]
+    fn test_extract_text_picture_argument_but_not_plugin_labels() {
+        let json = json!({
+            "events": [null, {
+                "id": 1,
+                "pages": [{
+                    "list": [
+                        {
+                            "code": 357,
+                            "parameters": [
+                                "TextPicture",
+                                "set",
+                                "テキストピクチャの設定",
+                                { "text": "●好感度：\\V[11]" }
+                            ]
+                        },
+                        {
+                            "code": 357,
+                            "parameters": [
+                                "InternalPlugin",
+                                "set",
+                                "内部設定",
+                                { "text": "開発者向け" }
+                            ]
+                        }
+                    ]
+                }]
+            }]
+        });
+
+        let segs = extract_map(&json);
+
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].source, "●好感度：\\V[11]");
+        assert_eq!(segs[0].kind, SegmentKind::PluginText);
+        assert_eq!(segs[0].key, "/events/1/pages/0/list/0/parameters/3/text");
     }
 
     #[test]

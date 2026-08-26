@@ -1,13 +1,13 @@
 //! Tauri commands for LLM translation and provider discovery.
 
-use serde::Deserialize;
-
 use crate::{
     core::{glossary, manifest},
     domain::types::{ProviderConfig, SourceFile},
     llm::{
         pipeline,
-        provider::{LlmProvider, OllamaProvider, TranslationContext},
+        provider::{
+            LlmProvider, OpenAiCompatibleProvider, PromptContextPolicy, TranslationContext,
+        },
     },
     state::AppState,
 };
@@ -66,15 +66,17 @@ pub async fn translate_segments(
     let translation_start = std::time::Instant::now();
 
     tokio::spawn(async move {
-        let provider = OllamaProvider::new(
+        let provider = OpenAiCompatibleProvider::new_for_preset(
+            &provider_config.provider_id,
             &provider_config.url,
             &provider_config.model,
+            provider_config.api_key.as_deref(),
             std::time::Duration::from_secs(180),
         );
 
         if let Err(e) = provider.health_check().await {
             let msg = format!(
-                "Ollama inaccessible ({}) — vérifiez qu'il est démarré : {e}",
+                "Fournisseur IA inaccessible ({}) : {e}",
                 provider_config.url
             );
             let _ = handle.emit("h2s://llm/error", serde_json::json!({ "message": msg }));
@@ -83,12 +85,15 @@ pub async fn translate_segments(
 
         // Resolve the project_id from the first segment so we can load glossary terms
         // and later update the manifest stats.
-        let lang_pair = "ja-en";
         let mut resolved_project_id: Option<String> = None;
         let mut project_engine = "mv_mz".to_string();
+        let mut source_lang = "ja".to_string();
+        let mut target_lang = "fr".to_string();
         let glossary_terms: Vec<(String, String)> = if let Some((first_id, _)) = pairs.first() {
-            let row = sqlx::query_as::<_, (String, String)>(
-                "SELECT sf.project_id, p.engine FROM segments s \
+            let row = sqlx::query_as::<_, (String, String, String, String)>(
+                "SELECT sf.project_id, p.engine, \
+                        COALESCE(p.source_language, 'ja'), \
+                        COALESCE(p.target_language, 'en') FROM segments s \
                  JOIN source_files sf ON s.source_file_id = sf.id \
                  JOIN projects p ON p.id = sf.project_id \
                  WHERE s.id = ? LIMIT 1",
@@ -99,11 +104,14 @@ pub async fn translate_segments(
             .ok()
             .flatten();
             match row {
-                Some((project_id, engine)) => {
+                Some((project_id, engine, project_source_lang, project_target_lang)) => {
                     resolved_project_id = Some(project_id.clone());
                     project_engine = engine;
+                    source_lang = project_source_lang;
+                    target_lang = project_target_lang;
+                    let lang_pair = format!("{source_lang}-{target_lang}");
                     let sources: Vec<&str> = pairs.iter().map(|(_, src)| src.as_str()).collect();
-                    glossary::relevant_terms(&db, &project_id, lang_pair, &sources).await
+                    glossary::relevant_terms(&db, &project_id, &lang_pair, &sources).await
                 }
                 None => vec![],
             }
@@ -112,11 +120,14 @@ pub async fn translate_segments(
         };
 
         let context = TranslationContext {
-            source_lang: "ja".to_string(),
-            target_lang: "en".to_string(),
+            source_lang,
+            target_lang,
             glossary_terms,
             engine: project_engine,
-            batch_size: provider_config.batch_size,
+            batch_size: provider_config.effective_batch_size(),
+            batch_delay_ms: provider_config.batch_delay_ms(),
+            prompt_context_policy: PromptContextPolicy::EngineOwned,
+            segment_contexts: vec![],
         };
 
         match pipeline::run(pairs, &provider, context, &db, &handle, None, None).await {
@@ -199,32 +210,38 @@ pub async fn translate_all_segments(
     let handle = app.clone();
 
     tokio::spawn(async move {
-        let provider = OllamaProvider::new(
+        let provider = OpenAiCompatibleProvider::new_for_preset(
+            &provider_config.provider_id,
             &provider_config.url,
             &provider_config.model,
+            provider_config.api_key.as_deref(),
             std::time::Duration::from_secs(180),
         );
 
         if let Err(e) = provider.health_check().await {
             let msg = format!(
-                "Ollama inaccessible ({}) — vérifiez qu'il est démarré : {e}",
+                "Fournisseur IA inaccessible ({}) : {e}",
                 provider_config.url
             );
             let _ = handle.emit("h2s://llm/error", serde_json::json!({ "message": msg }));
             return;
         }
 
-        let lang_pair = "ja-en";
         let mut cooldown =
             pipeline::CooldownState::new(cooldown_threshold_secs, cooldown_duration_secs);
 
-        let project_engine: String = sqlx::query_scalar("SELECT engine FROM projects WHERE id = ?")
-            .bind(&project_id)
-            .fetch_optional(&db)
-            .await
-            .ok()
-            .flatten()
-            .unwrap_or_else(|| "mv_mz".to_string());
+        let project_context: Option<(String, String, String)> = sqlx::query_as(
+            "SELECT engine, COALESCE(source_language, 'ja'), \
+                        COALESCE(target_language, 'en') FROM projects WHERE id = ?",
+        )
+        .bind(&project_id)
+        .fetch_optional(&db)
+        .await
+        .ok()
+        .flatten();
+        let (project_engine, source_lang, target_lang) = project_context
+            .unwrap_or_else(|| ("mv_mz".to_string(), "ja".to_string(), "fr".to_string()));
+        let lang_pair = format!("{source_lang}-{target_lang}");
 
         let global_total = total_untranslated as usize;
         let mut done_offset: usize = 0;
@@ -256,14 +273,17 @@ pub async fn translate_all_segments(
             // Load glossary terms filtered by batch content
             let sources: Vec<&str> = pairs.iter().map(|(_, src)| src.as_str()).collect();
             let glossary_terms =
-                glossary::relevant_terms(&db, &project_id, lang_pair, &sources).await;
+                glossary::relevant_terms(&db, &project_id, &lang_pair, &sources).await;
 
             let context = TranslationContext {
-                source_lang: "ja".to_string(),
-                target_lang: "en".to_string(),
+                source_lang: source_lang.clone(),
+                target_lang: target_lang.clone(),
                 glossary_terms,
                 engine: project_engine.clone(),
-                batch_size: provider_config.batch_size,
+                batch_size: provider_config.effective_batch_size(),
+                batch_delay_ms: provider_config.batch_delay_ms(),
+                prompt_context_policy: PromptContextPolicy::EngineOwned,
+                segment_contexts: vec![],
             };
 
             let translation_start = std::time::Instant::now();
@@ -313,38 +333,18 @@ pub async fn translate_all_segments(
     Ok(())
 }
 
-/// Fetch the list of available models from an Ollama instance.
-///
-/// Calls `GET {url}/api/tags` with a 5-second timeout and returns the model
-/// names. Returns an error string if the server is unreachable or the response
-/// cannot be parsed.
+/// Fetch the models exposed by an OpenAI-compatible provider.
 #[tauri::command]
-pub async fn get_ollama_models(url: String) -> Result<Vec<String>, String> {
-    #[derive(Deserialize)]
-    struct OllamaModel {
-        name: String,
-    }
-    #[derive(Deserialize)]
-    struct OllamaTagsResponse {
-        models: Vec<OllamaModel>,
-    }
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let endpoint = format!("{}/api/tags", url.trim_end_matches('/'));
-    let resp = client
-        .get(&endpoint)
-        .send()
+pub async fn get_provider_models(provider_config: ProviderConfig) -> Result<Vec<String>, String> {
+    let provider = OpenAiCompatibleProvider::new_for_preset(
+        &provider_config.provider_id,
+        &provider_config.url,
+        &provider_config.model,
+        provider_config.api_key.as_deref(),
+        std::time::Duration::from_secs(10),
+    );
+    provider
+        .list_models()
         .await
-        .map_err(|_| "Impossible de contacter Ollama — vérifiez l'URL".to_string())?;
-
-    let body: OllamaTagsResponse = resp
-        .json()
-        .await
-        .map_err(|e| format!("Réponse inattendue d'Ollama : {e}"))?;
-
-    Ok(body.models.into_iter().map(|m| m.name).collect())
+        .map_err(|error| error.to_string())
 }

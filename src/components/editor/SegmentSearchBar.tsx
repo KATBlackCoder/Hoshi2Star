@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { List, Rows3, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Input } from "@/components/ui/input";
 import {
@@ -8,6 +8,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import type { GridDensity } from "@/stores/ui";
 
 export type QaFilter =
   | "all"
@@ -23,6 +25,8 @@ interface SegmentSearchBarProps {
   onQaFilterChange: (value: QaFilter) => void;
   shownCount: number;
   totalCount: number;
+  density: GridDensity;
+  onDensityChange: (value: GridDensity) => void;
 }
 
 export function SegmentSearchBar({
@@ -32,6 +36,8 @@ export function SegmentSearchBar({
   onQaFilterChange,
   shownCount,
   totalCount,
+  density,
+  onDensityChange,
 }: SegmentSearchBarProps) {
   const { t } = useTranslation();
   const isFiltered = searchQuery !== "" || qaFilter !== "all";
@@ -86,6 +92,37 @@ export function SegmentSearchBar({
           {shownCount} / {totalCount}
         </span>
       )}
+
+      <div
+        role="group"
+        aria-label={t("segmentGrid.density.label")}
+        className="flex shrink-0 items-center rounded-lg border bg-background p-0.5"
+      >
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="h-6 w-6"
+          aria-label={t("segmentGrid.density.compact")}
+          aria-pressed={density === "compact"}
+          title={t("segmentGrid.density.compact")}
+          onClick={() => onDensityChange("compact")}
+        >
+          <List className="h-3 w-3" />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          className="h-6 w-6"
+          aria-label={t("segmentGrid.density.comfortable")}
+          aria-pressed={density === "comfortable"}
+          title={t("segmentGrid.density.comfortable")}
+          onClick={() => onDensityChange("comfortable")}
+        >
+          <Rows3 className="h-3 w-3" />
+        </Button>
+      </div>
     </div>
   );
 }

@@ -13,6 +13,8 @@ export interface Project {
   name: string;
   engine: string;
   gamePath: string;
+  sourceLang: string;
+  targetLang: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -57,6 +59,16 @@ export interface Segment {
   sourceFileId: string;
   jsonKey: string;
   sourceText: string;
+  /** Stable semantic kind. `unknown` means that engine has no context adapter yet. */
+  segmentKind: string;
+  /** Engine-owned scene boundary used to retrieve safe neighbouring lines. */
+  sceneId: string | null;
+  /** Zero-based order among extracted segments in the same scene. */
+  sequenceIndex: number | null;
+  speaker: string | null;
+  branchPath: string | null;
+  /** Versioned engine-specific facts; never interpreted as another engine's schema. */
+  contextJson: string | null;
   targetText: string;
   status: SegmentStatus;
   qaScore: number | null;
@@ -127,7 +139,22 @@ export type QaErrorType =
       max_units: number;
       char_count: number;
     }
-  | { type: "bom_detected" };
+  | { type: "bom_detected" }
+  | { type: "empty_translation" }
+  | { type: "unchanged_source" }
+  | { type: "source_script_remaining"; source_language: string }
+  | {
+      type: "suspicious_expansion";
+      source_chars: number;
+      target_chars: number;
+    }
+  | { type: "context_leak"; neighbor_text: string }
+  | { type: "inconsistent_repeated_source"; variants: number }
+  | {
+      type: "glossary_mismatch";
+      source_term: string;
+      expected_target: string;
+    };
 
 export interface QaResult {
   score: number;
@@ -138,6 +165,7 @@ export interface QaReport {
   totalSegments: number;
   okCount: number;
   errorCount: number;
+  criticalCount: number;
   errorsByType: Record<string, number>;
 }
 
@@ -223,9 +251,152 @@ export interface ImportReport {
 // LLM
 // ---------------------------------------------------------------------------
 
+export type ResourceProfile = "eco" | "balanced" | "fast";
+
 export interface ProviderConfig {
+  providerId?: string;
   url: string;
   model: string;
   apiKey?: string;
   batchSize: number;
+  resourceProfile: ResourceProfile;
+}
+
+export type ProviderTask = "translate" | "chat";
+
+/** One logical provider call, including local timing and optional API usage. */
+export interface ProviderCallMetrics {
+  task: ProviderTask;
+  model: string;
+  inputUnits: number;
+  promptChars: number;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+  durationMs: number;
+  attempts: number;
+  success: boolean;
+}
+
+export interface PipelineBatchMetrics {
+  responseFormatRetries: number;
+  placeholderRetries: number;
+  recursiveSplits: number;
+  semanticRejections: number;
+}
+
+export type PilotSampleCategory =
+  | "dialogue"
+  | "choice_branch"
+  | "database"
+  | "names_ui"
+  | "placeholder_multiline"
+  | "uncertain";
+
+export interface PilotNeighborLine {
+  segmentKind: string;
+  speaker: string | null;
+  text: string;
+}
+
+export interface PilotSegmentContext {
+  segmentKind: string;
+  sceneId: string | null;
+  speaker: string | null;
+  branchPath: string | null;
+  previous: PilotNeighborLine[];
+  following: PilotNeighborLine[];
+}
+
+export interface PilotSampleSegment {
+  stableKey: string;
+  fileName: string;
+  jsonKey: string;
+  sourceText: string;
+  segmentKind: string;
+  sceneId: string | null;
+  speaker: string | null;
+  branchPath: string | null;
+  category: PilotSampleCategory;
+  hasPlaceholders: boolean;
+  context: PilotSegmentContext | null;
+}
+
+export interface PilotIsolation {
+  personalDatabaseAccessed: boolean;
+  gameFilesWritten: number;
+  databaseRemoved: boolean;
+}
+
+/** Extraction-only pilot preparation; no provider has been contacted yet. */
+export interface PilotPreparation {
+  engine: "mv_mz";
+  sourceLanguage: string;
+  targetLanguage: string;
+  totalFiles: number;
+  totalSegments: number;
+  sampleSize: number;
+  byKind: Record<string, number>;
+  byCategory: Partial<Record<PilotSampleCategory, number>>;
+  sample: PilotSampleSegment[];
+  isolation: PilotIsolation;
+}
+
+export type PilotPhase =
+  | "preparing"
+  | "baseline"
+  | "contextual"
+  | "quality_review";
+
+export interface PilotProgressPayload {
+  phase: PilotPhase;
+  done: number;
+  total: number;
+}
+
+export type PilotQualityFlag =
+  | "empty_translation"
+  | "source_script_remaining"
+  | "context_leak";
+
+export interface PilotVariantResult {
+  translatedText: string;
+  qa: QaResult;
+  qualityFlags: PilotQualityFlag[];
+  needsReview: boolean;
+  fromTm: boolean;
+}
+
+export interface PilotComparison {
+  segment: PilotSampleSegment;
+  baseline: PilotVariantResult;
+  contextual: PilotVariantResult;
+  changed: boolean;
+  contextAvailable: boolean;
+}
+
+export interface PilotMetricsSummary {
+  calls: ProviderCallMetrics[];
+  requestCount: number;
+  inputUnits: number;
+  promptChars: number;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+  durationMs: number;
+  attempts: number;
+}
+
+export interface PilotVariantSummary {
+  metrics: PilotMetricsSummary;
+  averageQaScore: number;
+  needsReviewCount: number;
+}
+
+export interface PilotRunReport {
+  preparation: PilotPreparation;
+  comparisons: PilotComparison[];
+  baseline: PilotVariantSummary;
+  contextual: PilotVariantSummary;
+  changedCount: number;
 }

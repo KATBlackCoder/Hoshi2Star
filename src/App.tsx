@@ -1,22 +1,21 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import { FileTree } from "@/components/editor/FileTree";
 import { GlobalSearchResults } from "@/components/editor/GlobalSearchResults";
 import { ProjectList } from "@/components/editor/ProjectList";
-import { ProjectSearchBar } from "@/components/editor/ProjectSearchBar";
 import { SegmentGrid } from "@/components/editor/SegmentGrid";
-import { TMPanel } from "@/components/editor/TMPanel";
-import { QAPanel } from "@/components/editor/QAPanel";
-import { GlossaryPanel } from "@/components/editor/GlossaryPanel";
 import { AppToolbar } from "@/components/AppToolbar";
 import { AppDialogs } from "@/components/AppDialogs";
 import { UpdateDialog } from "@/components/UpdateDialog";
-import { useProjectStore, useIsExtractingGlossary } from "@/stores/project";
+import {
+  useProjectStore,
+  useIsExtractingGlossary,
+  useActiveLangPair,
+} from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { useSearchActive } from "@/stores/search";
 import { useSettingsStore } from "@/stores/settings";
@@ -24,6 +23,13 @@ import { useUpdaterStore } from "@/stores/updater";
 import { useAppHandlers } from "@/hooks/useAppHandlers";
 import { Toaster } from "@/components/ui/sonner";
 import { BookOpen, Loader2 } from "lucide-react";
+import { AppShell } from "@/components/shell/AppShell";
+import { InspectorRail } from "@/components/shell/InspectorRail";
+import { useAppMode, useUiStore } from "@/stores/ui";
+import { FileTreePanel } from "@/components/shell/FileTreePanel";
+import type { PanelImperativeHandle } from "react-resizable-panels";
+import { PilotComparisonWorkspace } from "@/components/pilot/PilotComparisonWorkspace";
+import { usePilotStore } from "@/stores/pilot";
 
 // ---------------------------------------------------------------------------
 // App
@@ -34,6 +40,7 @@ export default function App() {
   const { loadSettings } = useSettingsStore();
   const { t } = useTranslation();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const activeLangPair = useActiveLangPair();
   const activeSegmentSourceText = useEditorStore(
     (s) => s.activeSegmentSourceText,
   );
@@ -43,6 +50,13 @@ export default function App() {
   const isExtractingGlossary = useIsExtractingGlossary();
   const checkForUpdate = useUpdaterStore((s) => s.checkForUpdate);
   const searchActive = useSearchActive();
+  const mode = useAppMode();
+  const fileTreeOpen = useUiStore((state) => state.fileTreeOpen);
+  const setFileTreeOpen = useUiStore((state) => state.setFileTreeOpen);
+  const toggleFileTree = useUiStore((state) => state.toggleFileTree);
+  const fileTreePanelRef = useRef<PanelImperativeHandle>(null);
+  const pilotOpen = usePilotStore((state) => state.isOpen);
+  const openPilot = usePilotStore((state) => state.openWorkspace);
 
   useEffect(() => {
     void loadSettings();
@@ -53,108 +67,118 @@ export default function App() {
     void checkForUpdate();
   }, [checkForUpdate]);
 
+  useEffect(() => {
+    if (fileTreeOpen) fileTreePanelRef.current?.expand();
+    else fileTreePanelRef.current?.collapse();
+  }, [fileTreeOpen]);
+
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
-      <AppToolbar
-        onOpenSettings={() => handlers.setShowSettings(true)}
-        onOpenAbout={() => handlers.setShowAbout(true)}
-        onTranslate={handlers.handleTranslate}
-        onTranslateAll={() => void handlers.handleTranslateAll()}
-        onExportAll={() => void handlers.handleExportAll()}
-        isExporting={handlers.isExporting}
-      />
-
-      {isExtractingGlossary && (
-        <div className="flex h-7 shrink-0 items-center gap-2 border-b bg-muted/50 px-3 text-xs text-muted-foreground">
-          <Loader2 className="h-3 w-3 animate-spin shrink-0" />
-          <BookOpen className="h-3 w-3 shrink-0" />
-          <span>{t("glossaryPrompt.extracting")}</span>
-        </div>
-      )}
-
-      <ResizablePanelGroup
-        orientation="horizontal"
-        className="flex-1 overflow-hidden"
-      >
-        {/* Left: FileTree */}
-        <ResizablePanel
-          defaultSize="20%"
-          minSize="15%"
-          maxSize="35%"
-          collapsible={false}
-        >
-          <div className="flex h-full flex-col overflow-hidden border-r">
-            <FileTreeHeader />
-            {activeProjectId && <ProjectSearchBar key={activeProjectId} />}
-            <div className="flex-1 overflow-hidden">
-              <FileTree />
-            </div>
-          </div>
-        </ResizablePanel>
-
-        <ResizableHandle withHandle={true} />
-
-        {/* Centre: ProjectList (no active project) or SegmentGrid */}
-        <ResizablePanel defaultSize="55%" minSize="40%" collapsible={false}>
+    <>
+      <AppShell onOpenSettings={() => handlers.setShowSettings(true)}>
+        {mode === "library" ? (
+          <ProjectList />
+        ) : mode === "patch" ? (
           <div className="flex h-full flex-col overflow-hidden">
-            {activeProjectId ? (
-              searchActive ? (
-                <GlobalSearchResults />
-              ) : (
-                <SegmentGrid highlightPlaceholders />
-              )
-            ) : (
-              <ProjectList />
+            <AppToolbar
+              onOpenAbout={() => handlers.setShowAbout(true)}
+              onTranslate={handlers.handleTranslate}
+              onTranslateAll={() => void handlers.handleTranslateAll()}
+              onExportAll={() => void handlers.handleExportAll()}
+              onOpenPilot={openPilot}
+              isExporting={handlers.isExporting}
+            />
+
+            {isExtractingGlossary && (
+              <div className="flex min-h-10 shrink-0 items-center gap-2 border-b bg-muted/50 px-3 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                <BookOpen className="h-3 w-3 shrink-0" />
+                <span>{t("glossaryPrompt.extracting")}</span>
+              </div>
             )}
-          </div>
-        </ResizablePanel>
 
-        <ResizableHandle withHandle={true} />
+            {pilotOpen ? (
+              <PilotComparisonWorkspace />
+            ) : (
+              <div className="flex min-h-0 flex-1 overflow-hidden">
+                <ResizablePanelGroup
+                  orientation="horizontal"
+                  className="min-w-0 flex-1 overflow-hidden"
+                >
+                  {/* Left: game files */}
+                  <ResizablePanel
+                    id="file-tree"
+                    defaultSize="24%"
+                    minSize="15%"
+                    maxSize="35%"
+                    collapsedSize="48px"
+                    collapsible
+                    panelRef={fileTreePanelRef}
+                    onResize={(size) => {
+                      const expanded = size.inPixels > 56;
+                      if (expanded !== fileTreeOpen) setFileTreeOpen(expanded);
+                    }}
+                  >
+                    <FileTreePanel
+                      expanded={fileTreeOpen}
+                      activeProjectId={activeProjectId}
+                      onToggle={toggleFileTree}
+                    />
+                  </ResizablePanel>
 
-        {/* Right: TM + QA + Glossary side panels */}
-        <ResizablePanel
-          defaultSize="25%"
-          minSize="20%"
-          maxSize="40%"
-          collapsible={false}
-        >
-          <div className="flex h-full flex-col overflow-hidden border-l">
-            <ResizablePanelGroup orientation="vertical">
-              <ResizablePanel defaultSize={40} minSize={25}>
-                <TMPanel />
-              </ResizablePanel>
-              <ResizableHandle />
-              <ResizablePanel defaultSize={30} minSize={20}>
-                <QAPanel
+                  <ResizableHandle withHandle />
+
+                  {/* Centre: project picker or translation grid */}
+                  <ResizablePanel
+                    defaultSize="76%"
+                    minSize="45%"
+                    collapsible={false}
+                  >
+                    <div className="flex h-full flex-col overflow-hidden">
+                      {activeProjectId ? (
+                        searchActive ? (
+                          <GlobalSearchResults />
+                        ) : (
+                          <SegmentGrid highlightPlaceholders />
+                        )
+                      ) : (
+                        <ProjectList />
+                      )}
+                    </div>
+                  </ResizablePanel>
+                </ResizablePanelGroup>
+
+                <InspectorRail
+                  projectId={activeProjectId}
+                  langPair={activeLangPair}
                   sourceText={activeSegmentSourceText}
                   targetText={activeSegmentTargetText}
                 />
-              </ResizablePanel>
-              <ResizableHandle />
-              <ResizablePanel defaultSize={30} minSize={20}>
-                <GlossaryPanel projectId={activeProjectId} langPair="ja-en" />
-              </ResizablePanel>
-            </ResizablePanelGroup>
+              </div>
+            )}
           </div>
-        </ResizablePanel>
-      </ResizablePanelGroup>
-
+        ) : (
+          <ModePlaceholder mode={mode} />
+        )}
+      </AppShell>
       <AppDialogs handlers={handlers} />
       <UpdateDialog />
       <Toaster />
-    </div>
+    </>
   );
 }
 
-// ---------------------------------------------------------------------------
-// FileTree panel header
-// ---------------------------------------------------------------------------
-
-function FileTreeHeader() {
+function ModePlaceholder({ mode }: { mode: "player" | "images" }) {
   const { t } = useTranslation();
   return (
-    <div className="shrink-0 border-b px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80 select-none">
-      {t("fileTree.title")}
+    <div className="grid h-full place-items-center p-8">
+      <div className="max-w-lg rounded-2xl bg-card/80 p-8 text-center shadow-[var(--shadow-surface)] backdrop-blur-sm">
+        <p className="text-balance text-xl font-semibold">
+          {t("modes.comingSoonTitle", { mode: t(`modes.${mode}`) })}
+        </p>
+        <p className="mt-2 text-pretty text-sm leading-6 text-muted-foreground">
+          {t("modes.comingSoonDescription")}
+        </p>
+      </div>
     </div>
   );
 }

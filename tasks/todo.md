@@ -1,5 +1,104 @@
 # Tasks — Hoshi2Star
 
+## 📋 PLAN — Recommandations issues des analyses concurrents (2026-07-14) — NON DÉMARRÉ
+
+> Synthèse actionnable des analyses SLR Translator v3.022 (2026-07-14) et
+> DazedMTLTool (2026-07-12). **Aucun code écrit** — chaque lot devra passer par
+> son propre plan détaillé avant implémentation. ⚠️ SLR Translator est **GPL** :
+> on réimplémente les *mécanismes* en Rust, on ne copie jamais de code (c'est du
+> JS de toute façon). Mémoires : `slr-translator-analysis`,
+> `project-dazedmtltool-analysis`.
+>
+> **Déjà couvert chez nous — ne PAS refaire** : filtrage du glossaire par
+> occurrence (`core/glossary.rs::relevant_terms`, Phase 6), dédup de batch
+> (`llm/batch.rs`), validation placeholders + split adaptatif (`pipeline.rs`),
+> tokenizer structurel (ADR-002, supérieur à leurs regex d'escaping).
+
+### Lot 1 — Quick wins pipeline LLM (petit, sûr, indépendant du reste)
+
+- [ ] **1a. Budget de contexte unifié** (SLR `_fitContextBlocks`) : dans le
+      constructeur de prompt, traiter glossaire / contexte projet / (futur)
+      contexte de scène comme des blocs `{id, text, priority}` partageant un
+      budget = `context_length modèle − max_tokens réponse − system − user`,
+      rognés du moins prioritaire au plus prioritaire. Nécessite une estimation
+      de tokens grossière (chars/3 pour JA suffit). Rentable immédiatement avec
+      les petits modèles Ollama (gemma).
+- [ ] **1b. ETA dans la progression** : `ProgressPayload` (progress.rs) n'a que
+      `done/total`. Ajouter une estimation basée sur les **caractères** (pas les
+      segments, tailles trop hétérogènes), en **excluant les hits TM** du calcul
+      de débit — avantage sur SLR : eux détectent les cache-hits par heuristique
+      (>1000 chars/s), nous on SAIT quels segments viennent de la TM
+      (`from_tm`). Afficher `~Xmin restant` dans la toolbar/grille.
+- [ ] **1c. Anti-boucle de répétition** : sur réponse dégénérée (répétition du
+      même motif / finish reason `length`), bump `repeat_penalty` de +0.05 par
+      retry au lieu de re-essayer à l'identique (SLR 2.084). S'ajoute au split
+      adaptatif existant, ne le remplace pas.
+
+### Lot 2 — Retry « intelligent » (enrichit pipeline.rs, iso-architecture)
+
+- [ ] **2a. Prompt de correction détaillé** : aujourd'hui un échec de
+      restauration placeholder → retry aveugle du même prompt. À la place,
+      renvoyer au modèle la conversation + un message listant les problèmes PAR
+      segment (« segment 3 : ⟦ph_2⟧ manquant ; segment 5 : japonais résiduel »)
+      — converge beaucoup plus vite qu'un re-essai sec (SLR 2.082-2.084).
+- [ ] **2b. Décision de retry basée sur l'amélioration** : comparer le nombre de
+      problèmes de la réponse N à celui de N−1 ; si ça ne s'améliore pas malgré
+      des instructions précises → splitter tout de suite (au lieu d'épuiser
+      MAX_RETRIES). Si ça s'améliore → autoriser un essai bonus.
+- [ ] **2c. Check QA « box shifting »** : nouveau check dans le QA engine —
+      détecter la signature « segment A trop court + segment B adjacent trop
+      long » dans un même batch (texte qui a débordé d'une boîte dans l'autre).
+      Ratio lignes/caractères source↔cible. Critique pour Wolf (`@N\n` en tête).
+
+### Lot 3 — Scene Graph (grosse feature, plan dédié obligatoire)
+
+- [ ] **3. Contexte narratif par scène** — le vrai différenciateur relevé chez
+      SLR (3.009→3.022) : reconstruire les scènes depuis les events
+      (MV/MZ : codes 101/401 dialogue+locuteur, 102 choix, 117 common events →
+      graphe appelant/appelé, 201 transferts ; Wolf : équivalents dans nos
+      parsers de commandes). Trois consommateurs :
+      - batching par scène (grandes scènes isolées entières, petites regroupées
+        avec plancher de lignes, séparation dialogue / texte UI-système) ;
+      - bloc `[Scene: … / Locuteur]` injecté dans le prompt (via budget 1a) ;
+      - attribution du locuteur par segment (recoupe le « speaker scoring »
+        Dazed — le Scene Graph le couvre et le dépasse).
+      Rust, couche Engine. À planifier séparément (`/plan`) quand décidé.
+
+### Lot 4 — À rattacher à la tâche ROADMAP F4 « providers OpenAI-compat » (en pause)
+
+- [ ] **4a. Rate limiting adaptatif** basé sur les headers `x-ratelimit-*`
+      (Dazed, pattern `AdaptiveLimiter`) — sans objet pour Ollama local, requis
+      dès qu'un provider payant arrive.
+- [ ] **4b. Estimation de coût pré-run** avec confirmation avant un pipeline
+      complet (Dazed) — même condition.
+- [ ] **4c. Formats reasoning** : `reasoning_effort` (OpenAI), `thinking` avec
+      budget, `/no_think` Qwen + `chat_template_kwargs` (SLR) — à intégrer au
+      design `ProviderConfig` déjà écrit dans ROADMAP F4.
+
+### Lot 5 — Plus tard / opportuniste
+
+- [ ] **5a. Glossaire auto-généré par LLM** (SLR 2.104→3.016) : extraction par
+      chunks avec lignes « noms propres » en tête (runs katakana, kanji courts
+      entre 「」), accumulation incrémentale, pause/reprise. On a déjà une
+      extraction glossaire — comparer avant de décider si c'est un upgrade ou
+      un doublon. Synergie avec le partage `.h2s`.
+- [ ] **5b. Résumé de projet auto** persisté et injecté comme bloc de contexte
+      (priorité la plus basse du budget 1a).
+- [ ] **5c. Wizard de workflow guidé** (Dazed) : stepper ouvrir → traduire →
+      QA → exporter avec aide contextuelle — pattern UI pur, compatible Tenmon.
+- [ ] **5d. Genre des placeholders noms** (SLR 2.055) : accepter « She » pour un
+      `\n[1]` déclaré féminin dans la validation — niche, qualité EN.
+
+### Ordre recommandé
+
+1. **Lot 1** (1a+1b ensemble : ~1 session, gate vert facile) ;
+2. **Lot 2** (2a → 2b → 2c, chacun testable unitairement sur pipeline.rs/qa.rs) ;
+3. **Lot 3** sur décision explicite (plan dédié) ;
+4. **Lot 4** uniquement quand F4 provider expansion sort de pause ;
+5. **Lot 5** au fil de l'eau.
+
+---
+
 ## ✅ Feature — Pack d'échange `.h2s` (partage/reprise de projet) (2026-07-07) — TERMINÉE (code + vérif live), commit/release en attente
 
 > Objectif : permettre à un traducteur de partager l'état complet de sa

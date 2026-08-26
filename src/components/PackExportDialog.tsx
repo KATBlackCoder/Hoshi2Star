@@ -21,6 +21,7 @@ interface PackExportDialogProps {
   open: boolean;
   projectId: string;
   projectName: string;
+  langPair: string;
   onClose: () => void;
 }
 
@@ -34,6 +35,7 @@ export function PackExportDialog({
   open,
   projectId,
   projectName,
+  langPair,
   onClose,
 }: PackExportDialogProps) {
   const { t } = useTranslation();
@@ -59,7 +61,7 @@ export function PackExportDialog({
         projectId,
         outputPath: path,
         includeTm,
-        langPair: "ja-en",
+        langPair,
       });
       toast.success(
         t("pack.exportDone", {

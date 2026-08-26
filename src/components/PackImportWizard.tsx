@@ -32,6 +32,7 @@ import type {
 interface PackImportWizardProps {
   projectId: string;
   packPath: string;
+  langPair?: string;
   /** Dry-run result — already fetched by the caller before opening. */
   preview: ImportPreview;
   onClose: () => void;
@@ -81,6 +82,7 @@ export function PackImportWizard({
   projectId,
   packPath,
   preview,
+  langPair = "ja-en",
   onClose,
 }: PackImportWizardProps) {
   const { t } = useTranslation();
@@ -106,7 +108,7 @@ export function PackImportWizard({
         applySourceChanged,
         importGlossary,
         importTm,
-        langPair: "ja-en",
+        langPair,
       });
       setReport(result);
       void refreshProjectData(projectId);

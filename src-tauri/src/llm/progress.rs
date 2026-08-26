@@ -18,6 +18,7 @@ pub struct ProgressPayload {
 #[serde(rename_all = "camelCase")]
 pub struct PlaceholderWarningPayload {
     pub segment_id: String,
+    pub error_types: Vec<String>,
 }
 
 /// One segment's `target_text`/`status` as just persisted to the DB.

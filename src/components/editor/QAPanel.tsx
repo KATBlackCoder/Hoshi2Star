@@ -17,9 +17,18 @@ function errorIcon(type: QaErrorType["type"]) {
   switch (type) {
     case "missing_placeholder":
       return <AlertTriangle className="h-3 w-3 text-red-400 shrink-0" />;
+    case "empty_translation":
+    case "unchanged_source":
+    case "source_script_remaining":
+    case "suspicious_expansion":
+    case "context_leak":
+    case "inconsistent_repeated_source":
+      return <AlertTriangle className="h-3 w-3 text-red-400 shrink-0" />;
     case "line_too_long":
       return <AlertTriangle className="h-3 w-3 text-yellow-400 shrink-0" />;
     case "bom_detected":
+      return <AlertTriangle className="h-3 w-3 text-yellow-400 shrink-0" />;
+    case "glossary_mismatch":
       return <AlertTriangle className="h-3 w-3 text-yellow-400 shrink-0" />;
   }
 }
@@ -42,6 +51,32 @@ function errorLabel(
       });
     case "bom_detected":
       return t("qaPanel.errors.bom_detected");
+    case "empty_translation":
+      return t("qaPanel.errors.empty_translation");
+    case "unchanged_source":
+      return t("qaPanel.errors.unchanged_source");
+    case "source_script_remaining":
+      return t("qaPanel.errors.source_script_remaining", {
+        language: error.source_language,
+      });
+    case "suspicious_expansion":
+      return t("qaPanel.errors.suspicious_expansion", {
+        sourceChars: error.source_chars,
+        targetChars: error.target_chars,
+      });
+    case "context_leak":
+      return t("qaPanel.errors.context_leak", {
+        neighbor: error.neighbor_text,
+      });
+    case "inconsistent_repeated_source":
+      return t("qaPanel.errors.inconsistent_repeated_source", {
+        variants: error.variants,
+      });
+    case "glossary_mismatch":
+      return t("qaPanel.errors.glossary_mismatch", {
+        source: error.source_term,
+        target: error.expected_target,
+      });
   }
 }
 
@@ -134,6 +169,7 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
 
   // Real-time QA: invoked as a query keyed on source+target text
   // Uses a simple hash to avoid re-running on identical input
+  const hasEmptyTarget = !!activeSegmentId && !(targetText ?? "").trim();
   const { data: qaResult } = useQuery<QaResult>({
     queryKey: ["qa-check", sourceText, targetText, activeProjectId],
     queryFn: () =>
@@ -142,9 +178,13 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
         targetText: targetText ?? "",
         projectId: activeProjectId,
       }),
-    enabled: !!sourceText,
+    enabled: !!sourceText && !hasEmptyTarget,
     staleTime: 300,
   });
+
+  const displayedQaResult: QaResult | undefined = hasEmptyTarget
+    ? { score: 0, errors: [{ type: "empty_translation" }] }
+    : qaResult;
 
   // Project QA report badge
   const { data: qaReport } = useQuery<QaReport>({
@@ -165,6 +205,7 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
         {qaReport && qaReport.totalSegments > 0 && (
           <span className="text-[10px] text-muted-foreground tabular-nums">
             {qaReport.okCount}/{qaReport.totalSegments} ok
+            {qaReport.criticalCount > 0 && ` · ${qaReport.criticalCount} !`}
           </span>
         )}
         {activeProjectId && (
@@ -188,19 +229,19 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
           </p>
         )}
 
-        {activeSegmentId && qaResult && (
+        {activeSegmentId && displayedQaResult && (
           <div className="flex items-center gap-3">
-            <QAScoreRing score={qaResult.score} />
+            <QAScoreRing score={displayedQaResult.score} />
 
             {/* Error list */}
-            {qaResult.errors.length === 0 ? (
+            {displayedQaResult.errors.length === 0 ? (
               <div className="flex items-center gap-1.5 text-xs text-green-400">
                 <CheckCircle className="h-3 w-3 shrink-0" />
                 <span>{t("qaPanel.ok")}</span>
               </div>
             ) : (
               <ul className="flex-1 space-y-1">
-                {qaResult.errors.map((err, i) => (
+                {displayedQaResult.errors.map((err, i) => (
                   <li
                     key={i}
                     className="flex items-start gap-1.5 rounded bg-muted/30 px-2 py-1.5 text-xs"

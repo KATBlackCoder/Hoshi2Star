@@ -9,6 +9,7 @@ import {
 } from "@/stores/editor";
 import type { TmSuggestion } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useActiveLangPair } from "@/stores/project";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -55,13 +56,14 @@ export function TMPanel({ onApply }: TMPanelProps) {
   const activeSegmentId = useActiveSegmentId();
   const sourceText = useActiveSegmentSourceText();
   const { isExporting, exportToFile } = useExportToFile();
+  const langPair = useActiveLangPair();
 
   const { data: suggestions = [], isLoading } = useQuery<TmSuggestion[]>({
-    queryKey: ["tm-suggestions", sourceText],
+    queryKey: ["tm-suggestions", langPair, sourceText],
     queryFn: () =>
       invoke<TmSuggestion[]>("get_tm_suggestions", {
         sourceText: sourceText!,
-        langPair: "ja-en",
+        langPair,
       }),
     enabled: !!sourceText,
     staleTime: 1000 * 60, // TM changes rarely during a session
@@ -71,7 +73,7 @@ export function TMPanel({ onApply }: TMPanelProps) {
     void exportToFile({
       dialog: { filters: [{ name: "TMX", extensions: ["tmx"] }] },
       command: "export_tm",
-      args: { langPair: "ja-en" },
+      args: { langPair },
       successKey: "tmPanel.exportSuccess",
       errorKey: "tmPanel.exportError",
     });

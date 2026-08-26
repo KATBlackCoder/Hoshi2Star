@@ -3,7 +3,11 @@ import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
-import { useProjectStore, usePendingGlossaryExtract } from "@/stores/project";
+import {
+  getProjectLangPair,
+  useProjectStore,
+  usePendingGlossaryExtract,
+} from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { useLlmStore } from "@/stores/llm";
 import type {
@@ -71,7 +75,7 @@ export function useAppHandlers() {
     try {
       await invoke("extract_glossary_terms", {
         projectId,
-        langPair: "ja-en",
+        langPair: getProjectLangPair(projectId),
         providerConfig,
       });
     } catch {

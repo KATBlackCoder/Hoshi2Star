@@ -58,6 +58,12 @@
  * ------------------------------------------------------------------------- */
 
 :root {
+    --surface-raised: color-mix(in srgb, var(--background) 94%, black 6%);
+    --shadow-surface: 0 0 0 1px rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06), 0 2px 4px rgb(0 0 0 / 0.04);
+    --shadow-surface-hover: 0 0 0 1px rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.08), 0 2px 4px rgb(0 0 0 / 0.06);
+    --duration-fast: 120ms;
+    --duration-normal: 180ms;
+    --duration-slow: 240ms;
     --background: oklch(0.985 0.005 280);
     --foreground: oklch(0.22 0.03 275);
     --card: oklch(1 0 0);
@@ -95,6 +101,9 @@
 }
 
 .dark {
+    --surface-raised: color-mix(in srgb, var(--background) 94%, white 6%);
+    --shadow-surface: 0 0 0 1px rgb(255 255 255 / 0.08);
+    --shadow-surface-hover: 0 0 0 1px rgb(255 255 255 / 0.13);
     --background: oklch(0.17 0.03 277);
     --foreground: oklch(0.93 0.015 280);
     --card: oklch(0.21 0.035 277);
@@ -140,6 +149,7 @@
     }
   html {
     @apply font-sans;
+    -moz-osx-font-smoothing: grayscale;
     }
   /* Starfield Tenmon : étoiles fixes discrètes sur la nuit indigo */
   .dark body {
@@ -154,6 +164,15 @@
       radial-gradient(ellipse 80% 60% at 50% -10%, oklch(0.21 0.045 277) 0%, oklch(0.17 0.03 277) 55%, oklch(0.14 0.028 277) 100%);
     background-attachment: fixed;
     }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @layer utilities {

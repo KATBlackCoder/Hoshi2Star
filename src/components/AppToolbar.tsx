@@ -7,16 +7,15 @@ import { cn } from "@/lib/utils";
 import { openProjectErrorKey } from "@/lib/projectError";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  Bug,
   Clock,
   Download,
   FolderOpen,
+  FlaskConical,
   Info,
   Languages,
   Loader2,
   PackageOpen,
   Play,
-  Settings,
   Share2,
   Snowflake,
 } from "lucide-react";
@@ -24,7 +23,6 @@ import {
   openProject,
   useProjectStore,
   useIsExtractingGlossary,
-  useActiveProjectStats,
 } from "@/stores/project";
 import {
   useIsTranslating,
@@ -37,6 +35,8 @@ import { UpdateBadge } from "@/components/UpdateBadge";
 import { PackExportDialog } from "@/components/PackExportDialog";
 import { PackImportWizard } from "@/components/PackImportWizard";
 import type { ImportPreview } from "@/lib/types";
+import { usePilotStore } from "@/stores/pilot";
+import { useSettingsStore } from "@/stores/settings";
 
 // ---------------------------------------------------------------------------
 // Translation timer
@@ -138,20 +138,20 @@ function ConstellationProgress({ progress }: { progress: number }) {
 // ---------------------------------------------------------------------------
 
 interface AppToolbarProps {
-  onOpenSettings: () => void;
   onOpenAbout: () => void;
   onTranslate: () => void;
   onTranslateAll: () => void;
   onExportAll: () => void;
+  onOpenPilot: () => void;
   isExporting: boolean;
 }
 
 export function AppToolbar({
-  onOpenSettings,
   onOpenAbout,
   onTranslate,
   onTranslateAll,
   onExportAll,
+  onOpenPilot,
   isExporting,
 }: AppToolbarProps) {
   const { t } = useTranslation();
@@ -169,7 +169,11 @@ export function AppToolbar({
   const isTranslating = useIsTranslating();
   const isExtractingGlossary = useIsExtractingGlossary();
   const progress = useTranslationProgress();
-  const activeProjectStats = useActiveProjectStats();
+  const isPilotOpen = usePilotStore((state) => state.isOpen);
+  const isPilotRunning = usePilotStore((state) => state.isRunning);
+  const developerTools = useSettingsStore(
+    (state) => state.settings.developerTools,
+  );
 
   async function handleOpenGame() {
     const selected = await open({
@@ -204,7 +208,9 @@ export function AppToolbar({
       const preview = await invoke<ImportPreview>("preview_h2s_import", {
         projectId: activeProjectId,
         packPath: selected as string,
-        langPair: "ja-en",
+        langPair: activeProject
+          ? `${activeProject.sourceLang}-${activeProject.targetLang}`
+          : "ja-fr",
       });
       setPackImport({ packPath: selected as string, preview });
     } catch (err) {
@@ -216,14 +222,6 @@ export function AppToolbar({
 
   return (
     <div className="flex h-10 shrink-0 items-center gap-3 border-b px-3">
-      <span className="flex items-baseline gap-1.5 text-sm font-semibold tracking-tight select-none">
-        <span className="text-star drop-shadow-[0_0_6px_var(--star)]">★</span>
-        Hoshi2Star
-        <span className="text-[9px] font-normal tracking-widest text-muted-foreground/60">
-          星 → ★
-        </span>
-      </span>
-
       <Button
         size="sm"
         variant="outline"
@@ -244,7 +242,7 @@ export function AppToolbar({
           size="sm"
           className="h-7 gap-1.5 text-xs shadow-[0_0_12px_oklch(0.65_0.18_285/35%)]"
           onClick={onTranslate}
-          disabled={isTranslating || isExtractingGlossary}
+          disabled={isTranslating || isExtractingGlossary || isPilotRunning}
         >
           {isExtractingGlossary || isTranslating ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -265,7 +263,7 @@ export function AppToolbar({
           variant="outline"
           className="h-7 gap-1.5 text-xs"
           onClick={onTranslateAll}
-          disabled={isTranslating || isExtractingGlossary}
+          disabled={isTranslating || isExtractingGlossary || isPilotRunning}
         >
           {isTranslating ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -282,7 +280,7 @@ export function AppToolbar({
           variant="outline"
           className="h-7 gap-1.5 text-xs"
           onClick={onExportAll}
-          disabled={isTranslating || isExporting}
+          disabled={isTranslating || isExporting || isPilotRunning}
         >
           {isExporting ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -290,6 +288,23 @@ export function AppToolbar({
             <Download className="h-3.5 w-3.5" />
           )}
           {t("toolbar.exportAll")}
+        </Button>
+      )}
+
+      {developerTools && activeProject?.engine === "mv_mz" && (
+        <Button
+          size="sm"
+          variant={isPilotOpen ? "secondary" : "outline"}
+          className="h-7 gap-1.5 text-xs"
+          onClick={onOpenPilot}
+          disabled={isTranslating || isExtractingGlossary || isPilotRunning}
+        >
+          {isPilotRunning ? (
+            <Loader2 className="h-3.5 w-3.5 motion-safe:animate-spin" />
+          ) : (
+            <FlaskConical className="h-3.5 w-3.5" />
+          )}
+          {t("pilot.toolbar")}
         </Button>
       )}
 
@@ -301,7 +316,7 @@ export function AppToolbar({
             className="hit-area-40 relative h-7 w-7 p-0"
             title={t("pack.shareButton")}
             onClick={() => setShowPackExport(true)}
-            disabled={isTranslating}
+            disabled={isTranslating || isPilotRunning}
           >
             <Share2 className="h-3.5 w-3.5" />
           </Button>
@@ -311,7 +326,7 @@ export function AppToolbar({
             className="hit-area-40 relative h-7 w-7 p-0"
             title={t("pack.importButton")}
             onClick={() => void handleImportPack()}
-            disabled={isTranslating || isPreviewingPack}
+            disabled={isTranslating || isPreviewingPack || isPilotRunning}
           >
             {isPreviewingPack ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -320,25 +335,6 @@ export function AppToolbar({
             )}
           </Button>
         </>
-      )}
-
-      {activeProjectId && activeProject && (
-        <span className="ml-1 flex min-w-0 items-center gap-1.5 rounded-full border bg-card/60 px-2.5 py-0.5 text-xs text-muted-foreground">
-          <span className="truncate">{activeProject.name}</span>
-          <span className="shrink-0 rounded-full border border-primary/30 bg-primary/10 px-1.5 font-mono text-[9px] uppercase tracking-wider text-primary">
-            {activeProject.engine}
-          </span>
-          {activeProjectStats && activeProjectStats.totalSegments > 0 && (
-            <span className="shrink-0 font-mono text-[10px] tabular-nums text-star/80">
-              {Math.round(
-                (activeProjectStats.translatedCount /
-                  activeProjectStats.totalSegments) *
-                  100,
-              )}
-              %
-            </span>
-          )}
-        </span>
       )}
 
       {/* Progress bar + timer + cooldown */}
@@ -362,44 +358,12 @@ export function AppToolbar({
       >
         <Info className="h-4 w-4" />
       </Button>
-      {activeProject && (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="hit-area-40 relative h-7 w-7 p-0 text-muted-foreground hover:text-amber-400"
-          title="Debug — dump extracted segments to JSON"
-          onClick={() => {
-            void invoke<string>("debug_dump_segments", {
-              gamePath: activeProject.gamePath,
-            })
-              .then((path) => {
-                console.info("[h2s] debug dump written →", path);
-                alert(`Debug JSON écrit :\n${path}`);
-              })
-              .catch((err) => {
-                console.error("[h2s] debug dump failed:", err);
-                alert(`Erreur : ${err}`);
-              });
-          }}
-        >
-          <Bug className="h-4 w-4" />
-        </Button>
-      )}
-      <Button
-        size="sm"
-        variant="ghost"
-        className="hit-area-40 relative h-7 w-7 p-0"
-        onClick={onOpenSettings}
-        title={t("settings.title")}
-      >
-        <Settings className="h-4 w-4" />
-      </Button>
-
       {activeProjectId && activeProject && (
         <PackExportDialog
           open={showPackExport}
           projectId={activeProjectId}
           projectName={activeProject.name}
+          langPair={`${activeProject.sourceLang}-${activeProject.targetLang}`}
           onClose={() => setShowPackExport(false)}
         />
       )}
@@ -408,6 +372,11 @@ export function AppToolbar({
           projectId={activeProjectId}
           packPath={packImport.packPath}
           preview={packImport.preview}
+          langPair={
+            activeProject
+              ? `${activeProject.sourceLang}-${activeProject.targetLang}`
+              : "ja-fr"
+          }
           onClose={() => setPackImport(null)}
         />
       )}

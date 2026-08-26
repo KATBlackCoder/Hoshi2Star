@@ -83,7 +83,7 @@ mod tests {
     }
 
     #[test]
-    fn test_wolf_sysS_before_sys() {
+    fn test_wolf_sys_s_before_sys() {
         // \sysS[10] must yield exactly 1 token — not \sys[10] + "S" residual
         let result = Tokenizer::tokenize(r"\sysS[10]", Engine::Wolf);
         assert_eq!(result.map.len(), 1);

@@ -88,6 +88,21 @@ impl LineWidthConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum QaError {
+    EmptyTranslation,
+    UnchangedSource,
+    SourceScriptRemaining {
+        source_language: String,
+    },
+    SuspiciousExpansion {
+        source_chars: usize,
+        target_chars: usize,
+    },
+    ContextLeak {
+        neighbor_text: String,
+    },
+    InconsistentRepeatedSource {
+        variants: usize,
+    },
     MissingPlaceholder {
         placeholder: String,
     },
@@ -114,6 +129,27 @@ pub enum QaError {
 pub struct QaResult {
     pub score: u8,
     pub errors: Vec<QaError>,
+}
+
+impl QaResult {
+    pub fn has_critical_errors(&self) -> bool {
+        self.errors.iter().any(QaError::is_critical)
+    }
+
+    pub fn add_error(&mut self, error: QaError) {
+        self.errors.push(error);
+        let penalty: i32 = self.errors.iter().map(QaError::penalty).sum();
+        self.score = (100 - penalty).max(0) as u8;
+    }
+}
+
+/// Additional facts available to the automatic translation pipeline and full
+/// project audit. The basic editor QA remains available through [`check`].
+pub struct QaSemanticContext<'a> {
+    pub source_language: &'a str,
+    pub target_language: &'a str,
+    pub segment_kind: &'a str,
+    pub neighbor_sources: &'a [String],
 }
 
 // ---------------------------------------------------------------------------
@@ -262,6 +298,101 @@ pub fn check(
     QaResult { score, errors }
 }
 
+/// Run structural QA plus conservative semantic checks suitable for automatic
+/// persistence. These checks deliberately favour `needs_review` over silently
+/// accepting a contaminated model output.
+pub fn check_with_context(
+    source: &str,
+    target: &str,
+    glossary_terms: &[(String, String)],
+    engine: &str,
+    context: &QaSemanticContext<'_>,
+) -> QaResult {
+    let mut result = check(source, target, glossary_terms, engine);
+    let source_trimmed = source.trim();
+    let target_trimmed = target.trim();
+
+    if target_trimmed.is_empty() {
+        result.errors.push(QaError::EmptyTranslation);
+    } else {
+        if normalized_semantic_text(source_trimmed) == normalized_semantic_text(target_trimmed)
+            && unchanged_text_requires_translation(source_trimmed, context.source_language)
+        {
+            result.errors.push(QaError::UnchangedSource);
+        }
+
+        if context.source_language != context.target_language
+            && contains_source_script(target_trimmed, context.source_language)
+        {
+            result.errors.push(QaError::SourceScriptRemaining {
+                source_language: context.source_language.to_string(),
+            });
+        }
+
+        let source_chars = source_trimmed.chars().count();
+        let target_chars = target_trimmed.chars().count();
+        let speaker_expansion = context.segment_kind == "speaker"
+            && target_chars > 40
+            && target_chars > source_chars.saturating_mul(4);
+        let short_text_expansion = source_chars <= 20
+            && target_chars > 96
+            && target_chars > source_chars.saturating_mul(8);
+        if speaker_expansion || short_text_expansion {
+            result.errors.push(QaError::SuspiciousExpansion {
+                source_chars,
+                target_chars,
+            });
+        }
+
+        let normalized_target = normalized_semantic_text(target_trimmed);
+        if let Some(neighbor) = context.neighbor_sources.iter().find(|neighbor| {
+            let normalized_neighbor = normalized_semantic_text(neighbor);
+            normalized_neighbor.chars().count() >= 4
+                && normalized_target.contains(&normalized_neighbor)
+        }) {
+            result.errors.push(QaError::ContextLeak {
+                neighbor_text: neighbor.clone(),
+            });
+        }
+    }
+
+    let penalty: i32 = result.errors.iter().map(QaError::penalty).sum();
+    result.score = (100 - penalty).max(0) as u8;
+    result
+}
+
+fn normalized_semantic_text(text: &str) -> String {
+    text.split_whitespace()
+        .flat_map(str::chars)
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn contains_source_script(text: &str, source_language: &str) -> bool {
+    text.chars().any(|character| match source_language {
+        "ja" => matches!(
+            character,
+            '\u{3040}'..='\u{30ff}' | '\u{3400}'..='\u{4dbf}' | '\u{4e00}'..='\u{9fff}'
+        ),
+        "zh" => matches!(character, '\u{3400}'..='\u{4dbf}' | '\u{4e00}'..='\u{9fff}'),
+        "ko" => matches!(character, '\u{1100}'..='\u{11ff}' | '\u{3130}'..='\u{318f}' | '\u{ac00}'..='\u{d7af}'),
+        "ru" | "uk" | "bg" => matches!(character, '\u{0400}'..='\u{04ff}'),
+        _ => false,
+    })
+}
+
+/// Acronyms, engine tokens and placeholders such as `EXP`, `GP`, `OP` or `%2`
+/// are often intentionally identical in a Japanese-to-French localisation.
+/// For languages with a distinctive source script, unchanged text is only a
+/// translation failure when that script is actually present. Latin-source
+/// languages retain the conservative unchanged-text warning.
+fn unchanged_text_requires_translation(text: &str, source_language: &str) -> bool {
+    match source_language {
+        "ja" | "zh" | "ko" | "ru" | "uk" | "bg" => contains_source_script(text, source_language),
+        _ => text.chars().any(char::is_alphabetic),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Label helpers (used by report.rs for HTML output)
 // ---------------------------------------------------------------------------
@@ -273,6 +404,12 @@ impl QaError {
     /// and any future consumer read it here rather than re-spelling the match.
     pub fn penalty(&self) -> i32 {
         match self {
+            QaError::EmptyTranslation => 100,
+            QaError::UnchangedSource => 60,
+            QaError::SourceScriptRemaining { .. } => 40,
+            QaError::SuspiciousExpansion { .. } => 50,
+            QaError::ContextLeak { .. } => 60,
+            QaError::InconsistentRepeatedSource { .. } => 50,
             QaError::MissingPlaceholder { .. } => 25,
             QaError::LineTooLong { .. } => 10,
             QaError::BomDetected => 15,
@@ -283,11 +420,32 @@ impl QaError {
     /// Stable machine key for this error kind (CSS class / HTML filter value).
     pub fn type_key(&self) -> &'static str {
         match self {
+            QaError::EmptyTranslation => "empty_translation",
+            QaError::UnchangedSource => "unchanged_source",
+            QaError::SourceScriptRemaining { .. } => "source_script_remaining",
+            QaError::SuspiciousExpansion { .. } => "suspicious_expansion",
+            QaError::ContextLeak { .. } => "context_leak",
+            QaError::InconsistentRepeatedSource { .. } => "inconsistent_repeated_source",
             QaError::MissingPlaceholder { .. } => "missing_placeholder",
             QaError::LineTooLong { .. } => "line_too_long",
             QaError::BomDetected => "bom_detected",
             QaError::GlossaryMismatch { .. } => "glossary_mismatch",
         }
+    }
+
+    /// Critical errors must not be silently exported as completed work.
+    pub fn is_critical(&self) -> bool {
+        matches!(
+            self,
+            QaError::EmptyTranslation
+                | QaError::UnchangedSource
+                | QaError::SourceScriptRemaining { .. }
+                | QaError::SuspiciousExpansion { .. }
+                | QaError::ContextLeak { .. }
+                | QaError::InconsistentRepeatedSource { .. }
+                | QaError::MissingPlaceholder { .. }
+                | QaError::BomDetected
+        )
     }
 
     /// Human-readable label for this error in the requested language.
@@ -305,6 +463,23 @@ impl QaError {
 
     fn label_en(&self) -> String {
         match self {
+            QaError::EmptyTranslation => "Empty translation".to_string(),
+            QaError::UnchangedSource => "Translation is identical to the source".to_string(),
+            QaError::SourceScriptRemaining { source_language } => {
+                format!("Source-language script remains ({source_language})")
+            }
+            QaError::SuspiciousExpansion {
+                source_chars,
+                target_chars,
+            } => format!(
+                "Suspicious expansion ({source_chars} source chars → {target_chars} target chars)"
+            ),
+            QaError::ContextLeak { neighbor_text } => {
+                format!("Neighbouring context copied into output: \"{neighbor_text}\"")
+            }
+            QaError::InconsistentRepeatedSource { variants } => {
+                format!("Repeated source has {variants} different translations")
+            }
             QaError::MissingPlaceholder { placeholder } => {
                 format!("Missing placeholder: {placeholder}")
             }
@@ -330,6 +505,23 @@ impl QaError {
 
     fn label_fr(&self) -> String {
         match self {
+            QaError::EmptyTranslation => "Traduction vide".to_string(),
+            QaError::UnchangedSource => "La traduction est identique à la source".to_string(),
+            QaError::SourceScriptRemaining { source_language } => {
+                format!("Écriture de la langue source encore présente ({source_language})")
+            }
+            QaError::SuspiciousExpansion {
+                source_chars,
+                target_chars,
+            } => format!(
+                "Expansion suspecte ({source_chars} caract. source → {target_chars} caract. cible)"
+            ),
+            QaError::ContextLeak { neighbor_text } => {
+                format!("Contexte voisin recopié dans la sortie : \"{neighbor_text}\"")
+            }
+            QaError::InconsistentRepeatedSource { variants } => {
+                format!("La même source possède {variants} traductions différentes")
+            }
             QaError::MissingPlaceholder { placeholder } => {
                 format!("Placeholder manquant : {placeholder}")
             }
@@ -628,5 +820,86 @@ mod tests {
         let source = "term1 term2 term3 term4 term5 term6 term7";
         let result = check(source, "wrong translation", &t, "mv_mz");
         assert_eq!(result.score, 0);
+    }
+
+    fn semantic_context<'a>(kind: &'a str, neighbors: &'a [String]) -> QaSemanticContext<'a> {
+        QaSemanticContext {
+            source_language: "ja",
+            target_language: "fr",
+            segment_kind: kind,
+            neighbor_sources: neighbors,
+        }
+    }
+
+    #[test]
+    fn semantic_qa_rejects_empty_unchanged_and_source_script() {
+        let empty =
+            check_with_context("勇者", " ", &[], "mv_mz", &semantic_context("speaker", &[]));
+        assert!(matches!(
+            empty.errors.as_slice(),
+            [QaError::EmptyTranslation]
+        ));
+        assert!(empty.has_critical_errors());
+
+        let unchanged = check_with_context(
+            "勇者",
+            "勇者",
+            &[],
+            "mv_mz",
+            &semantic_context("speaker", &[]),
+        );
+        assert!(unchanged
+            .errors
+            .iter()
+            .any(|error| matches!(error, QaError::UnchangedSource)));
+        assert!(unchanged.errors.iter().any(|error| matches!(
+            error,
+            QaError::SourceScriptRemaining { source_language } if source_language == "ja"
+        )));
+    }
+
+    #[test]
+    fn semantic_qa_allows_language_neutral_tokens_to_remain_unchanged() {
+        for text in ["EXP", "GP", "OP", "%2", "aaa"] {
+            let result = check_with_context(
+                text,
+                text,
+                &[],
+                "mv_mz",
+                &semantic_context("system_term", &[]),
+            );
+            assert!(result
+                .errors
+                .iter()
+                .all(|error| !matches!(error, QaError::UnchangedSource)));
+        }
+    }
+
+    #[test]
+    fn semantic_qa_rejects_speaker_expansion_and_neighbor_copy() {
+        let expanded = check_with_context(
+            "男",
+            &"Un très long paragraphe de dialogue inventé par le modèle. ".repeat(2),
+            &[],
+            "mv_mz",
+            &semantic_context("speaker", &[]),
+        );
+        assert!(expanded
+            .errors
+            .iter()
+            .any(|error| matches!(error, QaError::SuspiciousExpansion { .. })));
+
+        let neighbors = vec!["ここから逃げてください".to_string()];
+        let leaked = check_with_context(
+            "はい",
+            "ここから逃げてください",
+            &[],
+            "mv_mz",
+            &semantic_context("dialogue", &neighbors),
+        );
+        assert!(leaked
+            .errors
+            .iter()
+            .any(|error| matches!(error, QaError::ContextLeak { .. })));
     }
 }

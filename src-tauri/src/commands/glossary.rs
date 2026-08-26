@@ -11,7 +11,7 @@ use crate::{
     domain::types::ProviderConfig,
     engines::wolf::extractor::extract_wolf_speaker_names,
     llm::provider::LlmProvider,
-    llm::provider::{OllamaProvider, DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_URL},
+    llm::provider::{OpenAiCompatibleProvider, DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_URL},
     state::AppState,
 };
 use tauri::{AppHandle, Emitter, State};
@@ -160,10 +160,16 @@ pub async fn extract_glossary_terms(
         } else {
             &provider_config.model
         };
-        let provider = OllamaProvider::new(url, model, Duration::from_secs(180));
+        let provider = OpenAiCompatibleProvider::new_for_preset(
+            &provider_config.provider_id,
+            url,
+            model,
+            provider_config.api_key.as_deref(),
+            Duration::from_secs(180),
+        );
 
         if let Err(e) = provider.health_check().await {
-            let msg = format!("Ollama inaccessible ({url}) — vérifiez qu'il est démarré : {e}");
+            let msg = format!("Fournisseur IA inaccessible ({url}) : {e}");
             eprintln!("[glossary] {msg}");
             let _ = app.emit(
                 "h2s://glossary/extraction-done",
@@ -185,6 +191,10 @@ pub async fn extract_glossary_terms(
                 }
             };
 
+        let metrics = provider.drain_metrics();
+        if !metrics.is_empty() {
+            let _ = app.emit("h2s://llm/metrics", metrics);
+        }
         let _ = app.emit("h2s://glossary/extraction-done", payload);
     });
 

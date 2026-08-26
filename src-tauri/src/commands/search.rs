@@ -104,7 +104,9 @@ async fn search_project_segments(
 
     let items_sql = format!(
         "SELECT s.id, s.source_file_id, s.json_key, s.source_text, s.target_text, \
-                s.status, s.qa_score, s.created_at, s.updated_at, sf.file_name \
+                s.segment_kind, s.scene_id, s.sequence_index, s.speaker, \
+                s.branch_path, s.context_json, s.status, s.qa_score, \
+                s.created_at, s.updated_at, sf.file_name \
          FROM segments s \
          JOIN source_files sf ON s.source_file_id = sf.id \
          WHERE sf.project_id = ? AND {predicate} \
@@ -203,6 +205,34 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(both.total, 1);
+    }
+
+    #[tokio::test]
+    async fn test_search_returns_persisted_mv_mz_context() {
+        let (pool, _tmp) = seeded_db().await;
+        sqlx::query(
+            "INSERT INTO segments \
+             (id, source_file_id, json_key, source_text, segment_kind, scene_id, \
+              sequence_index, speaker, branch_path, context_json) \
+             VALUES ('s1', 'f2', '/events/1/pages/0/list/1/parameters/0', \
+                     '勇者が話す', 'dialogue', 'Map001.json:event:1:page:0', 1, \
+                     '勇者', 'if:0', '{\"schemaVersion\":1}')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let result = search_project_segments(&pool, "p1", "勇者", SearchScope::Source, 500, 0)
+            .await
+            .unwrap();
+        let hit = result.items.first().unwrap();
+
+        assert_eq!(hit.segment_kind, "dialogue");
+        assert_eq!(hit.scene_id.as_deref(), Some("Map001.json:event:1:page:0"));
+        assert_eq!(hit.sequence_index, Some(1));
+        assert_eq!(hit.speaker.as_deref(), Some("勇者"));
+        assert_eq!(hit.branch_path.as_deref(), Some("if:0"));
+        assert_eq!(hit.context_json.as_deref(), Some(r#"{"schemaVersion":1}"#));
     }
 
     #[tokio::test]

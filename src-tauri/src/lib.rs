@@ -20,13 +20,14 @@ use commands::glossary::{
     get_glossary, update_glossary_term,
 };
 use commands::pack::{apply_h2s_import, export_h2s_pack, preview_h2s_import};
+use commands::pilot::{prepare_mv_mz_pilot, run_mv_mz_pilot};
 use commands::project::{
     debug_dump_segments, delete_project, get_project_stats, get_segments, get_source_files,
     list_projects, open_project, update_segment,
 };
 use commands::qa::{get_qa_report, get_tm_suggestions, qa_check_segment};
 use commands::search::search_segments;
-use commands::translate::{get_ollama_models, translate_all_segments, translate_segments};
+use commands::translate::{get_provider_models, translate_all_segments, translate_segments};
 use state::AppState;
 use tauri::Manager;
 
@@ -65,7 +66,7 @@ pub fn run() {
             get_tm_suggestions,
             get_qa_report,
             qa_check_segment,
-            get_ollama_models,
+            get_provider_models,
             get_glossary,
             add_glossary_term,
             update_glossary_term,
@@ -87,6 +88,8 @@ pub fn run() {
             export_h2s_pack,
             preview_h2s_import,
             apply_h2s_import,
+            prepare_mv_mz_pilot,
+            run_mv_mz_pilot,
         ]);
 
     #[cfg(debug_assertions)]

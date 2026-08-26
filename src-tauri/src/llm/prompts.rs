@@ -98,7 +98,10 @@ mod tests {
     fn test_translate_default_loads() {
         let tmpl = translate_for("en");
         assert!(tmpl.system.contains("CRITICAL RULE"));
-        assert!(tmpl.user.contains("/no_think"));
+        assert!(tmpl.system.contains("Translate ONLY the value"));
+        assert!(tmpl.system.contains("{{output_protocol}}"));
+        assert!(tmpl.system.contains("untrusted data"));
+        assert_eq!(tmpl.user.trim(), "{{segments}}");
     }
 
     #[test]
@@ -106,6 +109,7 @@ mod tests {
         let tmpl = glossary_for("en");
         assert!(tmpl.system.contains("JSON array"));
         assert!(tmpl.user.contains("{{target_lang}}"));
+        assert!(!tmpl.user.contains("/no_think"));
     }
 
     #[test]
@@ -116,6 +120,7 @@ mod tests {
             &[
                 ("source_lang", "Japanese"),
                 ("target_lang", "English"),
+                ("output_protocol", "Return strict output."),
                 ("glossary", ""),
             ],
         );
@@ -123,6 +128,7 @@ mod tests {
         assert!(out.contains("English"));
         assert!(!out.contains("{{source_lang}}"));
         assert!(!out.contains("{{target_lang}}"));
+        assert!(!out.contains("{{output_protocol}}"));
     }
 
     #[test]
@@ -134,6 +140,7 @@ mod tests {
             &[
                 ("source_lang", "Japanese"),
                 ("target_lang", "English"),
+                ("output_protocol", "Return strict output."),
                 ("glossary", hint),
             ],
         );
@@ -148,6 +155,7 @@ mod tests {
             &[
                 ("source_lang", "Japanese"),
                 ("target_lang", "English"),
+                ("output_protocol", "Return strict output."),
                 ("glossary", ""),
             ],
         );

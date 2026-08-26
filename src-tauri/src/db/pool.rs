@@ -3,11 +3,12 @@
 //! Called once from `lib.rs::run()` inside `.setup()`.
 //! Uses `sqlx::migrate!("./migrations")` to embed and run migrations at startup.
 
+use sqlx::migrate::Migrator;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use sqlx::SqlitePool;
+use sqlx::{Row, SqlitePool};
 use std::str::FromStr;
 
-static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
 
 /// Repair the historical state where SQLx migration 0004 is recorded as
 /// applied but `source_files.translation_secs` is absent.
@@ -78,15 +79,124 @@ pub async fn init(db_path: &str) -> Result<SqlitePool, sqlx::Error> {
         .connect_with(opts)
         .await?;
 
-    MIGRATOR.run(&pool).await.map_err(|source| {
-        sqlx::Error::Protocol(format!(
-            "SQLite schema upgrade failed for '{db_path}'. The database was \
-             not reset; back up the file and retry. Cause: {source}"
-        ))
-    })?;
+    // Embedded at compile time so packaged builds need no external SQL files.
+    // A personal database may have been opened by a newer experimental build.
+    // SQLx normally rejects those unknown versions. We preserve that database
+    // and its migration history when (and only when) its Patch core schema is
+    // still compatible with this build.
+    let latest_embedded = MIGRATOR.iter().map(|migration| migration.version).max();
+    let latest_applied = latest_applied_migration(&pool).await?;
+
+    if latest_applied
+        .zip(latest_embedded)
+        .is_some_and(|(applied, embedded)| applied > embedded)
+    {
+        validate_patch_schema(&pool).await?;
+        log::warn!(
+            "database migration version {} is newer than embedded version {}; \
+             preserving migration history and using the compatible Patch schema",
+            latest_applied.unwrap_or_default(),
+            latest_embedded.unwrap_or_default()
+        );
+    } else {
+        MIGRATOR.run(&pool).await.map_err(|source| {
+            sqlx::Error::Protocol(format!(
+                "SQLite schema upgrade failed for '{db_path}'. The database was \
+                 not reset; back up the file and retry. Cause: {source}"
+            ))
+        })?;
+    }
+
     repair_translation_secs(&pool).await?;
 
     Ok(pool)
+}
+
+async fn latest_applied_migration(pool: &SqlitePool) -> Result<Option<i64>, sqlx::Error> {
+    let has_migration_table: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master \
+         WHERE type = 'table' AND name = '_sqlx_migrations'",
+    )
+    .fetch_one(pool)
+    .await?;
+
+    if has_migration_table == 0 {
+        return Ok(None);
+    }
+
+    sqlx::query_scalar("SELECT MAX(version) FROM _sqlx_migrations WHERE success = TRUE")
+        .fetch_one(pool)
+        .await
+}
+
+async fn validate_patch_schema(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    const REQUIRED_COLUMNS: &[(&str, &[&str])] = &[
+        (
+            "projects",
+            &[
+                "id",
+                "name",
+                "engine",
+                "game_path",
+                "source_language",
+                "target_language",
+            ],
+        ),
+        (
+            "source_files",
+            &["id", "project_id", "file_name", "file_path", "file_type"],
+        ),
+        (
+            "segments",
+            &[
+                "id",
+                "source_file_id",
+                "json_key",
+                "source_text",
+                "target_text",
+                "status",
+                "segment_kind",
+                "scene_id",
+                "sequence_index",
+                "speaker",
+                "branch_path",
+                "context_json",
+            ],
+        ),
+        (
+            "tm_entries",
+            &["source_hash", "source_text", "target_text", "lang_pair"],
+        ),
+        (
+            "glossary_terms",
+            &["source_text", "target_text", "lang_pair", "project_id"],
+        ),
+    ];
+
+    for (table, required) in REQUIRED_COLUMNS {
+        let escaped_table = table.replace('"', "\"\"");
+        let pragma = format!("PRAGMA table_info(\"{escaped_table}\")");
+        let rows = sqlx::query(&pragma).fetch_all(pool).await?;
+        if rows.is_empty() {
+            return Err(sqlx::Error::Protocol(format!(
+                "newer database is missing required Patch table `{table}`"
+            )));
+        }
+
+        for column in *required {
+            let present = rows.iter().any(|row| {
+                row.try_get::<String, _>("name")
+                    .is_ok_and(|name| name == *column)
+            });
+            if !present {
+                return Err(sqlx::Error::Protocol(format!(
+                    "newer database table `{table}` is missing required Patch column `{column}`"
+                )));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -97,6 +207,7 @@ pub async fn init(db_path: &str) -> Result<SqlitePool, sqlx::Error> {
 mod tests {
     use super::*;
     use sqlx::migrate::Migrate;
+    use sqlx::FromRow;
     use tempfile::NamedTempFile;
 
     async fn connect_pool(path: &str) -> SqlitePool {
@@ -302,7 +413,7 @@ mod tests {
                 .fetch_all(&upgraded)
                 .await
                 .unwrap();
-        assert_eq!(versions, vec![1, 2, 3, 4, 5]);
+        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7]);
     }
 
     /// A write failure inside the repair must roll back only that transaction,
@@ -450,6 +561,16 @@ mod tests {
         assert_eq!(version_five_count, 0);
     }
 
+    #[derive(Debug, FromRow, PartialEq, Eq)]
+    struct StoredSegmentContext {
+        segment_kind: String,
+        scene_id: Option<String>,
+        sequence_index: Option<i64>,
+        speaker: Option<String>,
+        branch_path: Option<String>,
+        context_json: Option<String>,
+    }
+
     /// Run migrations on a fresh temp DB and verify the three tables exist.
     #[tokio::test]
     async fn test_migrations_create_tables() {
@@ -474,7 +595,73 @@ mod tests {
                 .fetch_all(&pool)
                 .await
                 .unwrap();
-        assert_eq!(versions, vec![1, 2, 3, 4, 5]);
+        assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7]);
+    }
+
+    /// Existing inserts remain compatible and receive the historical language
+    /// defaults until the user explicitly chooses another pair.
+    #[tokio::test]
+    async fn test_project_language_defaults() {
+        let tmp = NamedTempFile::new().unwrap();
+        let pool = init(tmp.path().to_str().unwrap()).await.unwrap();
+
+        sqlx::query(
+            "INSERT INTO projects (id, name, engine, game_path) VALUES ('p1','T','mv_mz','/tmp')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let pair: (String, String) =
+            sqlx::query_as("SELECT source_language, target_language FROM projects WHERE id = 'p1'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        assert_eq!(pair, ("ja".to_string(), "en".to_string()));
+    }
+
+    /// Databases created by a newer experimental build remain readable when
+    /// they still expose the complete Patch core schema. Their SQLx history is
+    /// never rewritten to impersonate this older build.
+    #[tokio::test]
+    async fn test_newer_compatible_database_is_preserved() {
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        let pool = init(&path).await.unwrap();
+
+        sqlx::query(
+            "INSERT INTO projects \
+             (id, name, engine, game_path, source_language, target_language) \
+             VALUES ('future-project', 'Future', 'mv_mz', '/tmp/future', 'ja', 'fr')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO _sqlx_migrations \
+             (version, description, success, checksum, execution_time) \
+             VALUES (8, 'future test migration', TRUE, X'010203', 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool.close().await;
+
+        let reopened = init(&path).await.expect("compatible future DB should open");
+        let project_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM projects WHERE id = 'future-project'")
+                .fetch_one(&reopened)
+                .await
+                .unwrap();
+        let future_checksum: Vec<u8> =
+            sqlx::query_scalar("SELECT checksum FROM _sqlx_migrations WHERE version = 8")
+                .fetch_one(&reopened)
+                .await
+                .unwrap();
+
+        assert_eq!(project_count, 1);
+        assert_eq!(future_checksum, vec![1, 2, 3]);
     }
 
     /// Verify the status CHECK constraint rejects invalid values.
@@ -500,6 +687,56 @@ mod tests {
         let err = sqlx::query("INSERT INTO segments (id, source_file_id, json_key, source_text, status) VALUES ('s2','f1','/2/name','NG','invalid_status')")
             .execute(&pool).await;
         assert!(err.is_err(), "invalid status should be rejected");
+    }
+
+    #[tokio::test]
+    async fn test_segment_context_defaults_are_backward_compatible() {
+        let tmp = NamedTempFile::new().unwrap();
+        let pool = init(tmp.path().to_str().unwrap()).await.unwrap();
+
+        sqlx::query(
+            "INSERT INTO projects (id, name, engine, game_path) \
+             VALUES ('p1','T','mv_mz','/tmp')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO source_files \
+             (id, project_id, file_name, file_path, file_type) \
+             VALUES ('f1','p1','A.json','/tmp/A.json','actors')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO segments (id, source_file_id, json_key, source_text) \
+             VALUES ('s1','f1','/1/name','テスト')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let row: StoredSegmentContext = sqlx::query_as(
+            "SELECT segment_kind, scene_id, sequence_index, speaker, \
+                    branch_path, context_json \
+             FROM segments WHERE id = 's1'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            row,
+            StoredSegmentContext {
+                segment_kind: "unknown".to_string(),
+                scene_id: None,
+                sequence_index: None,
+                speaker: None,
+                branch_path: None,
+                context_json: None,
+            }
+        );
     }
 
     /// Verify ON DELETE CASCADE removes child rows when a project is deleted.

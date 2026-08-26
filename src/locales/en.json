@@ -1,4 +1,21 @@
 {
+  "modes": {
+    "navigation": "Workspaces",
+    "library": "Library",
+    "patch": "Patch",
+    "player": "Player",
+    "images": "Images",
+    "comingSoonTitle": "{{mode}} workspace is being prepared",
+    "comingSoonDescription": "The foundation is ready. This mode will be connected to the project tools in the next phase."
+  },
+  "inspector": {
+    "title": "Translation inspector",
+    "tools": "Inspection tools",
+    "tm": "Memory",
+    "qa": "QA",
+    "glossary": "Glossary",
+    "close": "Close inspector"
+  },
   "toolbar": {
     "openGame": "Open Game",
     "translate": "Translate",
@@ -20,9 +37,81 @@
     "exportAllBlockedDesc": "{{count}} of {{total}} segments are not yet translated. Finish translating before exporting.",
     "exportAllClose": "Close"
   },
+  "pilot": {
+    "toolbar": "A/B Pilot",
+    "title": "MV/MZ Context Lab",
+    "subtitle": "Compare the same sample from “{{project}}” without context and with RPG Maker-specific context.",
+    "back": "Back to editor",
+    "mvMzOnly": "The contextual pilot is available only for RPG Maker MV/MZ projects.",
+    "newRun": "New test",
+    "setupTitle": "Prepare an isolated comparison",
+    "setupDescription": "Hoshi2Star extracts a representative sample into a temporary database, translates it twice, then compares quality and resource use. No result is injected into the game.",
+    "sampleSize": "Segments to compare",
+    "sampleHint": "Between 4 and 50 segments. The provider processes two variants, up to {{calls}} translation units before batching.",
+    "sameSample": "Identical sample",
+    "automaticQa": "Automatic QA",
+    "noPersistence": "No persistence",
+    "start": "Run comparison",
+    "running": "Comparison running…",
+    "workflow": "Workflow",
+    "resourceNote": "Calls remain sequential and follow the provider resource profile to limit CPU/GPU spikes.",
+    "phase": {
+      "preparing": "Temporary extraction",
+      "baseline": "Translation without context",
+      "contextual": "Translation with context",
+      "quality_review": "Quality checks"
+    },
+    "baseline": "Without context",
+    "contextual": "With context",
+    "qaAverage": "average QA score",
+    "requests": "requests",
+    "changed": "Changed outputs",
+    "isolation": "Isolation",
+    "isolated": "Database removed",
+    "isolationFailed": "Needs checking",
+    "visible": "{{visible}} of {{total}} comparisons shown",
+    "filterLabel": "Filter comparisons",
+    "category": {
+      "all": "All categories",
+      "dialogue": "Dialogue",
+      "choice_branch": "Choices and branches",
+      "database": "Descriptions and messages",
+      "names_ui": "Names and UI",
+      "placeholder_multiline": "Codes and multiline",
+      "uncertain": "Uncertain content"
+    },
+    "outputChanged": "Different output",
+    "placeholders": "Game codes",
+    "speaker": "Speaker: {{value}}",
+    "scene": "Scene: {{value}}",
+    "neighbors": "Neighbours: {{before}} before · {{after}} after",
+    "yourChoice": "Your assessment",
+    "decision": {
+      "baseline": "Without context",
+      "contextual": "With context",
+      "equivalent": "Equivalent",
+      "review": "Review"
+    },
+    "review": "Needs review",
+    "qaOk": "QA OK",
+    "empty": "Empty translation",
+    "qaError": {
+      "missing_placeholder": "Missing code",
+      "line_too_long": "Line too long",
+      "bom_detected": "BOM detected",
+      "glossary_mismatch": "Glossary mismatch"
+    },
+    "qualityFlag": {
+      "empty_translation": "Empty translation",
+      "source_script_remaining": "Source script remains",
+      "context_leak": "Context copied"
+    }
+  },
   "fileTree": {
     "title": "Files",
     "empty": "Open a game to view files",
+    "collapse": "Collapse files",
+    "expand": "Show files",
     "debugInject": "Debug inject",
     "debugInjectDone": "Injected: {{path}}",
     "debugInjectError": "Injection failed: {{error}}"
@@ -69,6 +158,8 @@
     },
     "empty": "Select a file in the left panel",
     "loading": "Loading...",
+    "loadError": "Unable to load segments",
+    "retry": "Try again",
     "noSegments": "No segments in this file",
     "footer": "{{count}} segments",
     "footerFiltered": "{{shown}} / {{total}} segments",
@@ -82,7 +173,12 @@
     "retranslateNeedsReview": "Retry {{count}} failed",
     "noModelConfigured": "No LLM model configured — open Settings (⚙)",
     "searchPlaceholder": "Search source or target…",
-    "searchClear": "Clear search"
+    "searchClear": "Clear search",
+    "density": {
+      "label": "Row density",
+      "compact": "Compact rows",
+      "comfortable": "Comfortable rows"
+    }
   },
   "tmPanel": {
     "title": "Translation Memory",
@@ -108,7 +204,14 @@
     "errors": {
       "missing_placeholder": "Missing placeholder: {{name}}",
       "line_too_long": "Line {{line}} too wide ({{units}} / {{maxUnits}} units — {{chars}} chars)",
-      "bom_detected": "UTF-8 BOM detected at start of target"
+      "bom_detected": "UTF-8 BOM detected at start of target",
+      "empty_translation": "The translation is empty",
+      "unchanged_source": "The translation is identical to the source",
+      "source_script_remaining": "Source-language script remains ({{language}})",
+      "suspicious_expansion": "Suspicious expansion: {{sourceChars}} → {{targetChars}} characters",
+      "context_leak": "Neighbouring context copied: {{neighbor}}",
+      "inconsistent_repeated_source": "The same source has {{variants}} different translations",
+      "glossary_mismatch": "Glossary mismatch: {{source}} must become {{target}}"
     }
   },
   "glossaryPanel": {
@@ -134,23 +237,62 @@
   },
   "settings": {
     "title": "Settings",
+    "close": "Close settings",
+    "sections": "Settings sections",
+    "tabs": {
+      "provider": "AI provider",
+      "languages": "Languages",
+      "appearance": "Appearance",
+      "developer": "Development"
+    },
+    "translation": {
+      "section": "New project languages",
+      "source": "Source language",
+      "target": "Target language",
+      "hint": "This pair is stored in each new project and does not change existing projects."
+    },
     "llm": {
-      "section": "LLM (Ollama)",
-      "urlLabel": "Ollama URL",
+      "section": "AI provider",
+      "description": "Choose a local or cloud OpenAI-compatible service, then verify its connection and model.",
+      "providerLabel": "Service",
+      "resourceProfileLabel": "Resource profile",
+      "resourceProfiles": {
+        "eco": "Eco",
+        "balanced": "Balanced",
+        "fast": "Fast"
+      },
+      "resourceProfileHints": {
+        "eco": "At most 8 segments and a 500 ms rest between batches to limit sustained load.",
+        "balanced": "At most 20 segments with a short breather between batches.",
+        "fast": "Up to 100 segments with no additional delay; maximum resource use is possible."
+      },
+      "urlLabel": "OpenAI-compatible URL",
       "modelLabel": "Model",
       "modelLoading": "Loading models...",
       "modelNone": "No model available",
       "modelManual": "Enter model name manually",
-      "modelError": "Cannot reach Ollama — check the URL",
+      "modelError": "Cannot reach the provider — check its URL and key",
       "testButton": "Test",
-      "testSuccess": "Ollama connected — {{count}} model(s) available",
+      "testSuccess": "Provider connected — {{count}} model(s) available",
+      "apiKeyLabel": "API key",
+      "apiKeyPlaceholder": "hf_… or service key",
+      "apiKeyHint": "Kept in memory only until the application closes.",
       "batchSizeLabel": "Batch size (segments per call)",
       "batchSizeHint": "Larger = fewer calls but a validation failure costs more to fix. Smaller = finer progress updates."
     },
     "appearance": {
       "section": "Appearance",
+      "description": "Choose the most comfortable theme for your translation sessions.",
       "light": "Light",
       "dark": "Dark"
+    },
+    "developer": {
+      "section": "Developer tools",
+      "debugBadge": "Diagnostics",
+      "description": "Technical features for checking models, prompts and integrations. They are not part of the normal translation workflow.",
+      "enable": "Show diagnostic tools",
+      "enableDescription": "Adds experimental actions only when a compatible project is open. This preference is disabled by default.",
+      "pilotExplanation": "The A/B Pilot will appear in the toolbar for RPG Maker MV/MZ projects. It compares translations with and without context without modifying the game or personal database."
     },
     "language": {
       "section": "Language"
@@ -205,7 +347,8 @@
     "close": "Close"
   },
   "projectList": {
-    "title": "Recent projects",
+    "title": "Your game library",
+    "subtitle": "Resume a patch, open a new game, or prepare your next play session in your language.",
     "empty": "No projects yet — open a game folder to get started",
     "continue": "Continue",
     "delete": "Delete project",

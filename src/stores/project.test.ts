@@ -15,6 +15,7 @@ import {
   useProjectStore,
 } from "@/stores/project";
 import type { Project, ProjectStats } from "@/lib/types";
+import { useSettingsStore } from "@/stores/settings";
 
 const initialState = useProjectStore.getState();
 
@@ -23,6 +24,8 @@ const PROJECT: Project = {
   name: "Test Game",
   engine: "mv_mz",
   gamePath: "/tmp/game",
+  sourceLang: "ja",
+  targetLang: "fr",
   createdAt: "2026-07-01",
   updatedAt: "2026-07-01",
 } as Project;
@@ -43,9 +46,11 @@ beforeEach(() => {
 
 describe("project store — openProject thunk", () => {
   it("registers the project, sets it active and loads files + stats", async () => {
-    mockIPC((cmd) => {
+    let openArgs: unknown;
+    mockIPC((cmd, args) => {
       switch (cmd) {
         case "open_project":
+          openArgs = args;
           return { project: PROJECT, wasRestored: false };
         case "get_source_files":
           return [];
@@ -65,6 +70,11 @@ describe("project store — openProject thunk", () => {
     expect(s.activeProjectStats).toEqual(STATS);
     // Fresh extraction → glossary-extract prompt armed + extraction toast
     expect(s.pendingGlossaryExtract).toBe("p1");
+    expect(openArgs as Record<string, unknown>).toMatchObject({
+      path: "/tmp/game",
+      sourceLang: useSettingsStore.getState().settings.defaultSourceLang,
+      targetLang: useSettingsStore.getState().settings.defaultTargetLang,
+    });
     expect(toastSuccess).toHaveBeenCalled();
   });
 
@@ -84,6 +94,26 @@ describe("project store — openProject thunk", () => {
 
     await openProject("/tmp/game");
     expect(useProjectStore.getState().pendingGlossaryExtract).toBeNull();
+  });
+
+  it("updates a restored project without duplicating its library card", async () => {
+    useProjectStore.setState({ projects: [PROJECT] });
+    mockIPC((cmd) => {
+      if (cmd === "open_project") {
+        return {
+          project: { ...PROJECT, name: "Updated title" },
+          wasRestored: true,
+        };
+      }
+      if (cmd === "get_source_files") return [];
+      if (cmd === "get_project_stats") return STATS;
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    await openProject("/tmp/game");
+
+    expect(useProjectStore.getState().projects).toHaveLength(1);
+    expect(useProjectStore.getState().projects[0].name).toBe("Updated title");
   });
 
   it("propagates a backend failure to the caller without touching the store", async () => {

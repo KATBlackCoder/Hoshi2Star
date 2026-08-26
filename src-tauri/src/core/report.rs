@@ -5,7 +5,9 @@
 //! (`export_qa_report` loads the project glossary) so `GlossaryMismatch`
 //! errors appear in the report.
 
-use crate::core::qa::{self, QaError};
+use crate::core::qa::{self, QaError, QaSemanticContext};
+use crate::domain::types::QaReport;
+use crate::llm::context::{self, PromptContextClass};
 use crate::utils::text::escape_xml;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
@@ -41,6 +43,17 @@ pub async fn collect_qa_details(
     project_id: &str,
     terms: &[(String, String)],
 ) -> Result<(usize, Vec<QaSegmentDetail>), sqlx::Error> {
+    let (summary, details) = audit_project(pool, project_id, terms).await?;
+    Ok((summary.total_segments as usize, details))
+}
+
+/// Recalculate semantic QA for every translated/review row, persist the score
+/// and critical status, and return an exact summary plus report details.
+pub async fn audit_project(
+    pool: &SqlitePool,
+    project_id: &str,
+    terms: &[(String, String)],
+) -> Result<(QaReport, Vec<QaSegmentDetail>), sqlx::Error> {
     #[derive(sqlx::FromRow)]
     struct Row {
         segment_id: String,
@@ -49,6 +62,10 @@ pub async fn collect_qa_details(
         source_text: String,
         target_text: String,
         engine: String,
+        source_language: String,
+        target_language: String,
+        segment_kind: String,
+        status: String,
     }
 
     let rows = sqlx::query_as::<_, Row>(
@@ -58,13 +75,16 @@ pub async fn collect_qa_details(
             ROW_NUMBER() OVER (PARTITION BY s.source_file_id ORDER BY s.rowid) AS seg_num,
             s.source_text,
             s.target_text,
-            p.engine
+            p.engine,
+            COALESCE(p.source_language, 'ja') AS source_language,
+            COALESCE(p.target_language, 'en') AS target_language,
+            s.segment_kind,
+            s.status
          FROM segments s
          JOIN source_files sf ON s.source_file_id = sf.id
          JOIN projects p ON sf.project_id = p.id
          WHERE sf.project_id = ?
-           AND s.status IN ('translated', 'reviewed', 'needs_review')
-           AND s.target_text != ''
+           AND (s.status IN ('translated', 'reviewed', 'needs_review') OR s.target_text != '')
          ORDER BY sf.file_name, s.rowid",
     )
     .bind(project_id)
@@ -72,9 +92,77 @@ pub async fn collect_qa_details(
     .await?;
 
     let total_checked = rows.len();
+    let ids: Vec<String> = rows.iter().map(|row| row.segment_id.clone()).collect();
+    let engine = rows.first().map(|row| row.engine.as_str()).unwrap_or("");
+    let prompt_contexts = context::build_for_segments(pool, engine, &ids).await?;
+
+    let mut variants =
+        std::collections::HashMap::<(String, String), std::collections::HashSet<String>>::new();
+    for row in &rows {
+        if engine == "mv_mz"
+            && context::mv_mz_context_class(&row.segment_kind) == PromptContextClass::Canonical
+            && !row.target_text.trim().is_empty()
+        {
+            variants
+                .entry((row.segment_kind.clone(), row.source_text.clone()))
+                .or_default()
+                .insert(row.target_text.trim().to_string());
+        }
+    }
+
     let mut details = Vec::new();
-    for row in rows {
-        let result = qa::check(&row.source_text, &row.target_text, terms, &row.engine);
+    let mut ok_count = 0_i64;
+    let mut critical_count = 0_i64;
+    let mut errors_by_type = std::collections::HashMap::<String, usize>::new();
+    let mut updates = Vec::with_capacity(total_checked);
+    for (index, row) in rows.into_iter().enumerate() {
+        let prompt_context = prompt_contexts.get(index).and_then(Option::as_ref);
+        let neighbor_sources: Vec<String> = prompt_context
+            .into_iter()
+            .flat_map(|value| value.previous.iter().chain(&value.following))
+            .map(|neighbor| neighbor.text.clone())
+            .collect();
+        let semantic_context = QaSemanticContext {
+            source_language: &row.source_language,
+            target_language: &row.target_language,
+            segment_kind: &row.segment_kind,
+            neighbor_sources: &neighbor_sources,
+        };
+        let mut result = qa::check_with_context(
+            &row.source_text,
+            &row.target_text,
+            terms,
+            &row.engine,
+            &semantic_context,
+        );
+        let variant_count = variants
+            .get(&(row.segment_kind.clone(), row.source_text.clone()))
+            .map_or(0, std::collections::HashSet::len);
+        if variant_count > 1 {
+            result.add_error(QaError::InconsistentRepeatedSource {
+                variants: variant_count,
+            });
+        }
+        let critical = result.has_critical_errors();
+        if critical {
+            critical_count += 1;
+        }
+        if result.score == 100 {
+            ok_count += 1;
+        }
+        for error in &result.errors {
+            *errors_by_type
+                .entry(error.type_key().to_string())
+                .or_default() += 1;
+        }
+        let next_status = if critical {
+            "needs_review"
+        } else if row.status == "reviewed" {
+            "reviewed"
+        } else {
+            "translated"
+        };
+        updates.push((row.segment_id.clone(), result.score, next_status));
         if result.score < 100 {
             details.push(QaSegmentDetail {
                 segment_id: row.segment_id,
@@ -87,7 +175,31 @@ pub async fn collect_qa_details(
             });
         }
     }
-    Ok((total_checked, details))
+
+    let mut transaction = pool.begin().await?;
+    for (segment_id, score, status) in updates {
+        sqlx::query(
+            "UPDATE segments SET qa_score = ?, status = ?, updated_at = datetime('now') \
+             WHERE id = ?",
+        )
+        .bind(i64::from(score))
+        .bind(status)
+        .bind(segment_id)
+        .execute(&mut *transaction)
+        .await?;
+    }
+    transaction.commit().await?;
+
+    Ok((
+        QaReport {
+            total_segments: total_checked as i64,
+            ok_count,
+            error_count: details.len() as i64,
+            critical_count,
+            errors_by_type,
+        },
+        details,
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +215,7 @@ struct Labels {
     line_long: &'static str,
     bom: &'static str,
     glossary: &'static str,
+    semantic: &'static str,
     filter_file: &'static str,
     filter_all_files: &'static str,
     filter_score: &'static str,
@@ -121,6 +234,12 @@ struct Labels {
     err_line_long: &'static str,
     err_bom: &'static str,
     err_glossary: &'static str,
+    err_empty: &'static str,
+    err_unchanged: &'static str,
+    err_source_script: &'static str,
+    err_expansion: &'static str,
+    err_context: &'static str,
+    err_inconsistent: &'static str,
 }
 
 fn labels(lang: &str) -> Labels {
@@ -134,6 +253,7 @@ fn labels(lang: &str) -> Labels {
             line_long: "Ligne trop longue",
             bom: "BOM UTF-8",
             glossary: "Terme glossaire non respecté",
+            semantic: "Erreurs sémantiques critiques",
             filter_file: "Fichier :",
             filter_all_files: "Tous les fichiers",
             filter_score: "Score :",
@@ -152,6 +272,12 @@ fn labels(lang: &str) -> Labels {
             err_line_long: "Ligne trop longue",
             err_bom: "BOM UTF-8",
             err_glossary: "Glossaire",
+            err_empty: "Vide",
+            err_unchanged: "Source inchangée",
+            err_source_script: "Écriture source",
+            err_expansion: "Expansion",
+            err_context: "Fuite de contexte",
+            err_inconsistent: "Incohérence répétée",
         }
     } else {
         Labels {
@@ -163,6 +289,7 @@ fn labels(lang: &str) -> Labels {
             line_long: "Line too long",
             bom: "BOM detected",
             glossary: "Glossary mismatch",
+            semantic: "Critical semantic errors",
             filter_file: "File:",
             filter_all_files: "All files",
             filter_score: "Score:",
@@ -181,6 +308,12 @@ fn labels(lang: &str) -> Labels {
             err_line_long: "Line too long",
             err_bom: "BOM detected",
             err_glossary: "Glossary mismatch",
+            err_empty: "Empty",
+            err_unchanged: "Unchanged source",
+            err_source_script: "Source script",
+            err_expansion: "Expansion",
+            err_context: "Context leak",
+            err_inconsistent: "Repeated inconsistency",
         }
     }
 }
@@ -238,6 +371,7 @@ pub fn generate_qa_html(
     let mut count_line_long: usize = 0;
     let mut count_bom: usize = 0;
     let mut count_glossary: usize = 0;
+    let mut count_semantic: usize = 0;
 
     for d in details {
         for e in &d.errors {
@@ -246,6 +380,12 @@ pub fn generate_qa_html(
                 QaError::LineTooLong { .. } => count_line_long += 1,
                 QaError::BomDetected => count_bom += 1,
                 QaError::GlossaryMismatch { .. } => count_glossary += 1,
+                QaError::EmptyTranslation
+                | QaError::UnchangedSource
+                | QaError::SourceScriptRemaining { .. }
+                | QaError::SuspiciousExpansion { .. }
+                | QaError::ContextLeak { .. }
+                | QaError::InconsistentRepeatedSource { .. } => count_semantic += 1,
             }
         }
     }
@@ -303,6 +443,7 @@ td{{padding:7px 10px;vertical-align:top}}
 .err-dot.line_too_long{{background:#f59e0b}}
 .err-dot.bom_detected{{background:#f59e0b}}
 .err-dot.glossary_mismatch{{background:#a78bfa}}
+.err-dot.empty_translation,.err-dot.unchanged_source,.err-dot.source_script_remaining,.err-dot.suspicious_expansion,.err-dot.context_leak,.err-dot.inconsistent_repeated_source{{background:#ef4444}}
 .source-text,.target-text{{max-width:280px;word-break:break-word;white-space:pre-wrap;font-family:monospace;font-size:11px;color:#ddd}}
 .source-text{{color:#94a3b8}}
 .no-data{{text-align:center;padding:40px;color:#666;font-size:14px}}
@@ -333,6 +474,7 @@ td{{padding:7px 10px;vertical-align:top}}
 <div class="stat"><span class="stat-label">{lbl_line_long}</span><span class="stat-value orange">{count_line_long}</span></div>
 <div class="stat"><span class="stat-label">{lbl_bom}</span><span class="stat-value orange">{count_bom}</span></div>
 <div class="stat"><span class="stat-label">{lbl_glossary}</span><span class="stat-value blue">{count_glossary}</span></div>
+<div class="stat"><span class="stat-label">{lbl_semantic}</span><span class="stat-value red">{count_semantic}</span></div>
 </div>
 "#,
         lbl_missing_ph = lbl.missing_ph,
@@ -343,6 +485,8 @@ td{{padding:7px 10px;vertical-align:top}}
         count_bom = count_bom,
         lbl_glossary = lbl.glossary,
         count_glossary = count_glossary,
+        lbl_semantic = lbl.semantic,
+        count_semantic = count_semantic,
     );
 
     if details.is_empty() {
@@ -389,6 +533,12 @@ td{{padding:7px 10px;vertical-align:top}}
 <label><input type="checkbox" class="err-filter" value="line_too_long" checked> {err_line_long}</label>
 <label><input type="checkbox" class="err-filter" value="bom_detected" checked> {err_bom}</label>
 <label><input type="checkbox" class="err-filter" value="glossary_mismatch" checked> {err_glossary}</label>
+<label><input type="checkbox" class="err-filter" value="empty_translation" checked> {err_empty}</label>
+<label><input type="checkbox" class="err-filter" value="unchanged_source" checked> {err_unchanged}</label>
+<label><input type="checkbox" class="err-filter" value="source_script_remaining" checked> {err_source_script}</label>
+<label><input type="checkbox" class="err-filter" value="suspicious_expansion" checked> {err_expansion}</label>
+<label><input type="checkbox" class="err-filter" value="context_leak" checked> {err_context}</label>
+<label><input type="checkbox" class="err-filter" value="inconsistent_repeated_source" checked> {err_inconsistent}</label>
 </div>
 </div>
 "#,
@@ -400,6 +550,12 @@ td{{padding:7px 10px;vertical-align:top}}
         err_line_long = lbl.err_line_long,
         err_bom = lbl.err_bom,
         err_glossary = lbl.err_glossary,
+        err_empty = lbl.err_empty,
+        err_unchanged = lbl.err_unchanged,
+        err_source_script = lbl.err_source_script,
+        err_expansion = lbl.err_expansion,
+        err_context = lbl.err_context,
+        err_inconsistent = lbl.err_inconsistent,
     );
 
     // Table

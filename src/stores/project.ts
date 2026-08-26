@@ -8,6 +8,8 @@ import type {
   ProjectStats,
   SourceFile,
 } from "@/lib/types";
+import { useSettingsStore } from "@/stores/settings";
+import { useUiStore } from "@/stores/ui";
 
 interface ProjectState {
   projects: Project[];
@@ -38,7 +40,20 @@ export const useProjectStore = create<ProjectState>()((set) => ({
   isExtractingGlossary: false,
 
   addProject: (project) =>
-    set((state) => ({ projects: [...state.projects, project] })),
+    set((state) => {
+      const existingIndex = state.projects.findIndex(
+        (candidate) => candidate.id === project.id,
+      );
+      if (existingIndex === -1) {
+        return { projects: [...state.projects, project] };
+      }
+
+      return {
+        projects: state.projects.map((candidate, index) =>
+          index === existingIndex ? project : candidate,
+        ),
+      };
+    }),
 
   setActiveProject: (id) => set({ activeProjectId: id }),
 
@@ -77,16 +92,40 @@ export const useIsExtractingGlossary = () =>
 export const useActiveProjectStats = () =>
   useProjectStore((s) => s.activeProjectStats);
 
+export const useActiveLangPair = () =>
+  useProjectStore((state) => {
+    const project = state.projects.find(
+      (candidate) => candidate.id === state.activeProjectId,
+    );
+    return project
+      ? `${project.sourceLang}-${project.targetLang}`
+      : `${useSettingsStore.getState().settings.defaultSourceLang}-${useSettingsStore.getState().settings.defaultTargetLang}`;
+  });
+
+export function getProjectLangPair(projectId: string): string {
+  const project = useProjectStore
+    .getState()
+    .projects.find((candidate) => candidate.id === projectId);
+  if (project) return `${project.sourceLang}-${project.targetLang}`;
+  const settings = useSettingsStore.getState().settings;
+  return `${settings.defaultSourceLang}-${settings.defaultTargetLang}`;
+}
+
 // Thunk: open a game folder via Tauri and register the project in the store.
 export async function openProject(
   gamePath: string,
 ): Promise<OpenProjectResult> {
+  const { defaultSourceLang, defaultTargetLang } =
+    useSettingsStore.getState().settings;
   const result = await invoke<OpenProjectResult>("open_project", {
     path: gamePath,
+    sourceLang: defaultSourceLang,
+    targetLang: defaultTargetLang,
   });
   const { project, wasRestored } = result;
   useProjectStore.getState().addProject(project);
   useProjectStore.getState().setActiveProject(project.id);
+  useUiStore.getState().setMode("patch");
   if (!wasRestored) {
     useProjectStore.getState().setPendingGlossaryExtract(project.id);
   }

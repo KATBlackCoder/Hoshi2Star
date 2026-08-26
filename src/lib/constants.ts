@@ -1,9 +1,67 @@
 // LLM provider defaults — single TS source of truth.
 // DEFAULT_OLLAMA_MODEL MUST match the Rust constant of the same name in
 // src-tauri/src/llm/provider.rs (mirrored there for backend fallbacks).
-export const DEFAULT_OLLAMA_URL = "http://localhost:11434";
+export const DEFAULT_OLLAMA_URL = "http://localhost:11434/v1";
 export const DEFAULT_OLLAMA_MODEL = "gemma4:e4b";
 export const DEFAULT_BATCH_SIZE = 20;
+
+export const RESOURCE_PROFILES = [
+  { id: "eco", batchSize: 8 },
+  { id: "balanced", batchSize: DEFAULT_BATCH_SIZE },
+  { id: "fast", batchSize: 50 },
+] as const;
+
+export const PROVIDER_PRESETS = [
+  {
+    id: "ollama",
+    label: "Ollama",
+    url: DEFAULT_OLLAMA_URL,
+    model: DEFAULT_OLLAMA_MODEL,
+    requiresApiKey: false,
+  },
+  {
+    id: "lmstudio",
+    label: "LM Studio",
+    url: "http://localhost:1234/v1",
+    model: "",
+    requiresApiKey: false,
+  },
+  {
+    id: "huggingface",
+    label: "Hugging Face",
+    url: "https://router.huggingface.co/v1",
+    model: "Qwen/Qwen3-8B",
+    requiresApiKey: true,
+  },
+  {
+    id: "openai",
+    label: "OpenAI",
+    url: "https://api.openai.com/v1",
+    model: "",
+    requiresApiKey: true,
+  },
+  {
+    id: "custom",
+    label: "Cloud / compatible",
+    url: "",
+    model: "",
+    requiresApiKey: true,
+  },
+] as const;
+
+export type ProviderId = (typeof PROVIDER_PRESETS)[number]["id"];
+
+export const GAME_LANGUAGES = [
+  { code: "ja", label: "日本語" },
+  { code: "en", label: "English" },
+  { code: "fr", label: "Français" },
+  { code: "es", label: "Español" },
+  { code: "de", label: "Deutsch" },
+  { code: "it", label: "Italiano" },
+  { code: "pt", label: "Português" },
+  { code: "ko", label: "한국어" },
+  { code: "zh", label: "中文" },
+] as const;
 
 // RPG Maker MV/MZ placeholder pattern — single source of truth.
 // Used in columns.tsx (buildHighlightedNodes).

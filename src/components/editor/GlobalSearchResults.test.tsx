@@ -48,6 +48,12 @@ function makeHit(
     sourceFileId: fileId,
     jsonKey: `/k/${id}`,
     sourceText: `ソース ${id}`,
+    segmentKind: "unknown",
+    sceneId: null,
+    sequenceIndex: null,
+    speaker: null,
+    branchPath: null,
+    contextJson: null,
     targetText: `target ${id}`,
     status: "translated",
     qaScore: null,
@@ -110,7 +116,12 @@ describe("GlobalSearchResults — cross-file selection + batch translate", () =>
     const startTranslation = vi.fn(async () => {});
     useLlmStore.setState({
       startTranslation,
-      providerConfig: { url: "u", model: "m", batchSize: 1 },
+      providerConfig: {
+        url: "u",
+        model: "m",
+        batchSize: 1,
+        resourceProfile: "balanced",
+      },
     });
     const user = userEvent.setup();
     render(<GlobalSearchResults />);
@@ -132,7 +143,12 @@ describe("GlobalSearchResults — cross-file selection + batch translate", () =>
     const startTranslation = vi.fn(async () => {});
     useLlmStore.setState({
       startTranslation,
-      providerConfig: { url: "u", model: "m", batchSize: 1 },
+      providerConfig: {
+        url: "u",
+        model: "m",
+        batchSize: 1,
+        resourceProfile: "balanced",
+      },
     });
     const user = userEvent.setup();
     render(<GlobalSearchResults />);
@@ -168,7 +184,12 @@ describe("GlobalSearchResults — cross-file selection + batch translate", () =>
     const startTranslation = vi.fn(async () => {});
     useLlmStore.setState({
       startTranslation,
-      providerConfig: { url: "u", model: "m", batchSize: 1 },
+      providerConfig: {
+        url: "u",
+        model: "m",
+        batchSize: 1,
+        resourceProfile: "balanced",
+      },
     });
     const user = userEvent.setup();
     render(<GlobalSearchResults />);
@@ -200,7 +221,12 @@ describe("GlobalSearchResults — row click navigation", () => {
   it("selection mode: with ≥1 checked, row click toggles instead of navigating", async () => {
     useLlmStore.setState({
       startTranslation: vi.fn(async () => {}),
-      providerConfig: { url: "u", model: "m", batchSize: 1 },
+      providerConfig: {
+        url: "u",
+        model: "m",
+        batchSize: 1,
+        resourceProfile: "balanced",
+      },
     });
     const user = userEvent.setup();
     render(<GlobalSearchResults />);
@@ -255,7 +281,12 @@ describe("GlobalSearchResults — collapse/expand per file", () => {
   it("collapsing does not touch the selection (header select still works)", async () => {
     useLlmStore.setState({
       startTranslation: vi.fn(async () => {}),
-      providerConfig: { url: "u", model: "m", batchSize: 1 },
+      providerConfig: {
+        url: "u",
+        model: "m",
+        batchSize: 1,
+        resourceProfile: "balanced",
+      },
     });
     const user = userEvent.setup();
     render(<GlobalSearchResults />);

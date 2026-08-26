@@ -364,7 +364,7 @@ async fn fetch_by_id(pool: &SqlitePool, id: &str) -> Result<GlossaryTerm, sqlx::
 mod tests {
     use super::*;
     use crate::db::pool::init;
-    use crate::llm::provider::OllamaProvider;
+    use crate::llm::provider::OpenAiCompatibleProvider;
     use httpmock::prelude::*;
     use serde_json::json;
     use std::time::Duration;
@@ -444,8 +444,13 @@ mod tests {
 
     // ---- Extraction tests --------------------------------------------------
 
-    fn make_provider(server: &MockServer) -> OllamaProvider {
-        OllamaProvider::new(&server.base_url(), "test-model", Duration::from_secs(5))
+    fn make_provider(server: &MockServer) -> OpenAiCompatibleProvider {
+        OpenAiCompatibleProvider::new(
+            &server.base_url(),
+            "test-model",
+            None,
+            Duration::from_secs(5),
+        )
     }
 
     async fn insert_actor_segment(db: &SqlitePool, project_id: &str) {
@@ -484,12 +489,12 @@ mod tests {
 
         let server = MockServer::start();
         server.mock(|when, then| {
-            when.method(POST).path("/api/chat");
+            when.method(POST).path("/v1/chat/completions");
             then.status(200).json_body(json!({
-                "message": {
+                "choices": [{ "message": {
                     "role": "assistant",
                     "content": r#"[{"source":"勇者","target":"Hero","domain":"character"}]"#
-                }
+                } }]
             }));
         });
 
@@ -513,12 +518,12 @@ mod tests {
 
         let server = MockServer::start();
         server.mock(|when, then| {
-            when.method(POST).path("/api/chat");
+            when.method(POST).path("/v1/chat/completions");
             then.status(200).json_body(json!({
-                "message": {
+                "choices": [{ "message": {
                     "role": "assistant",
                     "content": "Sorry, I cannot help with that."
-                }
+                } }]
             }));
         });
 
@@ -548,12 +553,12 @@ mod tests {
 
         let server = MockServer::start();
         server.mock(|when, then| {
-            when.method(POST).path("/api/chat");
+            when.method(POST).path("/v1/chat/completions");
             then.status(200).json_body(json!({
-                "message": {
+                "choices": [{ "message": {
                     "role": "assistant",
                     "content": serde_json::to_string(&many_terms).unwrap()
-                }
+                } }]
             }));
         });
 

@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import i18n from "@/lib/i18n";
 import { FileTree } from "@/components/editor/FileTree";
 import { useProjectStore } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
@@ -30,7 +29,7 @@ beforeEach(() => {
 });
 
 describe("FileTree — Option 2 counters (Phase 5)", () => {
-  it("shows ✓ N · ⚠ M and hides the inject button while needs_review remains", () => {
+  it("shows ✓ N · ⚠ M while needs_review remains", () => {
     useProjectStore.setState({
       sourceFiles: [
         makeFile({ translatedCount: 5, needsReviewCount: 2, totalCount: 7 }),
@@ -40,13 +39,9 @@ describe("FileTree — Option 2 counters (Phase 5)", () => {
 
     expect(screen.getByText("✓ 5")).toBeInTheDocument();
     expect(screen.getByText("⚠ 2")).toBeInTheDocument();
-    // Not strictly complete → no debug-inject button.
-    expect(
-      screen.queryByTitle(i18n.t("fileTree.debugInject")),
-    ).not.toBeInTheDocument();
   });
 
-  it("shows the inject button only when every segment is strictly translated", () => {
+  it("shows the translated count when every segment is translated", () => {
     useProjectStore.setState({
       sourceFiles: [
         makeFile({ translatedCount: 7, needsReviewCount: 0, totalCount: 7 }),
@@ -55,9 +50,6 @@ describe("FileTree — Option 2 counters (Phase 5)", () => {
     render(<FileTree />);
 
     expect(screen.getByText("✓ 7")).toBeInTheDocument();
-    expect(
-      screen.getByTitle(i18n.t("fileTree.debugInject")),
-    ).toBeInTheDocument();
   });
 
   it("shows no counters on an untouched file", () => {

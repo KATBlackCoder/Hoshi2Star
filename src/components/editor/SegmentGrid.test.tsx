@@ -27,10 +27,14 @@ vi.mock("sonner", () => ({
   },
 }));
 
-import { SegmentGrid } from "@/components/editor/SegmentGrid";
+import {
+  applySegmentUpdates,
+  SegmentGrid,
+} from "@/components/editor/SegmentGrid";
 import { useProjectStore } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { useLlmStore } from "@/stores/llm";
+import { useUiStore } from "@/stores/ui";
 import type { Segment } from "@/lib/types";
 
 const initialProject = useProjectStore.getState();
@@ -53,12 +57,15 @@ const SEGMENTS: Segment[] = Array.from({ length: 5 }, (_, i) => ({
  * regardless of the requested pageSize — the loader must keep fetching
  * pages until `total` is reached (Phase 3 fix).
  */
-function mockGridIpc(opts?: { failSave?: boolean }) {
+function mockGridIpc(opts?: { failSave?: boolean; failFirstLoad?: boolean }) {
   const calls = { getSegments: 0 };
   mockIPC((cmd, args) => {
     switch (cmd) {
       case "get_segments": {
         calls.getSegments += 1;
+        if (opts?.failFirstLoad && calls.getSegments === 1) {
+          throw new Error("database unavailable");
+        }
         const { page } = args as { page: number };
         const chunk = 2;
         return {
@@ -93,6 +100,7 @@ beforeEach(() => {
   useEditorStore.setState(initialEditor, true);
   useProjectStore.setState({ activeProjectId: "p1" });
   useEditorStore.setState({ activeFileId: "f1" });
+  useUiStore.setState({ gridDensity: "comfortable" });
 });
 
 describe("SegmentGrid — successive page loading (Phase 3)", () => {
@@ -110,13 +118,43 @@ describe("SegmentGrid — successive page loading (Phase 3)", () => {
   });
 });
 
+describe("SegmentGrid — coalesced translation updates", () => {
+  it("applies the latest update per stable segment id", () => {
+    const updates = new Map([
+      [
+        "s1",
+        { id: "s1", targetText: "first", status: "translated" as const },
+      ],
+      [
+        "s3",
+        { id: "s3", targetText: "third", status: "needs_review" as const },
+      ],
+    ]);
+
+    const result = applySegmentUpdates(SEGMENTS, updates);
+
+    expect(result.map((segment) => segment.id)).toEqual(
+      SEGMENTS.map((segment) => segment.id),
+    );
+    expect(result[0].targetText).toBe("first");
+    expect(result[2].targetText).toBe("third");
+    expect(result[2].status).toBe("needs_review");
+    expect(result[1]).toBe(SEGMENTS[1]);
+  });
+});
+
 describe("SegmentGrid — selection keyed by segment id + reset (Phase 3)", () => {
   it("translates the checked SEGMENT IDS (not row indexes) and resets on search change", async () => {
     mockGridIpc();
     const startTranslation = vi.fn(async () => {});
     useLlmStore.setState({
       startTranslation,
-      providerConfig: { url: "u", model: "m", batchSize: 1 },
+      providerConfig: {
+        url: "u",
+        model: "m",
+        batchSize: 1,
+        resourceProfile: "balanced",
+      },
     });
     const user = userEvent.setup();
     render(<SegmentGrid />);
@@ -159,5 +197,40 @@ describe("SegmentGrid — save failure surfaces a toast (Phase 3)", () => {
     expect(String(toastError.mock.calls[0][0])).toContain(
       i18n.t("segmentGrid.saveError", { error: "" }).slice(0, 20),
     );
+  });
+});
+
+describe("SegmentGrid — recoverable loading error", () => {
+  it("shows the failure and loads the file after retry", async () => {
+    mockGridIpc({ failFirstLoad: true });
+    const user = userEvent.setup();
+    render(<SegmentGrid />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(i18n.t("segmentGrid.loadError"));
+    expect(alert).toHaveTextContent("database unavailable");
+
+    await user.click(
+      screen.getByRole("button", { name: i18n.t("segmentGrid.retry") }),
+    );
+    expect(await screen.findByDisplayValue("target 5")).toBeInTheDocument();
+  });
+});
+
+describe("SegmentGrid — row density", () => {
+  it("switches between comfortable and compact rows", async () => {
+    mockGridIpc();
+    const user = userEvent.setup();
+    render(<SegmentGrid />);
+    await screen.findByDisplayValue("target 1");
+
+    const compact = screen.getByRole("button", {
+      name: i18n.t("segmentGrid.density.compact"),
+    });
+    expect(compact).toHaveAttribute("aria-pressed", "false");
+
+    await user.click(compact);
+    expect(useUiStore.getState().gridDensity).toBe("compact");
+    expect(compact).toHaveAttribute("aria-pressed", "true");
   });
 });

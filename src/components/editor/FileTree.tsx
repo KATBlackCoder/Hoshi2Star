@@ -1,16 +1,11 @@
-import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
-import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { FontSizeDialog } from "@/components/FontSizeDialog";
 import { useSourceFiles } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { cn } from "@/lib/utils";
 import { formatDuration } from "@/lib/format";
 import { STATUS_SUMMARY } from "@/lib/statusSummary";
-import type { FontScanResult } from "@/lib/types";
 import {
   FileText,
   Users,
@@ -24,8 +19,6 @@ import {
   Settings,
   MessageSquare,
   Database,
-  FlaskConical,
-  Loader2,
 } from "lucide-react";
 
 function fileIcon(fileType: string) {
@@ -95,63 +88,6 @@ export function FileTree() {
   const files = useSourceFiles();
   const activeFileId = useEditorStore((s) => s.activeFileId);
   const setActiveFile = useEditorStore((s) => s.setActiveFile);
-  const [injectingId, setInjectingId] = useState<string | null>(null);
-  const [pendingInjectId, setPendingInjectId] = useState<string | null>(null);
-  const [fontScan, setFontScan] = useState<FontScanResult | null>(null);
-
-  async function doInject(
-    fileId: string,
-    fontSize: number | null,
-    replaceExisting: boolean,
-  ) {
-    setInjectingId(fileId);
-    try {
-      const path = await invoke<string>("debug_inject_file", {
-        sourceFileId: fileId,
-        fontSize,
-        replaceExisting,
-      });
-      toast.success(t("fileTree.debugInjectDone", { path }));
-    } catch (err) {
-      toast.error(t("fileTree.debugInjectError", { error: String(err) }));
-    } finally {
-      setInjectingId(null);
-    }
-  }
-
-  async function handleDebugInject(fileId: string, fileType: string) {
-    if (injectingId) return;
-    // Font size dialog only makes sense for Wolf RPG (\f[N] control code)
-    if (!fileType.startsWith("wolf_")) {
-      await doInject(fileId, null, false);
-      return;
-    }
-    try {
-      const scan = await invoke<FontScanResult>("scan_font_status", {
-        sourceFileId: fileId,
-      });
-      setPendingInjectId(fileId);
-      setFontScan(scan);
-    } catch {
-      // scan failure is non-fatal — inject without font dialog
-      await doInject(fileId, null, false);
-    }
-  }
-
-  function handleFontApply(fontSize: number, replaceExisting: boolean) {
-    const fileId = pendingInjectId;
-    setPendingInjectId(null);
-    setFontScan(null);
-    if (fileId) void doInject(fileId, fontSize, replaceExisting);
-  }
-
-  function handleFontSkip() {
-    const fileId = pendingInjectId;
-    setPendingInjectId(null);
-    setFontScan(null);
-    if (fileId) void doInject(fileId, null, false);
-  }
-
   if (files.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-4">
@@ -163,91 +99,55 @@ export function FileTree() {
   }
 
   return (
-    <>
-      {fontScan && (
-        <FontSizeDialog
-          open={!!pendingInjectId}
-          scan={fontScan}
-          onApply={handleFontApply}
-          onSkip={handleFontSkip}
-        />
-      )}
-      <ScrollArea className="h-full">
-        <div className="p-2 space-y-0.5">
-          {files.map((file) => {
-            // Strict: every segment must be status='translated' — a file with
-            // pending needs_review is NOT complete (no inject button).
-            const isComplete =
-              file.totalCount > 0 && file.translatedCount === file.totalCount;
-            return (
-              <div
-                key={file.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => setActiveFile(file.id)}
-                onKeyDown={(e) => e.key === "Enter" && setActiveFile(file.id)}
-                className={cn(
-                  "group flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs",
-                  "hover:bg-accent hover:text-accent-foreground transition-[background-color,color,transform] cursor-pointer active:scale-[0.96]",
-                  activeFileId === file.id &&
-                    "bg-accent text-accent-foreground font-medium",
-                )}
-              >
-                {fileIcon(file.fileType)}
-                <span className="truncate flex-1">{file.fileName}</span>
-                {(file.translatedCount > 0 || file.needsReviewCount > 0) && (
-                  <span className="shrink-0 font-mono text-[10px] tabular-nums opacity-80">
-                    {file.translatedCount > 0 && (
-                      <span className={STATUS_SUMMARY.translated.className}>
-                        {STATUS_SUMMARY.translated.glyph} {file.translatedCount}
-                      </span>
-                    )}
-                    {file.translatedCount > 0 && file.needsReviewCount > 0 && (
-                      <span className="text-muted-foreground"> · </span>
-                    )}
-                    {file.needsReviewCount > 0 && (
-                      <span className={STATUS_SUMMARY.needsReview.className}>
-                        {STATUS_SUMMARY.needsReview.glyph}{" "}
-                        {file.needsReviewCount}
-                      </span>
-                    )}
-                  </span>
-                )}
-                {file.translationSecs !== null &&
-                  file.translationSecs !== undefined && (
-                    <Badge
-                      variant="secondary"
-                      className="shrink-0 text-[10px] opacity-70 px-1 py-0"
-                    >
-                      {formatDuration(file.translationSecs)}
-                    </Badge>
+    <ScrollArea className="h-full">
+      <div className="p-2 space-y-0.5">
+        {files.map((file) => {
+          return (
+            <div
+              key={file.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => setActiveFile(file.id)}
+              onKeyDown={(e) => e.key === "Enter" && setActiveFile(file.id)}
+              className={cn(
+                "group flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs",
+                "hover:bg-accent hover:text-accent-foreground transition-[background-color,color,transform] cursor-pointer active:scale-[0.96]",
+                activeFileId === file.id &&
+                  "bg-accent text-accent-foreground font-medium",
+              )}
+            >
+              {fileIcon(file.fileType)}
+              <span className="truncate flex-1">{file.fileName}</span>
+              {(file.translatedCount > 0 || file.needsReviewCount > 0) && (
+                <span className="shrink-0 font-mono text-[10px] tabular-nums opacity-80">
+                  {file.translatedCount > 0 && (
+                    <span className={STATUS_SUMMARY.translated.className}>
+                      {STATUS_SUMMARY.translated.glyph} {file.translatedCount}
+                    </span>
                   )}
-                {isComplete && (
-                  <button
-                    type="button"
-                    className={cn(
-                      "shrink-0 p-1 rounded transition-[opacity,color,transform] text-violet-400 hover:text-violet-300 active:scale-[0.96]",
-                      "opacity-0 group-hover:opacity-100",
-                    )}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void handleDebugInject(file.id, file.fileType);
-                    }}
-                    disabled={injectingId === file.id}
-                    title={t("fileTree.debugInject")}
+                  {file.translatedCount > 0 && file.needsReviewCount > 0 && (
+                    <span className="text-muted-foreground"> · </span>
+                  )}
+                  {file.needsReviewCount > 0 && (
+                    <span className={STATUS_SUMMARY.needsReview.className}>
+                      {STATUS_SUMMARY.needsReview.glyph} {file.needsReviewCount}
+                    </span>
+                  )}
+                </span>
+              )}
+              {file.translationSecs !== null &&
+                file.translationSecs !== undefined && (
+                  <Badge
+                    variant="secondary"
+                    className="shrink-0 text-[10px] opacity-70 px-1 py-0"
                   >
-                    {injectingId === file.id ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <FlaskConical className="h-3 w-3" />
-                    )}
-                  </button>
+                    {formatDuration(file.translationSecs)}
+                  </Badge>
                 )}
-              </div>
-            );
-          })}
-        </div>
-      </ScrollArea>
-    </>
+            </div>
+          );
+        })}
+      </div>
+    </ScrollArea>
   );
 }

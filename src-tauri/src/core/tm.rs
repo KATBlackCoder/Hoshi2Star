@@ -13,7 +13,8 @@
 use crate::utils::text::escape_xml;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sqlx::{FromRow, SqlitePool};
+use sqlx::{FromRow, QueryBuilder, Sqlite, SqlitePool};
+use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -224,6 +225,39 @@ pub async fn lookup_exact(
     .await
 }
 
+/// Exact-match lookup for one translation batch. A pipeline batch is capped at
+/// 100 hashes, well below SQLite's bind-variable limit, so all TM hits can be
+/// resolved with one indexed query instead of one query per segment.
+pub async fn lookup_exact_many(
+    source_hashes: &[String],
+    lang_pair: &str,
+    db: &SqlitePool,
+) -> Result<HashMap<String, TmEntry>, sqlx::Error> {
+    if source_hashes.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut query = QueryBuilder::<Sqlite>::new(
+        "SELECT id, source_hash, source_text, target_text, engine, lang_pair, \
+                confidence, created_at \
+         FROM tm_entries WHERE lang_pair = ",
+    );
+    query.push_bind(lang_pair).push(" AND source_hash IN (");
+    {
+        let mut hashes = query.separated(", ");
+        for hash in source_hashes {
+            hashes.push_bind(hash);
+        }
+    }
+    query.push(")");
+
+    let entries = query.build_query_as::<TmEntry>().fetch_all(db).await?;
+    Ok(entries
+        .into_iter()
+        .map(|entry| (entry.source_hash.clone(), entry))
+        .collect())
+}
+
 // ---------------------------------------------------------------------------
 // TMX export
 // ---------------------------------------------------------------------------
@@ -348,6 +382,39 @@ mod tests {
         assert!(lookup_exact(&hash, "ja-en", &db).await.unwrap().is_some());
         // ja-fr → not found
         assert!(lookup_exact(&hash, "ja-fr", &db).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_lookup_exact_many_is_batched_and_language_scoped() {
+        let (db, _file) = test_db().await;
+        insert("主人公", "Hero", "mv_mz", "ja-en", &db)
+            .await
+            .unwrap();
+        insert("村", "Village", "mv_mz", "ja-en", &db)
+            .await
+            .unwrap();
+        insert("主人公", "Héros", "mv_mz", "ja-fr", &db)
+            .await
+            .unwrap();
+
+        let hashes = vec![
+            hash_source("主人公"),
+            hash_source("村"),
+            hash_source("不在"),
+        ];
+        let hits = lookup_exact_many(&hashes, "ja-en", &db).await.unwrap();
+
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[&hash_source("主人公")].target_text, "Hero");
+        assert_eq!(hits[&hash_source("村")].target_text, "Village");
+        assert!(hits.values().all(|entry| entry.lang_pair == "ja-en"));
+    }
+
+    #[tokio::test]
+    async fn test_lookup_exact_many_empty_input_avoids_query_work() {
+        let (db, _file) = test_db().await;
+        let hits = lookup_exact_many(&[], "ja-en", &db).await.unwrap();
+        assert!(hits.is_empty());
     }
 
     #[tokio::test]

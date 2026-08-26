@@ -647,6 +647,12 @@ mod tests {
     fn test_real_inko_common_events_v3_round_trip() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../test/Densyanai_Inko_ver2.0/Data/BasicData/CommonEvent.dat");
+
+        if !path.exists() {
+            eprintln!("skipping optional real-game fixture: {}", path.display());
+            return;
+        }
+
         let raw = std::fs::read(&path)
             .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
 

@@ -748,6 +748,11 @@ mod tests {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../test/Densyanai_Inko_ver2.0/Data/MapData");
 
+        if !dir.exists() {
+            eprintln!("skipping optional real-game fixtures: {}", dir.display());
+            return;
+        }
+
         let maps = ["Map001.mps", "Map001_1.mps", "Map001_2.mps", "TitleMap.mps"];
 
         for name in maps {

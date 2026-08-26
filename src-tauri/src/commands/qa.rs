@@ -1,11 +1,9 @@
 //! Tauri commands for QA checks and Translation Memory queries.
 
-use std::collections::HashMap;
-
 use sqlx::SqlitePool;
 
 use crate::{
-    core::{glossary, qa, tm},
+    core::{glossary, qa, report, tm},
     domain::types::QaReport,
     state::AppState,
 };
@@ -26,7 +24,7 @@ pub async fn get_tm_suggestions(
 /// Run QA checks on a (source, target) pair and return the result.
 ///
 /// When `project_id` is provided, loads the project glossary (global +
-/// project terms, `ja-en`) and resolves the project engine from the DB so
+/// project terms for that project's language pair) and resolves the project engine from the DB so
 /// live QA matches the batch pipeline. Engine precedence: explicit param >
 /// `projects.engine` > `"mv_mz"`.
 #[tauri::command]
@@ -56,27 +54,53 @@ async fn check_segment_live(
     engine: Option<&str>,
     project_id: Option<&str>,
 ) -> qa::QaResult {
-    let (glossary_terms, db_engine) = match project_id {
+    let (glossary_terms, db_context) = match project_id {
         Some(pid) => {
-            let db_engine: Option<String> =
-                sqlx::query_scalar("SELECT engine FROM projects WHERE id = ?")
-                    .bind(pid)
-                    .fetch_optional(db)
-                    .await
-                    .ok()
-                    .flatten();
-            let terms = glossary::relevant_terms(db, pid, "ja-en", &[source_text]).await;
-            (terms, db_engine)
+            let project_context: Option<(String, String, String)> = sqlx::query_as(
+                "SELECT engine, COALESCE(source_language, 'ja'), \
+                        COALESCE(target_language, 'en') FROM projects WHERE id = ?",
+            )
+            .bind(pid)
+            .fetch_optional(db)
+            .await
+            .ok()
+            .flatten();
+            match project_context {
+                Some((db_engine, source_lang, target_lang)) => {
+                    let lang_pair = format!("{source_lang}-{target_lang}");
+                    let terms = glossary::relevant_terms(db, pid, &lang_pair, &[source_text]).await;
+                    (terms, Some((db_engine, source_lang, target_lang)))
+                }
+                None => (Vec::new(), None),
+            }
         }
         None => (Vec::new(), None),
     };
 
-    let engine = engine
+    let resolved_engine = engine
         .map(str::to_string)
-        .or(db_engine)
+        .or_else(|| db_context.as_ref().map(|value| value.0.clone()))
         .unwrap_or_else(|| "mv_mz".to_string());
-
-    qa::check(source_text, target_text, &glossary_terms, &engine)
+    let source_language = db_context
+        .as_ref()
+        .map(|value| value.1.as_str())
+        .unwrap_or("ja");
+    let target_language = db_context
+        .as_ref()
+        .map(|value| value.2.as_str())
+        .unwrap_or("fr");
+    qa::check_with_context(
+        source_text,
+        target_text,
+        &glossary_terms,
+        &resolved_engine,
+        &qa::QaSemanticContext {
+            source_language,
+            target_language,
+            segment_kind: "unknown",
+            neighbor_sources: &[],
+        },
+    )
 }
 
 /// Return a QA summary for all segments in a project.
@@ -85,60 +109,30 @@ pub async fn get_qa_report(
     project_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<QaReport, String> {
-    let total_segments: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM segments s \
-         JOIN source_files sf ON s.source_file_id = sf.id \
-         WHERE sf.project_id = ?",
+    let project_languages: (String, String) = sqlx::query_as(
+        "SELECT COALESCE(source_language, 'ja'), COALESCE(target_language, 'en') \
+         FROM projects WHERE id = ?",
     )
     .bind(&project_id)
     .fetch_one(&state.db)
     .await
-    .map_err(|e| e.to_string())?;
-
-    let ok_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM segments s \
+    .map_err(|error| error.to_string())?;
+    let sources: Vec<String> = sqlx::query_scalar(
+        "SELECT s.source_text FROM segments s \
          JOIN source_files sf ON s.source_file_id = sf.id \
-         WHERE sf.project_id = ? AND (qa_score = 100 OR qa_score IS NULL)",
-    )
-    .bind(&project_id)
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    // Fetch all non-null qa_score to compute errors_by_type
-    let qa_scores: Vec<i64> = sqlx::query_scalar(
-        "SELECT qa_score FROM segments s \
-         JOIN source_files sf ON s.source_file_id = sf.id \
-         WHERE sf.project_id = ? AND qa_score IS NOT NULL AND qa_score < 100",
+         WHERE sf.project_id = ? AND (s.status != 'untranslated' OR s.target_text != '')",
     )
     .bind(&project_id)
     .fetch_all(&state.db)
     .await
-    .map_err(|e| e.to_string())?;
-
-    let error_count = qa_scores.len() as i64;
-
-    // errors_by_type: approximate from score ranges
-    // (exact type breakdown would require storing error types in DB — F3 improvement)
-    let mut errors_by_type: HashMap<String, usize> = HashMap::new();
-    for score in &qa_scores {
-        if *score <= 75 {
-            *errors_by_type.entry("placeholder".to_string()).or_insert(0) += 1;
-        } else if *score <= 90 {
-            *errors_by_type
-                .entry("line_too_long".to_string())
-                .or_insert(0) += 1;
-        } else {
-            *errors_by_type.entry("bom".to_string()).or_insert(0) += 1;
-        }
-    }
-
-    Ok(QaReport {
-        total_segments,
-        ok_count,
-        error_count,
-        errors_by_type,
-    })
+    .map_err(|error| error.to_string())?;
+    let source_refs: Vec<&str> = sources.iter().map(String::as_str).collect();
+    let lang_pair = format!("{}-{}", project_languages.0, project_languages.1);
+    let terms = glossary::relevant_terms(&state.db, &project_id, &lang_pair, &source_refs).await;
+    let (summary, _) = report::audit_project(&state.db, &project_id, &terms)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(summary)
 }
 
 // ---------------------------------------------------------------------------

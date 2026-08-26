@@ -2,7 +2,11 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { toast } from "sonner";
-import type { ProviderConfig } from "@/lib/types";
+import type {
+  PipelineBatchMetrics,
+  ProviderCallMetrics,
+  ProviderConfig,
+} from "@/lib/types";
 import {
   DEFAULT_BATCH_SIZE,
   DEFAULT_OLLAMA_MODEL,
@@ -32,6 +36,8 @@ interface LlmState {
   translationStartTime: number | null;
   isCooling: boolean;
   cooldownRemaining: number;
+  requestMetrics: ProviderCallMetrics[];
+  pipelineMetrics: PipelineBatchMetrics[];
 
   // Actions
   setProviderConfig: (cfg: Partial<ProviderConfig>) => void;
@@ -44,16 +50,20 @@ interface LlmState {
   reset: () => void;
   startTimer: () => void;
   stopTimer: () => void;
+  appendMetrics: (metrics: ProviderCallMetrics[]) => void;
+  appendPipelineMetrics: (metrics: PipelineBatchMetrics) => void;
 }
 
 // ---------------------------------------------------------------------------
-// Default config — matches OllamaProvider defaults in Rust
+// Default config — Ollama through its OpenAI-compatible endpoint
 // ---------------------------------------------------------------------------
 
 const DEFAULT_CONFIG: ProviderConfig = {
+  providerId: "ollama",
   url: DEFAULT_OLLAMA_URL,
   model: DEFAULT_OLLAMA_MODEL,
   batchSize: DEFAULT_BATCH_SIZE,
+  resourceProfile: "balanced",
 };
 
 // ---------------------------------------------------------------------------
@@ -67,8 +77,10 @@ interface TranslationListenerOpts {
   onProgress: (done: number, total: number) => void;
   onCompleted: () => void;
   onError: (msg: string) => void;
-  onWarning: (segmentId: string) => void;
+  onWarning: (segmentId: string, errorTypes: string[]) => void;
   onCooling?: (remainingSecs: number) => void;
+  onMetrics: (metrics: ProviderCallMetrics[]) => void;
+  onPipelineMetrics: (metrics: PipelineBatchMetrics) => void;
 }
 
 /**
@@ -93,6 +105,13 @@ async function setupTranslationListeners(
   );
 
   fns.push(
+    await listen<PipelineBatchMetrics>(
+      "h2s://llm/pipeline-metrics",
+      (event) => opts.onPipelineMetrics(event.payload),
+    ),
+  );
+
+  fns.push(
     await listen("h2s://llm/completed", () => {
       opts.onCompleted();
       teardown();
@@ -107,12 +126,18 @@ async function setupTranslationListeners(
   );
 
   fns.push(
-    await listen<{ segmentId: string }>(
+    await listen<{ segmentId: string; errorTypes: string[] }>(
       "h2s://llm/placeholder-warning",
       (event) => {
-        opts.onWarning(event.payload.segmentId);
+        opts.onWarning(event.payload.segmentId, event.payload.errorTypes);
       },
     ),
+  );
+
+  fns.push(
+    await listen<ProviderCallMetrics[]>("h2s://llm/metrics", (event) => {
+      opts.onMetrics(event.payload);
+    }),
   );
 
   if (opts.onCooling) {
@@ -139,6 +164,8 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
   translationStartTime: null,
   isCooling: false,
   cooldownRemaining: 0,
+  requestMetrics: [],
+  pipelineMetrics: [],
 
   setProviderConfig: (cfg) =>
     set((s) => ({ providerConfig: { ...s.providerConfig, ...cfg } })),
@@ -147,10 +174,23 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
 
   stopTimer: () => set({ translationStartTime: null }),
 
+  appendMetrics: (metrics) =>
+    set((state) => ({ requestMetrics: [...state.requestMetrics, ...metrics] })),
+  appendPipelineMetrics: (metrics) =>
+    set((state) => ({
+      pipelineMetrics: [...state.pipelineMetrics, metrics],
+    })),
+
   startTranslation: async (segmentIds, fileId) => {
     if (get().isTranslating) return;
 
-    set({ isTranslating: true, translationProgress: 0, error: null });
+    set({
+      isTranslating: true,
+      translationProgress: 0,
+      error: null,
+      requestMetrics: [],
+      pipelineMetrics: [],
+    });
     get().startTimer();
 
     activeTeardown?.();
@@ -181,13 +221,15 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
         toast.error(`Erreur de traduction : ${msg}`, { duration: 6000 });
         activeTeardown = null;
       },
-      onWarning: (segmentId) => {
+      onWarning: (segmentId, errorTypes) => {
         const shortId = segmentId.slice(0, 8);
         toast.warning(
-          `⚠️ Segment ${shortId}… : placeholder non préservé — marqué comme 'À réviser'`,
+          `⚠️ Segment ${shortId}… : contrôle qualité (${errorTypes.join(", ") || "provider"}) — marqué comme 'À réviser'`,
           { duration: 5000 },
         );
       },
+      onMetrics: (metrics) => get().appendMetrics(metrics),
+      onPipelineMetrics: (metrics) => get().appendPipelineMetrics(metrics),
     });
 
     try {
@@ -216,6 +258,8 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
       error: null,
       isCooling: false,
       cooldownRemaining: 0,
+      requestMetrics: [],
+      pipelineMetrics: [],
     });
     get().startTimer();
 
@@ -247,13 +291,15 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
         toast.error(`Erreur de traduction : ${msg}`, { duration: 6000 });
         activeTeardown = null;
       },
-      onWarning: (segmentId) => {
+      onWarning: (segmentId, errorTypes) => {
         const shortId = segmentId.slice(0, 8);
         toast.warning(
-          `⚠️ Segment ${shortId}… : placeholder non préservé — marqué comme 'À réviser'`,
+          `⚠️ Segment ${shortId}… : contrôle qualité (${errorTypes.join(", ") || "provider"}) — marqué comme 'À réviser'`,
           { duration: 5000 },
         );
       },
+      onMetrics: (metrics) => get().appendMetrics(metrics),
+      onPipelineMetrics: (metrics) => get().appendPipelineMetrics(metrics),
       onCooling: (remainingSecs) => {
         set({ isCooling: remainingSecs > 0, cooldownRemaining: remainingSecs });
       },
@@ -287,6 +333,8 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
       translationStartTime: null,
       isCooling: false,
       cooldownRemaining: 0,
+      requestMetrics: [],
+      pipelineMetrics: [],
     }),
 }));
 
@@ -300,3 +348,5 @@ export const useTranslationStartTime = () =>
 export const useIsCooling = () => useLlmStore((s) => s.isCooling);
 export const useCooldownRemaining = () =>
   useLlmStore((s) => s.cooldownRemaining);
+export const useRequestMetrics = () => useLlmStore((s) => s.requestMetrics);
+export const usePipelineMetrics = () => useLlmStore((s) => s.pipelineMetrics);

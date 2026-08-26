@@ -1,24 +1,23 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { Moon, Sun, X } from "lucide-react";
+import { BrainCircuit, Languages, Palette, Wrench, X } from "lucide-react";
 import { toast } from "sonner";
+import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
+import { LanguageSettings } from "@/components/settings/LanguageSettings";
+import { ProviderSettings } from "@/components/settings/ProviderSettings";
+import { DeveloperSettings } from "@/components/settings/DeveloperSettings";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { PROVIDER_PRESETS, type ProviderId } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  useSettingsStore,
-  useSettings,
-  applyThemeToDom,
   DEFAULT_SETTINGS,
+  applyThemeToDom,
   type AppSettings,
+  type Language,
+  type Theme,
+  useSettings,
+  useSettingsStore,
 } from "@/stores/settings";
 
 interface SettingsModalProps {
@@ -26,60 +25,76 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
+type SettingsSection = "provider" | "languages" | "appearance" | "developer";
+
+const SECTIONS = [
+  { id: "provider", labelKey: "settings.tabs.provider", icon: BrainCircuit },
+  { id: "languages", labelKey: "settings.tabs.languages", icon: Languages },
+  { id: "appearance", labelKey: "settings.tabs.appearance", icon: Palette },
+  { id: "developer", labelKey: "settings.tabs.developer", icon: Wrench },
+] as const;
+
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const { t, i18n } = useTranslation();
   const currentSettings = useSettings();
-  const { saveSettings } = useSettingsStore();
-
+  const saveSettings = useSettingsStore((state) => state.saveSettings);
   const [draft, setDraft] = useState<AppSettings>(currentSettings);
   const [originalSettings, setOriginalSettings] =
     useState<AppSettings>(currentSettings);
-
+  const [activeSection, setActiveSection] =
+    useState<SettingsSection>("provider");
   const [models, setModels] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
-
   const [mounted, setMounted] = useState(open);
-  const [visible, setVisible] = useState(false);
-  const rafRef = useRef(0);
 
   useEffect(() => {
     if (open) {
       setMounted(true);
-      // Double rAF: the first guarantees the "hidden" state actually paints
-      // before we flip to visible, so the CSS transition has a start frame
-      // to animate from instead of jumping straight to its end state.
-      const raf1 = requestAnimationFrame(() => {
-        const raf2 = requestAnimationFrame(() => setVisible(true));
-        rafRef.current = raf2;
-      });
-      rafRef.current = raf1;
-      return () => cancelAnimationFrame(rafRef.current);
+      return;
     }
-    setVisible(false);
     const timeout = setTimeout(() => setMounted(false), 150);
     return () => clearTimeout(timeout);
   }, [open]);
 
-  // Re-sync local draft/original from the store every time the modal opens —
-  // `currentSettings` may have changed (loadSettings resolved, or a previous
-  // save) since this component's state was first initialized.
   useEffect(() => {
-    if (open) {
-      setDraft(currentSettings);
-      setOriginalSettings(currentSettings);
-    }
+    if (!open) return;
+    setDraft(currentSettings);
+    setOriginalSettings(currentSettings);
+    setActiveSection("provider");
+    void fetchModels(currentSettings, { silent: true });
+    // Re-synchronise only when the modal opens. Changes while editing belong
+    // to the local draft until Save or Cancel is selected.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  async function fetchModels(url: string, { silent = false } = {}) {
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") handleCancel();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, originalSettings]);
+
+  async function fetchModels(settings: AppSettings, { silent = false } = {}) {
     setModelsLoading(true);
     setModelsError(null);
     try {
-      const list = await invoke<string[]>("get_ollama_models", { url });
+      const list = await invoke<string[]>("get_provider_models", {
+        providerConfig: {
+          providerId: settings.providerId,
+          url: settings.ollamaUrl,
+          model: settings.ollamaModel,
+          apiKey: settings.apiKey.trim() || undefined,
+          batchSize: settings.batchSize,
+          resourceProfile: settings.resourceProfile,
+        },
+      });
       setModels(list);
-      if (list.length > 0 && !list.includes(draft.ollamaModel)) {
-        setDraft((d) => ({ ...d, ollamaModel: list[0] }));
+      if (list.length > 0 && !list.includes(settings.ollamaModel)) {
+        setDraft((current) => ({ ...current, ollamaModel: list[0] }));
       }
       if (!silent) {
         toast.success(t("settings.llm.testSuccess", { count: list.length }));
@@ -87,22 +102,42 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     } catch {
       setModelsError(t("settings.llm.modelError"));
       setModels([]);
-      if (!silent) {
-        toast.error(t("settings.llm.modelError"));
-      }
+      if (!silent) toast.error(t("settings.llm.modelError"));
     } finally {
       setModelsLoading(false);
     }
   }
 
-  useEffect(() => {
-    if (open) {
-      void fetchModels(draft.ollamaUrl, { silent: true });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
   if (!mounted) return null;
+
+  function updateDraft(patch: Partial<AppSettings>) {
+    setDraft((current) => ({ ...current, ...patch }));
+  }
+
+  function handleProviderChange(providerId: ProviderId) {
+    const preset = PROVIDER_PRESETS.find(
+      (candidate) => candidate.id === providerId,
+    );
+    if (!preset) return;
+    setModels([]);
+    setModelsError(null);
+    updateDraft({
+      providerId,
+      ollamaUrl: preset.url,
+      ollamaModel: preset.model,
+      apiKey: "",
+    });
+  }
+
+  function handleThemeChange(theme: Theme) {
+    updateDraft({ theme });
+    applyThemeToDom(theme);
+  }
+
+  function handleLanguageChange(language: Language) {
+    updateDraft({ language });
+    void i18n.changeLanguage(language);
+  }
 
   function handleCancel() {
     applyThemeToDom(originalSettings.theme);
@@ -116,7 +151,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   }
 
   function handleReset() {
-    setDraft(DEFAULT_SETTINGS);
+    setDraft({ ...DEFAULT_SETTINGS });
     applyThemeToDom(DEFAULT_SETTINGS.theme);
     void i18n.changeLanguage(DEFAULT_SETTINGS.language);
   }
@@ -124,235 +159,115 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   return (
     <div
       className={cn(
-        "fixed inset-0 z-50 flex items-center justify-center bg-black/50 transition-opacity duration-150",
-        visible ? "opacity-100" : "opacity-0",
+        "fixed inset-0 z-50 grid place-items-center bg-black/50 p-4 transition-opacity duration-150",
+        open ? "opacity-100" : "pointer-events-none opacity-0",
       )}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
         className={cn(
-          "w-[420px] rounded-lg border bg-background p-5 shadow-xl transition-[opacity,transform] duration-150",
-          visible
-            ? "opacity-100 scale-100"
-            : "opacity-0 scale-95 translate-y-1",
+          "flex max-h-[min(42rem,calc(100vh-2rem))] min-h-[32rem] w-[min(48rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border bg-background shadow-xl transition-[opacity,transform] duration-150",
+          open ? "scale-100 opacity-100" : "translate-y-1 scale-95 opacity-0",
         )}
       >
-        {/* Header */}
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">{t("settings.title")}</h2>
-          <button
+        <div className="flex min-h-14 shrink-0 items-center justify-between px-5">
+          <h2 id="settings-title" className="text-base font-semibold">
+            {t("settings.title")}
+          </h2>
+          <Button
             type="button"
-            className="hit-area-40 relative active:scale-[0.96] transition-transform"
+            variant="ghost"
+            size="icon"
+            aria-label={t("settings.close")}
             onClick={handleCancel}
           >
-            <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-          </button>
+            <X className="h-4 w-4" />
+          </Button>
         </div>
 
-        <div className="space-y-5">
-          {/* Section LLM */}
-          <section className="space-y-2">
-            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {t("settings.llm.section")}
-            </h3>
+        <div className="flex min-h-0 flex-1 border-y">
+          <nav
+            role="tablist"
+            aria-label={t("settings.sections")}
+            className="w-44 shrink-0 space-y-1 border-r bg-muted/20 p-2"
+          >
+            {SECTIONS.map(({ id, labelKey, icon: Icon }) => (
+              <button
+                key={id}
+                id={`settings-tab-${id}`}
+                type="button"
+                role="tab"
+                aria-selected={activeSection === id}
+                aria-controls={`settings-panel-${id}`}
+                className={cn(
+                  "flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-medium transition-[background-color,color,transform] active:scale-[0.98]",
+                  activeSection === id
+                    ? "bg-accent text-foreground shadow-[var(--shadow-surface)]"
+                    : "text-muted-foreground hover:bg-accent/55 hover:text-foreground",
+                )}
+                onClick={() => setActiveSection(id)}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                {t(labelKey)}
+              </button>
+            ))}
+          </nav>
 
-            <div className="space-y-1">
-              <label className="block text-xs text-muted-foreground">
-                {t("settings.llm.urlLabel")}
-              </label>
-              <div className="flex gap-2">
-                <Input
-                  className="h-8 text-xs"
-                  value={draft.ollamaUrl}
-                  onChange={(e) =>
-                    setDraft((d) => ({ ...d, ollamaUrl: e.target.value }))
-                  }
-                  onBlur={() =>
-                    void fetchModels(draft.ollamaUrl, { silent: true })
-                  }
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 shrink-0 text-xs"
-                  onClick={() => void fetchModels(draft.ollamaUrl)}
-                  disabled={modelsLoading}
-                >
-                  {t("settings.llm.testButton")}
-                </Button>
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-xs text-muted-foreground">
-                {t("settings.llm.modelLabel")}
-              </label>
-              {models.length > 0 ? (
-                <Select
-                  value={draft.ollamaModel}
-                  onValueChange={(v) =>
-                    setDraft((d) => ({ ...d, ollamaModel: v }))
-                  }
-                >
-                  <SelectTrigger className="h-8 w-full text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {models.map((m) => (
-                      <SelectItem key={m} value={m} className="text-xs">
-                        {m}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <>
-                  <Select disabled>
-                    <SelectTrigger className="h-8 w-full text-xs">
-                      <SelectValue
-                        placeholder={
-                          modelsLoading
-                            ? t("settings.llm.modelLoading")
-                            : t("settings.llm.modelNone")
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent />
-                  </Select>
-                  {modelsError && (
-                    <Input
-                      className="mt-1.5 h-8 text-xs"
-                      placeholder={t("settings.llm.modelManual")}
-                      value={draft.ollamaModel}
-                      onChange={(e) =>
-                        setDraft((d) => ({ ...d, ollamaModel: e.target.value }))
-                      }
-                    />
-                  )}
-                </>
-              )}
-              {modelsError && (
-                <p className="text-[11px] text-destructive">{modelsError}</p>
-              )}
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-xs text-muted-foreground">
-                {t("settings.llm.batchSizeLabel")}
-              </label>
-              <Input
-                type="number"
-                min={1}
-                max={100}
-                className="h-8 text-xs"
-                value={draft.batchSize}
-                onChange={(e) =>
-                  setDraft((d) => ({
-                    ...d,
-                    batchSize: Number(e.target.value),
-                  }))
-                }
-                onBlur={() =>
-                  setDraft((d) => ({
-                    ...d,
-                    batchSize: Math.min(100, Math.max(1, d.batchSize || 1)),
-                  }))
+          <div
+            id={`settings-panel-${activeSection}`}
+            role="tabpanel"
+            aria-labelledby={`settings-tab-${activeSection}`}
+            className="min-w-0 flex-1 overflow-y-auto p-6"
+          >
+            {activeSection === "provider" ? (
+              <ProviderSettings
+                draft={draft}
+                models={models}
+                modelsLoading={modelsLoading}
+                modelsError={modelsError}
+                onChange={updateDraft}
+                onProviderChange={handleProviderChange}
+                onTest={() => void fetchModels(draft)}
+                onUrlBlur={() => void fetchModels(draft, { silent: true })}
+              />
+            ) : activeSection === "languages" ? (
+              <LanguageSettings
+                draft={draft}
+                onChange={updateDraft}
+                onInterfaceLanguageChange={handleLanguageChange}
+              />
+            ) : activeSection === "appearance" ? (
+              <AppearanceSettings
+                theme={draft.theme}
+                onThemeChange={handleThemeChange}
+              />
+            ) : (
+              <DeveloperSettings
+                enabled={draft.developerTools}
+                onEnabledChange={(developerTools) =>
+                  updateDraft({ developerTools })
                 }
               />
-              <p className="text-[11px] text-muted-foreground">
-                {t("settings.llm.batchSizeHint")}
-              </p>
-            </div>
-          </section>
-
-          {/* Section Apparence */}
-          <section className="space-y-2">
-            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {t("settings.appearance.section")}
-            </h3>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant={draft.theme === "light" ? "default" : "outline"}
-                className="h-8 gap-1.5 text-xs"
-                onClick={() => {
-                  setDraft((d) => ({ ...d, theme: "light" }));
-                  applyThemeToDom("light");
-                }}
-              >
-                <Sun className="h-3.5 w-3.5" />
-                {t("settings.appearance.light")}
-              </Button>
-              <Button
-                size="sm"
-                variant={draft.theme === "dark" ? "default" : "outline"}
-                className="h-8 gap-1.5 text-xs"
-                onClick={() => {
-                  setDraft((d) => ({ ...d, theme: "dark" }));
-                  applyThemeToDom("dark");
-                }}
-              >
-                <Moon className="h-3.5 w-3.5" />
-                {t("settings.appearance.dark")}
-              </Button>
-            </div>
-          </section>
-
-          {/* Section Langue */}
-          <section className="space-y-2">
-            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {t("settings.language.section")}
-            </h3>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant={draft.language === "fr" ? "default" : "outline"}
-                className="h-8 text-xs"
-                onClick={() => {
-                  setDraft((d) => ({ ...d, language: "fr" }));
-                  void i18n.changeLanguage("fr");
-                }}
-              >
-                🇫🇷 FR
-              </Button>
-              <Button
-                size="sm"
-                variant={draft.language === "en" ? "default" : "outline"}
-                className="h-8 text-xs"
-                onClick={() => {
-                  setDraft((d) => ({ ...d, language: "en" }));
-                  void i18n.changeLanguage("en");
-                }}
-              >
-                🇬🇧 EN
-              </Button>
-            </div>
-          </section>
+            )}
+          </div>
         </div>
 
-        {/* Footer */}
-        <div className="mt-5 flex items-center justify-between">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 text-xs"
-            onClick={handleReset}
-          >
+        <div className="flex min-h-16 shrink-0 items-center justify-between px-5">
+          <Button type="button" variant="ghost" size="sm" onClick={handleReset}>
             {t("settings.reset")}
           </Button>
           <div className="flex gap-2">
             <Button
-              size="sm"
+              type="button"
               variant="outline"
-              className="h-7 text-xs"
+              size="sm"
               onClick={handleCancel}
             >
               {t("settings.cancel")}
             </Button>
-            <Button
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => void handleSave()}
-            >
+            <Button type="button" size="sm" onClick={() => void handleSave()}>
               {t("settings.save")}
             </Button>
           </div>

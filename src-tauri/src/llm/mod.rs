@@ -1,4 +1,5 @@
 pub mod batch;
+pub mod context;
 pub mod pipeline;
 pub mod progress;
 pub mod prompts;

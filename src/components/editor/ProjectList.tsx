@@ -135,23 +135,42 @@ export function ProjectList() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <div className="flex h-full flex-col items-center justify-center p-6 gap-4">
-        <p className="text-sm font-medium text-foreground">
-          {t("projectList.title")}
-        </p>
+      <div className="h-full overflow-y-auto px-6 py-10 sm:px-10">
+        <div className="mx-auto w-full max-w-5xl">
+          <div className="mb-8 max-w-2xl">
+            <p className="text-balance text-2xl font-semibold tracking-tight text-foreground">
+              {t("projectList.title")}
+            </p>
+            <p className="mt-2 text-pretty text-sm leading-6 text-muted-foreground">
+              {t("projectList.subtitle")}
+            </p>
+          </div>
 
         {projects.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            {t("projectList.empty")}
-          </p>
+          <div className="rounded-2xl bg-card/75 p-8 text-center shadow-[var(--shadow-surface)] backdrop-blur-sm">
+            <p className="text-sm text-muted-foreground">{t("projectList.empty")}</p>
+            <Button
+              size="sm"
+              className="mt-5 gap-1.5 text-xs shadow-[0_0_16px_oklch(0.65_0.18_285/25%)]"
+              onClick={() => void handleOpenNew()}
+              disabled={openingNew}
+            >
+              {openingNew ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <FolderOpen className="h-3.5 w-3.5" />
+              )}
+              {t("toolbar.openGame")}
+            </Button>
+          </div>
         ) : (
-          <div className="w-full max-w-md space-y-1.5">
+          <div className="grid w-full gap-3 lg:grid-cols-2">
             {projects.map((project) => {
               const stats = projectStats[project.id];
               return (
                 <div
                   key={project.id}
-                  className="group flex flex-col gap-1.5 rounded-lg border bg-card px-3 py-2.5 hover:bg-accent/30 transition-[background-color,transform] cursor-pointer active:scale-[0.96]"
+                  className="group flex cursor-pointer flex-col gap-3 rounded-2xl bg-card/80 p-4 shadow-[var(--shadow-surface)] backdrop-blur-sm transition-[background-color,box-shadow,transform] duration-[var(--duration-normal)] hover:bg-card hover:shadow-[var(--shadow-surface-hover)] focus-within:shadow-[var(--shadow-surface-hover)] active:scale-[0.99]"
                   onClick={() => void handleResume(project)}
                 >
                   <div className="flex items-center gap-3">
@@ -161,6 +180,9 @@ export function ProjectList() {
                       </p>
                       <p className="text-[11px] text-muted-foreground truncate">
                         {project.gamePath}
+                      </p>
+                      <p className="mt-1 font-mono text-[10px] uppercase tracking-wide text-primary">
+                        {project.sourceLang} → {project.targetLang}
                       </p>
                     </div>
 
@@ -174,7 +196,7 @@ export function ProjectList() {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-7 gap-1 text-xs shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="gap-1 text-xs shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
                       disabled={isOpening === project.id}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -191,7 +213,7 @@ export function ProjectList() {
 
                     <button
                       type="button"
-                      className="hit-area-40 relative shrink-0 flex h-6 w-6 items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive text-muted-foreground transition-[color,background-color,opacity,transform] active:scale-[0.96]"
+                      className="hit-area-40 relative shrink-0 flex h-10 w-10 items-center justify-center rounded-lg opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-destructive/20 hover:text-destructive text-muted-foreground transition-[color,background-color,opacity,transform] active:scale-[0.96]"
                       disabled={isDeleting === project.id}
                       title={t("projectList.delete")}
                       onClick={(e) => requestDelete(project, e)}
@@ -213,20 +235,22 @@ export function ProjectList() {
           </div>
         )}
 
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 gap-1.5 text-xs mt-2"
-          onClick={() => void handleOpenNew()}
-          disabled={openingNew}
-        >
-          {openingNew ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <FolderOpen className="h-3.5 w-3.5" />
-          )}
-          {t("toolbar.openGame")}
-        </Button>
+        {projects.length > 0 && (
+          <Button
+            size="sm"
+            className="mt-6 gap-1.5 text-xs shadow-[0_0_16px_oklch(0.65_0.18_285/25%)]"
+            onClick={() => void handleOpenNew()}
+            disabled={openingNew}
+          >
+            {openingNew ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FolderOpen className="h-3.5 w-3.5" />
+            )}
+            {t("toolbar.openGame")}
+          </Button>
+        )}
+        </div>
       </div>
     </>
   );

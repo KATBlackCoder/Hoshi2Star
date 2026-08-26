@@ -13,7 +13,7 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useProjectStore } from "@/stores/project";
+import { useActiveLangPair, useProjectStore } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { useLlmStore, useIsTranslating } from "@/stores/llm";
 import { createSegmentColumns, STATUS_STYLES } from "@/features/editor/columns";
@@ -30,9 +30,27 @@ import { cn } from "@/lib/utils";
 import { Play, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { useUiStore } from "@/stores/ui";
 
 interface SegmentGridProps {
   highlightPlaceholders?: boolean;
+}
+
+export function applySegmentUpdates(
+  segments: Segment[],
+  updates: ReadonlyMap<string, SegmentUpdate>,
+): Segment[] {
+  if (updates.size === 0) return segments;
+  return segments.map((segment) => {
+    const update = updates.get(segment.id);
+    return update
+      ? {
+          ...segment,
+          targetText: update.targetText,
+          status: update.status,
+        }
+      : segment;
+  });
 }
 
 export function SegmentGrid({
@@ -41,6 +59,7 @@ export function SegmentGrid({
   void highlightPlaceholders; // consumed by columns in future — prop reserved for F2
   const { t, i18n } = useTranslation();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const langPair = useActiveLangPair();
   const setSourceFiles = useProjectStore((s) => s.setSourceFiles);
   const setActiveProjectStats = useProjectStore((s) => s.setActiveProjectStats);
   const activeFileId = useEditorStore((s) => s.activeFileId);
@@ -49,12 +68,15 @@ export function SegmentGrid({
   const setGlossaryTerms = useEditorStore((s) => s.setGlossaryTerms);
   const { startTranslation, providerConfig } = useLlmStore();
   const isTranslating = useIsTranslating();
+  const gridDensity = useUiStore((state) => state.gridDensity);
+  const setGridDensity = useUiStore((state) => state.setGridDensity);
 
   const activeSegmentIdRef = useRef(activeSegmentId);
   activeSegmentIdRef.current = activeSegmentId;
 
   const [segments, setSegments] = useState<Segment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [qaFilter, setQaFilter] = useState<QaFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
@@ -67,17 +89,20 @@ export function SegmentGrid({
   // Monotonic sequence: a load started for a file the user has already left
   // must not overwrite the segments of the newly opened file.
   const loadSeqRef = useRef(0);
+  const pendingUpdatesRef = useRef(new Map<string, SegmentUpdate>());
+  const updateFrameRef = useRef<number | null>(null);
 
   const loadSegments = useCallback((projectId: string, fileId: string) => {
     const seq = ++loadSeqRef.current;
     setIsLoading(true);
+    setLoadError(null);
     void (async () => {
       try {
         // The backend is paginated and returns the real COUNT: fetch every
         // page so files larger than one page are no longer silently truncated
         // (footer and status counts then cover the whole file).
         const pageSize = 2000;
-        let all: Segment[] = [];
+        const all: Segment[] = [];
         for (let page = 0; ; page++) {
           const result = await invoke<PaginatedSegments>("get_segments", {
             projectId,
@@ -86,12 +111,15 @@ export function SegmentGrid({
             pageSize,
           });
           if (seq !== loadSeqRef.current) return; // stale load — file switched
-          all = all.concat(result.items);
+          all.push(...result.items);
           if (all.length >= result.total || result.items.length === 0) break;
         }
         setSegments(all);
-      } catch {
-        if (seq === loadSeqRef.current) setSegments([]);
+      } catch (error) {
+        if (seq === loadSeqRef.current) {
+          setSegments([]);
+          setLoadError(String(error));
+        }
       } finally {
         if (seq === loadSeqRef.current) setIsLoading(false);
       }
@@ -131,6 +159,15 @@ export function SegmentGrid({
     setQaFilter("all");
     setSearchQuery("");
     setRowSelection({});
+    pendingUpdatesRef.current.clear();
+    if (updateFrameRef.current !== null) {
+      if (typeof window.cancelAnimationFrame === "function") {
+        window.cancelAnimationFrame(updateFrameRef.current);
+      } else {
+        window.clearTimeout(updateFrameRef.current);
+      }
+      updateFrameRef.current = null;
+    }
   }, [activeFileId]);
 
   // Also drop the selection when the visible subset changes: rows checked
@@ -190,20 +227,43 @@ export function SegmentGrid({
   // persisted, so the table updates progressively during long translations
   // instead of waiting for the whole project to finish.
   useEffect(() => {
+    const pendingUpdates = pendingUpdatesRef.current;
+
+    const flushUpdates = () => {
+      updateFrameRef.current = null;
+      if (pendingUpdates.size === 0) return;
+      const updates = new Map(pendingUpdates);
+      pendingUpdates.clear();
+      setSegments((previous) => applySegmentUpdates(previous, updates));
+    };
+
+    const scheduleFlush = () => {
+      if (updateFrameRef.current !== null) return;
+      updateFrameRef.current =
+        typeof window.requestAnimationFrame === "function"
+          ? window.requestAnimationFrame(flushUpdates)
+          : window.setTimeout(flushUpdates, 16);
+    };
+
     const unlisten = listen<SegmentUpdate[]>(
       "h2s://llm/segments-updated",
       (event) => {
-        const updates = new Map(event.payload.map((u) => [u.id, u]));
-        if (updates.size === 0) return;
-        setSegments((prev) =>
-          prev.map((s) => {
-            const u = updates.get(s.id);
-            return u ? { ...s, targetText: u.targetText, status: u.status } : s;
-          }),
-        );
+        for (const update of event.payload) {
+          pendingUpdates.set(update.id, update);
+        }
+        scheduleFlush();
       },
     );
     return () => {
+      if (updateFrameRef.current !== null) {
+        if (typeof window.cancelAnimationFrame === "function") {
+          window.cancelAnimationFrame(updateFrameRef.current);
+        } else {
+          window.clearTimeout(updateFrameRef.current);
+        }
+      }
+      updateFrameRef.current = null;
+      pendingUpdates.clear();
       void unlisten.then((fn) => fn());
     };
   }, []);
@@ -234,11 +294,11 @@ export function SegmentGrid({
     }
     invoke<GlossaryTerm[]>("get_glossary", {
       projectId: activeProjectId,
-      langPair: "ja-en",
+      langPair,
     })
       .then(setGlossaryTerms)
       .catch(() => setGlossaryTerms([]));
-  }, [activeProjectId, setGlossaryTerms]);
+  }, [activeProjectId, langPair, setGlossaryTerms]);
 
   useEffect(() => {
     const unlisten = listen<GlossaryExtractionDonePayload>(
@@ -247,7 +307,7 @@ export function SegmentGrid({
         if (event.payload.projectId === activeProjectIdRef.current) {
           invoke<GlossaryTerm[]>("get_glossary", {
             projectId: event.payload.projectId,
-            langPair: "ja-en",
+            langPair,
           })
             .then(setGlossaryTerms)
             .catch(() => {});
@@ -257,7 +317,7 @@ export function SegmentGrid({
     return () => {
       void unlisten.then((fn) => fn());
     };
-  }, [setGlossaryTerms]);
+  }, [langPair, setGlossaryTerms]);
 
   const handleSave = useCallback(
     async (id: string, text: string) => {
@@ -364,7 +424,7 @@ export function SegmentGrid({
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 40,
+    estimateSize: () => (gridDensity === "compact" ? 40 : 56),
     overscan: 5,
   });
 
@@ -384,6 +444,34 @@ export function SegmentGrid({
         <p className="text-sm text-muted-foreground">
           {t("segmentGrid.loading")}
         </p>
+      </div>
+    );
+  }
+
+  if (loadError && activeProjectId) {
+    return (
+      <div className="grid h-full place-items-center p-6">
+        <div
+          role="alert"
+          className="max-w-md rounded-2xl bg-card/75 p-6 text-center shadow-[var(--shadow-surface)]"
+        >
+          <p className="text-balance text-sm font-semibold">
+            {t("segmentGrid.loadError")}
+          </p>
+          <p className="mt-1 text-pretty text-xs leading-5 text-muted-foreground">
+            {loadError}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-4"
+            onClick={() => loadSegments(activeProjectId, activeFileId)}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            {t("segmentGrid.retry")}
+          </Button>
+        </div>
       </div>
     );
   }
@@ -433,6 +521,8 @@ export function SegmentGrid({
         onQaFilterChange={setQaFilter}
         shownCount={filteredSegments.length}
         totalCount={segments.length}
+        density={gridDensity}
+        onDensityChange={setGridDensity}
       />
 
       {/* Batch action toolbar */}
@@ -511,7 +601,10 @@ export function SegmentGrid({
                   <div
                     key={cell.id}
                     className={cn(
-                      "flex items-start px-3 py-2 min-h-10",
+                      "flex items-start px-3",
+                      gridDensity === "compact"
+                        ? "min-h-10 py-1"
+                        : "min-h-14 py-2.5",
                       cell.column.id === "select" &&
                         "w-9 shrink-0 justify-center items-center",
                       cell.column.id === "index" && "w-14 shrink-0 justify-end",
