@@ -20,6 +20,7 @@ pub struct TerminologyService {
     analyzer: Arc<dyn MorphologicalAnalyzer>,
     scan_slots: Semaphore,
     active_by_project: Mutex<HashMap<String, ActiveScan>>,
+    translation_slots: Arc<Semaphore>,
 }
 
 impl TerminologyService {
@@ -28,6 +29,7 @@ impl TerminologyService {
             analyzer,
             scan_slots: Semaphore::new(max_concurrent_scans.max(1)),
             active_by_project: Mutex::new(HashMap::new()),
+            translation_slots: Arc::new(Semaphore::new(1)),
         }
     }
 
@@ -155,5 +157,17 @@ impl TerminologyService {
             .await
             .get(project_id)
             .map(|scan| scan.scan_id.clone())
+    }
+
+    pub async fn translation_permit(
+        &self,
+    ) -> std::result::Result<tokio::sync::OwnedSemaphorePermit, TerminologyError> {
+        self.translation_slots
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| {
+                TerminologyError::Analyzer("terminology translation scheduler is closed".into())
+            })
     }
 }

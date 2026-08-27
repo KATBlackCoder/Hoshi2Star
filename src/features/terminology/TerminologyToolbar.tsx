@@ -1,4 +1,4 @@
-import { BookOpenCheck, Plus, Search } from "lucide-react";
+import { BookOpenCheck, Languages, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { PartOfSpeech, TerminologyEntryStatus } from "@/lib/types";
@@ -23,6 +23,7 @@ export function TerminologyToolbar(props: {
   scanning: boolean;
   onScan: () => void;
   onCreate: () => void;
+  onTranslate: () => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -101,6 +102,9 @@ export function TerminologyToolbar(props: {
       />
       <Button variant="outline" onClick={props.onCreate}>
         <Plus /> {t("terminology.add")}
+      </Button>
+      <Button variant="outline" onClick={props.onTranslate}>
+        <Languages /> {t("terminology.translateTerms")}
       </Button>
       <Button
         onClick={props.onScan}

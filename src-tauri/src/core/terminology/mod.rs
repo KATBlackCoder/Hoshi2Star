@@ -9,6 +9,7 @@ pub mod normalize;
 pub mod repository;
 pub mod scanner;
 pub mod service;
+pub mod translator;
 pub mod types;
 
 use thiserror::Error;

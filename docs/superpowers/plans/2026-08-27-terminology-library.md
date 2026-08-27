@@ -558,27 +558,27 @@ Run: `git commit -m "feat(ui): add project-aware terminology workspace"`
 - Modify: `src/features/terminology/TerminologyWorkspace.tsx`
 - Test: modules et composants adjacents
 
-- [ ] **Step 1: Écrire le protocole strict par ID**
+- [x] **Step 1: Écrire le protocole strict par ID**
 
 Entrée provider par terme: ID, source, POS, type sémantique, lecture et 1 à 3 contextes représentatifs bornés. Sortie JSON stricte: `{id, target, confidence}`. Refuser ID manquant/inconnu/dupliqué, cible vide, texte source copié pour ja→en/fr et réponse libre. Ne jamais persister une réponse partielle silencieusement.
 
-- [ ] **Step 2: Adapter le prompt aux capacités sans créer un prompt par fournisseur**
+- [x] **Step 2: Adapter le prompt aux capacités sans créer un prompt par fournisseur**
 
 Réutiliser les politiques de provider/modèle existantes: petit modèle reçoit moins de termes/contextes; modèle robuste peut traiter un lot plus grand. La destination (`en` ou `fr`) et la catégorie sont explicites. Le prompt demande un lemme ou nom canonique, pas une phrase traduite.
 
-- [ ] **Step 3: Respecter les profils de ressources**
+- [x] **Step 3: Respecter les profils de ressources**
 
 Eco: 8 termes/1 contexte; Balanced: 20 termes/2 contextes; Fast: maximum 50/3 contextes, toujours une requête active à la fois pour les providers locaux. Émettre les métriques existantes `h2s://llm/metrics` et une progression terminologique séparée.
 
-- [ ] **Step 4: Persister en `proposed`**
+- [x] **Step 4: Persister en `proposed`**
 
 Chaque résultat valide crée/remplace la traduction pour langue+portée avec `review_status=proposed`, `enforcement=contextual` pour verbes/adjectifs/adverbes et `preferred` pour noms/entités. Seule une action utilisateur passe à `approved` ou `locked/required`.
 
-- [ ] **Step 5: Ajouter le dialogue de sélection**
+- [x] **Step 5: Ajouter le dialogue de sélection**
 
 Permettre: sélection visible, sélection manuelle, uniquement non traduits, cible en/fr, portée globale/projet et provider/modèle courant. Afficher avant envoi le nombre de termes et une estimation de tokens.
 
-- [ ] **Step 6: Tester ja→en et ja→fr avec provider mock**
+- [x] **Step 6: Tester ja→en et ja→fr avec provider mock**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml core::terminology::translator`
 
@@ -586,7 +586,7 @@ Run: `pnpm test src/features/terminology/TermTranslateDialog.test.tsx`
 
 Expected: résultats proposés corrects, aucune auto-approbation, erreurs protocolaires visibles et métriques émises.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 Run: `git add src-tauri/prompts/terminology/default.toml src-tauri/src/llm/prompts.rs src-tauri/src/core/terminology/translator.rs src-tauri/src/commands/terminology.rs src-tauri/src/lib.rs src/features/terminology`
 

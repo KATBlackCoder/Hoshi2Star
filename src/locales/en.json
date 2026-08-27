@@ -27,6 +27,7 @@
     "project": "Project",
     "global": "Global",
     "add": "Add",
+    "translateTerms": "Translate terms",
     "scan": "Analyze vocabulary",
     "scanning": "Analyzing…",
     "scanLocal": "Local vocabulary analysis",

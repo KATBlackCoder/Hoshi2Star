@@ -64,6 +64,11 @@ static GLOSSARY_DEFAULT: LazyLock<PromptTemplate> = LazyLock::new(|| {
         .expect("prompts/glossary/default.toml is malformed")
 });
 
+static TERMINOLOGY_DEFAULT: LazyLock<PromptTemplate> = LazyLock::new(|| {
+    toml::from_str(include_str!("../../prompts/terminology/default.toml"))
+        .expect("prompts/terminology/default.toml is malformed")
+});
+
 // ---------------------------------------------------------------------------
 // Public accessors with per-language routing
 // ---------------------------------------------------------------------------
@@ -84,6 +89,10 @@ pub fn translate_for(_target_lang: &str) -> &'static PromptTemplate {
 /// Example: `"fr" => &GLOSSARY_FR` once `prompts/glossary/fr.toml` exists.
 pub fn glossary_for(_target_lang: &str) -> &'static PromptTemplate {
     &GLOSSARY_DEFAULT
+}
+
+pub fn terminology_for(_target_lang: &str) -> &'static PromptTemplate {
+    &TERMINOLOGY_DEFAULT
 }
 
 // ---------------------------------------------------------------------------
@@ -110,6 +119,14 @@ mod tests {
         assert!(tmpl.system.contains("JSON array"));
         assert!(tmpl.user.contains("{{target_lang}}"));
         assert!(!tmpl.user.contains("/no_think"));
+    }
+
+    #[test]
+    fn terminology_prompt_requires_strict_ids_and_proposed_terms() {
+        let template = terminology_for("fr");
+        assert!(template.system.contains("exactly one object per input"));
+        assert!(template.system.contains("byte-for-byte unchanged"));
+        assert!(template.user.contains("{{terms}}"));
     }
 
     #[test]

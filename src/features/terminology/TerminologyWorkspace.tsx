@@ -20,11 +20,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useActiveProject } from "@/stores/project";
 import { useSettingsStore } from "@/stores/settings";
+import { useLlmStore } from "@/stores/llm";
 import type { TerminologyEntry, TerminologyScanProgress } from "@/lib/types";
 import { terminologyApi } from "./api";
 import { terminologyKeys } from "./queryKeys";
 import { ScanProgress } from "./ScanProgress";
 import { TermEditorDialog, type TermEditorValue } from "./TermEditorDialog";
+import { TermTranslateDialog } from "./TermTranslateDialog";
 import { TerminologyTable } from "./TerminologyTable";
 import { TerminologyToolbar } from "./TerminologyToolbar";
 import { useTerminologyUiStore } from "./terminologyUiStore";
@@ -36,6 +38,7 @@ export function TerminologyWorkspace() {
   const { t } = useTranslation();
   const activeProject = useActiveProject();
   const defaults = useSettingsStore((state) => state.settings);
+  const providerConfig = useLlmStore((state) => state.providerConfig);
   const ui = useTerminologyUiStore();
   const queryClient = useQueryClient();
   const [targetOverrides, setTargetOverrides] = useState<
@@ -60,6 +63,7 @@ export function TerminologyWorkspace() {
   );
   const [scanProgress, setScanProgress] =
     useState<TerminologyScanProgress | null>(null);
+  const [translateOpen, setTranslateOpen] = useState(false);
 
   const queryInput = {
     sourceLanguage,
@@ -258,6 +262,7 @@ export function TerminologyWorkspace() {
         scanning={Boolean(scanProgress)}
         onScan={() => void startScan()}
         onCreate={() => setEditorEntry(null)}
+        onTranslate={() => setTranslateOpen(true)}
       />
       {scanProgress && (
         <ScanProgress
@@ -334,6 +339,21 @@ export function TerminologyWorkspace() {
           }}
           onSave={(value) => save.mutate(value)}
           saving={save.isPending}
+        />
+      )}
+      {translateOpen && (
+        <TermTranslateDialog
+          open
+          entries={list.data?.items ?? []}
+          selectedIds={ui.selectedIds}
+          targetLanguage={targetLanguage}
+          projectId={projectId}
+          providerConfig={providerConfig}
+          onOpenChange={setTranslateOpen}
+          onDone={() => {
+            ui.clearSelection();
+            void invalidate();
+          }}
         />
       )}
       <AlertDialog

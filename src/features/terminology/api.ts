@@ -11,6 +11,7 @@ import type {
   TerminologyScanProgress,
   TerminologyStats,
   TerminologyTranslation,
+  ProviderConfig,
 } from "@/lib/types";
 
 export interface TerminologyListInput {
@@ -74,6 +75,12 @@ export const terminologyApi = {
     invoke<{ scanId: string }>("start_terminology_scan", { projectId }),
   cancelScan: (scanId: string) =>
     invoke<boolean>("cancel_terminology_scan", { scanId }),
+  translate: (input: {
+    entryIds: string[];
+    targetLanguage: string;
+    projectId: string | null;
+    providerConfig: ProviderConfig;
+  }) => invoke<{ jobId: string }>("translate_terminology_entries", { input }),
   onScanProgress: (
     handler: (payload: TerminologyScanProgress) => void,
   ): Promise<UnlistenFn> =>
@@ -86,5 +93,33 @@ export const terminologyApi = {
   ): Promise<UnlistenFn> =>
     listen<TerminologyScanDone>("h2s://terminology/scan-done", (event) =>
       handler(event.payload),
+    ),
+  onTranslateProgress: (
+    handler: (payload: {
+      jobId: string;
+      processed: number;
+      total: number;
+    }) => void,
+  ): Promise<UnlistenFn> =>
+    listen("h2s://terminology/translate-progress", (event) =>
+      handler(
+        event.payload as { jobId: string; processed: number; total: number },
+      ),
+    ),
+  onTranslateDone: (
+    handler: (payload: {
+      jobId: string;
+      summary: { proposed: number } | null;
+      error: string | null;
+    }) => void,
+  ): Promise<UnlistenFn> =>
+    listen("h2s://terminology/translate-done", (event) =>
+      handler(
+        event.payload as {
+          jobId: string;
+          summary: { proposed: number } | null;
+          error: string | null;
+        },
+      ),
     ),
 };
