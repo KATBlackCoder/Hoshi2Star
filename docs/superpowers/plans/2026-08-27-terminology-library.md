@@ -373,25 +373,25 @@ Run: `git commit -m "feat(terminology): add bounded Japanese morphology analyzer
 - Modify: `src-tauri/src/engines/mv_mz/mod.rs`
 - Test: `src-tauri/src/engines/mv_mz/terminology.rs`
 
-- [ ] **Step 1: Définir le contrat moteur**
+- [x] **Step 1: Définir le contrat moteur**
 
 Le contrat retourne `EngineTermSeed { source_text, semantic_type, part_of_speech, confidence }` et une version de texte sûre pour l'analyse morphologique. Il reçoit `Segment` avec le `file_type` de son `SourceFile`, pas seulement une chaîne, afin d'utiliser `segment_kind`, fichier, clé JSON, intervenant et contexte.
 
-- [ ] **Step 2: Écrire la table de vérité MV/MZ**
+- [x] **Step 2: Écrire la table de vérité MV/MZ**
 
 Tester au minimum les mappings: `actor_name/actor_nickname→character`, `speaker→speaker`, `class_name→class`, `item_name + Items.json→item`, `item_name + Weapons.json→weapon`, `item_name + Armors.json→armor`, `skill_name→skill`, `enemy_name→enemy`, `state_name→state`, `map_name→place`, `common_event_name→event`, `system_term→system`, `game_title→title`. Les profils, descriptions, messages, dialogues et choix ne créent pas d'entité structurée mais restent analysables par Lindera.
 
-- [ ] **Step 3: Implémenter sans logique générique RPG Maker dans le core**
+- [x] **Step 3: Implémenter sans logique générique RPG Maker dans le core**
 
 Les textes structurés sont insérés même s'ils n'apparaissent qu'une fois. Une entrée structurelle l'emporte sur une entrée Lindera identique grâce à une confiance supérieure et à son `semantic_type` spécifique; aucun écrasement destructif d'un sens différent.
 
-- [ ] **Step 4: Vérifier les fixtures MV et MZ**
+- [x] **Step 4: Vérifier les fixtures MV et MZ**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml engines::mv_mz::terminology`
 
 Expected: mêmes résultats pour les variantes MV et MZ, et aucun classement universel appliqué aux autres moteurs.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run: `git add src-tauri/src/engines/terminology.rs src-tauri/src/engines/mod.rs src-tauri/src/engines/mv_mz/mod.rs src-tauri/src/engines/mv_mz/terminology.rs`
 
