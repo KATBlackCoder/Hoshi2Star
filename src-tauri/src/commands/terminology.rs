@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime, State};
 
+use crate::core::terminology::normalize::normalize_term;
 use crate::core::terminology::repository;
 use crate::core::terminology::resolver::{self, QaTerminologyRule};
 use crate::core::terminology::scanner::{ScanEvent, ScanEventSink};
@@ -15,6 +16,7 @@ use crate::core::terminology::types::{
     TerminologyStats, TerminologyTranslationView, UpdateTermInput, UpsertTranslationInput,
 };
 use crate::domain::types::ProviderConfig;
+use crate::engines::wolf::extractor::extract_wolf_speaker_names;
 use crate::llm::provider::{LlmProvider, OpenAiCompatibleProvider};
 use crate::state::AppState;
 
@@ -42,6 +44,14 @@ pub struct TranslateTerminologyCommandInput {
 #[serde(rename_all = "camelCase")]
 pub struct StartTerminologyTranslationResponse {
     pub job_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WolfSpeakerTerminology {
+    pub entry_id: String,
+    pub canonical_text: String,
+    pub occurrence_count: usize,
 }
 
 #[tauri::command]
@@ -83,10 +93,128 @@ pub async fn get_segment_terminology(
     if segment_id.trim().is_empty() {
         return Err("terminology: segment id must not be empty".to_string());
     }
-    resolver::resolve_qa_rules_for_segments(&state.db, &[segment_id.clone()], &target_language)
+    resolver::resolve_qa_rules_for_segments(
+        &state.db,
+        std::slice::from_ref(&segment_id),
+        &target_language,
+    )
+    .await
+    .map(|mut rules| rules.remove(&segment_id).unwrap_or_default())
+    .map_err(stable_error)
+}
+
+/// Compatibility IPC for the existing Wolf workflow. Speaker names now feed
+/// the shared terminology library and its per-segment occurrence index.
+#[tauri::command]
+pub async fn extract_wolf_speakers(
+    project_id: String,
+    lang_pair: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<WolfSpeakerTerminology>, String> {
+    let source_language = lang_pair
+        .split_once('-')
+        .map(|(source, _)| source.trim())
+        .filter(|source| !source.is_empty())
+        .ok_or_else(|| format!("terminology: invalid language pair: {lang_pair:?}"))?;
+    extract_wolf_speakers_into_terminology(&state.db, &project_id, source_language)
         .await
-        .map(|mut rules| rules.remove(&segment_id).unwrap_or_default())
         .map_err(stable_error)
+}
+
+async fn extract_wolf_speakers_into_terminology(
+    pool: &sqlx::SqlitePool,
+    project_id: &str,
+    source_language: &str,
+) -> crate::core::terminology::Result<Vec<WolfSpeakerTerminology>> {
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM projects WHERE id = ?)")
+        .bind(project_id)
+        .fetch_one(pool)
+        .await?;
+    if !exists {
+        return Err(crate::core::terminology::TerminologyError::NotFound(
+            project_id.to_string(),
+        ));
+    }
+    let segments: Vec<(String, String)> = sqlx::query_as(
+        "SELECT segment.id, segment.source_text FROM segments segment \
+         JOIN source_files file ON file.id = segment.source_file_id \
+         WHERE file.project_id = ? ORDER BY segment.rowid",
+    )
+    .bind(project_id)
+    .fetch_all(pool)
+    .await?;
+    let source_texts = segments
+        .iter()
+        .map(|(_, source)| source.clone())
+        .collect::<Vec<_>>();
+    let speakers = extract_wolf_speaker_names(&source_texts);
+    let segment_speakers = segments
+        .iter()
+        .filter_map(|(segment_id, source_text)| {
+            extract_wolf_speaker_names(std::slice::from_ref(source_text))
+                .into_iter()
+                .next()
+                .map(|speaker| (segment_id, speaker.canonical))
+        })
+        .collect::<Vec<_>>();
+    let mut transaction = pool.begin().await?;
+    let mut result = Vec::with_capacity(speakers.len());
+    for speaker in speakers {
+        let normalized = normalize_term(&speaker.canonical, source_language)?;
+        let entry_id: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM terminology_entries \
+             WHERE source_language = ? AND normalized_text = ? \
+               AND semantic_type = 'speaker' AND sense_key = '' LIMIT 1",
+        )
+        .bind(source_language)
+        .bind(&normalized)
+        .fetch_optional(&mut *transaction)
+        .await?;
+        let entry_id = match entry_id {
+            Some(entry_id) => entry_id,
+            None => {
+                let entry_id = uuid::Uuid::new_v4().to_string();
+                sqlx::query(
+                    "INSERT INTO terminology_entries (\
+                        id, source_language, canonical_text, normalized_text, part_of_speech, \
+                        semantic_type, origin, confidence\
+                     ) VALUES (?, ?, ?, ?, 'proper_noun', 'speaker', 'engine', 1.0)",
+                )
+                .bind(&entry_id)
+                .bind(source_language)
+                .bind(&speaker.canonical)
+                .bind(&normalized)
+                .execute(&mut *transaction)
+                .await?;
+                entry_id
+            }
+        };
+        for (segment_id, canonical) in &segment_speakers {
+            if canonical == &speaker.canonical {
+                sqlx::query(
+                    "INSERT INTO terminology_occurrences (\
+                        entry_id, project_id, segment_id, surface_text, engine_kind, occurrence_count\
+                     ) VALUES (?, ?, ?, ?, 'speaker', 1) \
+                     ON CONFLICT(entry_id, segment_id, surface_text) DO UPDATE SET \
+                        project_id = excluded.project_id, engine_kind = excluded.engine_kind, \
+                        occurrence_count = excluded.occurrence_count",
+                )
+                .bind(&entry_id)
+                .bind(project_id)
+                .bind(segment_id)
+                .bind(&speaker.canonical)
+                .execute(&mut *transaction)
+                .await?;
+            }
+        }
+        result.push(WolfSpeakerTerminology {
+            entry_id,
+            canonical_text: speaker.canonical,
+            occurrence_count: speaker.occurrences,
+        });
+    }
+    transaction.commit().await?;
+    Ok(result)
 }
 
 #[tauri::command]
@@ -292,4 +420,75 @@ async fn ensure_project(state: &State<'_, AppState>, project_id: &str) -> Result
 
 fn stable_error(error: crate::core::terminology::TerminologyError) -> String {
     format!("terminology: {error}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn wolf_speaker_compatibility_command_is_idempotent_and_indexes_occurrences() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let pool = crate::db::pool::init(file.path().to_str().unwrap())
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO projects (id, name, engine, game_path) \
+             VALUES ('wolf-project', 'Wolf game', 'wolf', '/tmp/wolf')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO source_files (id, project_id, file_name, file_path, file_type) \
+             VALUES ('wolf-file', 'wolf-project', 'CommonEvent.dat', '/tmp/CommonEvent.dat', 'wolf_dat')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        for (id, source) in [
+            ("wolf-segment-1", "\\E勇者\nこんにちは"),
+            ("wolf-segment-2", "\\E勇者\nさようなら"),
+            ("wolf-segment-3", "地の文"),
+        ] {
+            sqlx::query(
+                "INSERT INTO segments (\
+                    id, source_file_id, json_key, source_text, target_text, status\
+                 ) VALUES (?, 'wolf-file', ?, ?, '', 'untranslated')",
+            )
+            .bind(id)
+            .bind(format!("/{id}"))
+            .bind(source)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let first = extract_wolf_speakers_into_terminology(&pool, "wolf-project", "ja")
+            .await
+            .unwrap();
+        let second = extract_wolf_speakers_into_terminology(&pool, "wolf-project", "ja")
+            .await
+            .unwrap();
+
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].canonical_text, "勇者");
+        assert_eq!(first[0].occurrence_count, 2);
+        assert_eq!(first, second);
+        let entry: (String, String, String) =
+            sqlx::query_as("SELECT part_of_speech, semantic_type, origin FROM terminology_entries")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            entry,
+            ("proper_noun".into(), "speaker".into(), "engine".into())
+        );
+        let occurrences: (i64, i64) =
+            sqlx::query_as("SELECT COUNT(*), SUM(occurrence_count) FROM terminology_occurrences")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(occurrences, (2, 2));
+    }
 }

@@ -1775,7 +1775,7 @@ mod tests {
         entries[0x28..0x2C].copy_from_slice(&(-1i32).to_le_bytes());
         // Entry 1: name=10, attrs=0, data_offset=100, unpacked=200, packed=-1
         let e = 0x2C;
-        entries[e + 0x00..e + 0x04].copy_from_slice(&10u32.to_le_bytes());
+        entries[e..e + 0x04].copy_from_slice(&10u32.to_le_bytes());
         entries[e + 0x04..e + 0x08].copy_from_slice(&0u32.to_le_bytes());
         entries[e + 0x20..e + 0x24].copy_from_slice(&100u32.to_le_bytes());
         entries[e + 0x24..e + 0x28].copy_from_slice(&200u32.to_le_bytes());
@@ -1817,7 +1817,7 @@ mod tests {
         entries[0x38..0x40].copy_from_slice(&(-1i64).to_le_bytes()); // packed_size
                                                                      // Entry 1: name=10, attrs=0, data_offset=500, unpacked=1000, packed=-1
         let e = 0x40;
-        entries[e + 0x00..e + 0x08].copy_from_slice(&10i64.to_le_bytes());
+        entries[e..e + 0x08].copy_from_slice(&10i64.to_le_bytes());
         entries[e + 0x08..e + 0x10].copy_from_slice(&0u64.to_le_bytes());
         entries[e + 0x28..e + 0x30].copy_from_slice(&500i64.to_le_bytes());
         entries[e + 0x30..e + 0x38].copy_from_slice(&1000i64.to_le_bytes());

@@ -3,8 +3,8 @@
 
 pub mod app;
 pub mod export;
-pub mod glossary;
 pub mod pack;
+mod pack_terminology;
 pub mod pilot;
 pub mod project;
 pub mod qa;

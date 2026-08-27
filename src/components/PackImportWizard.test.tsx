@@ -26,7 +26,10 @@ function makePreview(overrides: Partial<ImportPreview> = {}): ImportPreview {
     conflicts: 2,
     sourceChanged: 0,
     orphans: 1,
-    glossaryCount: 0,
+    terminologyCount: 0,
+    terminologyCreates: 0,
+    terminologyUpdates: 0,
+    terminologyConflicts: 0,
     tmCount: 0,
     ...overrides,
   };
@@ -39,8 +42,9 @@ const report: ImportReport = {
   skippedSourceChanged: 0,
   identical: 10,
   orphans: 1,
-  glossaryAdded: 0,
-  glossaryConflicts: 0,
+  terminologyAdded: 0,
+  terminologyUpdated: 0,
+  terminologyConflicts: 0,
   tmAdded: 0,
   backupPath: "/data/backups/backup-avant-import-x.h2s",
 };
@@ -122,6 +126,32 @@ describe("PackImportWizard", () => {
 
     await userEvent.click(screen.getByRole("checkbox"));
     expect(apply).toBeEnabled();
+  });
+
+  it("shows terminology creations, updates and locked conflicts before apply", () => {
+    mockIPC(() => Promise.resolve(null));
+    render(
+      <PackImportWizard
+        projectId="p1"
+        packPath="/tmp/pack.h2s"
+        preview={makePreview({
+          terminologyCount: 6,
+          terminologyCreates: 3,
+          terminologyUpdates: 2,
+          terminologyConflicts: 1,
+        })}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByText("Conséquences terminologiques"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Nouveaux termes")).toBeInTheDocument();
+    expect(screen.getByText("Termes mis à jour")).toBeInTheDocument();
+    expect(
+      screen.getByText("Conflits verrouillés (conservés)"),
+    ).toBeInTheDocument();
   });
 
   it("shows a dedicated message when the pack is refused (engine mismatch)", () => {

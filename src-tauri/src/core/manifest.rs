@@ -24,7 +24,8 @@ pub struct ManifestStats {
     pub file_count: u32,
     pub segment_count: u32,
     pub translated_count: u32,
-    pub glossary_term_count: u32,
+    #[serde(alias = "glossaryTermCount")]
+    pub terminology_term_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -128,21 +129,22 @@ pub async fn refresh_stats(pool: &sqlx::SqlitePool, project_id: &str) {
             (SELECT COUNT(*) FROM segments s2
                JOIN source_files sf2 ON s2.source_file_id = sf2.id
                WHERE sf2.project_id = p.id AND s2.status = 'translated'),
-            (SELECT COUNT(*) FROM glossary_terms g
-               WHERE g.project_id = p.id OR g.project_id IS NULL)
+            (SELECT COUNT(DISTINCT occurrence.entry_id)
+               FROM terminology_occurrences occurrence
+               WHERE occurrence.project_id = p.id)
          FROM projects p WHERE p.id = ?",
     )
     .bind(project_id)
     .fetch_optional(pool)
     .await;
-    if let Ok(Some((game_path, files, segs, translated, glossary))) = row {
+    if let Ok(Some((game_path, files, segs, translated, terminology))) = row {
         let _ = update_stats(
             &game_path,
             ManifestStats {
                 file_count: files as u32,
                 segment_count: segs as u32,
                 translated_count: translated as u32,
-                glossary_term_count: glossary as u32,
+                terminology_term_count: terminology as u32,
             },
         );
     }
@@ -161,7 +163,7 @@ mod tests {
             file_count: 10,
             segment_count: 500,
             translated_count: 200,
-            glossary_term_count: 15,
+            terminology_term_count: 15,
         }
     }
 
@@ -209,6 +211,18 @@ mod tests {
     }
 
     #[test]
+    fn test_legacy_glossary_stat_name_remains_readable() {
+        let mut json = serde_json::to_value(sample_manifest("/tmp/game")).unwrap();
+        let stats = json["stats"].as_object_mut().unwrap();
+        let terminology_count = stats.remove("terminologyTermCount").unwrap();
+        stats.insert("glossaryTermCount".to_string(), terminology_count);
+
+        let decoded: ManifestData = serde_json::from_value(json).unwrap();
+
+        assert_eq!(decoded.stats.terminology_term_count, 15);
+    }
+
+    #[test]
     fn test_update_stats_updates_counts() {
         let dir = tempfile::tempdir().unwrap();
         let game_path = dir.path().to_str().unwrap();
@@ -219,7 +233,7 @@ mod tests {
             file_count: 10,
             segment_count: 500,
             translated_count: 350,
-            glossary_term_count: 15,
+            terminology_term_count: 15,
         };
         update_stats(game_path, new_stats).unwrap();
 

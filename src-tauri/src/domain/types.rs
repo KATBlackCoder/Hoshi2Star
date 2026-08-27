@@ -24,7 +24,7 @@ pub struct Project {
 }
 
 impl Project {
-    /// BCP-47-like pair used to scope the translation memory and glossary.
+    /// BCP-47-like pair used to scope translation memory and terminology.
     pub fn lang_pair(&self) -> String {
         format!("{}-{}", self.source_lang, self.target_lang)
     }

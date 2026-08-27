@@ -24,7 +24,7 @@ use std::sync::LazyLock;
 
 /// Groupe G — Yanfly name box `\n<Name>`. Handled in a dedicated FIRST pass:
 /// only the structure (`\n<` and `>`) becomes tokens, the name stays inline so
-/// the LLM can translate it (and glossary terms apply). The main engine regex
+/// the LLM can translate it (and terminology rules apply). The main engine regex
 /// then runs on the result, which also tokenizes codes nested inside the name
 /// box (e.g. `\n<\C[6]ハルカ>`).
 static RE_NAMEBOX: LazyLock<Regex> =

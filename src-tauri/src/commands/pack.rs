@@ -3,7 +3,7 @@
 //! copy of the game.
 //!
 //! Three commands:
-//! - [`export_h2s_pack`]     — write the pack (segments + glossary ± TM)
+//! - [`export_h2s_pack`]     — write the pack (segments + terminology ± TM)
 //! - [`preview_h2s_import`]  — mandatory dry-run: validate + classify, zero writes
 //! - [`apply_h2s_import`]    — auto-backup, then apply in ONE SQLite transaction
 //!
@@ -12,18 +12,23 @@
 //! sides ordered by extraction order) — never by segment UUIDs, which are
 //! local to each database.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use tauri::{Emitter, Manager};
 
 use crate::core::h2s_pack::{
-    self, H2sPack, H2sPackError, PackFileStat, PackGlossaryTerm, PackManifest, PackSegment,
-    PackTmEntry, FORMAT_VERSION,
+    self, H2sPack, H2sPackError, PackFileStat, PackManifest, PackSegment, PackTmEntry,
+    FORMAT_VERSION,
 };
-use crate::core::{glossary, manifest, tm};
+use crate::core::{manifest, tm};
 use crate::state::AppState;
+
+use super::pack_terminology::{
+    export_terms as export_terminology_terms, import_terms as import_terminology_terms,
+    preview_import as preview_terminology_import, split_lang_pair,
+};
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -95,9 +100,8 @@ async fn build_project_pack(
     .await
     .map_err(|e| e.to_string())?;
 
-    let glossary_terms = glossary::list_for_project(db, project_id, lang_pair)
-        .await
-        .map_err(|e| e.to_string())?;
+    let (_, target_language) = split_lang_pair(lang_pair)?;
+    let terminology_terms = export_terminology_terms(db, project_id, target_language).await?;
 
     let tm_entries: Vec<(String, String, String, f64)> = if include_tm {
         sqlx::query_as(
@@ -145,14 +149,7 @@ async fn build_project_pack(
                 },
             )
             .collect(),
-        glossary: glossary_terms
-            .into_iter()
-            .map(|t| PackGlossaryTerm {
-                source_text: t.source_text,
-                target_text: t.target_text,
-                domain: t.domain,
-            })
-            .collect(),
+        glossary: terminology_terms,
         tm: tm_entries
             .into_iter()
             .map(
@@ -240,7 +237,7 @@ fn classify<'a>(
 pub struct PackExportSummary {
     pub segment_count: u32,
     pub file_count: u32,
-    pub glossary_count: u32,
+    pub terminology_count: u32,
     pub tm_count: u32,
 }
 
@@ -258,7 +255,7 @@ pub async fn export_h2s_pack(
     Ok(PackExportSummary {
         segment_count: pack.segments.len() as u32,
         file_count: pack.manifest.files.len() as u32,
-        glossary_count: pack.glossary.len() as u32,
+        terminology_count: pack.glossary.len() as u32,
         tm_count: pack.tm.len() as u32,
     })
 }
@@ -307,7 +304,10 @@ pub struct ImportPreview {
     pub conflicts: u32,
     pub source_changed: u32,
     pub orphans: u32,
-    pub glossary_count: u32,
+    pub terminology_count: u32,
+    pub terminology_creates: u32,
+    pub terminology_updates: u32,
+    pub terminology_conflicts: u32,
     pub tm_count: u32,
 }
 
@@ -324,7 +324,10 @@ impl ImportPreview {
             conflicts: 0,
             source_changed: 0,
             orphans: 0,
-            glossary_count: 0,
+            terminology_count: 0,
+            terminology_creates: 0,
+            terminology_updates: 0,
+            terminology_conflicts: 0,
             tm_count: 0,
         }
     }
@@ -395,6 +398,8 @@ pub async fn preview_h2s_import(
 
     let index = load_local_index(&state.db, &project_id).await?;
     let classified = classify(&pack, &index);
+    let (terminology_creates, terminology_updates, terminology_conflicts) =
+        preview_terminology_import(&state.db, &project_id, &lang_pair, &pack.glossary).await?;
 
     let count = |c: SegClass| classified.iter().filter(|(_, cl, _)| *cl == c).count() as u32;
 
@@ -409,7 +414,10 @@ pub async fn preview_h2s_import(
         conflicts: count(SegClass::Conflict),
         source_changed: count(SegClass::SourceChanged),
         orphans: count(SegClass::Orphan),
-        glossary_count: pack.glossary.len() as u32,
+        terminology_count: pack.glossary.len() as u32,
+        terminology_creates,
+        terminology_updates,
+        terminology_conflicts,
         tm_count: pack.tm.len() as u32,
     })
 }
@@ -457,8 +465,9 @@ pub struct ImportReport {
     pub skipped_source_changed: u32,
     pub identical: u32,
     pub orphans: u32,
-    pub glossary_added: u32,
-    pub glossary_conflicts: u32,
+    pub terminology_added: u32,
+    pub terminology_updated: u32,
+    pub terminology_conflicts: u32,
     pub tm_added: u32,
     pub backup_path: String,
 }
@@ -472,7 +481,7 @@ pub async fn apply_h2s_import(
     pack_path: String,
     policy: String,
     apply_source_changed: bool,
-    import_glossary: bool,
+    import_terminology: bool,
     import_tm: bool,
     lang_pair: String,
     app: tauri::AppHandle,
@@ -512,11 +521,12 @@ pub async fn apply_h2s_import(
     )
     .await?;
 
-    if import_glossary {
-        let (added, conflicts) =
-            import_glossary_terms(&mut tx, &project_id, &lang_pair, &pack.glossary).await?;
-        report.glossary_added = added;
-        report.glossary_conflicts = conflicts;
+    if import_terminology {
+        let (added, updated, conflicts) =
+            import_terminology_terms(&mut tx, &project_id, &lang_pair, &pack.glossary).await?;
+        report.terminology_added = added;
+        report.terminology_updated = updated;
+        report.terminology_conflicts = conflicts;
     }
 
     if import_tm {
@@ -597,59 +607,6 @@ async fn write_segment(
     Ok(())
 }
 
-/// Import glossary terms as PROJECT terms (never global — the receiver's
-/// global glossary is theirs). Existing identical pairs are skipped; same
-/// source with a different target keeps the local term and is reported.
-async fn import_glossary_terms(
-    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
-    project_id: &str,
-    lang_pair: &str,
-    terms: &[PackGlossaryTerm],
-) -> Result<(u32, u32), String> {
-    let existing: Vec<(String, String)> = sqlx::query_as(
-        "SELECT source_text, target_text FROM glossary_terms \
-         WHERE lang_pair = ? AND (project_id = ? OR project_id IS NULL)",
-    )
-    .bind(lang_pair)
-    .bind(project_id)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    let mut pairs: HashSet<(String, String)> = existing.iter().cloned().collect();
-    let mut sources: HashSet<String> = existing.into_iter().map(|(s, _)| s).collect();
-
-    let (mut added, mut conflicts) = (0u32, 0u32);
-    for term in terms {
-        let pair = (term.source_text.clone(), term.target_text.clone());
-        if pairs.contains(&pair) {
-            continue; // already known, silently skip
-        }
-        if sources.contains(&term.source_text) {
-            conflicts += 1; // local term wins, reported
-            continue;
-        }
-        sqlx::query(
-            "INSERT INTO glossary_terms \
-                 (id, source_text, target_text, lang_pair, domain, project_id, auto_generated) \
-             VALUES (?, ?, ?, ?, ?, ?, 0)",
-        )
-        .bind(uuid::Uuid::new_v4().to_string())
-        .bind(&term.source_text)
-        .bind(&term.target_text)
-        .bind(lang_pair)
-        .bind(&term.domain)
-        .bind(project_id)
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| e.to_string())?;
-        sources.insert(term.source_text.clone());
-        pairs.insert(pair);
-        added += 1;
-    }
-    Ok((added, conflicts))
-}
-
 /// Merge pack TM entries into the global TM. `DO NOTHING` on conflict — the
 /// receiver's own TM always wins over an imported pack.
 async fn import_tm_entries(
@@ -714,6 +671,7 @@ async fn write_backup(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::h2s_pack::PackGlossaryTerm;
 
     /// Fresh migrated pool. The temp file is returned too: dropping it would
     /// delete the DB under the pool's next connections.
@@ -973,13 +931,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_glossary_import_dedup_and_conflicts() {
+    async fn test_terminology_import_creates_updates_and_preserves_locked_terms() {
         let (pool, _tmp) = test_pool().await;
         seed(&pool).await;
-        // Existing GLOBAL term: same source as an incoming one, other target.
+        for (id, source) in [("e-locked", "勇者"), ("e-update", "剣")] {
+            sqlx::query(
+                "INSERT INTO terminology_entries (\
+                    id, source_language, canonical_text, normalized_text, part_of_speech, \
+                    semantic_type, origin\
+                 ) VALUES (?, 'ja', ?, ?, 'proper_noun', 'characters', 'manual')",
+            )
+            .bind(id)
+            .bind(source)
+            .bind(source)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
         sqlx::query(
-            "INSERT INTO glossary_terms (id, source_text, target_text, lang_pair, domain, project_id) \
-             VALUES ('g1', '勇者', 'Brave', 'ja-en', '', NULL)",
+            "INSERT INTO terminology_translations (\
+                id, entry_id, target_language, project_id, target_text, review_status, enforcement\
+             ) VALUES \
+                ('t-locked', 'e-locked', 'en', NULL, 'Brave', 'locked', 'required'), \
+                ('t-update', 'e-update', 'en', 'p1', 'Blade', 'approved', 'preferred')",
         )
         .execute(&pool)
         .await
@@ -996,29 +970,152 @@ mod tests {
                 target_text: "Demon Lord".into(),
                 domain: "characters".into(),
             },
+            PackGlossaryTerm {
+                source_text: "剣".into(),
+                target_text: "Sword".into(),
+                domain: "characters".into(),
+            },
         ];
+
+        let preview = preview_terminology_import(&pool, "p1", "ja-en", &terms)
+            .await
+            .unwrap();
+        assert_eq!(preview, (1, 1, 1));
+
         let mut tx = pool.begin().await.unwrap();
-        let (added, conflicts) = import_glossary_terms(&mut tx, "p1", "ja-en", &terms)
+        let (added, updated, conflicts) = import_terminology_terms(&mut tx, "p1", "ja-en", &terms)
             .await
             .unwrap();
         tx.commit().await.unwrap();
 
-        assert_eq!(added, 1, "only the new source is added");
-        assert_eq!(
-            conflicts, 1,
-            "existing source with a different target is kept"
-        );
-        let (target, project_id): (String, Option<String>) = sqlx::query_as(
-            "SELECT target_text, project_id FROM glossary_terms WHERE source_text = '魔王'",
+        assert_eq!((added, updated, conflicts), (1, 1, 1));
+        let imported: (String, String, String, String, Option<String>) = sqlx::query_as(
+            "SELECT entry.origin, translation.target_text, translation.review_status, \
+                    translation.enforcement, translation.project_id \
+             FROM terminology_entries entry \
+             JOIN terminology_translations translation ON translation.entry_id = entry.id \
+             WHERE entry.canonical_text = '魔王' AND translation.target_language = 'en'",
         )
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(target, "Demon Lord");
         assert_eq!(
-            project_id.as_deref(),
-            Some("p1"),
-            "imported terms are PROJECT terms, never global"
+            imported,
+            (
+                "import".into(),
+                "Demon Lord".into(),
+                "approved".into(),
+                "preferred".into(),
+                Some("p1".into())
+            )
+        );
+        let locked: (String, i64) = sqlx::query_as(
+            "SELECT target_text, (SELECT COUNT(*) FROM terminology_translations \
+             WHERE entry_id = 'e-locked' AND project_id = 'p1') \
+             FROM terminology_translations WHERE id = 't-locked'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(locked, ("Brave".into(), 0));
+
+        sqlx::query("DELETE FROM projects WHERE id = 'p1'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let surviving_entries: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM terminology_entries")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let project_translations: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM terminology_translations WHERE project_id = 'p1'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            surviving_entries, 3,
+            "source terms survive project deletion"
+        );
+        assert_eq!(project_translations, 0, "project overrides are cascaded");
+    }
+
+    #[tokio::test]
+    async fn test_pack_export_maps_only_reviewed_visible_terminology_for_each_target() {
+        let (pool, _tmp) = test_pool().await;
+        seed(&pool).await;
+        for (id, source, semantic) in [
+            ("e-approved", "勇者", "characters"),
+            ("e-locked", "魔王", "characters"),
+            ("e-proposed", "剣", "weapons"),
+            ("e-untranslated", "盾", "armors"),
+            ("e-unrelated", "薬", "items"),
+            ("e-fr", "宿屋", "locations"),
+        ] {
+            sqlx::query(
+                "INSERT INTO terminology_entries (\
+                    id, source_language, canonical_text, normalized_text, part_of_speech, \
+                    semantic_type, origin\
+                 ) VALUES (?, 'ja', ?, ?, 'noun', ?, 'manual')",
+            )
+            .bind(id)
+            .bind(source)
+            .bind(source)
+            .bind(semantic)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        sqlx::query(
+            "INSERT INTO terminology_translations (\
+                id, entry_id, target_language, project_id, target_text, review_status, enforcement\
+             ) VALUES \
+                ('t-approved', 'e-approved', 'en', NULL, 'Hero', 'approved', 'preferred'), \
+                ('t-locked', 'e-locked', 'en', 'p1', 'Demon Lord', 'locked', 'required'), \
+                ('t-proposed', 'e-proposed', 'en', 'p1', 'Sword', 'proposed', 'contextual'), \
+                ('t-unrelated', 'e-unrelated', 'en', NULL, 'Potion', 'approved', 'preferred'), \
+                ('t-fr', 'e-fr', 'fr', 'p1', 'Auberge', 'approved', 'preferred')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO terminology_occurrences (\
+                entry_id, project_id, segment_id, surface_text, engine_kind, occurrence_count\
+             ) VALUES ('e-approved', 'p1', 's1', '勇者', 'dialogue', 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let english = build_project_pack(&pool, "p1", "ja-en", false)
+            .await
+            .unwrap();
+        assert_eq!(
+            english.glossary,
+            vec![
+                PackGlossaryTerm {
+                    source_text: "勇者".into(),
+                    target_text: "Hero".into(),
+                    domain: "characters".into(),
+                },
+                PackGlossaryTerm {
+                    source_text: "魔王".into(),
+                    target_text: "Demon Lord".into(),
+                    domain: "characters".into(),
+                },
+            ]
+        );
+        let french = build_project_pack(&pool, "p1", "ja-fr", false)
+            .await
+            .unwrap();
+        assert_eq!(
+            french.glossary,
+            vec![PackGlossaryTerm {
+                source_text: "宿屋".into(),
+                target_text: "Auberge".into(),
+                domain: "locations".into(),
+            }]
         );
     }
 

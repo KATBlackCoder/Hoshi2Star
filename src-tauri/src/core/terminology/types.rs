@@ -53,6 +53,7 @@ string_enum!(PartOfSpeech {
     Unknown => "unknown",
 });
 
+#[allow(clippy::derivable_impls)]
 impl Default for PartOfSpeech {
     fn default() -> Self {
         Self::Unknown
@@ -65,6 +66,7 @@ string_enum!(EntryStatus {
     Archived => "archived",
 });
 
+#[allow(clippy::derivable_impls)]
 impl Default for EntryStatus {
     fn default() -> Self {
         Self::Active

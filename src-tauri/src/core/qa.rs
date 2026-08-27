@@ -948,7 +948,7 @@ mod tests {
             Enforcement::Required,
             PartOfSpeech::ProperNoun,
         );
-        let mismatch = check_with_rules("勇者", "Champion", &[rule.clone()], "mv_mz");
+        let mismatch = check_with_rules("勇者", "Champion", std::slice::from_ref(&rule), "mv_mz");
         assert!(matches!(
             mismatch.errors.as_slice(),
             [QaError::TerminologyMismatch {

@@ -715,7 +715,7 @@ Run: `pnpm test src/components/editor/QAPanel.test.tsx src/components/editor/Ter
 
 Expected: QA pure en preview, audit explicite, règles d'enforcement correctes.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Run: `git add -A src-tauri/src/core/qa.rs src-tauri/src/commands/qa.rs src-tauri/src/core/report.rs src/components/editor src/components/shell/InspectorRail.tsx src/hooks/useAppHandlers.ts src/stores/editor.ts src/stores/project.ts src/App.tsx src/lib/types.ts src/locales/en.json src/locales/fr.json`
 
@@ -729,6 +729,7 @@ Run: `git commit -m "refactor(qa): enforce reviewed terminology consistently"`
 
 - Modify: `src-tauri/src/core/h2s_pack.rs`
 - Modify: `src-tauri/src/commands/pack.rs`
+- Create: `src-tauri/src/commands/pack_terminology.rs`
 - Modify: `src-tauri/src/commands/terminology.rs`
 - Modify: `src-tauri/src/llm/prompts.rs`
 - Modify: `src-tauri/src/core/mod.rs`
@@ -741,19 +742,19 @@ Run: `git commit -m "refactor(qa): enforce reviewed terminology consistently"`
 - Modify: `src/components/PackImportWizard.tsx`
 - Test: modules et composants adjacents
 
-- [ ] **Step 1: Écrire les tests de compatibilité avant modification**
+- [x] **Step 1: Écrire les tests de compatibilité avant modification**
 
 Tester: export d'un pack v1 depuis la nouvelle base, import d'un ancien `glossary.json`, conflit global/projet, ja-en et ja-fr, terme non traduit, terme proposé, terme verrouillé et suppression du projet après import.
 
-- [ ] **Step 2: Garder le format v1**
+- [x] **Step 2: Garder le format v1**
 
 À l'export, mapper uniquement les traductions `approved` ou `locked` visibles pour le projet vers le champ historique `glossary` (`source`, `target`, `domain`). Ne pas exporter les candidats non traduits/proposés. À l'import, créer entrée+traduction `approved/preferred`, origine `import`, portée projet.
 
-- [ ] **Step 3: Afficher les conséquences dans l'assistant**
+- [x] **Step 3: Afficher les conséquences dans l'assistant**
 
 Le preview indique créations, mises à jour et conflits terminologiques. Aucun pack importé ne doit écraser silencieusement une traduction `locked`.
 
-- [ ] **Step 4: Retirer la façade historique après bascule des packs**
+- [x] **Step 4: Retirer la façade historique après bascule des packs**
 
 Avant suppression, déplacer `extract_wolf_speakers` vers `commands/terminology.rs` comme wrapper de compatibilité qui utilise `extract_wolf_speaker_names` mais écrit les entrées `speaker` et leurs occurrences dans la nouvelle base; conserver son nom IPC pour ne pas casser le parcours Wolf existant. Supprimer ensuite les autres commandes, le core et le prompt glossary, puis retirer leurs exports et leur enregistrement Tauri. Ne pas supprimer la table SQLite `glossary_terms` en 0008: elle reste une donnée de rollback historique, mais aucune requête applicative ne la lit ou l'écrit.
 
@@ -761,7 +762,7 @@ Run: `rg -n "Glossary|glossary|get_glossary|glossary_terms" src src-tauri/src sr
 
 Expected: uniquement le champ sérialisé `glossary` du format pack v1, les tests de compatibilité et les mentions explicites de migration; aucun CRUD, store, commande ou prompt actif.
 
-- [ ] **Step 5: Vérifier les archives réelles**
+- [x] **Step 5: Vérifier les archives réelles**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml commands::pack core::h2s_pack`
 

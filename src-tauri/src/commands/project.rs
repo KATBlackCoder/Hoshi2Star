@@ -202,7 +202,7 @@ pub async fn open_project(
             file_count,
             segment_count,
             translated_count: 0,
-            glossary_term_count: 0,
+            terminology_term_count: 0,
         },
     );
     if let Err(e) = manifest::write_manifest(&path, &manifest_data) {

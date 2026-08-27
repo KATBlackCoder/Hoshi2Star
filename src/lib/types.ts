@@ -280,7 +280,7 @@ export interface TerminologyScanDone {
 export interface PackExportSummary {
   segmentCount: number;
   fileCount: number;
-  glossaryCount: number;
+  terminologyCount: number;
   tmCount: number;
 }
 
@@ -304,7 +304,10 @@ export interface ImportPreview {
   conflicts: number;
   sourceChanged: number;
   orphans: number;
-  glossaryCount: number;
+  terminologyCount: number;
+  terminologyCreates: number;
+  terminologyUpdates: number;
+  terminologyConflicts: number;
   tmCount: number;
 }
 
@@ -322,8 +325,9 @@ export interface ImportReport {
   skippedSourceChanged: number;
   identical: number;
   orphans: number;
-  glossaryAdded: number;
-  glossaryConflicts: number;
+  terminologyAdded: number;
+  terminologyUpdated: number;
+  terminologyConflicts: number;
   tmAdded: number;
   backupPath: string;
 }

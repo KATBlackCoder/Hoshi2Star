@@ -27,7 +27,7 @@ interface PackExportDialogProps {
 
 /**
  * "Share project" dialog — exports the project's translation state as a
- * `.h2s` exchange pack (segments + glossary, TM opt-in) so another
+ * `.h2s` exchange pack (segments + terminology, TM opt-in) so another
  * Hoshi2Star user can resume the translation on their own copy of the game.
  * No game file ever enters the pack.
  */

@@ -156,7 +156,7 @@ pub trait LlmProvider: Send + Sync {
 
     /// Send a single system + user message and return the raw response string.
     ///
-    /// Used for non-translation tasks such as glossary term extraction.
+    /// Used for non-translation tasks such as terminology candidate translation.
     fn chat(
         &self,
         system: &str,

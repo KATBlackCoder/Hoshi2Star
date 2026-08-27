@@ -168,10 +168,6 @@ async fn validate_patch_schema(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             &["source_hash", "source_text", "target_text", "lang_pair"],
         ),
         (
-            "glossary_terms",
-            &["source_text", "target_text", "lang_pair", "project_id"],
-        ),
-        (
             "terminology_entries",
             &[
                 "id",

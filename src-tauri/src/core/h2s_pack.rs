@@ -105,7 +105,7 @@ pub struct PackSegment {
     pub qa_score: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PackGlossaryTerm {
     pub source_text: String,

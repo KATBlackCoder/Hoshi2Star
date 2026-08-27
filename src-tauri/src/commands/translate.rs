@@ -103,14 +103,11 @@ pub async fn translate_segments(
             .await
             .ok()
             .flatten();
-            match row {
-                Some((project_id, engine, project_source_lang, project_target_lang)) => {
-                    resolved_project_id = Some(project_id.clone());
-                    project_engine = engine;
-                    source_lang = project_source_lang;
-                    target_lang = project_target_lang;
-                }
-                None => {}
+            if let Some((project_id, engine, project_source_lang, project_target_lang)) = row {
+                resolved_project_id = Some(project_id);
+                project_engine = engine;
+                source_lang = project_source_lang;
+                target_lang = project_target_lang;
             }
         }
 
