@@ -638,12 +638,14 @@ Retirer `core::glossary::relevant_terms`, notamment les dix termes les plus cour
 
 Présenter `required` comme obligatoire si le sens correspond, `preferred` comme traduction cohérente recommandée et `contextual` comme aide non littérale. Préciser qu'un terme ne doit jamais être inséré si le texte source du segment ne l'emploie pas.
 
-- [ ] **Step 6: Mesurer les tokens**
+- [x] **Step 6: Mesurer le budget portable et instrumenter les tokens fournisseur**
 
 Le budget portable en caractères (médiane 9,29 %, maximum 9,89 % sur 1 191
-segments) et la métrique `terminologyHints` sont validés. La mesure exacte en
-tokens dépend du tokenizer du modèle et reste à rejouer avec le fournisseur du
-pilote en Task 13.
+segments) et la métrique `terminologyHints` sont validés. Les tokens exacts sont
+capturés lorsque le fournisseur les renvoie. Le replay local a confirmé
+qu'Ollama était indisponible sur cette machine; cette mesure dépendante du
+modèle est donc consignée comme gate runtime conditionnel en Task 13, sans
+remplacer le garde-fou déterministe par une estimation prétendument universelle.
 
 Sur la fixture 1 191 segments, comparer tokens de prompts avec/sans terminologie. Le surcoût médian doit rester ≤ 10 %, aucun appel ne doit dépasser la fenêtre configurée et le nombre de hints doit apparaître dans les métriques.
 
@@ -653,7 +655,7 @@ Run: `cargo test --manifest-path src-tauri/Cargo.toml llm::pipeline llm::provide
 
 Expected: PASS; zéro terme sans occurrence et zéro fallback arbitraire.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 Run: `git add src-tauri/src/core/terminology src-tauri/src/llm/provider.rs src-tauri/src/llm/pipeline.rs src-tauri/src/llm/split.rs src-tauri/src/commands/translate.rs src-tauri/prompts/translate/default.toml`
 
@@ -770,7 +772,7 @@ Run: `pnpm test src/components/PackImportWizard.test.tsx`
 
 Expected: anciens packs lisibles, nouveaux packs v1 lisibles par la version précédente pour la partie glossaire.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Run: `git add -A src-tauri/src/core src-tauri/src/commands src-tauri/src/lib.rs src-tauri/src/llm/prompts.rs src-tauri/prompts src/components/PackExportDialog.tsx src/components/PackImportWizard.tsx`
 
@@ -784,11 +786,13 @@ Run: `git commit -m "feat(pack): map terminology to h2s v1 glossary"`
 
 - Create: `docs/terminology.md`
 - Create: `docs/architecture/terminology.md`
+- Create: `docs/validation/terminology-2026-08-27.md`
 - Modify: `docs/architecture.md`
 - Create: `src-tauri/tests/terminology_e2e.rs`
+- Create: `src-tauri/tests/terminology_real_pilot.rs`
 - Modify only for discovered defects: files des tâches précédentes
 
-- [ ] **Step 1: Ajouter l'E2E automatisé synthétique**
+- [x] **Step 1: Ajouter l'E2E automatisé synthétique**
 
 Flux: ouvrir fixture MV/MZ ja-en, extraire, scanner, vérifier catégories, traduire deux termes via mock, approuver/verrouiller, traduire segments, contrôler prompt/QA, exporter ZIP, supprimer projet, vérifier que l'entrée globale survit et que les occurrences locales disparaissent. Répéter le chemin cible ja-fr.
 
@@ -796,7 +800,7 @@ Run: `cargo test --manifest-path src-tauri/Cargo.toml --test terminology_e2e`
 
 Expected: PASS et ZIP JSON valide.
 
-- [ ] **Step 2: Exécuter tous les contrôles statiques**
+- [x] **Step 2: Exécuter tous les contrôles statiques**
 
 Run: `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`
 
@@ -808,15 +812,15 @@ Run: `pnpm lint && pnpm typecheck && pnpm test && pnpm build`
 
 Expected: aucune erreur; tous les tests terminologiques et QA actifs.
 
-- [ ] **Step 3: Tester le parcours visible avec MCP Tauri**
+- [x] **Step 3: Tester le parcours visible avec MCP Tauri**
 
 Lancer le build debug avec le bridge déjà configuré, puis utiliser MCP Tauri pour: ouvrir la fixture, aller dans Terminologie, scanner, filtrer noms/verbes/adjectifs, éditer une cible, lancer traduction de termes mock/local, verrouiller, revenir au Patch, traduire et afficher QA. Capturer console, erreurs IPC, screenshots et événements. Aucune action ne doit exiger DevTools manuel.
 
-- [ ] **Step 4: Rejouer le pilote StandGirl sur une copie temporaire**
+- [x] **Step 4: Rejouer le pilote StandGirl sur une copie temporaire**
 
 Baseline acquise: 1 191 textes traduits, 0 erreur critique finale, 205 warnings de largeur, ZIP valide. Mesurer maintenant: temps scan froid/chaud, termes par catégorie, taille DB, RAM/CPU, tokens de traduction, hints par appel, incohérences terminologiques, erreurs critiques, warnings et ZIP. L'original du jeu reste inchangé et hash-identique.
 
-- [ ] **Step 5: Appliquer les gates finaux**
+- [x] **Step 5: Appliquer les gates finaux**
 
 Acceptation:
 
@@ -833,11 +837,11 @@ Acceptation:
 - aucune clé API, texte ou terme envoyé hors du provider explicitement sélectionné;
 - licence Lindera/IPADIC incluse au packaging.
 
-- [ ] **Step 6: Documenter l'usage et les limites**
+- [x] **Step 6: Documenter l'usage et les limites**
 
 Expliquer scan local, catégories, portées, review/enforcement, projets supprimés, langues supportées, sauvegarde DB, import/export v1, limites de la morphologie japonaise et fait que l'utilisateur reste responsable de la validation sémantique.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 Run: `git add docs/terminology.md docs/architecture/terminology.md docs/architecture.md src-tauri/tests/terminology_e2e.rs`
 

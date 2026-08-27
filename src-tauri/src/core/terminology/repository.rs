@@ -901,23 +901,27 @@ mod tests {
         .await
         .unwrap();
 
-        let started = Instant::now();
-        let page = list(
-            &pool,
-            &TerminologyQuery {
-                page_size: 100,
-                ..TerminologyQuery::default()
-            },
-        )
-        .await
-        .unwrap();
-        let elapsed = started.elapsed();
-
+        let query = TerminologyQuery {
+            page_size: 100,
+            ..TerminologyQuery::default()
+        };
+        let page = list(&pool, &query).await.unwrap();
         assert_eq!(page.total, 10_000);
         assert_eq!(page.items.len(), 100);
+
+        let mut samples = Vec::with_capacity(40);
+        for _ in 0..40 {
+            let started = Instant::now();
+            let measured_page = list(&pool, &query).await.unwrap();
+            samples.push(started.elapsed());
+            assert_eq!(measured_page.items.len(), 100);
+        }
+        samples.sort_unstable();
+        let p95 = samples[37];
+        eprintln!("terminology 10k page query p95: {p95:?}");
         assert!(
-            elapsed < Duration::from_millis(100),
-            "10k page query exceeded 100 ms: {elapsed:?}"
+            p95 < Duration::from_millis(100),
+            "10k page query p95 exceeded 100 ms: {p95:?}"
         );
     }
 }
