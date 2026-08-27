@@ -1,4 +1,11 @@
-import { Images, Languages, Library, Play, Settings } from "lucide-react";
+import {
+  BookOpenText,
+  Images,
+  Languages,
+  Library,
+  Play,
+  Settings,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -7,6 +14,7 @@ import { type AppMode, useUiStore } from "@/stores/ui";
 const MODES = [
   { id: "library", icon: Library },
   { id: "patch", icon: Languages },
+  { id: "terminology", icon: BookOpenText },
   { id: "player", icon: Play },
   { id: "images", icon: Images },
 ] as const;

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type AppMode = "library" | "patch" | "player" | "images";
+export type AppMode = "library" | "patch" | "terminology" | "player" | "images";
 export type InspectorTab = "tm" | "qa" | "glossary";
 export type GridDensity = "compact" | "comfortable";
 

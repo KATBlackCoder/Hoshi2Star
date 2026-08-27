@@ -193,6 +193,90 @@ export interface GlossaryExtractionDonePayload {
 }
 
 // ---------------------------------------------------------------------------
+// Terminology library
+// ---------------------------------------------------------------------------
+
+export type PartOfSpeech =
+  | "noun"
+  | "proper_noun"
+  | "verb"
+  | "adjective"
+  | "adverb"
+  | "expression"
+  | "unknown";
+export type TerminologyEntryStatus = "active" | "ignored" | "archived";
+export type TerminologyReviewStatus = "proposed" | "approved" | "locked";
+export type TerminologyEnforcement = "contextual" | "preferred" | "required";
+
+export interface TerminologyTranslation {
+  id: string;
+  targetLanguage: string;
+  projectId: string | null;
+  targetText: string;
+  reviewStatus: TerminologyReviewStatus;
+  enforcement: TerminologyEnforcement;
+  confidence: number;
+  providerId: string | null;
+  model: string | null;
+  acceptedVariants: string[];
+}
+
+export interface TerminologyContext {
+  segmentId: string;
+  surfaceText: string;
+  sourceText: string;
+  engineKind: string;
+  occurrenceCount: number;
+}
+
+export interface TerminologyEntry {
+  id: string;
+  sourceLanguage: string;
+  canonicalText: string;
+  normalizedText: string;
+  reading: string | null;
+  partOfSpeech: PartOfSpeech;
+  semanticType: string;
+  senseKey: string;
+  status: TerminologyEntryStatus;
+  origin: "engine" | "lindera" | "manual" | "legacy_glossary" | "import";
+  confidence: number;
+  occurrenceCount: number;
+  translation: TerminologyTranslation | null;
+  contexts: TerminologyContext[];
+}
+
+export interface PaginatedTerminology {
+  items: TerminologyEntry[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface TerminologyStats {
+  totalEntries: number;
+  untranslatedEntries: number;
+  proposedTranslations: number;
+  approvedTranslations: number;
+  lockedTranslations: number;
+}
+
+export interface TerminologyScanProgress {
+  scanId: string;
+  projectId: string;
+  processed: number;
+  total: number;
+  discovered: number;
+}
+
+export interface TerminologyScanDone {
+  scanId: string;
+  projectId: string;
+  status: "completed" | "cancelled" | "failed";
+  error: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // .h2s exchange pack (share/resume a translation)
 // ---------------------------------------------------------------------------
 

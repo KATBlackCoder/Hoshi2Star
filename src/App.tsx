@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ResizableHandle,
@@ -30,6 +30,12 @@ import { FileTreePanel } from "@/components/shell/FileTreePanel";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 import { PilotComparisonWorkspace } from "@/components/pilot/PilotComparisonWorkspace";
 import { usePilotStore } from "@/stores/pilot";
+
+const TerminologyWorkspace = lazy(() =>
+  import("@/features/terminology/TerminologyWorkspace").then((module) => ({
+    default: module.TerminologyWorkspace,
+  })),
+);
 
 // ---------------------------------------------------------------------------
 // App
@@ -77,6 +83,16 @@ export default function App() {
       <AppShell onOpenSettings={() => handlers.setShowSettings(true)}>
         {mode === "library" ? (
           <ProjectList />
+        ) : mode === "terminology" ? (
+          <Suspense
+            fallback={
+              <div className="grid h-full place-items-center text-sm text-muted-foreground">
+                Chargement de la terminologie…
+              </div>
+            }
+          >
+            <TerminologyWorkspace />
+          </Suspense>
         ) : mode === "patch" ? (
           <div className="flex h-full flex-col overflow-hidden">
             <AppToolbar

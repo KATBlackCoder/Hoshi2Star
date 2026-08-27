@@ -9,10 +9,9 @@ beforeEach(() => useUiStore.setState({ mode: "library" }));
 describe("ModeNavigation", () => {
   it("marks and changes the current mode", async () => {
     render(<ModeNavigation onOpenSettings={vi.fn()} />);
-    expect(screen.getByRole("button", { name: "Bibliothèque" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    expect(
+      screen.getByRole("button", { name: "Bibliothèque" }),
+    ).toHaveAttribute("aria-current", "page");
     await userEvent.click(screen.getByRole("button", { name: "Images" }));
     expect(useUiStore.getState().mode).toBe("images");
   });
@@ -23,5 +22,11 @@ describe("ModeNavigation", () => {
     library.focus();
     await userEvent.keyboard("{ArrowRight}");
     expect(useUiStore.getState().mode).toBe("patch");
+  });
+
+  it("opens the terminology workspace as its own mode", async () => {
+    render(<ModeNavigation onOpenSettings={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Terminologie" }));
+    expect(useUiStore.getState().mode).toBe("terminology");
   });
 });

@@ -26,16 +26,16 @@
 
 ## Découpage de livraison
 
-| Jalon | Contenu | Dépend de | Critère de sortie |
-|---|---|---|---|
-| T0 | Stabiliser les contrats QA déjà présents | commit `7c1b6b9` | worktree propre et suite actuelle verte |
-| T1 | Spike analyseur + budget ressources | T0 | choix documenté embedded ou ressource mmap, budgets tenus |
-| T2 | Schéma et repository terminologique | T1 | migration d'une DB existante sans perte et CRUD testé |
-| T3 | Adaptateur MV/MZ + scan local incrémental | T2 | fixture ja analysée de façon déterministe, annulation/reprise testées |
-| T4 | API Tauri + page Terminologie | T3 | scan/filtre/édition utilisables sans provider |
-| T5 | Traduction assistée des termes | T4 | ja→en et ja→fr, résultats `proposed`, validation manuelle |
-| T6 | Résolution par requête et intégration pipeline | T5 | zéro fallback arbitraire, contexte borné et pertinent |
-| T7 | QA terminologique, packs et durcissement | T6 | tests complets, MCP Tauri et jeu pilote satisfaisants |
+| Jalon | Contenu                                        | Dépend de        | Critère de sortie                                                     |
+| ----- | ---------------------------------------------- | ---------------- | --------------------------------------------------------------------- |
+| T0    | Stabiliser les contrats QA déjà présents       | commit `7c1b6b9` | worktree propre et suite actuelle verte                               |
+| T1    | Spike analyseur + budget ressources            | T0               | choix documenté embedded ou ressource mmap, budgets tenus             |
+| T2    | Schéma et repository terminologique            | T1               | migration d'une DB existante sans perte et CRUD testé                 |
+| T3    | Adaptateur MV/MZ + scan local incrémental      | T2               | fixture ja analysée de façon déterministe, annulation/reprise testées |
+| T4    | API Tauri + page Terminologie                  | T3               | scan/filtre/édition utilisables sans provider                         |
+| T5    | Traduction assistée des termes                 | T4               | ja→en et ja→fr, résultats `proposed`, validation manuelle             |
+| T6    | Résolution par requête et intégration pipeline | T5               | zéro fallback arbitraire, contexte borné et pertinent                 |
+| T7    | QA terminologique, packs et durcissement       | T6               | tests complets, MCP Tauri et jeu pilote satisfaisants                 |
 
 Ne pas commencer T2 si T1 dépasse le budget sans avoir testé le mode dictionnaire externe mmap. Ne pas commencer T6 tant que les traductions proposées/validées ne sont pas distinguées dans la base et l'UI.
 
@@ -44,6 +44,7 @@ Ne pas commencer T2 si T1 dépasse le budget sans avoir testé le mode dictionna
 ### Task 0: Isoler et valider le socle QA déjà en cours
 
 **Files:**
+
 - Modify only if failing: `src-tauri/tests/e2e_project_flow.rs`
 - Existing untracked fixtures: `src-tauri/tests/fixtures/mv_mz/`
 - Existing untracked contract: `src-tauri/tests/qa_v2_contract.rs`
@@ -81,6 +82,7 @@ Expected: le travail QA est indépendant de la terminologie et le worktree redev
 ### Task 1: Mesurer Lindera avant de l'intégrer à l'application
 
 **Files:**
+
 - Modify: `src-tauri/Cargo.toml`
 - Modify: `src-tauri/Cargo.lock`
 - Create: `src-tauri/benches/terminology_analyzer.rs`
@@ -128,6 +130,7 @@ Run: `git commit -m "perf(terminology): validate Japanese analyzer budgets"`
 ### Task 2: Créer le schéma SQLite et migrer le glossaire sans perte
 
 **Files:**
+
 - Create: `src-tauri/migrations/0008_terminology.sql`
 - Modify: `src-tauri/src/db/pool.rs`
 - Create: `src-tauri/tests/terminology_migration.rs`
@@ -269,6 +272,7 @@ Run: `git commit -m "feat(terminology): add multilingual termbase schema"`
 ### Task 3: Construire un noyau terminologique petit et sans dépendance UI
 
 **Files:**
+
 - Modify: `src-tauri/Cargo.toml`
 - Modify: `src-tauri/Cargo.lock`
 - Create: `src-tauri/src/core/terminology/mod.rs`
@@ -313,6 +317,7 @@ Run: `git commit -m "feat(terminology): add paginated termbase repository"`
 ### Task 4: Ajouter l'interface d'analyse et l'adaptateur japonais Lindera
 
 **Files:**
+
 - Create: `src-tauri/src/core/terminology/analyzer/mod.rs`
 - Create: `src-tauri/src/core/terminology/analyzer/japanese.rs`
 - Create: `src-tauri/src/core/terminology/analyzer/filters.rs`
@@ -367,6 +372,7 @@ Run: `git commit -m "feat(terminology): add bounded Japanese morphology analyzer
 ### Task 5: Faire appartenir la sémantique MV/MZ à l'adaptateur moteur
 
 **Files:**
+
 - Create: `src-tauri/src/engines/terminology.rs`
 - Create: `src-tauri/src/engines/mv_mz/terminology.rs`
 - Modify: `src-tauri/src/engines/mod.rs`
@@ -402,6 +408,7 @@ Run: `git commit -m "feat(mv-mz): classify engine-owned terminology"`
 ### Task 6: Scanner les projets de façon incrémentale, annulable et peu coûteuse
 
 **Files:**
+
 - Create: `src-tauri/src/core/terminology/scanner.rs`
 - Create: `src-tauri/src/core/terminology/service.rs`
 - Modify: `src-tauri/src/core/terminology/mod.rs`
@@ -447,6 +454,7 @@ Run: `git commit -m "feat(terminology): scan projects incrementally"`
 ### Task 7: Exposer une API Tauri étroite et testable
 
 **Files:**
+
 - Create: `src-tauri/src/commands/terminology.rs`
 - Modify: `src-tauri/src/commands/mod.rs`
 - Modify: `src-tauri/src/lib.rs`
@@ -479,6 +487,7 @@ Run: `git commit -m "feat(tauri): expose terminology commands"`
 ### Task 8: Construire la page React Terminologie sans dupliquer l'état serveur
 
 **Files:**
+
 - Modify: `src/stores/ui.ts`
 - Modify: `src/stores/ui.test.ts`
 - Modify: `src/components/shell/ModeNavigation.tsx`
@@ -499,15 +508,15 @@ Run: `git commit -m "feat(tauri): expose terminology commands"`
 - Create: `src/features/terminology/terminologyUiStore.ts`
 - Test: fichiers `*.test.tsx` adjacents
 
-- [ ] **Step 1: Ajouter le mode `terminology`**
+- [x] **Step 1: Ajouter le mode `terminology`**
 
 Le libellé français est `Terminologie`, pas `Bibliothèque`, car `library` désigne déjà les projets. La page fonctionne en vue globale sans projet et se filtre automatiquement sur le projet actif s'il existe. La source/cible par défaut vient du projet actif.
 
-- [ ] **Step 2: Séparer état serveur et état d'interface**
+- [x] **Step 2: Séparer état serveur et état d'interface**
 
 TanStack Query conserve pages, stats et mutations/invalidation. Zustand conserve uniquement recherche saisie, filtres, lignes sélectionnées et portée global/projet. Ne jamais recopier les entrées reçues dans Zustand.
 
-- [ ] **Step 3: Écrire les tests d'interface avant les composants**
+- [x] **Step 3: Écrire les tests d'interface avant les composants**
 
 Couvrir: page vide, chargement, erreur IPC, pagination, filtre POS/type/statut, changement de langue cible, sélection multiple, scan indisponible si source non japonaise, progression/annulation, création manuelle, édition/approbation/verrouillage et archivage confirmé.
 
@@ -515,19 +524,19 @@ Run: `pnpm test src/features/terminology src/components/shell/ModeNavigation.tes
 
 Expected: FAIL avant implémentation.
 
-- [ ] **Step 4: Implémenter la table compacte**
+- [x] **Step 4: Implémenter la table compacte**
 
 Colonnes: terme source, lecture, POS, type moteur, occurrence projet, cible effective, portée, statut de révision, enforcement, actions. Utiliser TanStack Table avec pagination serveur de 100 lignes et rendu virtualisé uniquement si la mesure DOM le justifie. Les mutations optimistes sont interdites pour les changements de verrouillage; attendre la confirmation SQLite.
 
-- [ ] **Step 5: Implémenter le scan explicite**
+- [x] **Step 5: Implémenter le scan explicite**
 
 Le bouton `Analyser le vocabulaire` affiche le périmètre et rappelle que l'opération est locale. Pendant le scan, montrer compteurs et annulation sans bloquer navigation/édition. À `scan-done`, invalider stats et page courante, pas toutes les queries de l'application.
 
-- [ ] **Step 6: Vérifier accessibilité et charge UI**
+- [x] **Step 6: Vérifier accessibilité et charge UI**
 
 Navigation clavier, focus du dialog, labels de boutons, état `aria-busy`, annonces de progression modérées et aucun rendu de 10 000 lignes. Une page/filtre doit rester interactive sous 100 ms hors IPC.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 Run: `git add src/stores/ui.ts src/stores/ui.test.ts src/components/shell/ModeNavigation.tsx src/components/shell/ModeNavigation.test.tsx src/App.tsx src/lib/types.ts src/locales/en.json src/locales/fr.json src/components/ui/dialog.tsx src/components/ui/table.tsx src/features/terminology`
 
@@ -538,6 +547,7 @@ Run: `git commit -m "feat(ui): add project-aware terminology workspace"`
 ### Task 9: Traduire les termes avec le modèle sans les approuver automatiquement
 
 **Files:**
+
 - Create: `src-tauri/prompts/terminology/default.toml`
 - Modify: `src-tauri/src/llm/prompts.rs`
 - Create: `src-tauri/src/core/terminology/translator.rs`
@@ -587,6 +597,7 @@ Run: `git commit -m "feat(terminology): translate term candidates with review st
 ### Task 10: Résoudre les termes pour chaque vraie requête LLM
 
 **Files:**
+
 - Create: `src-tauri/src/core/terminology/resolver.rs`
 - Modify: `src-tauri/src/core/terminology/mod.rs`
 - Modify: `src-tauri/src/llm/provider.rs`
@@ -648,6 +659,7 @@ Run: `git commit -m "feat(localization): resolve terminology per provider reques
 ### Task 11: Unifier la QA terminologique et remplacer l'interface Glossaire
 
 **Files:**
+
 - Modify: `src-tauri/src/core/qa.rs`
 - Modify: `src-tauri/src/commands/qa.rs`
 - Modify: `src-tauri/src/core/report.rs`
@@ -709,6 +721,7 @@ Run: `git commit -m "refactor(qa): enforce reviewed terminology consistently"`
 ### Task 12: Préserver les packs `.h2s` v1 et la restauration
 
 **Files:**
+
 - Modify: `src-tauri/src/core/h2s_pack.rs`
 - Modify: `src-tauri/src/commands/pack.rs`
 - Modify: `src-tauri/src/commands/terminology.rs`
@@ -762,6 +775,7 @@ Run: `git commit -m "feat(pack): map terminology to h2s v1 glossary"`
 ### Task 13: Durcir, documenter et valider dans la vraie application Tauri
 
 **Files:**
+
 - Create: `docs/terminology.md`
 - Create: `docs/architecture/terminology.md`
 - Modify: `docs/architecture.md`
