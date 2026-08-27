@@ -1,0 +1,13 @@
+{
+  "gameTitle": "星の試験物語 MZ",
+  "currencyUnit": "ゴールド",
+  "terms": {
+    "basic": ["レベル", "体力", "魔力"],
+    "commands": ["戦う", "逃げる", "道具"],
+    "params": ["攻撃力", "防御力"],
+    "messages": {
+      "alwaysDash": "常時ダッシュ",
+      "commandRemember": "コマンド記憶"
+    }
+  }
+}

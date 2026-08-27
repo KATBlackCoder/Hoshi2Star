@@ -1,0 +1,27 @@
+{
+  "displayName": "始まりの村",
+  "events": [
+    null,
+    {
+      "id": 1,
+      "name": "案内人",
+      "pages": [
+        {
+          "list": [
+            {"code": 101, "indent": 0, "parameters": ["", 0, 0, 2]},
+            {"code": 401, "indent": 0, "parameters": ["ようこそ、旅人よ！"]},
+            {"code": 401, "indent": 0, "parameters": ["所持金は\\V[1]ゴールドです。"]},
+            {"code": 102, "indent": 0, "parameters": [["村を調べる", "先へ進む"], 0, 0, 2, 0]},
+            {"code": 105, "indent": 0, "parameters": [2, false]},
+            {"code": 405, "indent": 0, "parameters": ["昔々、空から星が落ちました。"]},
+            {"code": 111, "indent": 0, "parameters": [0, 1, 0]},
+            {"code": 401, "indent": 1, "parameters": ["条件を満たしました。"]},
+            {"code": 412, "indent": 0, "parameters": []},
+            {"code": 357, "indent": 0, "parameters": ["TextPicture", "set", "表示", {"text": "夜空に輝く星"}]},
+            {"code": 0, "indent": 0, "parameters": []}
+          ]
+        }
+      ]
+    }
+  ]
+}
