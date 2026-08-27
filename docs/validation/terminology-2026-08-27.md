@@ -2,9 +2,7 @@
 
 ## Verdict
 
-Le pipeline terminologique MV/MZ est opérationnel pour une source japonaise vers l'anglais ou le français. Le scan, la révision, les contraintes par segment, le QA, les packs v1, la suppression de projet et le packaging sont couverts. L'analyse réelle StandGirl respecte les budgets de temps, mémoire et inactivité.
-
-La seule mesure conditionnelle non disponible sur cette machine est le nombre exact de tokens renvoyé par un modèle réel : aucun serveur Ollama ne répondait à `localhost:11434`. La borne portable de 10 % en caractères et la limite de 20 hints sont actives et testées; les métriques exactes seront renseignées automatiquement par tout fournisseur qui retourne son usage.
+Le pipeline terminologique MV/MZ est opérationnel pour une source japonaise vers l'anglais ou le français. Le scan, la révision, les contraintes par segment, le QA, les packs v1, la suppression de projet et le packaging sont couverts. L'analyse réelle StandGirl respecte les budgets de temps, mémoire et inactivité. Le budget exact de tokens a également été validé avec Ollama `gemma4:e4b`.
 
 ## Pilote StandGirl isolé
 
@@ -47,16 +45,36 @@ Application debug réelle Hoshi2Star 0.4.10, Tauri 2.11.2, Linux x86_64 :
 - aucune erreur, alerte ou exception console;
 - projet synthétique supprimé après le test.
 
-La traduction de termes via modèle réel était indisponible car Ollama ne répondait pas. Le protocole fournisseur est couvert par l'E2E déterministe avec mock local; aucun texte n'est parti sur le réseau.
+Ollama ne répondait pas pendant cette première session MCP. Le parcours fournisseur a ensuite été rejoué localement avec `gemma4:e4b`, comme détaillé ci-dessous. Aucun texte n'a été envoyé hors de la machine.
+
+## Validation Ollama réelle
+
+Modèles détectés localement : `gemma4:e4b` (8B, Q4_K_M) et `gemma4:e2b` (5,1B, Q4_K_M). Le test utilise le modèle par défaut Hoshi2Star `gemma4:e4b`, une copie temporaire de StandGirl et une DB jetable.
+
+Trois termes structurés ont été traduits en anglais puis en français. Chaque résultat a été persisté en `proposed`, puis un seul terme a été explicitement verrouillé pour tester le pipeline. Exemples du passage final : `六花 → Rikka`, `凛 → Rin`, `汎用 → General/Générique`.
+
+Les passages successifs ont également produit des variantes comme `Rikaka` et `Rokka` pour `六花`. Cette variabilité confirme qu'une sortie modèle ne doit jamais devenir `approved` ou `locked` automatiquement.
+
+| Mesure | ja→en | ja→fr | Gate |
+|---|---:|---:|---:|
+| Traduction de 3 termes, tokens prompt | 434 | 434 | informatif |
+| Traduction de 3 termes, tokens réponse | 141 | 143 | informatif |
+| Segment témoin sans hint | 275 | 275 | référence |
+| Même segment avec 1 hint | 299 | 299 | ≤ 302,5 |
+| Surcoût prompt exact | 8,73 % | 8,73 % | ≤ 10 % — OK |
+| QA avec terme verrouillé | 100, 0 critique | 100, 0 critique | OK |
+| Appels et retries | 1 tentative/appel | 1 tentative/appel | OK |
+
+Le premier format de hint, trop verbeux, mesurait 14,55 % et 14,91 %. Il a été compacté sans retirer la nature grammaticale, le type sémantique, l'enforcement ni les variantes. Le test opt-in échoue désormais si le surcoût exact dépasse 10 %.
 
 ## Automatisation
 
-- Rust : format et Clippy `-D warnings` propres; suite complète, 495 tests unitaires réussis et 4 ignorés, plus toutes les intégrations.
+- Rust : format et Clippy `-D warnings` propres; suite complète, 496 tests unitaires réussis et 4 ignorés, plus toutes les intégrations. Les deux pilotes privés ignorés par défaut passent lorsqu'ils sont activés explicitement.
 - E2E terminologique : MV/MZ ja→en et ja→fr, fournisseur mock uniquement, QA sans critique, JSON du ZIP relu, puis suppression projet validée.
 - Frontend : lint sans erreur (10 avertissements historiques hors de cette fonctionnalité), typecheck réussi, 29 fichiers et 93 tests réussis, build réussi.
 - UI : workspace terminologique chargé à la demande, chunk 25,60 kB (7,81 kB gzip). Le chunk principal reste à 735,57 kB et conserve l'avertissement Vite > 500 kB, dette indépendante à traiter par découpage supplémentaire.
 - SQLite : test 10 000 entrées paginé, 40 mesures, p95 observé 16,34 ms pour un gate à 100 ms.
-- Prompt : médiane 9,29 %, maximum 9,89 %, 2 hints maximum observés sur le corpus de 1 191 segments, borne absolue 20.
+- Prompt : médiane 4,22 %, maximum 5,41 % en caractères; 8,73 % en tokens réels Gemma; 2 hints maximum observés sur le corpus de 1 191 segments, borne absolue 20.
 
 ## Packaging et licence
 
@@ -79,5 +97,15 @@ pnpm build
 cargo test --manifest-path src-tauri/Cargo.toml --test terminology_e2e
 H2S_STANDGIRL_PATH=/chemin/vers/StandGirl \
   cargo test --manifest-path src-tauri/Cargo.toml \
-  --test terminology_real_pilot -- --ignored --nocapture
+  --test terminology_real_pilot \
+  standgirl_scan_meets_real_project_gates_on_a_disposable_copy \
+  -- --ignored --nocapture
+
+H2S_STANDGIRL_PATH=/chemin/vers/StandGirl \
+H2S_OLLAMA_URL=http://127.0.0.1:11434/v1 \
+H2S_OLLAMA_MODEL=gemma4:e4b \
+  cargo test --manifest-path src-tauri/Cargo.toml \
+  --test terminology_real_pilot \
+  standgirl_ollama_translates_terms_and_reports_exact_prompt_tokens \
+  -- --ignored --nocapture
 ```

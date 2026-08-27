@@ -454,6 +454,11 @@ mod tests {
             ratios.push(fragment_chars as f64 / estimated_prompt_chars as f64);
         }
         ratios.sort_by(f64::total_cmp);
+        eprintln!(
+            "terminology prompt character overhead: median {:.2}%, max {:.2}%",
+            ratios[ratios.len() / 2] * 100.0,
+            ratios.last().copied().unwrap_or_default() * 100.0
+        );
         assert!(ratios[ratios.len() / 2] <= 0.10);
     }
 }

@@ -11,7 +11,17 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use hoshi2star_lib::commands::project::open_project;
+use hoshi2star_lib::core::qa::{self, QaSemanticContext};
+use hoshi2star_lib::core::terminology::repository;
+use hoshi2star_lib::core::terminology::resolver;
+use hoshi2star_lib::core::terminology::translator;
+use hoshi2star_lib::core::terminology::types::{Enforcement, ReviewStatus, UpsertTranslationInput};
 use hoshi2star_lib::db;
+use hoshi2star_lib::domain::types::ResourceProfile;
+use hoshi2star_lib::llm::provider::{
+    LlmProvider, OpenAiCompatibleProvider, PromptContextPolicy, ProviderCallMetrics,
+    TranslationContext, DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_URL,
+};
 use hoshi2star_lib::state::AppState;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -42,6 +52,28 @@ struct PilotMetrics {
     active_scan_after_completion: bool,
 }
 
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct PilotTerm {
+    id: String,
+    segment_id: String,
+    source_text: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OllamaLanguageMetrics {
+    target_language: String,
+    translated_terms: Vec<(String, String)>,
+    term_call: ProviderCallMetrics,
+    baseline_call: ProviderCallMetrics,
+    hinted_call: ProviderCallMetrics,
+    prompt_token_overhead_percent: f64,
+    resolved_hints: usize,
+    translated_segment: String,
+    qa_score: u8,
+    qa_has_critical: bool,
+}
+
 fn copy_tree(source: &Path, destination: &Path) {
     fs::create_dir_all(destination).unwrap();
     for entry in fs::read_dir(source).unwrap() {
@@ -53,6 +85,51 @@ fn copy_tree(source: &Path, destination: &Path) {
         } else {
             fs::copy(source_path, destination_path).unwrap();
         }
+    }
+}
+
+async fn disposable_project(
+    source: &Path,
+    target_language: &str,
+) -> (
+    tempfile::TempDir,
+    tauri::App<tauri::test::MockRuntime>,
+    String,
+    PathBuf,
+) {
+    let workspace = tempfile::tempdir().unwrap();
+    let game = workspace.path().join("game-copy");
+    copy_tree(source, &game);
+    let database = workspace.path().join("pilot.db");
+    let pool = db::pool::init(database.to_str().unwrap()).await.unwrap();
+    let app = mock_builder()
+        .manage(AppState::new(pool).unwrap())
+        .build(mock_context(noop_assets()))
+        .unwrap();
+    let opened = open_project(
+        game.to_string_lossy().into_owned(),
+        Some("ja".into()),
+        Some(target_language.into()),
+        app.state(),
+    )
+    .await
+    .unwrap();
+    (workspace, app, opened.project.id, database)
+}
+
+fn translation_context(
+    target_language: &str,
+    hints: Vec<hoshi2star_lib::llm::provider::TerminologyHint>,
+) -> TranslationContext {
+    TranslationContext {
+        source_lang: "ja".into(),
+        target_lang: target_language.into(),
+        terminology_hints: hints,
+        engine: "mv_mz".into(),
+        batch_size: 1,
+        batch_delay_ms: 0,
+        prompt_context_policy: PromptContextPolicy::Disabled,
+        segment_contexts: Vec::new(),
     }
 }
 
@@ -130,27 +207,8 @@ async fn standgirl_scan_meets_real_project_gates_on_a_disposable_copy() {
     );
     assert!(source.is_dir());
 
-    let workspace = tempfile::tempdir().unwrap();
-    let game = workspace.path().join("game-copy");
-    copy_tree(&source, &game);
-
-    let database = workspace.path().join("pilot.db");
-    let pool = db::pool::init(database.to_str().unwrap()).await.unwrap();
-    let app = mock_builder()
-        .manage(AppState::new(pool).unwrap())
-        .build(mock_context(noop_assets()))
-        .unwrap();
+    let (workspace, app, project_id, database) = disposable_project(&source, "en").await;
     let state = app.state::<AppState>();
-
-    let opened = open_project(
-        game.to_string_lossy().into_owned(),
-        Some("ja".into()),
-        Some("en".into()),
-        state.clone(),
-    )
-    .await
-    .unwrap();
-    let project_id = opened.project.id;
     let extracted_segments: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM segments segment JOIN source_files file \
          ON file.id = segment.source_file_id WHERE file.project_id = ?",
@@ -248,4 +306,211 @@ async fn standgirl_scan_meets_real_project_gates_on_a_disposable_copy() {
             "RSS delta exceeded 180 MiB"
         );
     }
+    drop(workspace);
+}
+
+#[tokio::test]
+#[ignore = "requires StandGirl and a local Ollama server"]
+async fn standgirl_ollama_translates_terms_and_reports_exact_prompt_tokens() {
+    let source = PathBuf::from(
+        std::env::var("H2S_STANDGIRL_PATH")
+            .expect("set H2S_STANDGIRL_PATH to the private StandGirl game directory"),
+    );
+    let ollama_url =
+        std::env::var("H2S_OLLAMA_URL").unwrap_or_else(|_| DEFAULT_OLLAMA_URL.to_string());
+    let model =
+        std::env::var("H2S_OLLAMA_MODEL").unwrap_or_else(|_| DEFAULT_OLLAMA_MODEL.to_string());
+    let (_workspace, app, project_id, _database) = disposable_project(&source, "en").await;
+    let state = app.state::<AppState>();
+    state
+        .terminology
+        .scan_project(&state.db, &project_id, None)
+        .await
+        .unwrap();
+
+    let terms = sqlx::query_as::<_, PilotTerm>(
+        "SELECT DISTINCT entry.id, occurrence.segment_id, \
+         segment.source_text FROM terminology_entries entry \
+         JOIN terminology_occurrences occurrence ON occurrence.entry_id = entry.id \
+         JOIN segments segment ON segment.id = occurrence.segment_id \
+         WHERE occurrence.project_id = ? AND entry.origin = 'engine' \
+           AND entry.semantic_type != 'general' \
+           AND trim(segment.source_text) = trim(entry.canonical_text) \
+         ORDER BY CASE entry.semantic_type WHEN 'character' THEN 0 WHEN 'item' THEN 1 \
+                  WHEN 'skill' THEN 2 ELSE 3 END, entry.canonical_text LIMIT 3",
+    )
+    .bind(&project_id)
+    .fetch_all(&state.db)
+    .await
+    .unwrap();
+    assert_eq!(terms.len(), 3, "expected three stable engine-owned terms");
+    let entry_ids = terms.iter().map(|term| term.id.clone()).collect::<Vec<_>>();
+    let provider = OpenAiCompatibleProvider::new_for_preset(
+        "ollama",
+        &ollama_url,
+        &model,
+        None,
+        Duration::from_secs(180),
+    );
+    provider.health_check().await.unwrap();
+
+    let mut language_reports = Vec::new();
+    for target_language in ["en", "fr"] {
+        let summary = translator::translate_selected(
+            &state.db,
+            &provider,
+            &entry_ids,
+            target_language,
+            Some(&project_id),
+            ResourceProfile::Fast,
+            "ollama",
+            &model,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!((summary.requested, summary.proposed), (3, 3));
+        let term_call = provider.drain_metrics().into_iter().next().unwrap();
+        assert!(term_call.success);
+        assert!(term_call.prompt_tokens.is_some());
+
+        let translated_terms = sqlx::query_as::<_, (String, String)>(
+            "SELECT entry.canonical_text, translation.target_text \
+             FROM terminology_translations translation \
+             JOIN terminology_entries entry ON entry.id = translation.entry_id \
+             WHERE translation.project_id = ? AND translation.target_language = ? \
+               AND translation.entry_id IN (?, ?, ?) ORDER BY entry.canonical_text",
+        )
+        .bind(&project_id)
+        .bind(target_language)
+        .bind(&entry_ids[0])
+        .bind(&entry_ids[1])
+        .bind(&entry_ids[2])
+        .fetch_all(&state.db)
+        .await
+        .unwrap();
+        assert_eq!(translated_terms.len(), 3);
+        let review_statuses: Vec<String> = sqlx::query_scalar(
+            "SELECT review_status FROM terminology_translations \
+             WHERE project_id = ? AND target_language = ? AND entry_id IN (?, ?, ?)",
+        )
+        .bind(&project_id)
+        .bind(target_language)
+        .bind(&entry_ids[0])
+        .bind(&entry_ids[1])
+        .bind(&entry_ids[2])
+        .fetch_all(&state.db)
+        .await
+        .unwrap();
+        assert_eq!(review_statuses, vec!["proposed"; 3]);
+        let required_target: String = sqlx::query_scalar(
+            "SELECT target_text FROM terminology_translations \
+             WHERE entry_id = ? AND target_language = ? AND project_id = ?",
+        )
+        .bind(&terms[0].id)
+        .bind(target_language)
+        .bind(&project_id)
+        .fetch_one(&state.db)
+        .await
+        .unwrap();
+        repository::upsert_translation(
+            &state.db,
+            &UpsertTranslationInput {
+                entry_id: terms[0].id.clone(),
+                target_language: target_language.into(),
+                project_id: Some(project_id.clone()),
+                target_text: required_target.clone(),
+                review_status: ReviewStatus::Locked,
+                enforcement: Enforcement::Required,
+                confidence: 1.0,
+                provider_id: Some("ollama".into()),
+                model: Some(model.clone()),
+                accepted_variants: Vec::new(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let estimated_prompt_chars = 2_000 + terms[0].source_text.chars().count();
+        let hints = resolver::resolve_for_request(
+            &state.db,
+            std::slice::from_ref(&terms[0].segment_id),
+            target_language,
+            estimated_prompt_chars,
+        )
+        .await
+        .unwrap();
+        assert!(!hints.is_empty());
+        assert!(hints.len() <= 20);
+
+        let _baseline = provider
+            .translate(
+                vec![terms[0].source_text.clone()],
+                translation_context(target_language, Vec::new()),
+            )
+            .await
+            .unwrap();
+        let baseline_call = provider.drain_metrics().into_iter().next().unwrap();
+        let translated_segment = provider
+            .translate(
+                vec![terms[0].source_text.clone()],
+                translation_context(target_language, hints.clone()),
+            )
+            .await
+            .unwrap()
+            .remove(0);
+        let hinted_call = provider.drain_metrics().into_iter().next().unwrap();
+        let baseline_tokens = baseline_call.prompt_tokens.unwrap();
+        let hinted_tokens = hinted_call.prompt_tokens.unwrap();
+        let overhead =
+            100.0 * hinted_tokens.saturating_sub(baseline_tokens) as f64 / baseline_tokens as f64;
+        assert!(
+            overhead <= 10.0,
+            "terminology prompt token overhead exceeded 10%: {overhead:.2}%"
+        );
+
+        let qa_rules = resolver::resolve_qa_rules_for_segments(
+            &state.db,
+            std::slice::from_ref(&terms[0].segment_id),
+            target_language,
+        )
+        .await
+        .unwrap()
+        .remove(&terms[0].segment_id)
+        .unwrap();
+        let qa_result = qa::check_with_context(
+            &terms[0].source_text,
+            &translated_segment,
+            &qa_rules,
+            "mv_mz",
+            &QaSemanticContext {
+                source_language: "ja",
+                target_language,
+                segment_kind: "database",
+                neighbor_sources: &[],
+            },
+        );
+        assert!(!qa_result.has_critical_errors());
+        assert!(translated_segment
+            .to_lowercase()
+            .contains(&required_target.to_lowercase()));
+
+        language_reports.push(OllamaLanguageMetrics {
+            target_language: target_language.into(),
+            translated_terms,
+            term_call,
+            baseline_call,
+            hinted_call,
+            prompt_token_overhead_percent: overhead,
+            resolved_hints: hints.len(),
+            translated_segment,
+            qa_score: qa_result.score,
+            qa_has_critical: qa_result.has_critical_errors(),
+        });
+    }
+
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&language_reports).unwrap()
+    );
 }

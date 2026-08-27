@@ -79,20 +79,24 @@ pub(crate) fn terminology_prompt_fragment(hints: &[TerminologyHint]) -> String {
     let pairs = hints
         .iter()
         .map(|hint| {
+            let enforcement = match hint.enforcement {
+                Enforcement::Required => 'R',
+                Enforcement::Preferred => 'P',
+                Enforcement::Contextual => 'C',
+            };
             let variants = if hint.accepted_targets.is_empty() {
                 String::new()
             } else {
-                format!("; variants={}", hint.accepted_targets.join("|"))
+                format!(" alt {}", hint.accepted_targets.join("/"))
             };
             format!(
-                "[{};{};{}] {}={}{variants}",
-                hint.enforcement, hint.semantic_type, hint.part_of_speech, hint.source, hint.target,
+                "{enforcement} {} {} {}={}{variants}",
+                hint.semantic_type, hint.part_of_speech, hint.source, hint.target,
             )
         })
         .collect::<Vec<_>>();
     format!(
-        "\nTerminology (never insert absent terms; required=must use when sense matches; \
-         preferred=consistent; contextual=guidance):\n{}",
+        "\nTerms if used: R must, P prefer, C hint\n{}",
         pairs.join("\n")
     )
 }
@@ -1053,6 +1057,22 @@ mod tests {
         assert_eq!(metrics[0].attempts, 1);
         assert!(metrics[0].success);
         assert!(provider.drain_metrics().is_empty());
+    }
+
+    #[test]
+    fn terminology_fragment_is_compact_and_keeps_all_semantics() {
+        let fragment = terminology_prompt_fragment(&[TerminologyHint {
+            source: "六花".to_string(),
+            target: "Rikka".to_string(),
+            semantic_type: "character".to_string(),
+            part_of_speech: PartOfSpeech::ProperNoun,
+            enforcement: Enforcement::Required,
+            accepted_targets: vec!["Rikka-san".to_string()],
+        }]);
+
+        assert!(fragment.contains("R must, P prefer, C hint"));
+        assert!(fragment.contains("R character proper_noun 六花=Rikka alt Rikka-san"));
+        assert!(fragment.chars().count() < 100);
     }
 
     #[tokio::test]

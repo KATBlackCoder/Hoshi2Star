@@ -640,12 +640,11 @@ Présenter `required` comme obligatoire si le sens correspond, `preferred` comme
 
 - [x] **Step 6: Mesurer le budget portable et instrumenter les tokens fournisseur**
 
-Le budget portable en caractères (médiane 9,29 %, maximum 9,89 % sur 1 191
-segments) et la métrique `terminologyHints` sont validés. Les tokens exacts sont
-capturés lorsque le fournisseur les renvoie. Le replay local a confirmé
-qu'Ollama était indisponible sur cette machine; cette mesure dépendante du
-modèle est donc consignée comme gate runtime conditionnel en Task 13, sans
-remplacer le garde-fou déterministe par une estimation prétendument universelle.
+Le budget portable compact en caractères (médiane 4,22 %, maximum 5,41 % sur
+1 191 segments) et la métrique `terminologyHints` sont validés. Le replay Ollama
+`gemma4:e4b` mesure exactement 275 tokens prompt sans hint et 299 avec un hint,
+soit 8,73 % en ja→en comme en ja→fr. Le test réel impose désormais `≤ 10 %` tout
+en gardant la mesure runtime dépendante du tokenizer du modèle.
 
 Sur la fixture 1 191 segments, comparer tokens de prompts avec/sans terminologie. Le surcoût médian doit rester ≤ 10 %, aucun appel ne doit dépasser la fenêtre configurée et le nombre de hints doit apparaître dans les métriques.
 

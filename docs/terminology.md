@@ -73,7 +73,9 @@ Lindera est distribué sous licence MIT. L'avis de `mecab-ipadic-2.7.0-20070801`
 cargo test --manifest-path src-tauri/Cargo.toml --test terminology_e2e
 H2S_STANDGIRL_PATH=/chemin/vers/le/jeu \
   cargo test --manifest-path src-tauri/Cargo.toml \
-  --test terminology_real_pilot -- --ignored --nocapture
+  --test terminology_real_pilot \
+  standgirl_scan_meets_real_project_gates_on_a_disposable_copy \
+  -- --ignored --nocapture
 ```
 
 Le second test copie d'abord le jeu dans un dossier temporaire, utilise une base SQLite jetable et laisse l'original intact.
