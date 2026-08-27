@@ -132,7 +132,7 @@ Run: `git commit -m "perf(terminology): validate Japanese analyzer budgets"`
 - Modify: `src-tauri/src/db/pool.rs`
 - Create: `src-tauri/tests/terminology_migration.rs`
 
-- [ ] **Step 1: Écrire d'abord les tests de migration**
+- [x] **Step 1: Écrire d'abord les tests de migration**
 
 Les tests doivent créer une DB au niveau 0007 avec: un terme global manuel, un terme projet auto-généré, deux paires `ja-en`/`ja-fr` et une valeur vide historique. Après 0008, vérifier:
 
@@ -147,7 +147,7 @@ Run: `cargo test --manifest-path src-tauri/Cargo.toml --test terminology_migrati
 
 Expected: FAIL car les tables n'existent pas.
 
-- [ ] **Step 2: Ajouter le schéma 0008**
+- [x] **Step 2: Ajouter le schéma 0008**
 
 Le schéma doit créer exactement ces responsabilités:
 
@@ -244,21 +244,21 @@ CREATE TABLE terminology_scans (
 
 Ajouter les index de lecture: entrées par `(source_language, normalized_text)`, traductions par `(target_language, review_status)`, occurrences par `(project_id, segment_id)` et scans de segments par `project_id`.
 
-- [ ] **Step 3: Migrer les données historiques dans la même migration**
+- [x] **Step 3: Migrer les données historiques dans la même migration**
 
 Découper `lang_pair` au premier tiret uniquement pour les valeurs historiques connues (`ja-en`, `ja-fr`). Utiliser des IDs déterministes dérivés de l'ancien ID afin que la migration soit vérifiable. Ne pas supprimer `glossary_terms` en 0008; arrêter simplement toute nouvelle écriture après la bascule applicative.
 
-- [ ] **Step 4: Mettre à jour la validation de schéma**
+- [x] **Step 4: Mettre à jour la validation de schéma**
 
 Dans `validate_patch_schema`, remplacer l'exigence applicative `glossary_terms` par les tables minimales `terminology_entries`, `terminology_translations` et `terminology_occurrences`. Garder la table historique tolérée, mais non requise pour une future DB.
 
-- [ ] **Step 5: Vérifier migration et contraintes**
+- [x] **Step 5: Vérifier migration et contraintes**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml --test terminology_migration db::pool`
 
 Expected: PASS, y compris cascades, index partiels et réouverture de la DB.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Run: `git add src-tauri/migrations/0008_terminology.sql src-tauri/src/db/pool.rs src-tauri/tests/terminology_migration.rs`
 
