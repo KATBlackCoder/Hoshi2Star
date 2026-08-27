@@ -28,7 +28,34 @@ Natures : 696 noms, 67 noms propres, 255 verbes, 113 adjectifs, 88 adverbes et 3
 
 Types moteur : 1 087 généraux, 91 système, 20 objets, 15 lieux, 10 locuteurs, 9 compétences, 7 classes, 6 états, 4 personnages, 1 armure, 1 ennemi et 1 titre.
 
-Le pilote de traduction acquis avant ce jalon reste la référence export : 1 191 textes traduits, 0 erreur critique finale, 205 avertissements de largeur et ZIP valide. Il n'a pas été retraduit artificiellement sans fournisseur local; le présent replay valide l'intégration de la nouvelle bibliothèque sur exactement les mêmes 1 191 sources.
+Le pilote de traduction acquis avant ce jalon reste la référence export après révision : 1 191 textes traduits, 0 erreur critique finale, 205 avertissements de largeur et ZIP valide. Le replay complet ci-dessous mesure séparément les sorties brutes du modèle, avant cette révision humaine.
+
+## Replay complet Ollama avec et sans terminologie
+
+Le même corpus ja→en a été traduit deux fois avec Ollama `gemma4:e4b`, dans deux copies persistantes et isolées. L'empreinte sémantique des 1 191 sources est identique dans les deux bases : `fdc595ae38384c36f49da8eaf5059ee41b229cd6aa6343cf0cf81f3d69f95e5b`. Une seconde exécution a repris les checkpoints en 0,96 s, sans analyser ni traduire à nouveau les segments terminés.
+
+La bibliothèque ciblée contient 74 termes structurés : 72 sorties modèle conservées en `proposed + preferred`, et seulement deux noms vérifiés en `locked + required` (`六花 → Rikka`, `凛 → Rin`). Sa construction a pris 25 appels, 14 735 tokens et 318 964 ms fournisseur. Ce coût initial est mutualisable sur les traductions et projets futurs; il n'est pas inclus dans le coût de traduction de la variante assistée.
+
+| Mesure brute avant révision | Sans terminologie | Avec terminologie | Écart |
+|---|---:|---:|---:|
+| Segments | 1 191 | 1 191 | 0 |
+| Traduits / à réviser | 1 167 / 24 | 1 176 / 15 | +9 / −9 |
+| Erreurs QA critiques | 24 | 15 | −9 |
+| Segments QA parfaits | 994 | 987 | −7 |
+| Avertissements de largeur | 193 | 202 | +9 |
+| Sources répétées incohérentes | 36 | 34 | −2 |
+| Appels fournisseur | 181 | 179 | −2 |
+| Tokens prompt | 141 036 | 140 660 | −376 |
+| Tokens réponse | 32 244 | 32 412 | +168 |
+| Tokens totaux | 173 280 | 173 072 | −208 |
+| Durée fournisseur | 1 672 312 ms | 1 543 265 ms | −129 047 ms |
+| Appels avec hints / hints | 0 / 0 | 19 / 49 | +19 / +49 |
+
+Les 15 critiques de la variante terminologique sont 13 expansions suspectes réelles — plusieurs sorties absorbent des lignes voisines ou même le contexte sérialisé — et 2 reliquats de script japonais. Les 16 écarts terminologiques concernent 11 termes proposés et restent non critiques. Ils démontrent que `proposed` doit rester une aide à réviser : promouvoir automatiquement ces termes en `locked` aurait transformé des préférences imparfaites en erreurs bloquantes.
+
+La variante assistée améliore nettement ce tirage brut sur les erreurs critiques et légèrement sur les répétitions, sans surcoût de tokens observé. Elle produit toutefois davantage de lignes longues et un peu moins de segments à score 100. Comme les deux générations ne sont pas déterministes, ces écarts ne prouvent pas seuls une causalité; un benchmark à graines/modèles multiples sera nécessaire. Les deux exports sont correctement bloqués par le QA (24 et 15 critiques) et aucun contrôle n'a été contourné. Les détails restent hors Git dans `qa-details.json`, avec les DB et les copies privées du jeu.
+
+L'empreinte complète du jeu original après le replay reste `2d60b1f3858c0e39c4a32c538b39cd8cf99830e1127e378951372c9bc04f4523`, strictement identique à celle d'avant test.
 
 ## Parcours visible MCP Tauri
 
@@ -108,4 +135,11 @@ H2S_OLLAMA_MODEL=gemma4:e4b \
   --test terminology_real_pilot \
   standgirl_ollama_translates_terms_and_reports_exact_prompt_tokens \
   -- --ignored --nocapture
+
+H2S_STANDGIRL_PATH=/chemin/vers/StandGirl \
+H2S_FULL_PILOT_ROOT=/tmp/hoshi2star-standgirl-full-pilot \
+H2S_OLLAMA_URL=http://127.0.0.1:11434/v1 \
+H2S_OLLAMA_MODEL=gemma4:e4b \
+  cargo test --manifest-path src-tauri/Cargo.toml \
+  --test standgirl_full_pilot -- --ignored --nocapture
 ```
