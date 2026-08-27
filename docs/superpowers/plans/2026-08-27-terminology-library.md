@@ -278,15 +278,15 @@ Run: `git commit -m "feat(terminology): add multilingual termbase schema"`
 - Modify: `src-tauri/src/core/mod.rs`
 - Test: modules ci-dessus
 
-- [ ] **Step 1: Écrire les types et tests de sérialisation**
+- [x] **Step 1: Écrire les types et tests de sérialisation**
 
 Définir des enums Rust sérialisés en `snake_case` pour POS, type sémantique, statut, origine, review et enforcement. Définir `TerminologyEntryView`, `TerminologyQuery`, `PaginatedTerminology`, `CreateTermInput`, `UpdateTermInput` et `TermStats`. Vérifier les noms camelCase des champs IPC.
 
-- [ ] **Step 2: Centraliser la normalisation**
+- [x] **Step 2: Centraliser la normalisation**
 
 Ajouter `unicode-normalization = "0.1"`. `normalize.rs` doit faire NFKC, trim, espaces internes stables et casse pour les langues qui en ont une. La normalisation japonaise ne doit pas convertir kanji en lecture. Toutes les contraintes d'unicité, recherches et variantes appellent cette seule fonction.
 
-- [ ] **Step 3: Écrire les tests du repository avant les requêtes**
+- [x] **Step 3: Écrire les tests du repository avant les requêtes**
 
 Couvrir pagination, recherche, filtres POS/type/statut/présence dans projet, vue globale, override projet, traduction manquante, création, édition, archivage, verrouillage et variantes acceptées. Vérifier qu'une page de 100 entrées n'effectue pas de requête N+1.
 
@@ -294,15 +294,15 @@ Run: `cargo test --manifest-path src-tauri/Cargo.toml core::terminology`
 
 Expected: FAIL avant implémentation.
 
-- [ ] **Step 4: Implémenter les requêtes SQL bornées**
+- [x] **Step 4: Implémenter les requêtes SQL bornées**
 
 Une seule requête paginée retourne l'entrée, la traduction effective (override projet avant global), le nombre d'occurrences du projet et jusqu'à trois contextes représentatifs via une seconde requête groupée par les IDs de la page. `page_size` est borné à `1..=200`. Les modifications utilisent des transactions courtes et `archived` plutôt qu'un hard delete pour une entrée déjà référencée.
 
-- [ ] **Step 5: Ajouter une mesure de requêtes et un test 10k**
+- [x] **Step 5: Ajouter une mesure de requêtes et un test 10k**
 
 Dans une DB de test de 10 000 entrées, recherche/tri/page doivent rester sous 100 ms p95 sur la machine de référence et ne retourner que la page demandée.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Run: `git add src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/src/core/mod.rs src-tauri/src/core/terminology`
 
