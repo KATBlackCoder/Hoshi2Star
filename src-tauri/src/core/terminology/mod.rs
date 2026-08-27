@@ -7,6 +7,8 @@
 pub mod analyzer;
 pub mod normalize;
 pub mod repository;
+pub mod scanner;
+pub mod service;
 pub mod types;
 
 use thiserror::Error;

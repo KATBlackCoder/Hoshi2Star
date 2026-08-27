@@ -409,7 +409,7 @@ fn tree_digest(root: &Path) -> [u8; 32] {
 async fn mock_app(db_path: &str) -> tauri::App<tauri::test::MockRuntime> {
     let pool = db::pool::init(db_path).await.expect("pool init");
     mock_builder()
-        .manage(AppState { db: pool })
+        .manage(AppState::new(pool).expect("terminology service"))
         .build(mock_context(noop_assets()))
         .expect("mock app build")
 }

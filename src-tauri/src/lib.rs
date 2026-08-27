@@ -52,7 +52,7 @@ pub fn run() {
             let pool = tauri::async_runtime::block_on(db::pool::init(&path_str))
                 .map_err(|e| e.to_string())?;
 
-            app.manage(AppState { db: pool });
+            app.manage(AppState::new(pool).map_err(|error| error.to_string())?);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

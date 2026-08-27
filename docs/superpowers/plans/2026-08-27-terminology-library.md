@@ -410,33 +410,33 @@ Run: `git commit -m "feat(mv-mz): classify engine-owned terminology"`
 - Test: `src-tauri/src/core/terminology/scanner.rs`
 - Create: `src-tauri/tests/terminology_scan.rs`
 
-- [ ] **Step 1: Écrire les tests avec un faux analyseur compté**
+- [x] **Step 1: Écrire les tests avec un faux analyseur compté**
 
 Vérifier: premier scan, second scan sans appel analyseur, modification d'un seul segment, suppression d'un segment, fusion des occurrences, priorité aux seeds moteur, annulation après un chunk, reprise, erreur analyseur et deux demandes simultanées pour le même projet.
 
-- [ ] **Step 2: Implémenter le service long-vivant**
+- [x] **Step 2: Implémenter le service long-vivant**
 
 Ajouter `Arc<TerminologyService>` à `AppState`. Le service possède l'analyseur initialisé une fois, un sémaphore bornant les scans et une map `scan_id → AtomicBool` pour l'annulation. Le travail CPU s'exécute dans `spawn_blocking`; aucun appel Lindera ne bloque le runtime async Tauri.
 
-- [ ] **Step 3: Lire et écrire par chunks**
+- [x] **Step 3: Lire et écrire par chunks**
 
 Lire les segments triés par ID par pages de 250. Calculer `SHA-256(segment_id + source_text + segment_kind + analyzer_version)`. Ignorer les hashes inchangés. Pour un segment modifié, supprimer ses anciennes occurrences, analyser, puis upsert entrées/variantes/occurrences et scan du segment dans une transaction. Commit après au plus 250 segments pour borner WAL/RAM et permettre l'annulation.
 
-- [ ] **Step 4: Publier des événements compacts**
+- [x] **Step 4: Publier des événements compacts**
 
 Émettre `h2s://terminology/scan-progress` au plus dix fois par seconde avec `{scanId, projectId, processed, total, discovered}` et un unique `h2s://terminology/scan-done`. Ne jamais émettre les tokens ou la liste complète des termes dans les événements.
 
-- [ ] **Step 5: Ajuster SQLite seulement après mesure**
+- [x] **Step 5: Ajuster SQLite seulement après mesure**
 
 Mesurer WAL, `busy_timeout` et `synchronous=NORMAL` avec scan + édition simultanée. Les activer dans `db/pool.rs` seulement si le test démontre moins de contention sans perte aux tests de crash transactionnel. Garder `max_connections=5` tant qu'une mesure ne justifie pas plus.
 
-- [ ] **Step 6: Vérifier performance et inactivité**
+- [x] **Step 6: Vérifier performance et inactivité**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml --test terminology_scan core::terminology::scanner`
 
 Expected: PASS; mémoire bornée par chunk, un seul scan actif par projet et deuxième scan no-op.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 Run: `git add src-tauri/src/core/terminology src-tauri/src/state.rs src-tauri/src/lib.rs src-tauri/tests/terminology_scan.rs src-tauri/src/db/pool.rs`
 
