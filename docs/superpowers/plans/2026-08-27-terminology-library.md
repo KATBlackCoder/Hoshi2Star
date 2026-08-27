@@ -452,15 +452,15 @@ Run: `git commit -m "feat(terminology): scan projects incrementally"`
 - Modify: `src-tauri/src/lib.rs`
 - Create: `src-tauri/tests/terminology_commands.rs`
 
-- [ ] **Step 1: Définir les commandes**
+- [x] **Step 1: Définir les commandes**
 
 Ajouter uniquement: `list_terminology`, `get_terminology_stats`, `create_terminology_entry`, `update_terminology_entry`, `archive_terminology_entry`, `upsert_terminology_translation`, `start_terminology_scan`, `cancel_terminology_scan`. Les inputs portent `sourceLanguage`, `targetLanguage` et `projectId` séparément; ne plus faire parser `lang_pair` par les nouvelles API.
 
-- [ ] **Step 2: Borner et valider chaque input**
+- [x] **Step 2: Borner et valider chaque input**
 
 Refuser page négative, page > 200, texte vide, langue vide, statut/enforcement inconnu et projet inexistant. Une commande ne contient pas de SQL métier: elle valide, appelle le service/repository et convertit l'erreur en message stable.
 
-- [ ] **Step 3: Tester avec l'app Tauri de test**
+- [x] **Step 3: Tester avec l'app Tauri de test**
 
 Vérifier les noms camelCase, la pagination, l'override projet, le démarrage asynchrone et l'annulation. Les tests ne chargent pas le vrai dictionnaire: injecter le faux analyseur dans `TerminologyService`.
 
@@ -468,7 +468,7 @@ Run: `cargo test --manifest-path src-tauri/Cargo.toml --test terminology_command
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 Run: `git add src-tauri/src/commands/terminology.rs src-tauri/src/commands/mod.rs src-tauri/src/lib.rs src-tauri/tests/terminology_commands.rs`
 

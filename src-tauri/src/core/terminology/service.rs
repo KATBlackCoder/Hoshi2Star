@@ -44,23 +44,53 @@ impl TerminologyService {
         project_id: &str,
         event_sink: Option<ScanEventSink>,
     ) -> Result<ScanSummary> {
-        let scan_id = uuid::Uuid::new_v4().to_string();
-        let cancelled = Arc::new(AtomicBool::new(false));
-        {
-            let mut active = self.active_by_project.lock().await;
-            if active.contains_key(project_id) {
-                return Err(TerminologyError::InvalidInput(format!(
-                    "a terminology scan is already running for project `{project_id}`"
-                )));
-            }
-            active.insert(
-                project_id.to_string(),
-                ActiveScan {
-                    scan_id: scan_id.clone(),
-                    cancelled: cancelled.clone(),
-                },
-            );
+        self.validate_project(pool, project_id).await?;
+        let active = self.reserve(project_id).await?;
+        self.run_reserved(pool, project_id, active, event_sink)
+            .await
+    }
+
+    pub async fn start_project_scan(
+        self: &Arc<Self>,
+        pool: SqlitePool,
+        project_id: String,
+        event_sink: Option<ScanEventSink>,
+    ) -> Result<String> {
+        self.validate_project(&pool, &project_id).await?;
+        let active = self.reserve(&project_id).await?;
+        let scan_id = active.scan_id.clone();
+        let service = self.clone();
+        tokio::spawn(async move {
+            let _ = service
+                .run_reserved(&pool, &project_id, active, event_sink)
+                .await;
+        });
+        Ok(scan_id)
+    }
+
+    async fn reserve(&self, project_id: &str) -> Result<ActiveScan> {
+        let active_scan = ActiveScan {
+            scan_id: uuid::Uuid::new_v4().to_string(),
+            cancelled: Arc::new(AtomicBool::new(false)),
+        };
+        let mut active = self.active_by_project.lock().await;
+        if active.contains_key(project_id) {
+            return Err(TerminologyError::InvalidInput(format!(
+                "a terminology scan is already running for project `{project_id}`"
+            )));
         }
+        active.insert(project_id.to_string(), active_scan.clone());
+        Ok(active_scan)
+    }
+
+    async fn run_reserved(
+        &self,
+        pool: &SqlitePool,
+        project_id: &str,
+        active_scan: ActiveScan,
+        event_sink: Option<ScanEventSink>,
+    ) -> Result<ScanSummary> {
+        let scan_id = active_scan.scan_id;
 
         let result = match self.scan_slots.acquire().await {
             Ok(_permit) => {
@@ -69,7 +99,7 @@ impl TerminologyService {
                     self.analyzer.clone(),
                     &scan_id,
                     project_id,
-                    cancelled,
+                    active_scan.cancelled,
                     event_sink.clone(),
                 )
                 .await
@@ -92,6 +122,20 @@ impl TerminologyService {
             }));
         }
         result
+    }
+
+    async fn validate_project(&self, pool: &SqlitePool, project_id: &str) -> Result<()> {
+        let engine: Option<String> = sqlx::query_scalar("SELECT engine FROM projects WHERE id = ?")
+            .bind(project_id)
+            .fetch_optional(pool)
+            .await?;
+        let engine = engine.ok_or_else(|| TerminologyError::NotFound(project_id.to_string()))?;
+        if crate::engines::terminology::adapter_for(&engine).is_none() {
+            return Err(TerminologyError::InvalidInput(format!(
+                "terminology scanning is not supported for engine `{engine}`"
+            )));
+        }
+        Ok(())
     }
 
     pub async fn cancel_scan(&self, scan_id: &str) -> bool {
