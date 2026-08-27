@@ -48,19 +48,19 @@ Ne pas commencer T2 si T1 dépasse le budget sans avoir testé le mode dictionna
 - Existing untracked fixtures: `src-tauri/tests/fixtures/mv_mz/`
 - Existing untracked contract: `src-tauri/tests/qa_v2_contract.rs`
 
-- [ ] **Step 1: Examiner les changements existants sans les reformater globalement**
+- [x] **Step 1: Examiner les changements existants sans les reformater globalement**
 
 Run: `git diff -- src-tauri/tests/e2e_project_flow.rs && git status --short`
 
 Expected: seulement les fixtures/contrats QA de la phase précédente sont présents; aucun fichier applicatif inattendu.
 
-- [ ] **Step 2: Exécuter les contrats ciblés**
+- [x] **Step 2: Exécuter les contrats ciblés**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml --test qa_v2_contract --test e2e_project_flow`
 
 Expected: PASS ou tests explicitement `ignored` avec le motif d'implémentation déjà documenté; aucune erreur de fixture.
 
-- [ ] **Step 3: Exécuter la base de régression avant la nouvelle fonctionnalité**
+- [x] **Step 3: Exécuter la base de régression avant la nouvelle fonctionnalité**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml`
 
@@ -68,7 +68,7 @@ Run: `pnpm typecheck && pnpm test && pnpm build`
 
 Expected: PASS; le warning de taille de chunk Vite déjà connu est acceptable, pas une nouvelle erreur.
 
-- [ ] **Step 4: Créer un commit séparé pour ce socle**
+- [x] **Step 4: Créer un commit séparé pour ce socle**
 
 Run: `git add src-tauri/tests/e2e_project_flow.rs src-tauri/tests/fixtures/mv_mz src-tauri/tests/qa_v2_contract.rs`
 
@@ -89,11 +89,11 @@ Expected: le travail QA est indépendant de la terminologie et le worktree redev
 - Conditional if embedded exceeds the gate: `src-tauri/tauri.conf.json`
 - Conditional if embedded exceeds the gate: `src-tauri/resources/lindera-ipadic/`
 
-- [ ] **Step 1: Écrire le corpus attendu avant l'adaptateur**
+- [x] **Step 1: Écrire le corpus attendu avant l'adaptateur**
 
 Créer une fixture UTF-8 avec au minimum: nom propre en kanji, nom en katakana, verbe conjugué, adjectif en `い`, adjectif en `な`, particules, auxiliaires, nombre, code RPG Maker (`\\V[1]`, `\\N[2]`, `\\C[3]`), nom d'item composé et deux phrases provenant des fixtures MV/MZ. Pour chaque cas, stocker le lemme attendu, la catégorie générale attendue et les tokens à exclure.
 
-- [ ] **Step 2: Ajouter Lindera 5.1 dans une configuration mesurable**
+- [x] **Step 2: Ajouter Lindera 5.1 dans une configuration mesurable**
 
 Commencer avec `lindera = { version = "5.1", features = ["embed-ipadic"] }`. Ajouter un bench `harness = false` qui utilise `std::time::Instant` et la mesure RSS native de la plateforme afin de ne pas ajouter Criterion au binaire applicatif. Ne pas activer UniDic, NEologd ou CJK dans le premier build.
 
@@ -101,7 +101,7 @@ Run: `cargo check --manifest-path src-tauri/Cargo.toml`
 
 Expected: le crate et IPADIC se compilent sur la toolchain du dépôt.
 
-- [ ] **Step 3: Écrire un benchmark reproductible**
+- [x] **Step 3: Écrire un benchmark reproductible**
 
 Le benchmark doit mesurer séparément: temps de construction de l'analyseur, temps froid, temps chaud, débit sur 1 191 segments, RSS avant/après, taille du binaire release et taille imputable au dictionnaire. Répéter cinq fois et publier médiane/p95; ne pas utiliser le réseau pendant la mesure.
 
@@ -109,15 +109,15 @@ Run: `cargo bench --manifest-path src-tauri/Cargo.toml --bench terminology_analy
 
 Expected: un rapport contient toutes les mesures, la version Lindera, l'OS, l'architecture et le hash du corpus.
 
-- [ ] **Step 4: Appliquer le gate de ressources**
+- [x] **Step 4: Appliquer le gate de ressources**
 
 Le mode embedded est accepté si: analyse chaude de 1 191 segments ≤ 5 s, re-scan sans changement ≤ 1 s, hausse RSS après initialisation ≤ 180 MiB, ajout au paquet compressé ≤ 25 MiB et CPU au repos revient à 0 %. Sinon, retirer `embed-ipadic`, empaqueter IPADIC 5.1 sous `src-tauri/resources/lindera-ipadic/`, déclarer cette ressource dans `tauri.conf.json`, résoudre son chemin avec l'API Tauri et la charger en mmap, puis répéter exactement le benchmark. Si les deux modes échouent, arrêter ce plan avant migration et comparer Vibrato sur le même trait/corpus.
 
-- [ ] **Step 5: Vérifier licences et distribution hors ligne**
+- [x] **Step 5: Vérifier licences et distribution hors ligne**
 
 Documenter les licences de Lindera et du dictionnaire IPADIC retenu. Confirmer que l'analyse fonctionne dans un build release sans téléchargement au premier lancement.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Run: `git add src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/benches/terminology_analyzer.rs src-tauri/tests/fixtures/terminology/ja_tokens.json docs/benchmarks/terminology-analyzer-2026-08-27.md`
 

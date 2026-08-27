@@ -1,0 +1,97 @@
+[
+  {
+    "id": "proper-noun-kanji",
+    "text": "六花は東京へ向かった。",
+    "expected": [
+      { "lemma": "六花", "partOfSpeech": "noun" },
+      { "lemma": "東京", "partOfSpeech": "noun" },
+      { "lemma": "向かう", "partOfSpeech": "verb" }
+    ],
+    "excluded": ["は", "へ", "た", "。"]
+  },
+  {
+    "id": "katakana-item",
+    "text": "ポーションを手に入れた。",
+    "expected": [
+      { "lemma": "ポーション", "partOfSpeech": "noun" },
+      { "lemma": "手", "partOfSpeech": "noun" },
+      { "lemma": "入れる", "partOfSpeech": "verb" }
+    ],
+    "excluded": ["を", "た", "。"]
+  },
+  {
+    "id": "conjugated-verb",
+    "text": "魔王を倒して村を救った。",
+    "expected": [
+      { "lemma": "魔王", "partOfSpeech": "noun" },
+      { "lemma": "倒す", "partOfSpeech": "verb" },
+      { "lemma": "村", "partOfSpeech": "noun" },
+      { "lemma": "救う", "partOfSpeech": "verb" }
+    ],
+    "excluded": ["を", "て", "た", "。"]
+  },
+  {
+    "id": "adjectives",
+    "text": "美しい夜と静かな町。",
+    "expected": [
+      { "lemma": "美しい", "partOfSpeech": "adjective" },
+      { "lemma": "夜", "partOfSpeech": "noun" },
+      { "lemma": "静か", "partOfSpeech": "adjective" },
+      { "lemma": "町", "partOfSpeech": "noun" }
+    ],
+    "excluded": ["と", "な", "。"]
+  },
+  {
+    "id": "rpg-maker-codes",
+    "text": "\\C[3]勇者\\C[0]の所持金は\\V[1]です。\\N[2]に話しかける。",
+    "expected": [
+      { "lemma": "勇者", "partOfSpeech": "noun" },
+      { "lemma": "所持金", "partOfSpeech": "noun" },
+      { "lemma": "話しかける", "partOfSpeech": "verb" }
+    ],
+    "excluded": ["C", "V", "N", "1", "2", "3", "[", "]", "\\"]
+  },
+  {
+    "id": "compound-skill",
+    "text": "星降りの剣で暗黒騎士を攻撃する。",
+    "expected": [
+      { "lemma": "星", "partOfSpeech": "noun" },
+      { "lemma": "剣", "partOfSpeech": "noun" },
+      { "lemma": "暗黒", "partOfSpeech": "noun" },
+      { "lemma": "騎士", "partOfSpeech": "noun" },
+      { "lemma": "攻撃", "partOfSpeech": "noun" },
+      { "lemma": "する", "partOfSpeech": "verb" }
+    ],
+    "excluded": ["の", "で", "を", "。"]
+  },
+  {
+    "id": "numbers-and-auxiliaries",
+    "text": "今日は100ゴールドを持っている。",
+    "expected": [
+      { "lemma": "今日", "partOfSpeech": "noun" },
+      { "lemma": "ゴールド", "partOfSpeech": "noun" },
+      { "lemma": "持つ", "partOfSpeech": "verb" }
+    ],
+    "excluded": ["100", "は", "を", "て", "いる", "。"]
+  },
+  {
+    "id": "mv-dialogue",
+    "text": "今夜は星がとても綺麗ですね。",
+    "expected": [
+      { "lemma": "今夜", "partOfSpeech": "noun" },
+      { "lemma": "星", "partOfSpeech": "noun" },
+      { "lemma": "綺麗", "partOfSpeech": "noun" }
+    ],
+    "excluded": ["は", "が", "です", "ね", "。"]
+  },
+  {
+    "id": "mz-dialogue",
+    "text": "新しい冒険を始めましょう！",
+    "expected": [
+      { "lemma": "新しい", "partOfSpeech": "adjective" },
+      { "lemma": "冒険", "partOfSpeech": "noun" },
+      { "lemma": "始める", "partOfSpeech": "verb" }
+    ],
+    "excluded": ["を", "ましょう", "！"]
+  }
+]
