@@ -13,7 +13,7 @@ La dépendance déclarée `lindera = "5.1"` a été résolue et verrouillée par
 - Lindera: 5.3.0
 - Dictionnaire: `embedded://ipadic`
 - Corpus: 9 cas linguistiques versionnés, répétés jusqu'à 1 191 segments
-- SHA-256 du corpus: `5570249a86db8309cfa16899031ac4df5b46562973317be8e0756ca5368a1d5f`
+- SHA-256 du corpus: `aa92066dd160c31673eaede049150b374194be4ffc9c83f8384ca13a9ed44fc9`
 - Runs chauds: 5
 
 Le corpus couvre noms en kanji/katakana, verbes conjugués, adjectifs `い`/`な`, particules, auxiliaires, nombres, expressions et codes RPG Maker. Il mesure le coût morphologique de manière reproductible; le pilote StandGirl mesurera ensuite l'intégration complète sur les 1 191 segments réels.

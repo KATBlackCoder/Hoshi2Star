@@ -4,6 +4,7 @@
 //! semantic classification and language-specific morphology live behind
 //! dedicated adapters and never leak into this module's repository queries.
 
+pub mod analyzer;
 pub mod normalize;
 pub mod repository;
 pub mod types;
@@ -16,6 +17,8 @@ pub enum TerminologyError {
     InvalidInput(String),
     #[error("terminology entry not found: {0}")]
     NotFound(String),
+    #[error("terminology analyzer failed: {0}")]
+    Analyzer(String),
     #[error(transparent)]
     Database(#[from] sqlx::Error),
 }

@@ -319,7 +319,7 @@ Run: `git commit -m "feat(terminology): add paginated termbase repository"`
 - Modify: `src-tauri/src/core/terminology/mod.rs`
 - Test: modules ci-dessus
 
-- [ ] **Step 1: Écrire le contrat indépendant de Lindera**
+- [x] **Step 1: Écrire le contrat indépendant de Lindera**
 
 ```rust
 pub struct LinguisticToken {
@@ -342,21 +342,21 @@ pub trait MorphologicalAnalyzer: Send + Sync {
 
 Les tests du scanner utiliseront un faux analyseur; aucun test métier ne doit dépendre directement de Lindera.
 
-- [ ] **Step 2: Protéger les codes moteur avant tokenisation**
+- [x] **Step 2: Protéger les codes moteur avant tokenisation**
 
 Réutiliser la logique MV/MZ existante de protection des codes via une entrée fournie par l'adaptateur moteur. Ne pas recopier les regex de placeholders dans `japanese.rs`. Vérifier que `\\V[1]`, `\\N[2]`, balises de couleur et marqueurs de nom n'engendrent aucun terme.
 
-- [ ] **Step 3: Mapper IPADIC vers les catégories stables Hoshi2Star**
+- [x] **Step 3: Mapper IPADIC vers les catégories stables Hoshi2Star**
 
 Mapper noms généraux/propres, verbes, adjectifs, adverbes et expressions. Exclure particules, auxiliaires, symboles, espaces, ponctuation, nombres seuls et tokens vides. Conserver la forme de base comme `canonical_text`, la surface comme variante et la lecture si disponible.
 
-- [ ] **Step 4: Tester la fixture linguistique**
+- [x] **Step 4: Tester la fixture linguistique**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml core::terminology::analyzer`
 
 Expected: PASS pour toutes les formes grammaticales et tous les placeholders de la fixture.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run: `git add src-tauri/src/core/terminology/analyzer src-tauri/src/core/terminology/mod.rs`
 

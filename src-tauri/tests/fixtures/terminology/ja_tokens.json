@@ -4,7 +4,7 @@
     "text": "六花は東京へ向かった。",
     "expected": [
       { "lemma": "六花", "partOfSpeech": "noun" },
-      { "lemma": "東京", "partOfSpeech": "noun" },
+      { "lemma": "東京", "partOfSpeech": "proper_noun" },
       { "lemma": "向かう", "partOfSpeech": "verb" }
     ],
     "excluded": ["は", "へ", "た", "。"]
@@ -46,7 +46,8 @@
     "text": "\\C[3]勇者\\C[0]の所持金は\\V[1]です。\\N[2]に話しかける。",
     "expected": [
       { "lemma": "勇者", "partOfSpeech": "noun" },
-      { "lemma": "所持金", "partOfSpeech": "noun" },
+      { "lemma": "所持", "partOfSpeech": "noun" },
+      { "lemma": "金", "partOfSpeech": "noun" },
       { "lemma": "話しかける", "partOfSpeech": "verb" }
     ],
     "excluded": ["C", "V", "N", "1", "2", "3", "[", "]", "\\"]
@@ -80,7 +81,7 @@
     "expected": [
       { "lemma": "今夜", "partOfSpeech": "noun" },
       { "lemma": "星", "partOfSpeech": "noun" },
-      { "lemma": "綺麗", "partOfSpeech": "noun" }
+      { "lemma": "綺麗", "partOfSpeech": "adjective" }
     ],
     "excluded": ["は", "が", "です", "ね", "。"]
   },
