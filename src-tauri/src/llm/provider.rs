@@ -16,6 +16,7 @@ use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
+use crate::core::terminology::types::{Enforcement, PartOfSpeech};
 use crate::llm::context::SegmentPromptContext;
 
 // ---------------------------------------------------------------------------
@@ -36,8 +37,8 @@ pub enum PromptContextPolicy {
 pub struct TranslationContext {
     pub source_lang: String,
     pub target_lang: String,
-    /// (source_term, target_term) pairs injected into the system prompt.
-    pub glossary_terms: Vec<(String, String)>,
+    /// Terms resolved for this exact provider request from segment occurrences.
+    pub terminology_hints: Vec<TerminologyHint>,
     /// Project engine (`"wolf"`, `"mv_mz"`, `"vx_ace"`, `"bakin"`, …) — selects
     /// which placeholder patterns `Tokenizer::tokenize` uses (ADR-002).
     pub engine: String,
@@ -54,6 +55,46 @@ pub struct TranslationContext {
     /// Empty/`None` preserves the legacy context-free prompt.
     #[serde(default)]
     pub segment_contexts: Vec<Option<SegmentPromptContext>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminologyHint {
+    pub source: String,
+    pub target: String,
+    pub semantic_type: String,
+    pub part_of_speech: PartOfSpeech,
+    pub enforcement: Enforcement,
+    #[serde(default)]
+    pub accepted_targets: Vec<String>,
+}
+
+/// Render the complete terminology fragment used by translation prompts.
+/// Keeping this pure and shared lets the resolver enforce its budget against
+/// the exact text that will be sent, including instructions and variants.
+pub(crate) fn terminology_prompt_fragment(hints: &[TerminologyHint]) -> String {
+    if hints.is_empty() {
+        return String::new();
+    }
+    let pairs = hints
+        .iter()
+        .map(|hint| {
+            let variants = if hint.accepted_targets.is_empty() {
+                String::new()
+            } else {
+                format!("; variants={}", hint.accepted_targets.join("|"))
+            };
+            format!(
+                "[{};{};{}] {}={}{variants}",
+                hint.enforcement, hint.semantic_type, hint.part_of_speech, hint.source, hint.target,
+            )
+        })
+        .collect::<Vec<_>>();
+    format!(
+        "\nTerminology (never insert absent terms; required=must use when sense matches; \
+         preferred=consistent; contextual=guidance):\n{}",
+        pairs.join("\n")
+    )
 }
 
 /// Logical operation measured by one provider call.
@@ -79,6 +120,8 @@ pub struct ProviderCallMetrics {
     pub duration_ms: u64,
     pub attempts: u32,
     pub success: bool,
+    #[serde(default)]
+    pub terminology_hints: usize,
 }
 
 #[derive(Debug, Error)]
@@ -333,16 +376,7 @@ impl LlmProvider for OpenAiCompatibleProvider {
             return Ok(vec![]);
         }
 
-        let glossary_hint = if context.glossary_terms.is_empty() {
-            String::new()
-        } else {
-            let pairs: Vec<String> = context
-                .glossary_terms
-                .iter()
-                .map(|(s, t)| format!("{s} → {t}"))
-                .collect();
-            format!("\nGlossary:\n{}", pairs.join("\n"))
-        };
+        let terminology_hint = terminology_prompt_fragment(&context.terminology_hints);
 
         let translation_units = render_translation_units(&segments, &context.segment_contexts);
         let tmpl = crate::llm::prompts::translate_for(&context.target_lang);
@@ -368,7 +402,7 @@ impl LlmProvider for OpenAiCompatibleProvider {
                     crate::llm::prompts::lang_code_to_name(&context.target_lang),
                 ),
                 ("output_protocol", output_protocol),
-                ("glossary", &glossary_hint),
+                ("terminology", &terminology_hint),
             ],
         );
         let prompt_body = tmpl.render(&tmpl.user, &[("segments", &translation_units)]);
@@ -471,6 +505,7 @@ impl LlmProvider for OpenAiCompatibleProvider {
             duration_ms: elapsed_millis(started),
             attempts,
             success: outcome.is_ok(),
+            terminology_hints: context.terminology_hints.len(),
         });
 
         outcome.map(|(translations, _)| translations)
@@ -561,6 +596,7 @@ impl LlmProvider for OpenAiCompatibleProvider {
             duration_ms: elapsed_millis(started),
             attempts,
             success: outcome.is_ok(),
+            terminology_hints: 0,
         });
 
         outcome.map(|(content, _)| content)
@@ -791,7 +827,7 @@ mod tests {
         TranslationContext {
             source_lang: "ja".to_string(),
             target_lang: "en".to_string(),
-            glossary_terms: vec![],
+            terminology_hints: vec![],
             engine: "mv_mz".to_string(),
             batch_size: DEFAULT_BATCH_SIZE,
             batch_delay_ms: 0,
@@ -989,9 +1025,18 @@ mod tests {
             }));
         });
         let provider = make_provider(&server);
+        let mut context = ctx();
+        context.terminology_hints = vec![TerminologyHint {
+            source: "勇者".to_string(),
+            target: "Hero".to_string(),
+            semantic_type: "character".to_string(),
+            part_of_speech: PartOfSpeech::Noun,
+            enforcement: Enforcement::Required,
+            accepted_targets: vec![],
+        }];
 
         provider
-            .translate(vec!["勇者".to_string()], ctx())
+            .translate(vec!["勇者".to_string()], context)
             .await
             .expect("translate");
         let metrics = provider.drain_metrics();
@@ -1000,6 +1045,7 @@ mod tests {
         assert_eq!(metrics[0].task, ProviderTask::Translate);
         assert_eq!(metrics[0].model, "test-model");
         assert_eq!(metrics[0].input_units, 1);
+        assert_eq!(metrics[0].terminology_hints, 1);
         assert!(metrics[0].prompt_chars > 0);
         assert_eq!(metrics[0].prompt_tokens, Some(120));
         assert_eq!(metrics[0].completion_tokens, Some(17));

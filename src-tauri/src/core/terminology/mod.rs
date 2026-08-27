@@ -7,6 +7,7 @@
 pub mod analyzer;
 pub mod normalize;
 pub mod repository;
+pub mod resolver;
 pub mod scanner;
 pub mod service;
 pub mod translator;

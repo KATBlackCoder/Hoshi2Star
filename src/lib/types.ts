@@ -353,6 +353,8 @@ export interface ProviderCallMetrics {
   task: ProviderTask;
   model: string;
   inputUnits: number;
+  /** Occurrence-scoped terminology hints sent in this exact request. */
+  terminologyHints: number;
   promptChars: number;
   promptTokens: number | null;
   completionTokens: number | null;

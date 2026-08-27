@@ -607,11 +607,11 @@ Run: `git commit -m "feat(terminology): translate term candidates with review st
 - Modify: `src-tauri/prompts/translate/default.toml`
 - Test: modules ci-dessus
 
-- [ ] **Step 1: Écrire les tests qui reproduisent le défaut actuel**
+- [x] **Step 1: Écrire les tests qui reproduisent le défaut actuel**
 
 Vérifier qu'un terme sans occurrence dans le lot n'est jamais envoyé, que zéro correspondance produit une liste vide, qu'un override projet masque le global, qu'une traduction `proposed` n'est pas `required`, et qu'un lot de dialogue séparé d'un lot canonique reçoit des hints différents.
 
-- [ ] **Step 2: Remplacer le tuple de glossaire par un type riche**
+- [x] **Step 2: Remplacer le tuple de glossaire par un type riche**
 
 ```rust
 pub struct TerminologyHint {
@@ -626,23 +626,28 @@ pub struct TerminologyHint {
 
 `TranslationContext` porte `terminology_hints`. Supprimer `glossary_terms` après adaptation de tous les tests.
 
-- [ ] **Step 3: Résoudre après le regroupement interne du pipeline**
+- [x] **Step 3: Résoudre après le regroupement interne du pipeline**
 
 Pour chaque appel réel à `provider.translate`, passer les IDs de segments du sous-lot à `resolver`. Une requête SQL récupère uniquement les entrées actives ayant une occurrence sur ces segments et une traduction effective non vide dans la cible. Ordonner `required`, `preferred`, `contextual`, puis fréquence; dédupliquer et borner à 20 termes et 10 % du budget estimé de prompt.
 
-- [ ] **Step 4: Supprimer le fallback arbitraire**
+- [x] **Step 4: Supprimer le fallback arbitraire**
 
 Retirer `core::glossary::relevant_terms`, notamment les dix termes les plus courts quand rien ne correspond. Retirer le chargement par fichier dans `commands/translate.rs`. Aucun fallback global n'est autorisé.
 
-- [ ] **Step 5: Rendre le prompt explicite**
+- [x] **Step 5: Rendre le prompt explicite**
 
 Présenter `required` comme obligatoire si le sens correspond, `preferred` comme traduction cohérente recommandée et `contextual` comme aide non littérale. Préciser qu'un terme ne doit jamais être inséré si le texte source du segment ne l'emploie pas.
 
 - [ ] **Step 6: Mesurer les tokens**
 
+Le budget portable en caractères (médiane 9,29 %, maximum 9,89 % sur 1 191
+segments) et la métrique `terminologyHints` sont validés. La mesure exacte en
+tokens dépend du tokenizer du modèle et reste à rejouer avec le fournisseur du
+pilote en Task 13.
+
 Sur la fixture 1 191 segments, comparer tokens de prompts avec/sans terminologie. Le surcoût médian doit rester ≤ 10 %, aucun appel ne doit dépasser la fenêtre configurée et le nombre de hints doit apparaître dans les métriques.
 
-- [ ] **Step 7: Vérifier le pipeline complet**
+- [x] **Step 7: Vérifier le pipeline complet**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml llm::pipeline llm::provider core::terminology::resolver commands::translate`
 

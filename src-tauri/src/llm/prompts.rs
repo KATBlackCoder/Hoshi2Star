@@ -138,7 +138,7 @@ mod tests {
                 ("source_lang", "Japanese"),
                 ("target_lang", "English"),
                 ("output_protocol", "Return strict output."),
-                ("glossary", ""),
+                ("terminology", ""),
             ],
         );
         assert!(out.contains("Japanese"));
@@ -149,7 +149,7 @@ mod tests {
     }
 
     #[test]
-    fn test_render_glossary_hint_injected() {
+    fn test_render_terminology_hint_injected() {
         let tmpl = translate_for("en");
         let hint = "\nGlossary:\n勇者 → Hero";
         let out = tmpl.render(
@@ -158,14 +158,14 @@ mod tests {
                 ("source_lang", "Japanese"),
                 ("target_lang", "English"),
                 ("output_protocol", "Return strict output."),
-                ("glossary", hint),
+                ("terminology", hint),
             ],
         );
         assert!(out.contains("勇者 → Hero"));
     }
 
     #[test]
-    fn test_render_empty_glossary() {
+    fn test_render_empty_terminology() {
         let tmpl = translate_for("en");
         let out = tmpl.render(
             &tmpl.system,
@@ -173,10 +173,10 @@ mod tests {
                 ("source_lang", "Japanese"),
                 ("target_lang", "English"),
                 ("output_protocol", "Return strict output."),
-                ("glossary", ""),
+                ("terminology", ""),
             ],
         );
-        assert!(!out.contains("{{glossary}}"));
+        assert!(!out.contains("{{terminology}}"));
     }
 
     #[test]
