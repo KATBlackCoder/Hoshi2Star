@@ -2,14 +2,17 @@ use std::collections::HashMap;
 
 use sqlx::{FromRow, QueryBuilder, Sqlite, SqlitePool};
 
-use super::{mv_mz_context_class, NeighborLine, PromptContextClass, SegmentPromptContext};
+use super::{
+    mv_mz_context_class, NeighborLine, PromptContextClass, QaNeighborContext, SegmentContextBundle,
+    SegmentPromptContext,
+};
 
 const NEIGHBOR_RADIUS: i64 = 2;
 
 pub(super) async fn build(
     db: &SqlitePool,
     segment_ids: &[String],
-) -> Result<Vec<Option<SegmentPromptContext>>, sqlx::Error> {
+) -> Result<Vec<SegmentContextBundle>, sqlx::Error> {
     if segment_ids.is_empty() {
         return Ok(Vec::new());
     }
@@ -19,7 +22,8 @@ pub(super) async fn build(
                 c.scene_id AS center_scene_id, c.sequence_index AS center_sequence, \
                 c.speaker AS center_speaker, c.branch_path AS center_branch_path, \
                 n.segment_kind AS neighbor_kind, n.sequence_index AS neighbor_sequence, \
-                n.speaker AS neighbor_speaker, n.source_text AS neighbor_text \
+                n.speaker AS neighbor_speaker, n.source_text AS neighbor_text, \
+                n.target_text AS neighbor_target \
          FROM segments c \
          LEFT JOIN segments n \
            ON c.scene_id IS NOT NULL \
@@ -44,7 +48,7 @@ pub(super) async fn build(
     query.push(") ORDER BY c.rowid, n.sequence_index");
 
     let rows = query.build_query_as::<JoinedRow>().fetch_all(db).await?;
-    let mut contexts: HashMap<String, SegmentPromptContext> =
+    let mut contexts: HashMap<String, SegmentContextBundle> =
         HashMap::with_capacity(segment_ids.len());
 
     for row in rows {
@@ -59,13 +63,16 @@ pub(super) async fn build(
                 PromptContextClass::Branch => (None, None, row.center_branch_path),
                 PromptContextClass::Canonical | PromptContextClass::Isolated => (None, None, None),
             };
-            SegmentPromptContext {
-                segment_kind: row.center_kind,
-                scene_id,
-                speaker,
-                branch_path,
-                previous: Vec::with_capacity(NEIGHBOR_RADIUS as usize),
-                following: Vec::with_capacity(NEIGHBOR_RADIUS as usize),
+            SegmentContextBundle {
+                prompt: Some(SegmentPromptContext {
+                    segment_kind: row.center_kind,
+                    scene_id,
+                    speaker,
+                    branch_path,
+                    previous: Vec::with_capacity(NEIGHBOR_RADIUS as usize),
+                    following: Vec::with_capacity(NEIGHBOR_RADIUS as usize),
+                }),
+                qa_neighbors: QaNeighborContext::default(),
             }
         });
 
@@ -85,16 +92,27 @@ pub(super) async fn build(
             speaker: row.neighbor_speaker,
             text: neighbor_text,
         };
+        context.qa_neighbors.sources.push(line.text.clone());
+        if let Some(target) = row
+            .neighbor_target
+            .filter(|target| !target.trim().is_empty())
+        {
+            context.qa_neighbors.targets.push(target);
+        }
+        let prompt = context
+            .prompt
+            .as_mut()
+            .expect("MV/MZ context bundle always has prompt metadata");
         if neighbor_sequence < center_sequence {
-            context.previous.push(line);
+            prompt.previous.push(line);
         } else {
-            context.following.push(line);
+            prompt.following.push(line);
         }
     }
 
     Ok(segment_ids
         .iter()
-        .map(|id| contexts.get(id).cloned())
+        .map(|id| contexts.get(id).cloned().unwrap_or_default())
         .collect())
 }
 
@@ -110,6 +128,7 @@ struct JoinedRow {
     neighbor_sequence: Option<i64>,
     neighbor_speaker: Option<String>,
     neighbor_text: Option<String>,
+    neighbor_target: Option<String>,
 }
 
 #[cfg(test)]
@@ -167,9 +186,16 @@ mod tests {
     #[tokio::test]
     async fn context_is_bounded_and_does_not_cross_branch_boundaries() {
         let (pool, _temp) = seeded_db().await;
+        sqlx::query(
+            "UPDATE segments SET target_text = 'Translated following line', \
+                    status = 'translated' WHERE id = 's3'",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
 
         let contexts = build(&pool, &["center".to_string()]).await.unwrap();
-        let center = contexts[0].as_ref().unwrap();
+        let center = contexts[0].prompt.as_ref().unwrap();
 
         assert_eq!(center.segment_kind, "dialogue");
         assert_eq!(center.speaker.as_deref(), Some("勇者"));
@@ -184,6 +210,10 @@ mod tests {
             .iter()
             .chain(&center.following)
             .all(|line| line.text != "other branch" && line.text != "遠すぎる"));
+        assert_eq!(
+            contexts[0].qa_neighbors.targets,
+            vec!["Translated following line"]
+        );
     }
 
     #[tokio::test]
@@ -199,12 +229,12 @@ mod tests {
 
         assert_eq!(contexts.len(), 3);
         assert_eq!(
-            contexts[0].as_ref().unwrap().speaker.as_deref(),
+            contexts[0].prompt.as_ref().unwrap().speaker.as_deref(),
             Some("勇者")
         );
-        assert_eq!(contexts[1], None);
+        assert_eq!(contexts[1], SegmentContextBundle::default());
         assert_eq!(
-            contexts[2].as_ref().unwrap().speaker.as_deref(),
+            contexts[2].prompt.as_ref().unwrap().speaker.as_deref(),
             Some("仲間")
         );
     }
@@ -236,18 +266,18 @@ mod tests {
             .await
             .unwrap();
 
-        let speaker = contexts[0].as_ref().unwrap();
+        let speaker = contexts[0].prompt.as_ref().unwrap();
         assert_eq!(speaker.segment_kind, "speaker");
         assert!(speaker.scene_id.is_none());
         assert!(speaker.speaker.is_none());
         assert!(speaker.branch_path.is_none());
         assert!(speaker.previous.is_empty() && speaker.following.is_empty());
 
-        let choice = contexts[1].as_ref().unwrap();
+        let choice = contexts[1].prompt.as_ref().unwrap();
         assert_eq!(choice.branch_path.as_deref(), Some("choice:2"));
         assert!(choice.previous.is_empty() && choice.following.is_empty());
 
-        let term = contexts[2].as_ref().unwrap();
+        let term = contexts[2].prompt.as_ref().unwrap();
         assert!(term.scene_id.is_none());
         assert!(term.previous.is_empty() && term.following.is_empty());
     }

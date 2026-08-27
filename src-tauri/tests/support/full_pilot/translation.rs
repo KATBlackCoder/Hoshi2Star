@@ -5,9 +5,16 @@ use hoshi2star_lib::llm::pipeline;
 use hoshi2star_lib::llm::provider::{
     LlmProvider, PromptContextPolicy, ProviderCallMetrics, TranslationContext,
 };
+use hoshi2star_lib::llm::split::PipelineBatchMetrics;
 use serde::Serialize;
 
 use super::PilotWorkspace;
+
+pub struct RetryRun {
+    pub requested_segments: usize,
+    pub pipeline_metrics: PipelineBatchMetrics,
+    pub provider_metrics: Vec<ProviderCallMetrics>,
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -50,16 +57,7 @@ pub async fn run<P: LlmProvider>(workspace: &PilotWorkspace, provider: &P) -> Re
             pipeline::run_inner(
                 pairs,
                 provider,
-                TranslationContext {
-                    source_lang: "ja".into(),
-                    target_lang: "en".into(),
-                    terminology_hints: Vec::new(),
-                    engine: "mv_mz".into(),
-                    batch_size: 20,
-                    batch_delay_ms: 0,
-                    prompt_context_policy: PromptContextPolicy::EngineOwned,
-                    segment_contexts: Vec::new(),
-                },
+                translation_context(),
                 &state.db,
                 None,
                 None,
@@ -99,6 +97,66 @@ pub async fn run<P: LlmProvider>(workspace: &PilotWorkspace, provider: &P) -> Re
         .map_err(|error| error.to_string())?;
     }
     Ok(())
+}
+
+pub async fn retry_needs_review<P: LlmProvider>(
+    workspace: &PilotWorkspace,
+    provider: &P,
+) -> Result<RetryRun, String> {
+    let state = workspace.state();
+    let (audit, _) = hoshi2star_lib::core::report::audit_project(&state.db, &workspace.project_id)
+        .await
+        .map_err(|error| error.to_string())?;
+    eprintln!(
+        "[terminology-retry] preflight found {} critical segments",
+        audit.critical_count
+    );
+    let pairs = sqlx::query_as::<_, (String, String)>(
+        "SELECT segment.id, segment.source_text FROM segments segment \
+         JOIN source_files file ON file.id = segment.source_file_id \
+         WHERE file.project_id = ? AND segment.status = 'needs_review' \
+         ORDER BY file.file_name, segment.rowid",
+    )
+    .bind(&workspace.project_id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(|error| error.to_string())?;
+    let requested_segments = pairs.len();
+    let outcome = pipeline::run_inner_with_metrics(
+        pairs,
+        provider,
+        translation_context(),
+        &state.db,
+        None,
+        None,
+        None,
+        |done, total| eprintln!("[terminology-retry] {done}/{total}"),
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    let provider_metrics = provider.drain_metrics();
+    append_metrics(
+        &workspace.root.join("retry-provider-metrics.jsonl"),
+        &provider_metrics,
+    )?;
+    Ok(RetryRun {
+        requested_segments,
+        pipeline_metrics: outcome.metrics,
+        provider_metrics,
+    })
+}
+
+fn translation_context() -> TranslationContext {
+    TranslationContext {
+        source_lang: "ja".into(),
+        target_lang: "en".into(),
+        terminology_hints: Vec::new(),
+        engine: "mv_mz".into(),
+        batch_size: 20,
+        batch_delay_ms: 0,
+        prompt_context_policy: PromptContextPolicy::EngineOwned,
+        segment_contexts: Vec::new(),
+    }
 }
 
 pub fn append_metrics(

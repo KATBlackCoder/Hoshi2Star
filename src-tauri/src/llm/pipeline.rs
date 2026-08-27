@@ -6,9 +6,10 @@
 //! 3. Tokenize remaining segments (ADR-002: placeholders → ⟦ph_N⟧)
 //! 4. Send tokenized batch to the provider via `split::llm_translate_with_split`
 //! 5. Validate + restore placeholders; retry up to `MAX_RETRIES` times if invalid
-//! 6. Persist the batch's `target_text`/`status` to the DB immediately
+//! 6. Retry semantic QA failures as isolated singletons with bounded context
+//! 7. Persist the batch's `target_text`/`status` to the DB immediately
 //!    (incremental persistence — a crash mid-run only loses the in-flight batch)
-//! 7. Emit `h2s://llm/segments-updated` (the batch's persisted `target_text`/
+//! 8. Emit `h2s://llm/segments-updated` (the batch's persisted `target_text`/
 //!    `status`), `h2s://llm/progress`, and `h2s://llm/placeholder-warning`
 //!    (if an `AppHandle` was provided), and call `on_progress(done, total)`
 //! 8. If a `CooldownState` was provided, possibly `.await` a rest period
@@ -27,6 +28,7 @@ use crate::llm::progress::{
     CoolingPayload, PlaceholderWarningPayload, ProgressPayload, SegmentUpdatePayload,
 };
 use crate::llm::provider::{LlmError, LlmProvider, PromptContextPolicy, TranslationContext};
+use crate::llm::semantic_retry::{self, SemanticRetryRequest};
 use crate::llm::split::{llm_translate_with_split, PipelineBatchMetrics};
 use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
 use serde::Serialize;
@@ -53,6 +55,12 @@ pub struct TranslationResult {
     pub needs_review: bool,
     pub qa_score: u8,
     pub qa_errors: Vec<qa::QaError>,
+}
+
+#[derive(Debug)]
+pub struct PipelineRunOutcome {
+    pub results: Vec<TranslationResult>,
+    pub metrics: PipelineBatchMetrics,
 }
 
 #[derive(Debug, Error)]
@@ -221,10 +229,41 @@ pub async fn run_inner<P, F>(
     context: TranslationContext,
     db: &SqlitePool,
     app_handle: Option<&tauri::AppHandle>,
+    cooldown: Option<&mut CooldownState>,
+    global_progress: Option<(usize, usize)>,
+    on_progress: F,
+) -> Result<Vec<TranslationResult>, PipelineError>
+where
+    P: LlmProvider,
+    F: FnMut(usize, usize),
+{
+    Ok(run_inner_with_metrics(
+        segments,
+        provider,
+        context,
+        db,
+        app_handle,
+        cooldown,
+        global_progress,
+        on_progress,
+    )
+    .await?
+    .results)
+}
+
+/// Variant of [`run_inner`] used by diagnostics and real-project pilots that
+/// need aggregate retry counters without depending on Tauri event listeners.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_inner_with_metrics<P, F>(
+    segments: Vec<(String, String)>,
+    provider: &P,
+    context: TranslationContext,
+    db: &SqlitePool,
+    app_handle: Option<&tauri::AppHandle>,
     mut cooldown: Option<&mut CooldownState>,
     global_progress: Option<(usize, usize)>,
     mut on_progress: F,
-) -> Result<Vec<TranslationResult>, PipelineError>
+) -> Result<PipelineRunOutcome, PipelineError>
 where
     P: LlmProvider,
     F: FnMut(usize, usize),
@@ -234,6 +273,7 @@ where
 
     let batch_size = context.batch_size.clamp(1, 100);
     let mut results = Vec::with_capacity(total);
+    let mut run_metrics = PipelineBatchMetrics::default();
     let mut done = 0usize;
 
     for batch_segments in segments.chunks(batch_size) {
@@ -251,6 +291,7 @@ where
         }
 
         let (batch_results, pipeline_metrics) = batch_outcome?;
+        run_metrics.merge(pipeline_metrics.clone());
 
         if let Some(handle) = app_handle {
             let _ = handle.emit("h2s://llm/pipeline-metrics", pipeline_metrics);
@@ -312,7 +353,10 @@ where
         }
     }
 
-    Ok(results)
+    Ok(PipelineRunOutcome {
+        results,
+        metrics: run_metrics,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -366,14 +410,16 @@ where
     let qa_rules = resolver::resolve_qa_rules_for_segments(db, &segment_ids, &context.target_lang)
         .await
         .map_err(|error| PipelineError::Database(error.to_string()))?;
-    let prompt_contexts = match context.prompt_context_policy {
-        PromptContextPolicy::Disabled => vec![None; segment_ids.len()],
-        PromptContextPolicy::EngineOwned => {
-            context::build_for_segments(db, &context.engine, &segment_ids)
-                .await
-                .map_err(|error| PipelineError::Database(error.to_string()))?
-        }
-    };
+    let context_bundles = context::build_context_bundles(db, &context.engine, &segment_ids)
+        .await
+        .map_err(|error| PipelineError::Database(error.to_string()))?;
+    let prompt_contexts = context_bundles
+        .iter()
+        .map(|bundle| match context.prompt_context_policy {
+            PromptContextPolicy::Disabled => None,
+            PromptContextPolicy::EngineOwned => bundle.prompt.clone(),
+        })
+        .collect::<Vec<_>>();
     let (unique_segs, idx_map) = batch::dedup_with_context(segments, &prompt_contexts);
 
     // Translation table: (translated_text, from_tm, needs_review)
@@ -543,14 +589,10 @@ where
     // Build final Vec<TranslationResult> (same order as input `segments`)
     let mut results = Vec::with_capacity(segments.len());
     for (index, (id, source_text)) in segments.iter().enumerate() {
-        let (raw_target, from_tm, provider_needs_review) =
+        let (mut raw_target, from_tm, provider_needs_review) =
             translations[index].take().unwrap_or_default();
         let prompt_context = prompt_contexts.get(index).and_then(Option::as_ref);
-        let neighbor_sources: Vec<String> = prompt_context
-            .into_iter()
-            .flat_map(|value| value.previous.iter().chain(&value.following))
-            .map(|neighbor| neighbor.text.clone())
-            .collect();
+        let qa_neighbors = &context_bundles[index].qa_neighbors;
         let segment_kind = prompt_context
             .map(|value| value.segment_kind.as_str())
             .unwrap_or("unknown");
@@ -558,20 +600,52 @@ where
             source_language: &context.source_lang,
             target_language: &context.target_lang,
             segment_kind,
-            neighbor_sources: &neighbor_sources,
+            neighbor_sources: &qa_neighbors.sources,
+            neighbor_targets: &qa_neighbors.targets,
         };
         let segment_rules = qa_rules.get(id).map(Vec::as_slice).unwrap_or(&[]);
-        let qa_result = qa::check_with_context(
+        let mut qa_result = qa::check_with_context(
             source_text,
             &raw_target,
             segment_rules,
             &context.engine,
             &qa_context,
         );
-        let needs_review = provider_needs_review || qa_result.has_critical_errors();
         if !provider_needs_review && qa_result.has_critical_errors() {
             pipeline_metrics.semantic_rejections += 1;
+            if !from_tm {
+                let tokenized = Tokenizer::tokenize(
+                    source_text,
+                    TokEngine::from_project_engine(&context.engine),
+                );
+                let retry = semantic_retry::retry(
+                    SemanticRetryRequest {
+                        source_text,
+                        tokenized: &tokenized,
+                        translation_context: context,
+                        segment_id: id,
+                        terminology_rules: segment_rules,
+                        prompt_context,
+                        qa_neighbors,
+                    },
+                    provider,
+                    db,
+                )
+                .await;
+                pipeline_metrics.merge(retry.metrics);
+                if let Some(recovered_target) = retry.recovered_target {
+                    raw_target = recovered_target;
+                    qa_result = qa::check_with_context(
+                        source_text,
+                        &raw_target,
+                        segment_rules,
+                        &context.engine,
+                        &qa_context,
+                    );
+                }
+            }
         }
+        let needs_review = provider_needs_review || qa_result.has_critical_errors();
         let translated_text = if raw_target.trim().is_empty() {
             source_text.clone()
         } else {
@@ -682,6 +756,43 @@ mod tests {
         }
     }
 
+    async fn insert_dialogue_scene(db: &SqlitePool) {
+        sqlx::query(
+            "INSERT INTO projects (id, name, engine, game_path) \
+             VALUES ('p1', 'Test', 'mv_mz', '/tmp')",
+        )
+        .execute(db)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO source_files (id, project_id, file_name, file_path, file_type) \
+             VALUES ('f1', 'p1', 'Map001.json', '/tmp/Map001.json', 'map')",
+        )
+        .execute(db)
+        .await
+        .unwrap();
+        for (id, sequence, text, speaker) in [
+            ("before", 0, "待って", Some("仲間")),
+            ("center", 1, "行こう", Some("勇者")),
+            ("after", 2, "はい", Some("仲間")),
+        ] {
+            sqlx::query(
+                "INSERT INTO segments \
+                 (id, source_file_id, json_key, source_text, segment_kind, scene_id, \
+                  sequence_index, speaker) \
+                 VALUES (?, 'f1', ?, ?, 'dialogue', 'Map001.json:event:1:page:0', ?, ?)",
+            )
+            .bind(id)
+            .bind(format!("/{id}"))
+            .bind(text)
+            .bind(sequence)
+            .bind(speaker)
+            .execute(db)
+            .await
+            .unwrap();
+        }
+    }
+
     // ── Tests ────────────────────────────────────────────────────────────────
 
     #[tokio::test]
@@ -743,40 +854,7 @@ mod tests {
     #[tokio::test]
     async fn mv_mz_context_reaches_provider_with_bounded_neighbors() {
         let (db, _f) = test_db().await;
-        sqlx::query(
-            "INSERT INTO projects (id, name, engine, game_path) \
-             VALUES ('p1', 'Test', 'mv_mz', '/tmp')",
-        )
-        .execute(&db)
-        .await
-        .unwrap();
-        sqlx::query(
-            "INSERT INTO source_files (id, project_id, file_name, file_path, file_type) \
-             VALUES ('f1', 'p1', 'Map001.json', '/tmp/Map001.json', 'map')",
-        )
-        .execute(&db)
-        .await
-        .unwrap();
-        for (id, sequence, text, speaker) in [
-            ("before", 0, "待って", Some("仲間")),
-            ("center", 1, "行こう", Some("勇者")),
-            ("after", 2, "はい", Some("仲間")),
-        ] {
-            sqlx::query(
-                "INSERT INTO segments \
-                 (id, source_file_id, json_key, source_text, segment_kind, scene_id, \
-                  sequence_index, speaker) \
-                 VALUES (?, 'f1', ?, ?, 'dialogue', 'Map001.json:event:1:page:0', ?, ?)",
-            )
-            .bind(id)
-            .bind(format!("/{id}"))
-            .bind(text)
-            .bind(sequence)
-            .bind(speaker)
-            .execute(&db)
-            .await
-            .unwrap();
-        }
+        insert_dialogue_scene(&db).await;
         let provider = MockProvider::new(vec![Ok(vec!["Let's go".to_string()])]);
 
         run_inner(
@@ -798,6 +876,105 @@ mod tests {
         assert_eq!(prompt_context.speaker.as_deref(), Some("勇者"));
         assert_eq!(prompt_context.previous[0].text, "待って");
         assert_eq!(prompt_context.following[0].text, "はい");
+    }
+
+    #[tokio::test]
+    async fn semantic_failure_retries_singleton_without_neighbors() {
+        let (db, _f) = test_db().await;
+        insert_dialogue_scene(&db).await;
+        let contaminated = "Let's go. This output wrongly continues with a very long neighbouring conversation that does not belong to the source segment at all.";
+        let provider = MockProvider::new(vec![
+            Ok(vec![contaminated.to_string()]),
+            Ok(vec!["Let's go.".to_string()]),
+        ]);
+
+        let (results, metrics) = translate_batch(
+            &[("center".to_string(), "行こう".to_string())],
+            &provider,
+            &ctx(),
+            "ja-en",
+            &db,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(provider.calls(), 2);
+        assert_eq!(results[0].translated_text, "Let's go.");
+        assert!(!results[0].needs_review);
+        assert_eq!(metrics.semantic_rejections, 1);
+        assert_eq!(metrics.semantic_retries, 1);
+        assert_eq!(metrics.semantic_recoveries, 1);
+        let contexts = provider.contexts();
+        let retry = contexts[1].segment_contexts[0].as_ref().unwrap();
+        assert!(retry.previous.is_empty());
+        assert!(retry.following.is_empty());
+        assert_eq!(retry.speaker.as_deref(), Some("勇者"));
+    }
+
+    #[tokio::test]
+    async fn exhausted_semantic_retries_keep_first_output_for_review() {
+        let (db, _f) = test_db().await;
+        insert_dialogue_scene(&db).await;
+        let first = "Let's go. This output wrongly continues with a very long neighbouring conversation that does not belong to the source segment at all.";
+        let second = "Another excessively expanded answer that keeps inventing unrelated dialogue and remains far too long for this tiny source.";
+        let third = "A final excessively expanded answer that still invents unrelated dialogue and must never be silently accepted.";
+        let provider = MockProvider::new(vec![
+            Ok(vec![first.to_string()]),
+            Ok(vec![second.to_string()]),
+            Ok(vec![third.to_string()]),
+        ]);
+
+        let (results, metrics) = translate_batch(
+            &[("center".to_string(), "行こう".to_string())],
+            &provider,
+            &ctx(),
+            "ja-en",
+            &db,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(provider.calls(), 3);
+        assert_eq!(results[0].translated_text, first);
+        assert!(results[0].needs_review);
+        assert_eq!(metrics.semantic_rejections, 1);
+        assert_eq!(metrics.semantic_retries, 2);
+        assert_eq!(metrics.semantic_recoveries, 0);
+        assert_eq!(provider.contexts()[2].segment_contexts, vec![None]);
+    }
+
+    #[tokio::test]
+    async fn translated_neighbor_overlap_triggers_isolated_retry() {
+        let (db, _f) = test_db().await;
+        insert_dialogue_scene(&db).await;
+        sqlx::query(
+            "UPDATE segments SET target_text = 'We should go and continue the mission.', \
+                    status = 'translated' WHERE id = 'after'",
+        )
+        .execute(&db)
+        .await
+        .unwrap();
+        let provider = MockProvider::new(vec![
+            Ok(vec!["Let's go and continue the mission.".to_string()]),
+            Ok(vec!["Let's go.".to_string()]),
+        ]);
+
+        let results = run_inner(
+            vec![("center".to_string(), "行こう".to_string())],
+            &provider,
+            ctx(),
+            &db,
+            None,
+            None,
+            None,
+            |_, _| {},
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(provider.calls(), 2);
+        assert_eq!(results[0].translated_text, "Let's go.");
+        assert!(!results[0].needs_review);
     }
 
     #[tokio::test]

@@ -96,7 +96,7 @@ async fn evaluate_project(
     let total_checked = rows.len();
     let ids: Vec<String> = rows.iter().map(|row| row.segment_id.clone()).collect();
     let engine = rows.first().map(|row| row.engine.as_str()).unwrap_or("");
-    let prompt_contexts = context::build_for_segments(pool, engine, &ids).await?;
+    let context_bundles = context::build_context_bundles(pool, engine, &ids).await?;
     let target_language = rows
         .first()
         .map(|row| row.target_language.as_str())
@@ -126,17 +126,13 @@ async fn evaluate_project(
     let mut terminology_by_entry = std::collections::HashMap::<String, QaTerminologyIssue>::new();
     let mut updates = Vec::with_capacity(total_checked);
     for (index, row) in rows.into_iter().enumerate() {
-        let prompt_context = prompt_contexts.get(index).and_then(Option::as_ref);
-        let neighbor_sources: Vec<String> = prompt_context
-            .into_iter()
-            .flat_map(|value| value.previous.iter().chain(&value.following))
-            .map(|neighbor| neighbor.text.clone())
-            .collect();
+        let qa_neighbors = &context_bundles[index].qa_neighbors;
         let semantic_context = QaSemanticContext {
             source_language: &row.source_language,
             target_language: &row.target_language,
             segment_kind: &row.segment_kind,
-            neighbor_sources: &neighbor_sources,
+            neighbor_sources: &qa_neighbors.sources,
+            neighbor_targets: &qa_neighbors.targets,
         };
         let mut result = qa::check_with_context(
             &row.source_text,

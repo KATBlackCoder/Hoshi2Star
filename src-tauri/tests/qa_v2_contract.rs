@@ -23,6 +23,7 @@ fn semantic_check(
             target_language,
             segment_kind,
             neighbor_sources: &[],
+            neighbor_targets: &[],
         },
     )
 }

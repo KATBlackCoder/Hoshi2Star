@@ -28,6 +28,8 @@ pub struct PipelineBatchMetrics {
     pub placeholder_retries: u32,
     pub recursive_splits: u32,
     pub semantic_rejections: u32,
+    pub semantic_retries: u32,
+    pub semantic_recoveries: u32,
 }
 
 impl PipelineBatchMetrics {
@@ -36,6 +38,8 @@ impl PipelineBatchMetrics {
         self.placeholder_retries += other.placeholder_retries;
         self.recursive_splits += other.recursive_splits;
         self.semantic_rejections += other.semantic_rejections;
+        self.semantic_retries += other.semantic_retries;
+        self.semantic_recoveries += other.semantic_recoveries;
     }
 }
 

@@ -370,6 +370,8 @@ export interface PipelineBatchMetrics {
   placeholderRetries: number;
   recursiveSplits: number;
   semanticRejections: number;
+  semanticRetries: number;
+  semanticRecoveries: number;
 }
 
 export type PilotSampleCategory =

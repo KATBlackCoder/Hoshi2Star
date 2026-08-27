@@ -5,7 +5,7 @@ use hoshi2star_lib::core::report;
 use hoshi2star_lib::llm::provider::ProviderCallMetrics;
 use serde::Serialize;
 
-use super::{PilotConfig, PilotWorkspace, VariantSummary};
+use super::{translation::RetryRun, PilotConfig, PilotWorkspace, VariantSummary};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -16,7 +16,38 @@ struct Comparison {
     terminology: VariantSummary,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RetryReport {
+    model: String,
+    source_fingerprint: String,
+    requested_segments: usize,
+    pipeline_metrics: hoshi2star_lib::llm::split::PipelineBatchMetrics,
+    provider: ProviderTotals,
+    after: VariantSummary,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProviderTotals {
+    calls: usize,
+    attempts: u32,
+    prompt_tokens: Option<u64>,
+    completion_tokens: Option<u64>,
+    total_tokens: Option<u64>,
+    duration_ms: u64,
+    calls_with_hints: usize,
+    terminology_hints: usize,
+}
+
 pub async fn summarize(workspace: &PilotWorkspace) -> Result<VariantSummary, String> {
+    summarize_named(workspace, "qa-details.json").await
+}
+
+pub async fn summarize_named(
+    workspace: &PilotWorkspace,
+    details_file_name: &str,
+) -> Result<VariantSummary, String> {
     let state = workspace.state();
     let (translated, needs_review, untranslated): (i64, i64, i64) = sqlx::query_as(
         "SELECT SUM(CASE WHEN segment.status = 'translated' THEN 1 ELSE 0 END), \
@@ -33,7 +64,7 @@ pub async fn summarize(workspace: &PilotWorkspace) -> Result<VariantSummary, Str
         .await
         .map_err(|error| error.to_string())?;
     let details_json = serde_json::to_vec_pretty(&details).map_err(|error| error.to_string())?;
-    fs::write(workspace.root.join("qa-details.json"), details_json)
+    fs::write(workspace.root.join(details_file_name), details_json)
         .map_err(|error| error.to_string())?;
     let inconsistent_repeated_sources: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM (SELECT segment.source_text FROM segments segment \
@@ -78,6 +109,28 @@ pub async fn summarize(workspace: &PilotWorkspace) -> Result<VariantSummary, Str
     })
 }
 
+pub fn write_retry_report(
+    config: &PilotConfig,
+    source_fingerprint: String,
+    retry: RetryRun,
+    after: VariantSummary,
+) -> Result<(), String> {
+    let provider = provider_totals(&retry.provider_metrics);
+    let report = RetryReport {
+        model: config.model.clone(),
+        source_fingerprint,
+        requested_segments: retry.requested_segments,
+        pipeline_metrics: retry.pipeline_metrics,
+        provider,
+        after,
+    };
+    let output = serde_json::to_vec_pretty(&report).map_err(|error| error.to_string())?;
+    fs::write(config.root.join("terminology-retry.json"), &output)
+        .map_err(|error| error.to_string())?;
+    println!("{}", String::from_utf8_lossy(&output));
+    Ok(())
+}
+
 pub fn write_comparison(
     config: &PilotConfig,
     source_fingerprint: String,
@@ -117,4 +170,20 @@ fn sum_optional(
         .map(select)
         .collect::<Option<Vec<_>>>()
         .map(|values| values.into_iter().sum())
+}
+
+fn provider_totals(metrics: &[ProviderCallMetrics]) -> ProviderTotals {
+    ProviderTotals {
+        calls: metrics.len(),
+        attempts: metrics.iter().map(|metric| metric.attempts).sum(),
+        prompt_tokens: sum_optional(metrics, |metric| metric.prompt_tokens),
+        completion_tokens: sum_optional(metrics, |metric| metric.completion_tokens),
+        total_tokens: sum_optional(metrics, |metric| metric.total_tokens),
+        duration_ms: metrics.iter().map(|metric| metric.duration_ms).sum(),
+        calls_with_hints: metrics
+            .iter()
+            .filter(|metric| metric.terminology_hints > 0)
+            .count(),
+        terminology_hints: metrics.iter().map(|metric| metric.terminology_hints).sum(),
+    }
 }

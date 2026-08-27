@@ -76,6 +76,8 @@ describe("llm store", () => {
       placeholderRetries: 1,
       recursiveSplits: 1,
       semanticRejections: 3,
+      semanticRetries: 2,
+      semanticRecoveries: 1,
     };
 
     useLlmStore.getState().appendPipelineMetrics(metrics);

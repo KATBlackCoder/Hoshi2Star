@@ -117,6 +117,21 @@ pub async fn run() -> Result<(), String> {
     Ok(())
 }
 
+pub async fn retry_critical() -> Result<(), String> {
+    let config = PilotConfig::from_env()?;
+    let terminology_variant = workspace::prepare(&config, "terminology").await?;
+    let source_fingerprint = terminology_variant.source_fingerprint().await?;
+    let retry_provider = provider(&config);
+    retry_provider
+        .health_check()
+        .await
+        .map_err(|error| error.to_string())?;
+    let retry = translation::retry_needs_review(&terminology_variant, &retry_provider).await?;
+    let after =
+        report::summarize_named(&terminology_variant, "qa-details-after-retry.json").await?;
+    report::write_retry_report(&config, source_fingerprint, retry, after)
+}
+
 fn provider(config: &PilotConfig) -> OpenAiCompatibleProvider {
     OpenAiCompatibleProvider::new_for_preset(
         "ollama",

@@ -488,6 +488,7 @@ async fn standgirl_ollama_translates_terms_and_reports_exact_prompt_tokens() {
                 target_language,
                 segment_kind: "database",
                 neighbor_sources: &[],
+                neighbor_targets: &[],
             },
         );
         assert!(!qa_result.has_critical_errors());

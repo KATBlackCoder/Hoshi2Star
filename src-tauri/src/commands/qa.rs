@@ -105,6 +105,7 @@ async fn check_segment_live(
             target_language,
             segment_kind: "unknown",
             neighbor_sources: &[],
+            neighbor_targets: &[],
         },
     )
 }

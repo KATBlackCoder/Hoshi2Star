@@ -163,6 +163,7 @@ pub struct QaSemanticContext<'a> {
     pub target_language: &'a str,
     pub segment_kind: &'a str,
     pub neighbor_sources: &'a [String],
+    pub neighbor_targets: &'a [String],
 }
 
 // ---------------------------------------------------------------------------
@@ -431,11 +432,18 @@ pub fn check_with_context(
         }
 
         let normalized_target = normalized_semantic_text(target_trimmed);
-        if let Some(neighbor) = context.neighbor_sources.iter().find(|neighbor| {
+        let source_leak = context.neighbor_sources.iter().find(|neighbor| {
             let normalized_neighbor = normalized_semantic_text(neighbor);
             normalized_neighbor.chars().count() >= 4
                 && normalized_target.contains(&normalized_neighbor)
-        }) {
+        });
+        let translated_leak = (target_chars > source_chars.saturating_mul(4)).then(|| {
+            context
+                .neighbor_targets
+                .iter()
+                .find(|neighbor| shares_word_sequence(target_trimmed, neighbor, 4))
+        });
+        if let Some(neighbor) = source_leak.or_else(|| translated_leak.flatten()) {
             result.errors.push(QaError::ContextLeak {
                 neighbor_text: neighbor.clone(),
             });
@@ -452,6 +460,25 @@ fn normalized_semantic_text(text: &str) -> String {
         .flat_map(str::chars)
         .flat_map(char::to_lowercase)
         .collect()
+}
+
+fn shares_word_sequence(left: &str, right: &str, minimum_words: usize) -> bool {
+    let words = |text: &str| {
+        text.split(|character: char| !character.is_alphanumeric())
+            .filter(|word| !word.is_empty())
+            .map(str::to_lowercase)
+            .collect::<Vec<_>>()
+    };
+    let left_words = words(left);
+    let right_words = words(right);
+    if left_words.len() < minimum_words || right_words.len() < minimum_words {
+        return false;
+    }
+    left_words.windows(minimum_words).any(|left_window| {
+        right_words
+            .windows(minimum_words)
+            .any(|right_window| left_window == right_window)
+    })
 }
 
 fn contains_source_script(text: &str, source_language: &str) -> bool {
@@ -1002,6 +1029,7 @@ mod tests {
             target_language: "fr",
             segment_kind: kind,
             neighbor_sources: neighbors,
+            neighbor_targets: &[],
         }
     }
 
@@ -1072,6 +1100,25 @@ mod tests {
             &semantic_context("dialogue", &neighbors),
         );
         assert!(leaked
+            .errors
+            .iter()
+            .any(|error| matches!(error, QaError::ContextLeak { .. })));
+
+        let translated_neighbors = vec!["We should go and continue the mission.".to_string()];
+        let translated_leak = check_with_context(
+            "行こう",
+            "Let's go and continue the mission.",
+            &[],
+            "mv_mz",
+            &QaSemanticContext {
+                source_language: "ja",
+                target_language: "en",
+                segment_kind: "dialogue",
+                neighbor_sources: &[],
+                neighbor_targets: &translated_neighbors,
+            },
+        );
+        assert!(translated_leak
             .errors
             .iter()
             .any(|error| matches!(error, QaError::ContextLeak { .. })));

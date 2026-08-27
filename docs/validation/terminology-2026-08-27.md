@@ -57,6 +57,29 @@ La variante assistée améliore nettement ce tirage brut sur les erreurs critiqu
 
 L'empreinte complète du jeu original après le replay reste `2d60b1f3858c0e39c4a32c538b39cd8cf99830e1127e378951372c9bc04f4523`, strictement identique à celle d'avant test.
 
+## Reprise automatique des rejets sémantiques
+
+La lecture humaine des 15 premières réparations a révélé quatre sorties encore contaminées, mais assez courtes pour échapper au seuil d'expansion. Le QA a donc été renforcé sans envoyer davantage de contexte au modèle : l'adaptateur MV/MZ collecte séparément les cibles voisines déjà persistées pour l'audit, et signale un chevauchement d'au moins quatre mots uniquement lorsque la cible dépasse quatre fois la longueur source. Ces cibles voisines ne sont jamais sérialisées dans le prompt.
+
+Après ce changement, l'audit pré-export a détecté 63 fuites de contexte dans le tirage brut. Ces 63 segments ont été rejoués : 45 nouvelles sorties ont passé directement le QA; 18 ont été rejetées et automatiquement retentées une par une sans lignes voisines. Les 18 ont été récupérées, avec une seule candidate nécessitant la deuxième tentative totalement dépourvue de métadonnées.
+
+| Mesure après reprise | Avant | Après | Écart |
+|---|---:|---:|---:|
+| Segments traduits / à réviser | 1 176 / 15 | 1 191 / 0 | +15 / −15 |
+| Erreurs critiques | 15 | 0 | −15 |
+| Segments QA parfaits | 987 | 1 034 | +47 |
+| Segments avec avertissement | 204 | 157 | −47 |
+| Avertissements de largeur | 202 | 157 | −45 |
+| Sources répétées incohérentes | 34 | 33 | −1 |
+| Écarts terminologiques informatifs | 16 | 16 | 0 |
+| ZIP exportable | non | oui | validé |
+
+Le second passage robuste a consommé 29 appels, 20 118 tokens et 246 237 ms fournisseur. En incluant la première passe de diagnostic sur les 15 critiques, le coût de remédiation observé est de 39 appels, 26 061 tokens et 365 364 ms. Aucun retry de format, placeholder ou split récursif n'a été requis.
+
+Le ZIP final contient 26 fichiers JSON et passe `unzip -t` sans erreur. L'empreinte complète du jeu original reste `2d60b1f3858c0e39c4a32c538b39cd8cf99830e1127e378951372c9bc04f4523`.
+
+Le parcours MCP Tauri a ensuite validé l'application debug Hoshi2Star 0.4.10 avec Tauri 2.11.2 : connexion au bridge 9223, état backend, arbre d'accessibilité, ouverture/extraction du fixture MZ, appel QA réel retournant `suspicious_expansion`, puis suppression complète du projet synthétique. La console ne contient aucune erreur et le manifest du fixture a été supprimé avec le projet.
+
 ## Parcours visible MCP Tauri
 
 Application debug réelle Hoshi2Star 0.4.10, Tauri 2.11.2, Linux x86_64 :
@@ -96,7 +119,7 @@ Le premier format de hint, trop verbeux, mesurait 14,55 % et 14,91 %. Il a été
 
 ## Automatisation
 
-- Rust : format et Clippy `-D warnings` propres; suite complète, 496 tests unitaires réussis et 4 ignorés, plus toutes les intégrations. Les deux pilotes privés ignorés par défaut passent lorsqu'ils sont activés explicitement.
+- Rust : format et Clippy `-D warnings` propres; suite complète, 499 tests unitaires réussis et 4 ignorés, plus toutes les intégrations. Les pilotes privés ignorés par défaut passent lorsqu'ils sont activés explicitement.
 - E2E terminologique : MV/MZ ja→en et ja→fr, fournisseur mock uniquement, QA sans critique, JSON du ZIP relu, puis suppression projet validée.
 - Frontend : lint sans erreur (10 avertissements historiques hors de cette fonctionnalité), typecheck réussi, 29 fichiers et 93 tests réussis, build réussi.
 - UI : workspace terminologique chargé à la demande, chunk 25,60 kB (7,81 kB gzip). Le chunk principal reste à 735,57 kB et conserve l'avertissement Vite > 500 kB, dette indépendante à traiter par découpage supplémentaire.
@@ -142,4 +165,13 @@ H2S_OLLAMA_URL=http://127.0.0.1:11434/v1 \
 H2S_OLLAMA_MODEL=gemma4:e4b \
   cargo test --manifest-path src-tauri/Cargo.toml \
   --test standgirl_full_pilot -- --ignored --nocapture
+
+H2S_STANDGIRL_PATH=/chemin/vers/StandGirl \
+H2S_FULL_PILOT_ROOT=/tmp/hoshi2star-standgirl-full-pilot \
+H2S_OLLAMA_URL=http://127.0.0.1:11434/v1 \
+H2S_OLLAMA_MODEL=gemma4:e4b \
+  cargo test --manifest-path src-tauri/Cargo.toml \
+  --test standgirl_full_pilot \
+  repair_standgirl_terminology_critical_segments \
+  -- --ignored --nocapture
 ```

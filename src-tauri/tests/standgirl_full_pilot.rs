@@ -11,3 +11,9 @@ mod full_pilot;
 async fn compare_full_standgirl_translation_with_and_without_terminology() {
     full_pilot::run().await.unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires an existing full StandGirl pilot and local Ollama"]
+async fn repair_standgirl_terminology_critical_segments() {
+    full_pilot::retry_critical().await.unwrap();
+}
