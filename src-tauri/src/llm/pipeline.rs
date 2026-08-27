@@ -363,18 +363,9 @@ where
 {
     let batch_len = segments.len();
     let segment_ids: Vec<String> = segments.iter().map(|(id, _)| id.clone()).collect();
-    let qa_hints = resolver::resolve_for_request(
-        db,
-        &segment_ids,
-        &context.target_lang,
-        2_000
-            + segments
-                .iter()
-                .map(|(_, text)| text.chars().count())
-                .sum::<usize>(),
-    )
-    .await
-    .map_err(|error| PipelineError::Database(error.to_string()))?;
+    let qa_rules = resolver::resolve_qa_rules_for_segments(db, &segment_ids, &context.target_lang)
+        .await
+        .map_err(|error| PipelineError::Database(error.to_string()))?;
     let prompt_contexts = match context.prompt_context_policy {
         PromptContextPolicy::Disabled => vec![None; segment_ids.len()],
         PromptContextPolicy::EngineOwned => {
@@ -569,15 +560,11 @@ where
             segment_kind,
             neighbor_sources: &neighbor_sources,
         };
-        let qa_terms = qa_hints
-            .iter()
-            .filter(|hint| source_text.contains(&hint.source))
-            .map(|hint| (hint.source.clone(), hint.target.clone()))
-            .collect::<Vec<_>>();
+        let segment_rules = qa_rules.get(id).map(Vec::as_slice).unwrap_or(&[]);
         let qa_result = qa::check_with_context(
             source_text,
             &raw_target,
-            &qa_terms,
+            segment_rules,
             &context.engine,
             &qa_context,
         );

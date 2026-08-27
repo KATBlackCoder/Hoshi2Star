@@ -2,7 +2,6 @@ import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Segment, SegmentStatus } from "@/lib/types";
-import { useGlossaryTerms } from "@/stores/editor";
 import { useActiveEngine } from "@/stores/project";
 import { cn } from "@/lib/utils";
 import { getPlaceholderRegex } from "@/lib/constants";
@@ -140,20 +139,14 @@ const EditableCell = memo(function EditableCell({
 });
 
 // ---------------------------------------------------------------------------
-// Source text highlight (placeholders + glossary terms)
+// Source text highlight (engine placeholders only)
 // ---------------------------------------------------------------------------
 
 const SourceCell = memo(function SourceCell({ text }: { text: string }) {
-  const terms = useGlossaryTerms();
   const engine = useActiveEngine();
   const nodes = useMemo(
-    () =>
-      buildHighlightedNodes(
-        text,
-        terms.map((t) => t.sourceText),
-        getPlaceholderRegex(engine),
-      ),
-    [text, terms, engine],
+    () => buildHighlightedNodes(text, [], getPlaceholderRegex(engine)),
+    [text, engine],
   );
   return (
     <p className="text-xs leading-relaxed whitespace-pre-wrap break-words min-w-0 max-w-full">

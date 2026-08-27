@@ -13,7 +13,6 @@ import { SettingsModal } from "@/components/settings/SettingsModal";
 import { AboutModal } from "@/components/AboutModal";
 import { TranslateAllDialog } from "@/components/TranslateAllDialog";
 import { FontSizeDialog } from "@/components/FontSizeDialog";
-import { usePendingGlossaryExtract } from "@/stores/project";
 import type { useAppHandlers } from "@/hooks/useAppHandlers";
 
 // ---------------------------------------------------------------------------
@@ -28,7 +27,6 @@ interface AppDialogsProps {
 
 export function AppDialogs({ handlers }: AppDialogsProps) {
   const { t } = useTranslation();
-  const pendingGlossaryExtract = usePendingGlossaryExtract();
 
   const {
     showSettings,
@@ -43,8 +41,6 @@ export function AppDialogs({ handlers }: AppDialogsProps) {
     setShowAbout,
     setExportDialog,
     setShowTranslateAll,
-    handleGlossaryConfirm,
-    handleGlossaryDecline,
     handleExportConfirm,
     handleExportFontApply,
     handleExportFontSkip,
@@ -125,25 +121,6 @@ export function AppDialogs({ handlers }: AppDialogsProps) {
         />
       )}
 
-      {/* Glossary extraction prompt */}
-      <AlertDialog open={pendingGlossaryExtract !== null}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("glossaryPrompt.title")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("glossaryPrompt.description")}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleGlossaryDecline}>
-              {t("glossaryPrompt.no")}
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={() => void handleGlossaryConfirm()}>
-              {t("glossaryPrompt.yes")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }

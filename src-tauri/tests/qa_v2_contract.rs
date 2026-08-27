@@ -121,11 +121,8 @@ fn report_labels_are_independent_from_the_translation_target() {
     assert_eq!(error.label("en"), r"Missing placeholder: \V[1]");
 }
 
-/// Desired QA v2 contract. It is ignored until the project evaluator is split
-/// into a pure preview and an explicit persistence command in the next phase.
 #[tokio::test]
-#[ignore = "QA v2: audit preview must become read-only before enabling this contract"]
-async fn qa_report_preview_does_not_change_segment_status_or_score() {
+async fn qa_report_preview_is_read_only_and_explicit_audit_persists() {
     let temporary = tempfile::NamedTempFile::new().unwrap();
     let pool = db::pool::init(temporary.path().to_str().unwrap())
         .await
@@ -160,7 +157,7 @@ async fn qa_report_preview_does_not_change_segment_status_or_score() {
             .fetch_one(&pool)
             .await
             .unwrap();
-    let _preview = report::audit_project(&pool, "p1", &[]).await.unwrap();
+    let _preview = report::preview_project(&pool, "p1").await.unwrap();
     let after: (String, Option<i64>) =
         sqlx::query_as("SELECT status, qa_score FROM segments WHERE id = 's1'")
             .fetch_one(&pool)
@@ -171,4 +168,14 @@ async fn qa_report_preview_does_not_change_segment_status_or_score() {
         after, before,
         "reading a QA report must not mutate project data"
     );
+
+    let (summary, _) = report::audit_project(&pool, "p1").await.unwrap();
+    let audited: (String, Option<i64>) =
+        sqlx::query_as("SELECT status, qa_score FROM segments WHERE id = 's1'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(summary.critical_count, 1);
+    assert_eq!(audited.0, "needs_review");
+    assert!(audited.1.unwrap_or(100) < 100);
 }

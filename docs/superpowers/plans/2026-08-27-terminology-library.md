@@ -681,11 +681,11 @@ Run: `git commit -m "feat(localization): resolve terminology per provider reques
 - Modify: `src/locales/en.json`
 - Modify: `src/locales/fr.json`
 
-- [ ] **Step 1: Faire du rapport QA un évaluateur pur**
+- [x] **Step 1: Faire du rapport QA un évaluateur pur**
 
 Activer et satisfaire le contrat `qa_report_preview_is_read_only_and_export_runs_one_explicit_audit`. La prévisualisation ne modifie ni statut ni score; l'audit explicite avant export peut persister les résultats dans une transaction contrôlée.
 
-- [ ] **Step 2: Écrire les règles terminologiques**
+- [x] **Step 2: Écrire les règles terminologiques**
 
 - `locked + required` sur entité stable: erreur critique si aucune cible/variante acceptée n'apparaît;
 - `approved + preferred`: warning de cohérence;
@@ -695,11 +695,11 @@ Activer et satisfaire le contrat `qa_report_preview_is_read_only_and_export_runs
 
 Renommer l'erreur API en `TerminologyMismatch` et accepter temporairement `GlossaryMismatch` en désérialisation des anciens rapports si nécessaire.
 
-- [ ] **Step 3: Réutiliser le même resolver**
+- [x] **Step 3: Réutiliser le même resolver**
 
 QA reçoit les IDs de segments et demande les hints au resolver; elle ne recharge pas toute la base. Une incohérence répétée est groupée par `entry_id` dans le rapport pour permettre d'ouvrir la page Terminologie filtrée sur le terme.
 
-- [ ] **Step 4: Remplacer l'inspecteur sans créer un deuxième CRUD**
+- [x] **Step 4: Remplacer l'inspecteur sans créer un deuxième CRUD**
 
 Le nouvel inspecteur montre seulement les termes correspondant au segment actif et ouvre la page complète pour l'édition. Supprimer l'ancien panneau React et ses handlers/stores. Garder provisoirement la façade Rust `glossary` en lecture uniquement parce que les packs v1 l'utilisent encore; sa suppression appartient à Task 12. Vérifier:
 
@@ -707,7 +707,7 @@ Run: `rg -n "Glossary|glossary|get_glossary|glossary_terms" src src-tauri/src sr
 
 Expected: aucune UI/store active de glossaire; seulement la façade backend historique, les packs, la migration et le prompt historique en attente de Task 12.
 
-- [ ] **Step 5: Vérifier QA et frontend**
+- [x] **Step 5: Vérifier QA et frontend**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml core::qa commands::qa core::report`
 

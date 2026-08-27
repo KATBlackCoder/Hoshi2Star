@@ -209,6 +209,16 @@ pub struct ProjectStats {
 }
 
 /// Summary of QA errors for a whole project.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QaTerminologyIssue {
+    pub entry_id: String,
+    pub source_term: String,
+    pub expected_targets: Vec<String>,
+    pub severity: String,
+    pub occurrences: usize,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QaReport {
@@ -217,6 +227,7 @@ pub struct QaReport {
     pub error_count: i64,
     pub critical_count: i64,
     pub errors_by_type: HashMap<String, usize>,
+    pub terminology_issues: Vec<QaTerminologyIssue>,
 }
 
 #[cfg(test)]

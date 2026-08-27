@@ -75,8 +75,6 @@ function mockGridIpc(opts?: { failSave?: boolean; failFirstLoad?: boolean }) {
           pageSize: chunk,
         };
       }
-      case "get_glossary":
-        return [];
       case "update_segment": {
         if (opts?.failSave) throw new Error("disk full");
         const { id, targetText } = args as { id: string; targetText: string };

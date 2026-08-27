@@ -1,12 +1,11 @@
 //! QA report generation — collect per-segment QA details and render to HTML.
 //!
-//! Errors are recalculated at export time (not stored in DB) so the report
-//! is always fresh. Glossary terms are supplied by the caller
-//! (`export_qa_report` loads the project glossary) so `GlossaryMismatch`
-//! errors appear in the report.
+//! Preview is a pure read: errors are recalculated without changing segment
+//! status or score. Only the explicit pre-export audit persists QA state.
 
 use crate::core::qa::{self, QaError, QaSemanticContext};
-use crate::domain::types::QaReport;
+use crate::core::terminology::resolver;
+use crate::domain::types::{QaReport, QaTerminologyIssue};
 use crate::llm::context::{self, PromptContextClass};
 use crate::utils::text::escape_xml;
 use serde::{Deserialize, Serialize};
@@ -33,27 +32,30 @@ pub struct QaSegmentDetail {
 // ---------------------------------------------------------------------------
 
 /// Fetch all translated segments for `project_id`, recalculate QA errors
-/// (including glossary checks against `terms` as `(source, expected_target)`
-/// pairs), and return `(total_checked, details)` where `total_checked` is the
+/// (including occurrence-scoped terminology checks), and return
+/// `(total_checked, details)` where `total_checked` is the
 /// number of segments examined and `details` only those with `score < 100`.
 ///
 /// Uses `ROW_NUMBER()` (SQLite ≥ 3.25 — bundled libsqlite3-sys 0.30.1 → 3.46.x).
 pub async fn collect_qa_details(
     pool: &SqlitePool,
     project_id: &str,
-    terms: &[(String, String)],
 ) -> Result<(usize, Vec<QaSegmentDetail>), sqlx::Error> {
-    let (summary, details) = audit_project(pool, project_id, terms).await?;
+    let (summary, details) = preview_project(pool, project_id).await?;
     Ok((summary.total_segments as usize, details))
 }
 
-/// Recalculate semantic QA for every translated/review row, persist the score
-/// and critical status, and return an exact summary plus report details.
-pub async fn audit_project(
+async fn evaluate_project(
     pool: &SqlitePool,
     project_id: &str,
-    terms: &[(String, String)],
-) -> Result<(QaReport, Vec<QaSegmentDetail>), sqlx::Error> {
+) -> Result<
+    (
+        QaReport,
+        Vec<QaSegmentDetail>,
+        Vec<(String, u8, &'static str)>,
+    ),
+    sqlx::Error,
+> {
     #[derive(sqlx::FromRow)]
     struct Row {
         segment_id: String,
@@ -95,6 +97,13 @@ pub async fn audit_project(
     let ids: Vec<String> = rows.iter().map(|row| row.segment_id.clone()).collect();
     let engine = rows.first().map(|row| row.engine.as_str()).unwrap_or("");
     let prompt_contexts = context::build_for_segments(pool, engine, &ids).await?;
+    let target_language = rows
+        .first()
+        .map(|row| row.target_language.as_str())
+        .unwrap_or("en");
+    let terminology_rules = resolver::resolve_qa_rules_for_segments(pool, &ids, target_language)
+        .await
+        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
 
     let mut variants =
         std::collections::HashMap::<(String, String), std::collections::HashSet<String>>::new();
@@ -114,6 +123,7 @@ pub async fn audit_project(
     let mut ok_count = 0_i64;
     let mut critical_count = 0_i64;
     let mut errors_by_type = std::collections::HashMap::<String, usize>::new();
+    let mut terminology_by_entry = std::collections::HashMap::<String, QaTerminologyIssue>::new();
     let mut updates = Vec::with_capacity(total_checked);
     for (index, row) in rows.into_iter().enumerate() {
         let prompt_context = prompt_contexts.get(index).and_then(Option::as_ref);
@@ -131,7 +141,10 @@ pub async fn audit_project(
         let mut result = qa::check_with_context(
             &row.source_text,
             &row.target_text,
-            terms,
+            terminology_rules
+                .get(&row.segment_id)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]),
             &row.engine,
             &semantic_context,
         );
@@ -154,6 +167,24 @@ pub async fn audit_project(
             *errors_by_type
                 .entry(error.type_key().to_string())
                 .or_default() += 1;
+            if let QaError::TerminologyMismatch {
+                entry_id,
+                source_term,
+                expected_targets,
+                severity,
+            } = error
+            {
+                let issue = terminology_by_entry
+                    .entry(entry_id.clone())
+                    .or_insert_with(|| QaTerminologyIssue {
+                        entry_id: entry_id.clone(),
+                        source_term: source_term.clone(),
+                        expected_targets: expected_targets.clone(),
+                        severity: format!("{severity:?}").to_lowercase(),
+                        occurrences: 0,
+                    });
+                issue.occurrences += 1;
+            }
         }
         let next_status = if critical {
             "needs_review"
@@ -176,6 +207,43 @@ pub async fn audit_project(
         }
     }
 
+    let mut terminology_issues = terminology_by_entry.into_values().collect::<Vec<_>>();
+    terminology_issues.sort_by(|left, right| {
+        right
+            .occurrences
+            .cmp(&left.occurrences)
+            .then_with(|| left.source_term.cmp(&right.source_term))
+    });
+    Ok((
+        QaReport {
+            total_segments: total_checked as i64,
+            ok_count,
+            error_count: details.len() as i64,
+            critical_count,
+            errors_by_type,
+            terminology_issues,
+        },
+        details,
+        updates,
+    ))
+}
+
+/// Recalculate project QA without mutating status, score or timestamps.
+pub async fn preview_project(
+    pool: &SqlitePool,
+    project_id: &str,
+) -> Result<(QaReport, Vec<QaSegmentDetail>), sqlx::Error> {
+    let (summary, details, _) = evaluate_project(pool, project_id).await?;
+    Ok((summary, details))
+}
+
+/// Explicit pre-export audit. Evaluation remains read-only until every result
+/// is available, then all status/score updates are committed atomically.
+pub async fn audit_project(
+    pool: &SqlitePool,
+    project_id: &str,
+) -> Result<(QaReport, Vec<QaSegmentDetail>), sqlx::Error> {
+    let (summary, details, updates) = evaluate_project(pool, project_id).await?;
     let mut transaction = pool.begin().await?;
     for (segment_id, score, status) in updates {
         sqlx::query(
@@ -189,17 +257,7 @@ pub async fn audit_project(
         .await?;
     }
     transaction.commit().await?;
-
-    Ok((
-        QaReport {
-            total_segments: total_checked as i64,
-            ok_count,
-            error_count: details.len() as i64,
-            critical_count,
-            errors_by_type,
-        },
-        details,
-    ))
+    Ok((summary, details))
 }
 
 // ---------------------------------------------------------------------------
@@ -214,7 +272,7 @@ struct Labels {
     missing_ph: &'static str,
     line_long: &'static str,
     bom: &'static str,
-    glossary: &'static str,
+    terminology: &'static str,
     semantic: &'static str,
     filter_file: &'static str,
     filter_all_files: &'static str,
@@ -233,7 +291,7 @@ struct Labels {
     err_missing_ph: &'static str,
     err_line_long: &'static str,
     err_bom: &'static str,
-    err_glossary: &'static str,
+    err_terminology: &'static str,
     err_empty: &'static str,
     err_unchanged: &'static str,
     err_source_script: &'static str,
@@ -252,7 +310,7 @@ fn labels(lang: &str) -> Labels {
             missing_ph: "Placeholder manquant",
             line_long: "Ligne trop longue",
             bom: "BOM UTF-8",
-            glossary: "Terme glossaire non respecté",
+            terminology: "Terminologie non respectée",
             semantic: "Erreurs sémantiques critiques",
             filter_file: "Fichier :",
             filter_all_files: "Tous les fichiers",
@@ -271,7 +329,7 @@ fn labels(lang: &str) -> Labels {
             err_missing_ph: "Placeholder manquant",
             err_line_long: "Ligne trop longue",
             err_bom: "BOM UTF-8",
-            err_glossary: "Glossaire",
+            err_terminology: "Terminologie",
             err_empty: "Vide",
             err_unchanged: "Source inchangée",
             err_source_script: "Écriture source",
@@ -288,7 +346,7 @@ fn labels(lang: &str) -> Labels {
             missing_ph: "Missing placeholder",
             line_long: "Line too long",
             bom: "BOM detected",
-            glossary: "Glossary mismatch",
+            terminology: "Terminology mismatch",
             semantic: "Critical semantic errors",
             filter_file: "File:",
             filter_all_files: "All files",
@@ -307,7 +365,7 @@ fn labels(lang: &str) -> Labels {
             err_missing_ph: "Missing placeholder",
             err_line_long: "Line too long",
             err_bom: "BOM detected",
-            err_glossary: "Glossary mismatch",
+            err_terminology: "Terminology mismatch",
             err_empty: "Empty",
             err_unchanged: "Unchanged source",
             err_source_script: "Source script",
@@ -370,7 +428,7 @@ pub fn generate_qa_html(
     let mut count_missing_ph: usize = 0;
     let mut count_line_long: usize = 0;
     let mut count_bom: usize = 0;
-    let mut count_glossary: usize = 0;
+    let mut count_terminology: usize = 0;
     let mut count_semantic: usize = 0;
 
     for d in details {
@@ -379,7 +437,7 @@ pub fn generate_qa_html(
                 QaError::MissingPlaceholder { .. } => count_missing_ph += 1,
                 QaError::LineTooLong { .. } => count_line_long += 1,
                 QaError::BomDetected => count_bom += 1,
-                QaError::GlossaryMismatch { .. } => count_glossary += 1,
+                QaError::TerminologyMismatch { .. } => count_terminology += 1,
                 QaError::EmptyTranslation
                 | QaError::UnchangedSource
                 | QaError::SourceScriptRemaining { .. }
@@ -442,7 +500,7 @@ td{{padding:7px 10px;vertical-align:top}}
 .err-dot.missing_placeholder{{background:#ef4444}}
 .err-dot.line_too_long{{background:#f59e0b}}
 .err-dot.bom_detected{{background:#f59e0b}}
-.err-dot.glossary_mismatch{{background:#a78bfa}}
+.err-dot.terminology_mismatch{{background:#a78bfa}}
 .err-dot.empty_translation,.err-dot.unchanged_source,.err-dot.source_script_remaining,.err-dot.suspicious_expansion,.err-dot.context_leak,.err-dot.inconsistent_repeated_source{{background:#ef4444}}
 .source-text,.target-text{{max-width:280px;word-break:break-word;white-space:pre-wrap;font-family:monospace;font-size:11px;color:#ddd}}
 .source-text{{color:#94a3b8}}
@@ -473,7 +531,7 @@ td{{padding:7px 10px;vertical-align:top}}
 <div class="stat"><span class="stat-label">{lbl_missing_ph}</span><span class="stat-value red">{count_missing_ph}</span></div>
 <div class="stat"><span class="stat-label">{lbl_line_long}</span><span class="stat-value orange">{count_line_long}</span></div>
 <div class="stat"><span class="stat-label">{lbl_bom}</span><span class="stat-value orange">{count_bom}</span></div>
-<div class="stat"><span class="stat-label">{lbl_glossary}</span><span class="stat-value blue">{count_glossary}</span></div>
+<div class="stat"><span class="stat-label">{lbl_terminology}</span><span class="stat-value blue">{count_terminology}</span></div>
 <div class="stat"><span class="stat-label">{lbl_semantic}</span><span class="stat-value red">{count_semantic}</span></div>
 </div>
 "#,
@@ -483,8 +541,8 @@ td{{padding:7px 10px;vertical-align:top}}
         count_line_long = count_line_long,
         lbl_bom = lbl.bom,
         count_bom = count_bom,
-        lbl_glossary = lbl.glossary,
-        count_glossary = count_glossary,
+        lbl_terminology = lbl.terminology,
+        count_terminology = count_terminology,
         lbl_semantic = lbl.semantic,
         count_semantic = count_semantic,
     );
@@ -532,7 +590,7 @@ td{{padding:7px 10px;vertical-align:top}}
 <label><input type="checkbox" class="err-filter" value="missing_placeholder" checked> {err_missing_ph}</label>
 <label><input type="checkbox" class="err-filter" value="line_too_long" checked> {err_line_long}</label>
 <label><input type="checkbox" class="err-filter" value="bom_detected" checked> {err_bom}</label>
-<label><input type="checkbox" class="err-filter" value="glossary_mismatch" checked> {err_glossary}</label>
+<label><input type="checkbox" class="err-filter" value="terminology_mismatch" checked> {err_terminology}</label>
 <label><input type="checkbox" class="err-filter" value="empty_translation" checked> {err_empty}</label>
 <label><input type="checkbox" class="err-filter" value="unchanged_source" checked> {err_unchanged}</label>
 <label><input type="checkbox" class="err-filter" value="source_script_remaining" checked> {err_source_script}</label>
@@ -549,7 +607,7 @@ td{{padding:7px 10px;vertical-align:top}}
         err_missing_ph = lbl.err_missing_ph,
         err_line_long = lbl.err_line_long,
         err_bom = lbl.err_bom,
-        err_glossary = lbl.err_glossary,
+        err_terminology = lbl.err_terminology,
         err_empty = lbl.err_empty,
         err_unchanged = lbl.err_unchanged,
         err_source_script = lbl.err_source_script,
@@ -795,10 +853,10 @@ mod tests {
         assert!(html.contains("BOM UTF-8"), "missing FR bom label");
     }
 
-    // --- Phase 4 (audit 2026-07-01): glossary wiring + real denominator ---
+    // --- Occurrence-scoped terminology + real denominator ---
 
     /// Seed a minimal project with two translated segments:
-    /// - s1 violates the glossary term ハルカ→Haruka (target omits "Haruka")
+    /// - s1 violates the terminology rule ハルカ→Haruka
     /// - s2 is clean
     async fn seed_project(pool: &sqlx::SqlitePool) {
         sqlx::query(
@@ -828,33 +886,51 @@ mod tests {
         .execute(pool)
         .await
         .unwrap();
+        sqlx::query(
+            "INSERT INTO terminology_entries (\
+                id, source_language, canonical_text, normalized_text, part_of_speech, \
+                semantic_type, sense_key, status, origin, confidence\
+             ) VALUES ('e1','ja','ハルカ','ハルカ','proper_noun','character','','active','manual',1.0); \
+             INSERT INTO terminology_occurrences (\
+                entry_id, project_id, segment_id, surface_text, engine_kind, occurrence_count\
+             ) VALUES ('e1','p1','s1','ハルカ','dialogue',1); \
+             INSERT INTO terminology_translations (\
+                id, entry_id, target_language, target_text, review_status, enforcement, confidence\
+             ) VALUES ('t1','e1','en','Haruka','approved','preferred',1.0)",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
-    async fn test_collect_qa_details_applies_glossary_terms() {
+    async fn test_collect_qa_details_applies_occurrence_scoped_terms() {
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let pool = crate::db::pool::init(tmp.path().to_str().unwrap())
             .await
             .unwrap();
         seed_project(&pool).await;
 
-        let terms = vec![("ハルカ".to_string(), "Haruka".to_string())];
-        let (total_checked, details) = collect_qa_details(&pool, "p1", &terms).await.unwrap();
+        let (total_checked, details) = collect_qa_details(&pool, "p1").await.unwrap();
 
         // Both translated segments were examined, only s1 has an error.
         assert_eq!(total_checked, 2);
         assert_eq!(details.len(), 1);
         assert_eq!(details[0].segment_id, "s1");
 
-        // A segment whose source contains a glossary term but whose target
-        // lacks the expected translation must surface a GlossaryMismatch.
+        // A segment with an exact occurrence but no accepted target must
+        // surface a TerminologyMismatch.
         assert!(
             details.iter().any(|d| d
                 .errors
                 .iter()
-                .any(|e| matches!(e, QaError::GlossaryMismatch { .. }))),
-            "expected a GlossaryMismatch for s1 (ハルカ → Haruka missing), got: {details:?}"
+                .any(|e| matches!(e, QaError::TerminologyMismatch { .. }))),
+            "expected a TerminologyMismatch for s1 (ハルカ → Haruka missing), got: {details:?}"
         );
+        let (summary, _) = preview_project(&pool, "p1").await.unwrap();
+        assert_eq!(summary.terminology_issues.len(), 1);
+        assert_eq!(summary.terminology_issues[0].entry_id, "e1");
+        assert_eq!(summary.terminology_issues[0].occurrences, 1);
     }
 
     #[test]

@@ -29,8 +29,8 @@ use commands::qa::{get_qa_report, get_tm_suggestions, qa_check_segment};
 use commands::search::search_segments;
 use commands::terminology::{
     archive_terminology_entry, cancel_terminology_scan, create_terminology_entry,
-    get_terminology_stats, list_terminology, start_terminology_scan, translate_terminology_entries,
-    update_terminology_entry, upsert_terminology_translation,
+    get_segment_terminology, get_terminology_stats, list_terminology, start_terminology_scan,
+    translate_terminology_entries, update_terminology_entry, upsert_terminology_translation,
 };
 use commands::translate::{get_provider_models, translate_all_segments, translate_segments};
 use state::AppState;
@@ -96,6 +96,7 @@ pub fn run() {
             prepare_mv_mz_pilot,
             run_mv_mz_pilot,
             list_terminology,
+            get_segment_terminology,
             get_terminology_stats,
             create_terminology_entry,
             update_terminology_entry,

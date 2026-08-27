@@ -151,44 +151,6 @@ pub async fn list_for_project(
     Ok(result)
 }
 
-/// Select the glossary terms relevant to a batch of source strings.
-///
-/// Loads the project glossary ([`list_for_project`]) and keeps the terms whose
-/// `source_text` appears in at least one of `sources` (capped at 20). If none
-/// match, falls back to the 10 shortest terms — short proper names add the least
-/// prompt noise. Returns `(source, target)` pairs ready for
-/// `TranslationContext.glossary_terms`. Single source of truth for the filter
-/// previously duplicated across the batch and project translate paths.
-pub async fn relevant_terms(
-    pool: &SqlitePool,
-    project_id: &str,
-    lang_pair: &str,
-    sources: &[&str],
-) -> Vec<(String, String)> {
-    let all_terms = list_for_project(pool, project_id, lang_pair)
-        .await
-        .unwrap_or_default();
-
-    let relevant: Vec<(String, String)> = all_terms
-        .iter()
-        .filter(|t| sources.iter().any(|src| src.contains(&t.source_text)))
-        .take(20)
-        .map(|t| (t.source_text.clone(), t.target_text.clone()))
-        .collect();
-    if !relevant.is_empty() {
-        return relevant;
-    }
-
-    // Fallback: 10 shortest terms.
-    let mut by_len = all_terms;
-    by_len.sort_by_key(|t| t.source_text.len());
-    by_len
-        .into_iter()
-        .take(10)
-        .map(|t| (t.source_text, t.target_text))
-        .collect()
-}
-
 // ---------------------------------------------------------------------------
 // LLM extraction
 // ---------------------------------------------------------------------------

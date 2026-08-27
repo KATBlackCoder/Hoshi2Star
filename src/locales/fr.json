@@ -79,7 +79,7 @@
     "tools": "Outils d’inspection",
     "tm": "Mémoire",
     "qa": "QA",
-    "glossary": "Glossaire",
+    "terminology": "Terminologie",
     "close": "Fermer l’inspecteur"
   },
   "toolbar": {
@@ -165,7 +165,7 @@
       "missing_placeholder": "Code manquant",
       "line_too_long": "Ligne trop longue",
       "bom_detected": "BOM détecté",
-      "glossary_mismatch": "Glossaire non respecté"
+      "terminology_mismatch": "Terminologie non respectée"
     },
     "qualityFlag": {
       "empty_translation": "Traduction vide",
@@ -277,29 +277,22 @@
       "suspicious_expansion": "Expansion suspecte : {{sourceChars}} → {{targetChars}} caractères",
       "context_leak": "Contexte voisin recopié : {{neighbor}}",
       "inconsistent_repeated_source": "La même source possède {{variants}} traductions différentes",
-      "glossary_mismatch": "Terme non respecté : {{source}} doit devenir {{target}}"
+      "terminology_mismatch": "{{severity}} — {{source}} doit utiliser {{target}}"
+    },
+    "severity": {
+      "critical": "Critique",
+      "warning": "Avertissement",
+      "info": "Information"
     }
   },
-  "glossaryPanel": {
-    "title": "Glossaire",
-    "extract": "Extraire Auto",
-    "extracting": "Extraction…",
-    "addTerm": "Ajouter un terme",
-    "source": "Source",
-    "target": "Cible",
-    "domain": "Domaine",
-    "scope": "Portée",
-    "global": "Global",
-    "project": "Projet",
-    "auto": "Auto",
-    "noTerms": "Aucun terme glossaire",
-    "deleteConfirm": "Supprimer ce terme ?",
-    "extractDone": "termes extraits",
-    "extractNoTerms": "Aucun nouveau terme trouvé — le jeu n'a peut-être pas de fichiers Actors/Skills/Items/States, ou tous les termes sont déjà dans le glossaire",
-    "extractError": "Erreur d'extraction",
-    "extractSpeakers": "Personnages",
-    "extractSpeakersDone": "noms de personnages ajoutés",
-    "extractSpeakersNone": "Aucun nouveau nom de personnage trouvé"
+  "terminologyInspector": {
+    "title": "Terminologie du segment",
+    "openLibrary": "Bibliothèque",
+    "openTerm": "Ouvrir le terme {{source}} dans la bibliothèque",
+    "selectSegment": "Sélectionnez un segment pour afficher uniquement ses termes.",
+    "loading": "Chargement des termes…",
+    "empty": "Aucun terme analysé pour ce segment.",
+    "variants": "Variantes acceptées : {{variants}}"
   },
   "settings": {
     "title": "Paramètres",
@@ -389,17 +382,6 @@
   "project": {
     "restored": "Projet restauré — reprise de la traduction",
     "extracted": "Extraction terminée — {{total}} segments · {{translated}} traduits"
-  },
-  "glossaryPrompt": {
-    "title": "📖 Glossaire auto",
-    "description": "🎮 Scanne les acteurs, skills, items et états du jeu pour pré-remplir ton glossaire. ⏱️ 10–30 s.",
-    "yes": "⚔️ Extraire",
-    "no": "Ignorer",
-    "extracting": "Extraction du glossaire en cours…",
-    "translationBlocked": "Glossaire en cours…",
-    "extractDone": "Glossaire prêt — {{count}} termes extraits.",
-    "extractDone_zero": "Extraction terminée — aucun nouveau terme trouvé.",
-    "extractError": "Extraction du glossaire échouée. Réessayez depuis le panneau Glossaire."
   },
   "about": {
     "title": "À propos",

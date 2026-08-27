@@ -79,7 +79,7 @@
     "tools": "Inspection tools",
     "tm": "Memory",
     "qa": "QA",
-    "glossary": "Glossary",
+    "terminology": "Terminology",
     "close": "Close inspector"
   },
   "toolbar": {
@@ -165,7 +165,7 @@
       "missing_placeholder": "Missing code",
       "line_too_long": "Line too long",
       "bom_detected": "BOM detected",
-      "glossary_mismatch": "Glossary mismatch"
+      "terminology_mismatch": "Terminology mismatch"
     },
     "qualityFlag": {
       "empty_translation": "Empty translation",
@@ -277,29 +277,22 @@
       "suspicious_expansion": "Suspicious expansion: {{sourceChars}} → {{targetChars}} characters",
       "context_leak": "Neighbouring context copied: {{neighbor}}",
       "inconsistent_repeated_source": "The same source has {{variants}} different translations",
-      "glossary_mismatch": "Glossary mismatch: {{source}} must become {{target}}"
+      "terminology_mismatch": "{{severity}} — {{source}} must use {{target}}"
+    },
+    "severity": {
+      "critical": "Critical",
+      "warning": "Warning",
+      "info": "Information"
     }
   },
-  "glossaryPanel": {
-    "title": "Glossary",
-    "extract": "Extract Auto",
-    "extracting": "Extracting...",
-    "addTerm": "Add term",
-    "source": "Source",
-    "target": "Target",
-    "domain": "Domain",
-    "scope": "Scope",
-    "global": "Global",
-    "project": "Project",
-    "auto": "Auto",
-    "noTerms": "No glossary terms yet",
-    "deleteConfirm": "Delete this term?",
-    "extractDone": "terms extracted",
-    "extractNoTerms": "No new terms found — the game may have no Actors/Skills/Items/States, or all terms are already in the glossary",
-    "extractError": "Extraction error",
-    "extractSpeakers": "Speakers",
-    "extractSpeakersDone": "speaker names added",
-    "extractSpeakersNone": "No new speaker names found"
+  "terminologyInspector": {
+    "title": "Segment terminology",
+    "openLibrary": "Library",
+    "openTerm": "Open {{source}} in the terminology library",
+    "selectSegment": "Select a segment to show only its terminology.",
+    "loading": "Loading terminology…",
+    "empty": "No analyzed terminology for this segment.",
+    "variants": "Accepted variants: {{variants}}"
   },
   "settings": {
     "title": "Settings",
@@ -389,17 +382,6 @@
   "project": {
     "restored": "Project restored — continuing where you left off",
     "extracted": "Extracted — {{total}} segments · {{translated}} translated"
-  },
-  "glossaryPrompt": {
-    "title": "📖 Auto Glossary",
-    "description": "🎮 Scans actors, skills, items and states to pre-fill your glossary. ⏱️ 10–30 s.",
-    "yes": "⚔️ Extract",
-    "no": "Skip",
-    "extracting": "Extracting glossary terms…",
-    "translationBlocked": "Glossary in progress…",
-    "extractDone": "Glossary ready — {{count}} terms extracted.",
-    "extractDone_zero": "Glossary extraction complete — no new terms found.",
-    "extractError": "Glossary extraction failed. You can retry from the Glossary panel."
   },
   "about": {
     "title": "About",

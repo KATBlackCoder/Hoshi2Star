@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime, State};
 
 use crate::core::terminology::repository;
+use crate::core::terminology::resolver::{self, QaTerminologyRule};
 use crate::core::terminology::scanner::{ScanEvent, ScanEventSink};
 use crate::core::terminology::translator::{self, TranslationProgressSink};
 use crate::core::terminology::types::{
@@ -71,6 +72,21 @@ pub async fn get_terminology_stats(
     )
     .await
     .map_err(stable_error)
+}
+
+#[tauri::command]
+pub async fn get_segment_terminology(
+    segment_id: String,
+    target_language: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<QaTerminologyRule>, String> {
+    if segment_id.trim().is_empty() {
+        return Err("terminology: segment id must not be empty".to_string());
+    }
+    resolver::resolve_qa_rules_for_segments(&state.db, &[segment_id.clone()], &target_language)
+        .await
+        .map(|mut rules| rules.remove(&segment_id).unwrap_or_default())
+        .map_err(stable_error)
 }
 
 #[tauri::command]

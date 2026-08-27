@@ -13,13 +13,11 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useActiveLangPair, useProjectStore } from "@/stores/project";
+import { useProjectStore } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { useLlmStore, useIsTranslating } from "@/stores/llm";
 import { createSegmentColumns, STATUS_STYLES } from "@/features/editor/columns";
 import type {
-  GlossaryExtractionDonePayload,
-  GlossaryTerm,
   PaginatedSegments,
   ProjectStats,
   Segment,
@@ -59,13 +57,11 @@ export function SegmentGrid({
   void highlightPlaceholders; // consumed by columns in future — prop reserved for F2
   const { t, i18n } = useTranslation();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
-  const langPair = useActiveLangPair();
   const setSourceFiles = useProjectStore((s) => s.setSourceFiles);
   const setActiveProjectStats = useProjectStore((s) => s.setActiveProjectStats);
   const activeFileId = useEditorStore((s) => s.activeFileId);
   const setActiveSegment = useEditorStore((s) => s.setActiveSegment);
   const activeSegmentId = useEditorStore((s) => s.activeSegmentId);
-  const setGlossaryTerms = useEditorStore((s) => s.setGlossaryTerms);
   const { startTranslation, providerConfig } = useLlmStore();
   const isTranslating = useIsTranslating();
   const gridDensity = useUiStore((state) => state.gridDensity);
@@ -285,39 +281,6 @@ export function SegmentGrid({
       void unlistenImport.then((fn) => fn());
     };
   }, [loadSegments, reloadSourceFiles, reloadProjectStats]);
-
-  // Load glossary terms when the active project changes
-  useEffect(() => {
-    if (!activeProjectId) {
-      setGlossaryTerms([]);
-      return;
-    }
-    invoke<GlossaryTerm[]>("get_glossary", {
-      projectId: activeProjectId,
-      langPair,
-    })
-      .then(setGlossaryTerms)
-      .catch(() => setGlossaryTerms([]));
-  }, [activeProjectId, langPair, setGlossaryTerms]);
-
-  useEffect(() => {
-    const unlisten = listen<GlossaryExtractionDonePayload>(
-      "h2s://glossary/extraction-done",
-      (event) => {
-        if (event.payload.projectId === activeProjectIdRef.current) {
-          invoke<GlossaryTerm[]>("get_glossary", {
-            projectId: event.payload.projectId,
-            langPair,
-          })
-            .then(setGlossaryTerms)
-            .catch(() => {});
-        }
-      },
-    );
-    return () => {
-      void unlisten.then((fn) => fn());
-    };
-  }, [langPair, setGlossaryTerms]);
 
   const handleSave = useCallback(
     async (id: string, text: string) => {

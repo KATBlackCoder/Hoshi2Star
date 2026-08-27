@@ -1,20 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
-import {
-  getProjectLangPair,
-  useProjectStore,
-  usePendingGlossaryExtract,
-} from "@/stores/project";
+import { useProjectStore } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { useLlmStore } from "@/stores/llm";
-import type {
-  FontScanResult,
-  GlossaryExtractionDonePayload,
-  ProjectStats,
-} from "@/lib/types";
+import type { FontScanResult, ProjectStats } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -39,54 +30,7 @@ export function useAppHandlers() {
   const { t } = useTranslation();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const activeFileId = useEditorStore((s) => s.activeFileId);
-  const pendingGlossaryExtract = usePendingGlossaryExtract();
   const { startTranslation, startTranslateAll, providerConfig } = useLlmStore();
-  const setPendingGlossaryExtract = useProjectStore(
-    (s) => s.setPendingGlossaryExtract,
-  );
-  const setExtractingGlossary = useProjectStore((s) => s.setExtractingGlossary);
-
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    listen<GlossaryExtractionDonePayload>(
-      "h2s://glossary/extraction-done",
-      (event) => {
-        setExtractingGlossary(false);
-        if (event.payload.error) {
-          toast.error(t("glossaryPrompt.extractError"));
-        } else {
-          const count = event.payload.terms.length;
-          toast.success(t("glossaryPrompt.extractDone", { count }));
-        }
-      },
-    ).then((fn) => {
-      unlisten = fn;
-    });
-    return () => {
-      unlisten?.();
-    };
-  }, [setExtractingGlossary, t]);
-
-  async function handleGlossaryConfirm() {
-    if (!pendingGlossaryExtract) return;
-    const projectId = pendingGlossaryExtract;
-    setPendingGlossaryExtract(null);
-    setExtractingGlossary(true);
-    try {
-      await invoke("extract_glossary_terms", {
-        projectId,
-        langPair: getProjectLangPair(projectId),
-        providerConfig,
-      });
-    } catch {
-      setExtractingGlossary(false);
-      toast.error(t("glossaryPrompt.extractError"));
-    }
-  }
-
-  function handleGlossaryDecline() {
-    setPendingGlossaryExtract(null);
-  }
 
   async function handleExportAll() {
     if (!activeProjectId) return;
@@ -211,8 +155,6 @@ export function useAppHandlers() {
     setExportDialog,
     setShowTranslateAll,
     // Handlers
-    handleGlossaryConfirm,
-    handleGlossaryDecline,
     handleExportAll,
     handleExportConfirm,
     handleExportFontApply,

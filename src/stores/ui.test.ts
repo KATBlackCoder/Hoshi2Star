@@ -20,10 +20,10 @@ describe("ui store", () => {
 
   it("keeps inspector state independent from the mode", () => {
     useUiStore.getState().toggleInspector();
-    useUiStore.getState().setInspectorTab("glossary");
+    useUiStore.getState().setInspectorTab("terminology");
     expect(useUiStore.getState()).toMatchObject({
       inspectorOpen: false,
-      inspectorTab: "glossary",
+      inspectorTab: "terminology",
     });
   });
 

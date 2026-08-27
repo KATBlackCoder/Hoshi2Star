@@ -31,7 +31,6 @@ beforeEach(() => {
   useProjectStore.setState({
     projects: [PROJECT],
     activeProjectId: PROJECT.id,
-    isExtractingGlossary: false,
   });
   useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS } });
   usePilotStore.setState({ isOpen: false, isRunning: false });

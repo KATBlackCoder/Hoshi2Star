@@ -36,6 +36,32 @@ struct HintRow {
     enforcement: String,
 }
 
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QaTerminologyRule {
+    pub entry_id: String,
+    pub source: String,
+    pub target: String,
+    pub semantic_type: String,
+    pub part_of_speech: PartOfSpeech,
+    pub review_status: ReviewStatus,
+    pub enforcement: Enforcement,
+    pub accepted_targets: Vec<String>,
+}
+
+#[derive(Debug, FromRow)]
+struct QaRuleRow {
+    segment_id: String,
+    entry_id: String,
+    source: String,
+    semantic_type: String,
+    part_of_speech: String,
+    translation_id: String,
+    target: String,
+    review_status: String,
+    enforcement: String,
+}
+
 pub async fn resolve_for_request(
     pool: &SqlitePool,
     segment_ids: &[String],
@@ -107,6 +133,88 @@ pub async fn resolve_for_request(
         });
     }
     Ok(fit_prompt_budget(candidates, estimated_prompt_chars))
+}
+
+/// Resolve all effective terminology rules attached to the exact segments.
+/// The result is grouped by segment so QA cannot accidentally apply a term to
+/// another dialogue line in the same batch.
+pub async fn resolve_qa_rules_for_segments(
+    pool: &SqlitePool,
+    segment_ids: &[String],
+    target_language: &str,
+) -> Result<HashMap<String, Vec<QaTerminologyRule>>> {
+    if segment_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let Some(project_id) = project_for_segments(pool, segment_ids).await? else {
+        return Ok(HashMap::new());
+    };
+    let mut rows = Vec::new();
+    for chunk in segment_ids.chunks(400) {
+        let mut builder = QueryBuilder::<Sqlite>::new(
+            "SELECT occurrence.segment_id, entry.id AS entry_id, \
+                    entry.canonical_text AS source, entry.semantic_type, \
+                    entry.part_of_speech, translation.id AS translation_id, \
+                    translation.target_text AS target, translation.review_status, \
+                    translation.enforcement \
+             FROM terminology_occurrences occurrence \
+             JOIN terminology_entries entry ON entry.id = occurrence.entry_id \
+             JOIN terminology_translations translation ON translation.id = (\
+                 SELECT candidate.id FROM terminology_translations candidate \
+                 WHERE candidate.entry_id = entry.id AND candidate.target_language = ",
+        );
+        builder
+            .push_bind(target_language.trim().to_lowercase())
+            .push(" AND (candidate.project_id = ")
+            .push_bind(project_id.clone())
+            .push(" OR candidate.project_id IS NULL) ORDER BY CASE WHEN candidate.project_id = ")
+            .push_bind(project_id.clone())
+            .push(
+                " THEN 0 ELSE 1 END, candidate.updated_at DESC LIMIT 1) \
+                 WHERE entry.status = 'active' AND trim(translation.target_text) != '' \
+                   AND occurrence.project_id = ",
+            )
+            .push_bind(project_id.clone())
+            .push(" AND occurrence.segment_id IN (");
+        let mut separated = builder.separated(",");
+        for segment_id in chunk {
+            separated.push_bind(segment_id);
+        }
+        separated.push_unseparated(") ORDER BY occurrence.segment_id, entry.id");
+        rows.extend(
+            builder
+                .build_query_as::<QaRuleRow>()
+                .fetch_all(pool)
+                .await?,
+        );
+    }
+
+    let translation_ids = rows
+        .iter()
+        .map(|row| row.translation_id.clone())
+        .collect::<Vec<_>>();
+    let variants = load_variants(pool, &translation_ids).await?;
+    let mut grouped: HashMap<String, Vec<QaTerminologyRule>> = HashMap::new();
+    for row in rows {
+        let rules = grouped.entry(row.segment_id).or_default();
+        if rules.iter().any(|rule| rule.entry_id == row.entry_id) {
+            continue;
+        }
+        rules.push(QaTerminologyRule {
+            entry_id: row.entry_id,
+            source: row.source,
+            target: row.target,
+            semantic_type: row.semantic_type,
+            part_of_speech: PartOfSpeech::from_str(&row.part_of_speech)?,
+            review_status: ReviewStatus::from_str(&row.review_status)?,
+            enforcement: Enforcement::from_str(&row.enforcement)?,
+            accepted_targets: variants
+                .get(&row.translation_id)
+                .cloned()
+                .unwrap_or_default(),
+        });
+    }
+    Ok(grouped)
 }
 
 async fn project_for_segments(pool: &SqlitePool, segment_ids: &[String]) -> Result<Option<String>> {
@@ -274,6 +382,20 @@ mod tests {
         assert_eq!(hints.len(), 1);
         assert_eq!(hints[0].target, "Demon King");
         assert_eq!(hints[0].enforcement, Enforcement::Preferred);
+    }
+
+    #[tokio::test]
+    async fn qa_rules_remain_segment_scoped_and_keep_review_semantics() {
+        let (_directory, pool) = seeded_pool().await;
+        let rules = resolve_qa_rules_for_segments(&pool, &["s1".into(), "s2".into()], "en")
+            .await
+            .unwrap();
+        assert_eq!(rules["s1"].len(), 1);
+        assert_eq!(rules["s1"][0].target, "Champion");
+        assert_eq!(rules["s1"][0].accepted_targets, vec!["The Champion"]);
+        assert_eq!(rules["s2"].len(), 1);
+        assert_eq!(rules["s2"][0].review_status, ReviewStatus::Proposed);
+        assert_eq!(rules["s2"][0].enforcement, Enforcement::Required);
     }
 
     #[tokio::test]

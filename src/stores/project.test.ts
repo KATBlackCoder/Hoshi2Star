@@ -68,8 +68,6 @@ describe("project store — openProject thunk", () => {
     expect(s.projects).toHaveLength(1);
     expect(s.activeProjectId).toBe("p1");
     expect(s.activeProjectStats).toEqual(STATS);
-    // Fresh extraction → glossary-extract prompt armed + extraction toast
-    expect(s.pendingGlossaryExtract).toBe("p1");
     expect(openArgs as Record<string, unknown>).toMatchObject({
       path: "/tmp/game",
       sourceLang: useSettingsStore.getState().settings.defaultSourceLang,
@@ -78,7 +76,7 @@ describe("project store — openProject thunk", () => {
     expect(toastSuccess).toHaveBeenCalled();
   });
 
-  it("does not arm the glossary prompt when the project was restored", async () => {
+  it("restores an existing project without duplicating it", async () => {
     mockIPC((cmd) => {
       switch (cmd) {
         case "open_project":
@@ -93,7 +91,7 @@ describe("project store — openProject thunk", () => {
     });
 
     await openProject("/tmp/game");
-    expect(useProjectStore.getState().pendingGlossaryExtract).toBeNull();
+    expect(useProjectStore.getState().projects).toHaveLength(1);
   });
 
   it("updates a restored project without duplicating its library card", async () => {

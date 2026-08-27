@@ -49,4 +49,47 @@ describe("QAPanel", () => {
     expect(screen.getByText("0")).toBeInTheDocument();
     expect(commands).not.toContain("qa_check_segment");
   });
+
+  it("renders terminology severity and sends the exact segment id", async () => {
+    let qaArgs: Record<string, unknown> | undefined;
+    mockIPC((cmd, args) => {
+      if (cmd === "get_qa_report") {
+        return {
+          totalSegments: 1,
+          okCount: 0,
+          errorCount: 1,
+          criticalCount: 0,
+          errorsByType: { terminology_mismatch: 1 },
+          terminologyIssues: [],
+        };
+      }
+      if (cmd === "qa_check_segment") {
+        qaArgs = args as Record<string, unknown>;
+        return {
+          score: 100,
+          errors: [
+            {
+              type: "terminology_mismatch",
+              entry_id: "e1",
+              source_term: "勇者",
+              expected_targets: ["Hero"],
+              severity: "info",
+            },
+          ],
+        };
+      }
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <QAPanel sourceText="勇者" targetText="Champion" />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText(/Information/)).toBeInTheDocument();
+    expect(qaArgs).toMatchObject({ segmentId: "s1", projectId: "p1" });
+  });
 });
