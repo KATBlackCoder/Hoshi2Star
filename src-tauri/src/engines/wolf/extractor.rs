@@ -1499,7 +1499,7 @@ mod tests {
         let mut errors = 0usize;
         for entry in std::fs::read_dir(&map_dir).unwrap().flatten() {
             let p = entry.path();
-            if p.extension().map_or(false, |e| e == "mps") {
+            if p.extension().is_some_and(|e| e == "mps") {
                 let bytes = std::fs::read(&p).unwrap();
                 let name = p.file_name().unwrap().to_string_lossy().into_owned();
                 match extract_map_segments(&name, &bytes, &v2()) {
@@ -1523,7 +1523,7 @@ mod tests {
         let mut errors = 0usize;
         for entry in std::fs::read_dir(&map_dir).unwrap().flatten() {
             let p = entry.path();
-            if p.extension().map_or(false, |e| e == "mps") {
+            if p.extension().is_some_and(|e| e == "mps") {
                 let bytes = std::fs::read(&p).unwrap();
                 let name = p.file_name().unwrap().to_string_lossy().into_owned();
                 match extract_map_segments(&name, &bytes, &v2()) {

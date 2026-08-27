@@ -704,8 +704,8 @@ mod tests {
         dat.push(version);
 
         let db = parse_database(&project, &dat).unwrap();
-        assert_eq!(db.types[0].fields[0].is_string(), false);
-        assert_eq!(db.types[0].fields[0].is_valid(), true);
+        assert!(!db.types[0].fields[0].is_string());
+        assert!(db.types[0].fields[0].is_valid());
         assert_eq!(db.types[0].entries[0].int_values, [42u32]);
         assert!(db.types[0].entries[0].string_values.is_empty());
     }

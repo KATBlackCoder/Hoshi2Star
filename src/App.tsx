@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ResizableHandle,
@@ -11,18 +11,13 @@ import { SegmentGrid } from "@/components/editor/SegmentGrid";
 import { AppToolbar } from "@/components/AppToolbar";
 import { AppDialogs } from "@/components/AppDialogs";
 import { UpdateDialog } from "@/components/UpdateDialog";
-import {
-  useProjectStore,
-  useIsExtractingGlossary,
-  useActiveLangPair,
-} from "@/stores/project";
+import { useProjectStore, useActiveLangPair } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { useSearchActive } from "@/stores/search";
 import { useSettingsStore } from "@/stores/settings";
 import { useUpdaterStore } from "@/stores/updater";
 import { useAppHandlers } from "@/hooks/useAppHandlers";
 import { Toaster } from "@/components/ui/sonner";
-import { BookOpen, Loader2 } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
 import { InspectorRail } from "@/components/shell/InspectorRail";
 import { useAppMode, useUiStore } from "@/stores/ui";
@@ -31,6 +26,12 @@ import type { PanelImperativeHandle } from "react-resizable-panels";
 import { PilotComparisonWorkspace } from "@/components/pilot/PilotComparisonWorkspace";
 import { usePilotStore } from "@/stores/pilot";
 
+const TerminologyWorkspace = lazy(() =>
+  import("@/features/terminology/TerminologyWorkspace").then((module) => ({
+    default: module.TerminologyWorkspace,
+  })),
+);
+
 // ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
@@ -38,7 +39,6 @@ import { usePilotStore } from "@/stores/pilot";
 export default function App() {
   const handlers = useAppHandlers();
   const { loadSettings } = useSettingsStore();
-  const { t } = useTranslation();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const activeLangPair = useActiveLangPair();
   const activeSegmentSourceText = useEditorStore(
@@ -47,7 +47,6 @@ export default function App() {
   const activeSegmentTargetText = useEditorStore(
     (s) => s.activeSegmentTargetText,
   );
-  const isExtractingGlossary = useIsExtractingGlossary();
   const checkForUpdate = useUpdaterStore((s) => s.checkForUpdate);
   const searchActive = useSearchActive();
   const mode = useAppMode();
@@ -77,6 +76,16 @@ export default function App() {
       <AppShell onOpenSettings={() => handlers.setShowSettings(true)}>
         {mode === "library" ? (
           <ProjectList />
+        ) : mode === "terminology" ? (
+          <Suspense
+            fallback={
+              <div className="grid h-full place-items-center text-sm text-muted-foreground">
+                Chargement de la terminologie…
+              </div>
+            }
+          >
+            <TerminologyWorkspace />
+          </Suspense>
         ) : mode === "patch" ? (
           <div className="flex h-full flex-col overflow-hidden">
             <AppToolbar
@@ -87,14 +96,6 @@ export default function App() {
               onOpenPilot={openPilot}
               isExporting={handlers.isExporting}
             />
-
-            {isExtractingGlossary && (
-              <div className="flex min-h-10 shrink-0 items-center gap-2 border-b bg-muted/50 px-3 text-xs text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin shrink-0" />
-                <BookOpen className="h-3 w-3 shrink-0" />
-                <span>{t("glossaryPrompt.extracting")}</span>
-              </div>
-            )}
 
             {pilotOpen ? (
               <PilotComparisonWorkspace />

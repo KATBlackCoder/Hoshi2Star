@@ -1,0 +1,13 @@
+[
+  null,
+  {
+    "id": 1,
+    "name": "内部用ラベル",
+    "list": [
+      {"code": 101, "indent": 0, "parameters": ["", 0, 0, 2, "システム"]},
+      {"code": 401, "indent": 0, "parameters": ["セーブしますか？"]},
+      {"code": 102, "indent": 0, "parameters": [["はい", "いいえ"], 0, 0, 2, 0]},
+      {"code": 0, "indent": 0, "parameters": []}
+    ]
+  }
+]

@@ -15,10 +15,6 @@ use commands::export::{
     debug_inject_file, export_debug_json, export_project, export_qa_report, export_tm,
     scan_font_status, strip_font_prefixes,
 };
-use commands::glossary::{
-    add_glossary_term, delete_glossary_term, extract_glossary_terms, extract_wolf_speakers,
-    get_glossary, update_glossary_term,
-};
 use commands::pack::{apply_h2s_import, export_h2s_pack, preview_h2s_import};
 use commands::pilot::{prepare_mv_mz_pilot, run_mv_mz_pilot};
 use commands::project::{
@@ -27,6 +23,12 @@ use commands::project::{
 };
 use commands::qa::{get_qa_report, get_tm_suggestions, qa_check_segment};
 use commands::search::search_segments;
+use commands::terminology::{
+    archive_terminology_entry, cancel_terminology_scan, create_terminology_entry,
+    extract_wolf_speakers, get_segment_terminology, get_terminology_stats, list_terminology,
+    start_terminology_scan, translate_terminology_entries, update_terminology_entry,
+    upsert_terminology_translation,
+};
 use commands::translate::{get_provider_models, translate_all_segments, translate_segments};
 use state::AppState;
 use tauri::Manager;
@@ -52,7 +54,7 @@ pub fn run() {
             let pool = tauri::async_runtime::block_on(db::pool::init(&path_str))
                 .map_err(|e| e.to_string())?;
 
-            app.manage(AppState { db: pool });
+            app.manage(AppState::new(pool).map_err(|error| error.to_string())?);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -67,11 +69,6 @@ pub fn run() {
             get_qa_report,
             qa_check_segment,
             get_provider_models,
-            get_glossary,
-            add_glossary_term,
-            update_glossary_term,
-            delete_glossary_term,
-            extract_glossary_terms,
             extract_wolf_speakers,
             export_tm,
             export_qa_report,
@@ -90,6 +87,16 @@ pub fn run() {
             apply_h2s_import,
             prepare_mv_mz_pilot,
             run_mv_mz_pilot,
+            list_terminology,
+            get_segment_terminology,
+            get_terminology_stats,
+            create_terminology_entry,
+            update_terminology_entry,
+            archive_terminology_entry,
+            upsert_terminology_translation,
+            start_terminology_scan,
+            cancel_terminology_scan,
+            translate_terminology_entries,
         ]);
 
     #[cfg(debug_assertions)]

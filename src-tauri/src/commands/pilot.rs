@@ -359,7 +359,7 @@ where
     let make_context = |prompt_context_policy| TranslationContext {
         source_lang: prepared.report.source_language.clone(),
         target_lang: prepared.report.target_language.clone(),
-        glossary_terms: Vec::new(),
+        terminology_hints: Vec::new(),
         engine: "mv_mz".to_string(),
         batch_size: provider_config.effective_batch_size(),
         batch_delay_ms: provider_config.batch_delay_ms(),
@@ -982,6 +982,7 @@ mod tests {
                 duration_ms: 5,
                 attempts: 1,
                 success: true,
+                terminology_hints: context.terminology_hints.len(),
             });
             let prefix = match context.prompt_context_policy {
                 PromptContextPolicy::Disabled => "Base",

@@ -13,8 +13,8 @@ import { cn } from "@/lib/utils";
 // Error row
 // ---------------------------------------------------------------------------
 
-function errorIcon(type: QaErrorType["type"]) {
-  switch (type) {
+function errorIcon(error: QaErrorType) {
+  switch (error.type) {
     case "missing_placeholder":
       return <AlertTriangle className="h-3 w-3 text-red-400 shrink-0" />;
     case "empty_translation":
@@ -28,8 +28,19 @@ function errorIcon(type: QaErrorType["type"]) {
       return <AlertTriangle className="h-3 w-3 text-yellow-400 shrink-0" />;
     case "bom_detected":
       return <AlertTriangle className="h-3 w-3 text-yellow-400 shrink-0" />;
-    case "glossary_mismatch":
-      return <AlertTriangle className="h-3 w-3 text-yellow-400 shrink-0" />;
+    case "terminology_mismatch":
+      return (
+        <AlertTriangle
+          className={cn(
+            "h-3 w-3 shrink-0",
+            error.severity === "critical"
+              ? "text-red-400"
+              : error.severity === "warning"
+                ? "text-yellow-400"
+                : "text-blue-400",
+          )}
+        />
+      );
   }
 }
 
@@ -72,10 +83,11 @@ function errorLabel(
       return t("qaPanel.errors.inconsistent_repeated_source", {
         variants: error.variants,
       });
-    case "glossary_mismatch":
-      return t("qaPanel.errors.glossary_mismatch", {
+    case "terminology_mismatch":
+      return t("qaPanel.errors.terminology_mismatch", {
         source: error.source_term,
-        target: error.expected_target,
+        target: error.expected_targets.join(" / "),
+        severity: t(`qaPanel.severity.${error.severity}`),
       });
   }
 }
@@ -177,6 +189,7 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
         sourceText: sourceText!,
         targetText: targetText ?? "",
         projectId: activeProjectId,
+        segmentId: activeSegmentId,
       }),
     enabled: !!sourceText && !hasEmptyTarget,
     staleTime: 300,
@@ -246,7 +259,7 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
                     key={i}
                     className="flex items-start gap-1.5 rounded bg-muted/30 px-2 py-1.5 text-xs"
                   >
-                    {errorIcon(err.type)}
+                    {errorIcon(err)}
                     <span className="leading-snug">{errorLabel(err, t)}</span>
                   </li>
                 ))}

@@ -1,10 +1,10 @@
 //! End-to-end integration tests exercising the real Tauri command layer
 //! (`open_project` → `update_segment` → `export_project`) against decrypted
-//! game fixtures in `test/`.
+//! small, versioned synthetic game fixtures.
 //!
-//! The fixtures are gitignored. Tests that require the user's MV/MZ fixtures
-//! discover them by structure and fail explicitly when they are unavailable;
-//! optional Wolf coverage still skips when its fixture is absent. The flow is driven through the actual
+//! MV/MZ coverage must never depend on a user's private games or a gitignored
+//! local directory. Optional Wolf coverage still skips when its legacy fixture
+//! is absent. The flow is driven through the actual
 //! `#[tauri::command]` functions — `mock_builder` only holds the managed
 //! `AppState`; commands are called directly with a `State` from `Manager`.
 //!
@@ -24,6 +24,7 @@ use hoshi2star_lib::commands::project::{
 };
 use hoshi2star_lib::commands::qa::get_qa_report;
 use hoshi2star_lib::db;
+use hoshi2star_lib::domain::types::Project;
 use hoshi2star_lib::engines::filter;
 use hoshi2star_lib::llm::tokenizer::Engine as TokEngine;
 use hoshi2star_lib::state::AppState;
@@ -107,32 +108,26 @@ fn test_dir() -> PathBuf {
         .join("test")
 }
 
-/// Locate a required MV/MZ fixture by its engine layout instead of relying on
-/// a display folder name that changes when the archive is renamed.
-fn required_fixture_with_system(relative_data_dir: &Path) -> PathBuf {
-    let root = test_dir();
-    let mut matches: Vec<PathBuf> = std::fs::read_dir(&root)
-        .unwrap_or_else(|error| panic!("cannot read fixture directory {}: {error}", root.display()))
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| path.join(relative_data_dir).join("System.json").is_file())
-        .collect();
-    matches.sort();
-    matches.into_iter().next().unwrap_or_else(|| {
-        panic!(
-            "required MV/MZ fixture containing {}/System.json is missing under {}",
-            relative_data_dir.display(),
-            root.display()
-        )
-    })
+fn versioned_fixture(name: &str, relative_data_dir: &Path) -> PathBuf {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("mv_mz")
+        .join(name);
+    assert!(
+        root.join(relative_data_dir).join("System.json").is_file(),
+        "versioned {name} fixture is incomplete: {}",
+        root.display()
+    );
+    root
 }
 
 fn required_mv_fixture() -> PathBuf {
-    required_fixture_with_system(Path::new("www/data"))
+    versioned_fixture("mv", Path::new("www/data"))
 }
 
 fn required_mz_fixture() -> PathBuf {
-    required_fixture_with_system(Path::new("data"))
+    versioned_fixture("mz", Path::new("data"))
 }
 
 fn escape_json_pointer_token(token: &str) -> String {
@@ -414,9 +409,42 @@ fn tree_digest(root: &Path) -> [u8; 32] {
 async fn mock_app(db_path: &str) -> tauri::App<tauri::test::MockRuntime> {
     let pool = db::pool::init(db_path).await.expect("pool init");
     mock_builder()
-        .manage(AppState { db: pool })
+        .manage(AppState::new(pool).expect("terminology service"))
         .build(mock_context(noop_assets()))
         .expect("mock app build")
+}
+
+/// Copy the committed MV fixture into a disposable game directory and open it
+/// through the real command layer. Keeping this setup in one place prevents QA
+/// and export tests from slowly growing different pseudo-games.
+async fn opened_mv_fixture(
+    target_language: &str,
+) -> (
+    tempfile::TempDir,
+    tauri::App<tauri::test::MockRuntime>,
+    Project,
+) {
+    let fixture = required_mv_fixture();
+    let temporary = tempfile::tempdir().unwrap();
+    let game_root = temporary.path().join("game");
+    copy_tree(
+        &fixture.join("www").join("data"),
+        &game_root.join("www").join("data"),
+    );
+
+    let db_file = temporary.path().join("h2s.db");
+    let app = mock_app(db_file.to_str().unwrap()).await;
+    let project = open_project(
+        game_root.to_string_lossy().to_string(),
+        Some("ja".to_string()),
+        Some(target_language.to_string()),
+        app.state(),
+    )
+    .await
+    .expect("open synthetic MV fixture")
+    .project;
+
+    (temporary, app, project)
 }
 
 /// Assert that the archive at `zip_path` contains `entry_name` and that its
@@ -437,28 +465,7 @@ fn zip_entry_contains(zip_path: &Path, entry_name: &str, needle: &[u8]) -> bool 
 /// present in the exported `www/data/*.json`.
 #[tokio::test]
 async fn mv_open_translate_export_round_trip() {
-    let fixture = required_mv_fixture();
-
-    // Copy only www/data (the assets under www/ are ~600 MB and unused).
-    let tmp = tempfile::tempdir().unwrap();
-    let game_root = tmp.path().join("game");
-    copy_tree(
-        &fixture.join("www").join("data"),
-        &game_root.join("www").join("data"),
-    );
-
-    let db_file = tmp.path().join("h2s.db");
-    let app = mock_app(db_file.to_str().unwrap()).await;
-
-    let project = open_project(
-        game_root.to_str().unwrap().to_string(),
-        None,
-        None,
-        app.state(),
-    )
-    .await
-    .expect("open_project")
-    .project;
+    let (_temporary, app, project) = opened_mv_fixture("fr").await;
     assert_eq!(project.engine, "mv_mz");
     assert_eq!(project.source_lang, "ja");
     assert_eq!(project.target_lang, "fr");
@@ -487,6 +494,76 @@ async fn mv_open_translate_export_round_trip() {
         zip_entry_contains(Path::new(&zip_path), &file_zip_path, MARKER.as_bytes()),
         "exported {file_zip_path} must contain the injected translation"
     );
+}
+
+/// A width warning requires review but must not make a valid patch impossible.
+#[tokio::test]
+async fn mv_export_allows_a_non_critical_width_warning() {
+    let (_temporary, app, project) = opened_mv_fixture("en").await;
+    let files = get_source_files(project.id.clone(), app.state())
+        .await
+        .expect("get_source_files");
+    let first_file = files.first().expect("at least one source file");
+    let segment = get_segments(
+        project.id.clone(),
+        first_file.id.clone(),
+        0,
+        100_000,
+        app.state(),
+    )
+    .await
+    .expect("get_segments")
+    .items
+    .into_iter()
+    .next()
+    .expect("at least one segment");
+
+    let updated = update_segment(
+        segment.id,
+        "This translated line is deliberately wider than the default message box.".to_string(),
+        app.state(),
+    )
+    .await
+    .expect("save warning-only translation");
+    assert_eq!(updated.qa_score, Some(90));
+
+    export_project(project.id, None, true, app.state())
+        .await
+        .expect("a warning-only project must remain exportable");
+}
+
+/// Missing engine variables are blockers even though their legacy numeric
+/// score (75) is above the UI's former `score < 70` critical threshold.
+#[tokio::test]
+async fn mv_export_blocks_a_missing_placeholder_at_score_75() {
+    let (_temporary, app, project) = opened_mv_fixture("en").await;
+    let files = get_source_files(project.id.clone(), app.state())
+        .await
+        .expect("get_source_files");
+    let mut placeholder_segment = None;
+    for file in files {
+        let page = get_segments(project.id.clone(), file.id, 0, 100_000, app.state())
+            .await
+            .expect("get_segments");
+        if let Some(segment) = page
+            .items
+            .into_iter()
+            .find(|segment| segment.source_text.contains(r"\V[1]"))
+        {
+            placeholder_segment = Some(segment);
+            break;
+        }
+    }
+    let segment = placeholder_segment.expect("fixture segment containing \\V[1]");
+    let updated = update_segment(segment.id, "You have some gold.".to_string(), app.state())
+        .await
+        .expect("save structurally invalid translation");
+    assert_eq!(updated.qa_score, Some(75));
+
+    let error = export_project(project.id, None, true, app.state())
+        .await
+        .expect_err("a missing placeholder must block export");
+    assert!(error.contains("Export bloqué"));
 }
 
 /// Characterization test (Phase 8, étape 0): `debug_dump_segments` must extract
@@ -627,13 +704,14 @@ async fn mz_debug_dump_matches_original_game_content() {
         "MZ extraction audit: {extracted} exact segments, {visible} visible event texts, \
          {supported} supported game-content texts"
     );
+    assert!(extracted > 0, "MZ fixture must yield translated content");
     assert!(
-        extracted > 20_000,
-        "MZ fixture should exercise a large extraction"
+        visible > 0,
+        "MZ fixture must exercise player-visible event text"
     );
-    assert!(
-        visible > 20_000,
-        "MZ fixture should exercise dialogue, choices, scrolling text and plugin text"
+    assert_eq!(
+        extracted, supported,
+        "the synthetic fixture must not hide unsupported extraction"
     );
 }
 
@@ -663,8 +741,9 @@ async fn mv_mz_pilot_preparation_is_deterministic_and_non_destructive() {
             .map(|segment| segment.stable_key.as_str())
             .collect::<std::collections::HashSet<_>>();
 
-        assert_eq!(preparation.sample_size, 50);
-        assert_eq!(unique_keys.len(), 50);
+        let expected_sample_size = 50.min(preparation.total_segments);
+        assert_eq!(preparation.sample_size, expected_sample_size);
+        assert_eq!(unique_keys.len(), expected_sample_size);
         assert!(preparation.sample.iter().all(|item| item.context.is_some()));
         assert!(!preparation.isolation.personal_database_accessed);
         assert_eq!(preparation.isolation.game_files_written, 0);

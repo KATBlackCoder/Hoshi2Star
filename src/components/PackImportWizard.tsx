@@ -88,7 +88,7 @@ export function PackImportWizard({
   const { t } = useTranslation();
   const [policy, setPolicy] = useState<ImportPolicy>("fill");
   const [applySourceChanged, setApplySourceChanged] = useState(false);
-  const [importGlossary, setImportGlossary] = useState(true);
+  const [importTerminology, setImportTerminology] = useState(true);
   const [importTm, setImportTm] = useState(false);
   const [confirmOverwriteAll, setConfirmOverwriteAll] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
@@ -106,7 +106,7 @@ export function PackImportWizard({
         packPath,
         policy,
         applySourceChanged,
-        importGlossary,
+        importTerminology,
         importTm,
         langPair,
       });
@@ -151,16 +151,22 @@ export function PackImportWizard({
               value={report.skippedSourceChanged}
             />
             <CountLine label={t("pack.reportOrphans")} value={report.orphans} />
-            {(report.glossaryAdded > 0 || report.glossaryConflicts > 0) && (
+            {report.terminologyAdded > 0 && (
               <CountLine
-                label={t("pack.reportGlossary")}
-                value={report.glossaryAdded}
+                label={t("pack.reportTerminologyAdded")}
+                value={report.terminologyAdded}
               />
             )}
-            {report.glossaryConflicts > 0 && (
+            {report.terminologyUpdated > 0 && (
               <CountLine
-                label={t("pack.reportGlossaryConflicts")}
-                value={report.glossaryConflicts}
+                label={t("pack.reportTerminologyUpdated")}
+                value={report.terminologyUpdated}
+              />
+            )}
+            {report.terminologyConflicts > 0 && (
+              <CountLine
+                label={t("pack.reportTerminologyConflicts")}
+                value={report.terminologyConflicts}
               />
             )}
             {report.tmAdded > 0 && (
@@ -240,6 +246,23 @@ export function PackImportWizard({
             value={preview.sourceChanged}
           />
           <CountLine label={t("pack.previewOrphans")} value={preview.orphans} />
+          {preview.terminologyCount > 0 && (
+            <div className="mt-2 rounded-md border bg-muted/30 p-2">
+              <p className="mb-1 font-medium">{t("pack.terminologyPreview")}</p>
+              <CountLine
+                label={t("pack.terminologyCreates")}
+                value={preview.terminologyCreates}
+              />
+              <CountLine
+                label={t("pack.terminologyUpdates")}
+                value={preview.terminologyUpdates}
+              />
+              <CountLine
+                label={t("pack.terminologyConflicts")}
+                value={preview.terminologyConflicts}
+              />
+            </div>
+          )}
 
           <div className="mt-3 grid gap-2">
             <label className="text-xs text-muted-foreground">
@@ -287,13 +310,15 @@ export function PackImportWizard({
                 })}
               </label>
             )}
-            {preview.glossaryCount > 0 && (
+            {preview.terminologyCount > 0 && (
               <label className="flex items-center gap-2 text-xs">
                 <Checkbox
-                  checked={importGlossary}
-                  onCheckedChange={(v) => setImportGlossary(v === true)}
+                  checked={importTerminology}
+                  onCheckedChange={(v) => setImportTerminology(v === true)}
                 />
-                {t("pack.importGlossary", { count: preview.glossaryCount })}
+                {t("pack.importTerminology", {
+                  count: preview.terminologyCount,
+                })}
               </label>
             )}
             {preview.tmCount > 0 && (

@@ -14,16 +14,16 @@ beforeEach(() => {
 
 describe("ui store", () => {
   it("switches workspace mode", () => {
-    useUiStore.getState().setMode("images");
-    expect(useUiStore.getState().mode).toBe("images");
+    useUiStore.getState().setMode("terminology");
+    expect(useUiStore.getState().mode).toBe("terminology");
   });
 
   it("keeps inspector state independent from the mode", () => {
     useUiStore.getState().toggleInspector();
-    useUiStore.getState().setInspectorTab("glossary");
+    useUiStore.getState().setInspectorTab("terminology");
     expect(useUiStore.getState()).toMatchObject({
       inspectorOpen: false,
-      inspectorTab: "glossary",
+      inspectorTab: "terminology",
     });
   });
 

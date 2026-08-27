@@ -1,7 +1,7 @@
 //! Tauri commands for LLM translation and provider discovery.
 
 use crate::{
-    core::{glossary, manifest},
+    core::manifest,
     domain::types::{ProviderConfig, SourceFile},
     llm::{
         pipeline,
@@ -83,13 +83,13 @@ pub async fn translate_segments(
             return;
         }
 
-        // Resolve the project_id from the first segment so we can load glossary terms
-        // and later update the manifest stats.
+        // Resolve project metadata once; terminology is resolved later for
+        // each exact provider request from segment occurrences.
         let mut resolved_project_id: Option<String> = None;
         let mut project_engine = "mv_mz".to_string();
         let mut source_lang = "ja".to_string();
         let mut target_lang = "fr".to_string();
-        let glossary_terms: Vec<(String, String)> = if let Some((first_id, _)) = pairs.first() {
+        if let Some((first_id, _)) = pairs.first() {
             let row = sqlx::query_as::<_, (String, String, String, String)>(
                 "SELECT sf.project_id, p.engine, \
                         COALESCE(p.source_language, 'ja'), \
@@ -103,26 +103,18 @@ pub async fn translate_segments(
             .await
             .ok()
             .flatten();
-            match row {
-                Some((project_id, engine, project_source_lang, project_target_lang)) => {
-                    resolved_project_id = Some(project_id.clone());
-                    project_engine = engine;
-                    source_lang = project_source_lang;
-                    target_lang = project_target_lang;
-                    let lang_pair = format!("{source_lang}-{target_lang}");
-                    let sources: Vec<&str> = pairs.iter().map(|(_, src)| src.as_str()).collect();
-                    glossary::relevant_terms(&db, &project_id, &lang_pair, &sources).await
-                }
-                None => vec![],
+            if let Some((project_id, engine, project_source_lang, project_target_lang)) = row {
+                resolved_project_id = Some(project_id);
+                project_engine = engine;
+                source_lang = project_source_lang;
+                target_lang = project_target_lang;
             }
-        } else {
-            vec![]
-        };
+        }
 
         let context = TranslationContext {
             source_lang,
             target_lang,
-            glossary_terms,
+            terminology_hints: vec![],
             engine: project_engine,
             batch_size: provider_config.effective_batch_size(),
             batch_delay_ms: provider_config.batch_delay_ms(),
@@ -241,7 +233,6 @@ pub async fn translate_all_segments(
         .flatten();
         let (project_engine, source_lang, target_lang) = project_context
             .unwrap_or_else(|| ("mv_mz".to_string(), "ja".to_string(), "fr".to_string()));
-        let lang_pair = format!("{source_lang}-{target_lang}");
 
         let global_total = total_untranslated as usize;
         let mut done_offset: usize = 0;
@@ -270,15 +261,10 @@ pub async fn translate_all_segments(
                 continue;
             }
 
-            // Load glossary terms filtered by batch content
-            let sources: Vec<&str> = pairs.iter().map(|(_, src)| src.as_str()).collect();
-            let glossary_terms =
-                glossary::relevant_terms(&db, &project_id, &lang_pair, &sources).await;
-
             let context = TranslationContext {
                 source_lang: source_lang.clone(),
                 target_lang: target_lang.clone(),
-                glossary_terms,
+                terminology_hints: vec![],
                 engine: project_engine.clone(),
                 batch_size: provider_config.effective_batch_size(),
                 batch_delay_ms: provider_config.batch_delay_ms(),

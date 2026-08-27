@@ -14,7 +14,7 @@ Never translate, remove, reorder, paraphrase, or modify a ⟦ph_N⟧ token. If n
 impossible, keep the token at the end.
 
 OUTPUT PROTOCOL:
-{{output_protocol}}{{glossary}}
+{{output_protocol}}{{terminology}}
 """
 
 user = "{{segments}}"

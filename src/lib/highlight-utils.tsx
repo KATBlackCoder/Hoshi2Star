@@ -4,7 +4,7 @@ function escapeRe(s: string) {
 }
 
 /**
- * Split `text` by glossary term sources (sorted by length desc), then apply
+ * Split `text` by optional term sources (sorted by length desc), then apply
  * placeholder highlight to each plain-text segment.
  * Returns a flat array of ReactNode ready to render inside a `<p>`.
  *
@@ -13,7 +13,7 @@ function escapeRe(s: string) {
  */
 export function buildHighlightedNodes(
   text: string,
-  glossaryTerms: string[],
+  termSources: string[],
   phRe: RegExp,
 ): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
@@ -39,20 +39,20 @@ export function buildHighlightedNodes(
     return parts;
   }
 
-  if (glossaryTerms.length === 0) {
+  if (termSources.length === 0) {
     return applyPlaceholders(text, "0");
   }
 
   // Sort terms by length descending to avoid shorter substrings matching first
-  const sorted = [...glossaryTerms].sort((a, b) => b.length - a.length);
+  const sorted = [...termSources].sort((a, b) => b.length - a.length);
   const pattern = sorted.map(escapeRe).join("|");
-  const glossaryRe = new RegExp(`(${pattern})`, "g");
+  const termRe = new RegExp(`(${pattern})`, "g");
 
   let last = 0;
   let m: RegExpExecArray | null;
-  glossaryRe.lastIndex = 0;
+  termRe.lastIndex = 0;
 
-  while ((m = glossaryRe.exec(text)) !== null) {
+  while ((m = termRe.exec(text)) !== null) {
     if (m.index > last) {
       nodes.push(
         ...applyPlaceholders(text.slice(last, m.index), `pre-${m.index}`),
@@ -66,7 +66,7 @@ export function buildHighlightedNodes(
         {m[0]}
       </mark>,
     );
-    last = glossaryRe.lastIndex;
+    last = termRe.lastIndex;
   }
   if (last < text.length) {
     nodes.push(...applyPlaceholders(text.slice(last), `tail`));

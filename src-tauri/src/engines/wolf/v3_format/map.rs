@@ -658,7 +658,7 @@ mod tests {
             tileset_id: 1,
             width,
             height,
-            unknown4: if version >= VERSION_V35 { 0 } else { 0 },
+            unknown4: 0,
             layer_cnt,
             tiles,
             events: Vec::new(),

@@ -16,10 +16,6 @@ interface ProjectState {
   activeProjectId: string | null;
   activeProjectStats: ProjectStats | null;
   sourceFiles: SourceFile[];
-  /** project.id en attente de réponse utilisateur (oui/non) — null si aucun */
-  pendingGlossaryExtract: string | null;
-  /** true pendant que extract_glossary_terms tourne en arrière-plan */
-  isExtractingGlossary: boolean;
 
   // Actions
   addProject: (project: Project) => void;
@@ -27,8 +23,6 @@ interface ProjectState {
   setActiveProjectStats: (stats: ProjectStats | null) => void;
   setSourceFiles: (files: SourceFile[]) => void;
   removeProject: (id: string) => void;
-  setPendingGlossaryExtract: (id: string | null) => void;
-  setExtractingGlossary: (v: boolean) => void;
 }
 
 export const useProjectStore = create<ProjectState>()((set) => ({
@@ -36,8 +30,6 @@ export const useProjectStore = create<ProjectState>()((set) => ({
   activeProjectId: null,
   activeProjectStats: null,
   sourceFiles: [],
-  pendingGlossaryExtract: null,
-  isExtractingGlossary: false,
 
   addProject: (project) =>
     set((state) => {
@@ -64,9 +56,6 @@ export const useProjectStore = create<ProjectState>()((set) => ({
   removeProject: (id) =>
     set((state) => ({ projects: state.projects.filter((p) => p.id !== id) })),
 
-  setPendingGlossaryExtract: (id) => set({ pendingGlossaryExtract: id }),
-
-  setExtractingGlossary: (v) => set({ isExtractingGlossary: v }),
 }));
 
 // Selectors
@@ -82,12 +71,6 @@ export const useActiveEngine = () =>
   );
 
 export const useSourceFiles = () => useProjectStore((s) => s.sourceFiles);
-
-export const usePendingGlossaryExtract = () =>
-  useProjectStore((s) => s.pendingGlossaryExtract);
-
-export const useIsExtractingGlossary = () =>
-  useProjectStore((s) => s.isExtractingGlossary);
 
 export const useActiveProjectStats = () =>
   useProjectStore((s) => s.activeProjectStats);
@@ -126,10 +109,6 @@ export async function openProject(
   useProjectStore.getState().addProject(project);
   useProjectStore.getState().setActiveProject(project.id);
   useUiStore.getState().setMode("patch");
-  if (!wasRestored) {
-    useProjectStore.getState().setPendingGlossaryExtract(project.id);
-  }
-
   const [files, stats] = await Promise.all([
     invoke<SourceFile[]>("get_source_files", { projectId: project.id }),
     invoke<ProjectStats>("get_project_stats", { projectId: project.id }),

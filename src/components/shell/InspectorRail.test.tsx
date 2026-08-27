@@ -10,8 +10,8 @@ vi.mock("@/components/editor/TMPanel", () => ({
 vi.mock("@/components/editor/QAPanel", () => ({
   QAPanel: () => <p>QA test</p>,
 }));
-vi.mock("@/components/editor/GlossaryPanel", () => ({
-  GlossaryPanel: () => <p>Glossaire test</p>,
+vi.mock("@/components/editor/TerminologyInspector", () => ({
+  TerminologyInspector: () => <p>Terminologie test</p>,
 }));
 
 beforeEach(() => {
@@ -35,9 +35,9 @@ describe("InspectorRail", () => {
     );
     expect(screen.getByRole("tabpanel")).toHaveTextContent("QA test");
 
-    await userEvent.click(screen.getByRole("tab", { name: "Glossaire" }));
-    expect(screen.getByRole("tabpanel")).toHaveTextContent("Glossaire test");
-    expect(useUiStore.getState().inspectorTab).toBe("glossary");
+    await userEvent.click(screen.getByRole("tab", { name: "Terminologie" }));
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("Terminologie test");
+    expect(useUiStore.getState().inspectorTab).toBe("terminology");
   });
 
   it("collapses and reopens directly on the requested tool", async () => {

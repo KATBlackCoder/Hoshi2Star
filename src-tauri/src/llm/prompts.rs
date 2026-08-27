@@ -5,7 +5,7 @@
 //! no runtime file access, no Tauri bundle config needed.
 //!
 //! Adding a new target language: create the `.toml`, add a `match` arm in
-//! `translate_for()` / `glossary_for()`, add the code in `lang_code_to_name()`.
+//! `translate_for()` / `terminology_for()`, add the code in `lang_code_to_name()`.
 
 use serde::Deserialize;
 use std::sync::LazyLock;
@@ -59,9 +59,9 @@ static TRANSLATE_DEFAULT: LazyLock<PromptTemplate> = LazyLock::new(|| {
         .expect("prompts/translate/default.toml is malformed")
 });
 
-static GLOSSARY_DEFAULT: LazyLock<PromptTemplate> = LazyLock::new(|| {
-    toml::from_str(include_str!("../../prompts/glossary/default.toml"))
-        .expect("prompts/glossary/default.toml is malformed")
+static TERMINOLOGY_DEFAULT: LazyLock<PromptTemplate> = LazyLock::new(|| {
+    toml::from_str(include_str!("../../prompts/terminology/default.toml"))
+        .expect("prompts/terminology/default.toml is malformed")
 });
 
 // ---------------------------------------------------------------------------
@@ -77,13 +77,8 @@ pub fn translate_for(_target_lang: &str) -> &'static PromptTemplate {
     &TRANSLATE_DEFAULT
 }
 
-/// Return the glossary extraction prompt template for the given target language code.
-/// Falls back to `default.toml` for any language without a dedicated file.
-///
-/// To add a language: embed a new static, then match on the code here.
-/// Example: `"fr" => &GLOSSARY_FR` once `prompts/glossary/fr.toml` exists.
-pub fn glossary_for(_target_lang: &str) -> &'static PromptTemplate {
-    &GLOSSARY_DEFAULT
+pub fn terminology_for(_target_lang: &str) -> &'static PromptTemplate {
+    &TERMINOLOGY_DEFAULT
 }
 
 // ---------------------------------------------------------------------------
@@ -105,11 +100,11 @@ mod tests {
     }
 
     #[test]
-    fn test_glossary_default_loads() {
-        let tmpl = glossary_for("en");
-        assert!(tmpl.system.contains("JSON array"));
-        assert!(tmpl.user.contains("{{target_lang}}"));
-        assert!(!tmpl.user.contains("/no_think"));
+    fn terminology_prompt_requires_strict_ids_and_proposed_terms() {
+        let template = terminology_for("fr");
+        assert!(template.system.contains("exactly one object per input"));
+        assert!(template.system.contains("byte-for-byte unchanged"));
+        assert!(template.user.contains("{{terms}}"));
     }
 
     #[test]
@@ -121,7 +116,7 @@ mod tests {
                 ("source_lang", "Japanese"),
                 ("target_lang", "English"),
                 ("output_protocol", "Return strict output."),
-                ("glossary", ""),
+                ("terminology", ""),
             ],
         );
         assert!(out.contains("Japanese"));
@@ -132,23 +127,23 @@ mod tests {
     }
 
     #[test]
-    fn test_render_glossary_hint_injected() {
+    fn test_render_terminology_hint_injected() {
         let tmpl = translate_for("en");
-        let hint = "\nGlossary:\n勇者 → Hero";
+        let hint = "\nTerminology:\n勇者 → Hero";
         let out = tmpl.render(
             &tmpl.system,
             &[
                 ("source_lang", "Japanese"),
                 ("target_lang", "English"),
                 ("output_protocol", "Return strict output."),
-                ("glossary", hint),
+                ("terminology", hint),
             ],
         );
         assert!(out.contains("勇者 → Hero"));
     }
 
     #[test]
-    fn test_render_empty_glossary() {
+    fn test_render_empty_terminology() {
         let tmpl = translate_for("en");
         let out = tmpl.render(
             &tmpl.system,
@@ -156,10 +151,10 @@ mod tests {
                 ("source_lang", "Japanese"),
                 ("target_lang", "English"),
                 ("output_protocol", "Return strict output."),
-                ("glossary", ""),
+                ("terminology", ""),
             ],
         );
-        assert!(!out.contains("{{glossary}}"));
+        assert!(!out.contains("{{terminology}}"));
     }
 
     #[test]

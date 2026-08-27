@@ -8,7 +8,7 @@ use serde::Serialize;
 use std::io::Write as _;
 
 use crate::{
-    core::{glossary, report, tm},
+    core::{report, tm},
     domain::types::SourceFile,
     engines::{
         detector::guess_wolf_version_from_structure,
@@ -239,25 +239,14 @@ pub async fn export_project(
     replace_existing: bool,
     state: tauri::State<'_, AppState>,
 ) -> Result<String, String> {
-    let (game_path, engine, source_language, target_language): (String, String, String, String) =
-        sqlx::query_as(
-            "SELECT game_path, engine, COALESCE(source_language, 'ja'), \
-                    COALESCE(target_language, 'en') FROM projects WHERE id = ?",
-        )
-        .bind(&project_id)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let lang_pair = format!("{source_language}-{target_language}");
-    let terms: Vec<(String, String)> =
-        glossary::list_for_project(&state.db, &project_id, &lang_pair)
+    let (game_path, engine): (String, String) =
+        sqlx::query_as("SELECT game_path, engine FROM projects WHERE id = ?")
+            .bind(&project_id)
+            .fetch_one(&state.db)
             .await
-            .map_err(|error| error.to_string())?
-            .into_iter()
-            .map(|term| (term.source_text, term.target_text))
-            .collect();
-    let (qa_summary, _) = report::audit_project(&state.db, &project_id, &terms)
+            .map_err(|e| e.to_string())?;
+
+    let (qa_summary, _) = report::audit_project(&state.db, &project_id)
         .await
         .map_err(|error| error.to_string())?;
     if qa_summary.critical_count > 0 {
@@ -431,27 +420,13 @@ pub async fn export_qa_report(
     lang: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let (project_title, source_lang, target_lang): (String, String, String) = sqlx::query_as(
-        "SELECT name, COALESCE(source_language, 'ja'), \
-                    COALESCE(target_language, 'en') FROM projects WHERE id = ?",
-    )
-    .bind(&project_id)
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| e.to_string())?;
+    let project_title: String = sqlx::query_scalar("SELECT name FROM projects WHERE id = ?")
+        .bind(&project_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| e.to_string())?;
 
-    // Glossary terms make GlossaryMismatch live in the report (stat, filter
-    // and badge already exist in the generated HTML).
-    let lang_pair = format!("{source_lang}-{target_lang}");
-    let terms: Vec<(String, String)> =
-        glossary::list_for_project(&state.db, &project_id, &lang_pair)
-            .await
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .map(|t| (t.source_text, t.target_text))
-            .collect();
-
-    let (total_checked, details) = report::collect_qa_details(&state.db, &project_id, &terms)
+    let (total_checked, details) = report::collect_qa_details(&state.db, &project_id)
         .await
         .map_err(|e| e.to_string())?;
 

@@ -48,6 +48,7 @@ describe("llm store", () => {
       task: "translate" as const,
       model: "gemma4:e4b",
       inputUnits: 2,
+      terminologyHints: 1,
       promptChars: 500,
       promptTokens: 120,
       completionTokens: 17,

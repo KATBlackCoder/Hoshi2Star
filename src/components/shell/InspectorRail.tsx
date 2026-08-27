@@ -5,7 +5,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { GlossaryPanel } from "@/components/editor/GlossaryPanel";
+import { TerminologyInspector } from "@/components/editor/TerminologyInspector";
 import { QAPanel } from "@/components/editor/QAPanel";
 import { TMPanel } from "@/components/editor/TMPanel";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,7 @@ const TABS: Array<{
 }> = [
   { id: "tm", labelKey: "inspector.tm", icon: Database },
   { id: "qa", labelKey: "inspector.qa", icon: ShieldCheck },
-  { id: "glossary", labelKey: "inspector.glossary", icon: BookMarked },
+  { id: "terminology", labelKey: "inspector.terminology", icon: BookMarked },
 ];
 
 export function InspectorRail({
@@ -129,7 +129,7 @@ export function InspectorRail({
         ) : inspectorTab === "qa" ? (
           <QAPanel sourceText={sourceText} targetText={targetText} />
         ) : (
-          <GlossaryPanel projectId={projectId} langPair={langPair} />
+          <TerminologyInspector projectId={projectId} langPair={langPair} />
         )}
       </div>
     </aside>

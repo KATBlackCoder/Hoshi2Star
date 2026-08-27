@@ -19,11 +19,7 @@ import {
   Share2,
   Snowflake,
 } from "lucide-react";
-import {
-  openProject,
-  useProjectStore,
-  useIsExtractingGlossary,
-} from "@/stores/project";
+import { openProject, useProjectStore } from "@/stores/project";
 import {
   useIsTranslating,
   useTranslationProgress,
@@ -167,7 +163,6 @@ export function AppToolbar({
     s.projects.find((p) => p.id === s.activeProjectId),
   );
   const isTranslating = useIsTranslating();
-  const isExtractingGlossary = useIsExtractingGlossary();
   const progress = useTranslationProgress();
   const isPilotOpen = usePilotStore((state) => state.isOpen);
   const isPilotRunning = usePilotStore((state) => state.isRunning);
@@ -242,18 +237,16 @@ export function AppToolbar({
           size="sm"
           className="h-7 gap-1.5 text-xs shadow-[0_0_12px_oklch(0.65_0.18_285/35%)]"
           onClick={onTranslate}
-          disabled={isTranslating || isExtractingGlossary || isPilotRunning}
+          disabled={isTranslating || isPilotRunning}
         >
-          {isExtractingGlossary || isTranslating ? (
+          {isTranslating ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
             <Play className="h-3.5 w-3.5" />
           )}
-          {isExtractingGlossary
-            ? t("glossaryPrompt.translationBlocked")
-            : isTranslating
-              ? `${t("toolbar.translating")} ${progress > 0 ? `${progress}%` : ""}`
-              : t("toolbar.translate")}
+          {isTranslating
+            ? `${t("toolbar.translating")} ${progress > 0 ? `${progress}%` : ""}`
+            : t("toolbar.translate")}
         </Button>
       )}
 
@@ -263,7 +256,7 @@ export function AppToolbar({
           variant="outline"
           className="h-7 gap-1.5 text-xs"
           onClick={onTranslateAll}
-          disabled={isTranslating || isExtractingGlossary || isPilotRunning}
+          disabled={isTranslating || isPilotRunning}
         >
           {isTranslating ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -297,7 +290,7 @@ export function AppToolbar({
           variant={isPilotOpen ? "secondary" : "outline"}
           className="h-7 gap-1.5 text-xs"
           onClick={onOpenPilot}
-          disabled={isTranslating || isExtractingGlossary || isPilotRunning}
+          disabled={isTranslating || isPilotRunning}
         >
           {isPilotRunning ? (
             <Loader2 className="h-3.5 w-3.5 motion-safe:animate-spin" />

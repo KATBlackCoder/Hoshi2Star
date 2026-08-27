@@ -17,10 +17,14 @@
 //! - `MissingPlaceholder`  → −25
 //! - `LineTooLong`         → −10
 //! - `BomDetected`         → −15
-//! - `GlossaryMismatch`    → −15
+//! - `TerminologyMismatch` → severity-dependent (0/15/35)
 //!
 //! Minimum score: 0.
 
+use crate::core::terminology::{
+    resolver::QaTerminologyRule,
+    types::{Enforcement, PartOfSpeech, ReviewStatus},
+};
 use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -117,12 +121,21 @@ pub enum QaError {
         char_count: usize,
     },
     BomDetected,
-    /// A glossary term whose source was found in the source text but whose
-    /// expected target translation is absent from the target text.
-    GlossaryMismatch {
+    /// An occurrence-scoped terminology rule whose accepted target is absent.
+    TerminologyMismatch {
+        entry_id: String,
         source_term: String,
-        expected_target: String,
+        expected_targets: Vec<String>,
+        severity: QaSeverity,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QaSeverity {
+    Critical,
+    Warning,
+    Info,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,20 +206,83 @@ pub fn measure_line_units(line: &str) -> f32 {
 // Internal checks
 // ---------------------------------------------------------------------------
 
-fn check_glossary(source: &str, target: &str, terms: &[(String, String)]) -> Vec<QaError> {
+fn check_terminology(target: &str, rules: &[QaTerminologyRule]) -> Vec<QaError> {
     let target_lower = target.to_lowercase();
+    rules
+        .iter()
+        .filter_map(|rule| {
+            let mut accepted = vec![rule.target.clone()];
+            accepted.extend(rule.accepted_targets.iter().cloned());
+            if accepted
+                .iter()
+                .any(|candidate| target_lower.contains(&candidate.to_lowercase()))
+            {
+                return None;
+            }
+            let severity = terminology_severity(rule);
+            Some(QaError::TerminologyMismatch {
+                entry_id: rule.entry_id.clone(),
+                source_term: rule.source.clone(),
+                expected_targets: accepted,
+                severity,
+            })
+        })
+        .collect()
+}
+
+fn terminology_severity(rule: &QaTerminologyRule) -> QaSeverity {
+    if rule.review_status == ReviewStatus::Proposed || rule.enforcement == Enforcement::Contextual {
+        return QaSeverity::Info;
+    }
+    let stable_entity = matches!(
+        rule.part_of_speech,
+        PartOfSpeech::Noun | PartOfSpeech::ProperNoun
+    ) && matches!(
+        rule.semantic_type.as_str(),
+        "character"
+            | "speaker"
+            | "actor"
+            | "class"
+            | "item"
+            | "weapon"
+            | "armor"
+            | "skill"
+            | "enemy"
+            | "state"
+            | "map"
+            | "location"
+            | "currency"
+            | "system_term"
+            | "game_title"
+            | "object"
+    );
+    if rule.review_status == ReviewStatus::Locked
+        && rule.enforcement == Enforcement::Required
+        && stable_entity
+    {
+        QaSeverity::Critical
+    } else {
+        QaSeverity::Warning
+    }
+}
+
+fn legacy_rules(source: &str, terms: &[(String, String)]) -> Vec<QaTerminologyRule> {
     terms
         .iter()
         .filter_map(|(source_term, target_term)| {
-            if source.contains(source_term.as_str())
-                && !target_lower.contains(target_term.to_lowercase().as_str())
-            {
-                Some(QaError::GlossaryMismatch {
-                    source_term: source_term.clone(),
-                    expected_target: target_term.clone(),
-                })
-            } else {
+            if !source.contains(source_term) {
                 None
+            } else {
+                Some(QaTerminologyRule {
+                    entry_id: String::new(),
+                    source: source_term.clone(),
+                    target: target_term.clone(),
+                    semantic_type: "general".to_string(),
+                    part_of_speech: PartOfSpeech::Unknown,
+                    review_status: ReviewStatus::Approved,
+                    enforcement: Enforcement::Preferred,
+                    accepted_targets: Vec::new(),
+                })
             }
         })
         .collect()
@@ -243,8 +319,8 @@ fn check_line_length(text: &str, config: &LineWidthConfig) -> Vec<QaError> {
 /// Run all QA checks on a (source, target) pair.
 ///
 /// `source` is the original Japanese text; `target` is the translation.
-/// `glossary_terms` is a slice of `(source_term, expected_target)` pairs —
-/// pass `&[]` when no glossary is available.
+/// `legacy_terms` is retained only for the historical pack compatibility
+/// layer. Runtime translation and reports use occurrence-scoped rules.
 /// `engine` selects placeholder patterns and line-width config:
 ///   `"wolf"` → Wolf RPG placeholders + 520 px box
 ///   any other value → MV/MZ placeholders + 720 px box
@@ -252,7 +328,17 @@ fn check_line_length(text: &str, config: &LineWidthConfig) -> Vec<QaError> {
 pub fn check(
     source: &str,
     target: &str,
-    glossary_terms: &[(String, String)],
+    legacy_terms: &[(String, String)],
+    engine: &str,
+) -> QaResult {
+    let terminology_rules = legacy_rules(source, legacy_terms);
+    check_with_rules(source, target, &terminology_rules, engine)
+}
+
+fn check_with_rules(
+    source: &str,
+    target: &str,
+    terminology_rules: &[QaTerminologyRule],
     engine: &str,
 ) -> QaResult {
     let mut errors: Vec<QaError> = Vec::new();
@@ -285,9 +371,9 @@ pub fn check(
     // 3. Line width check
     errors.extend(check_line_length(target, &line_config));
 
-    // 4. Glossary mismatch check
-    if !glossary_terms.is_empty() {
-        errors.extend(check_glossary(source, target, glossary_terms));
+    // 4. Occurrence-scoped terminology consistency check
+    if !terminology_rules.is_empty() {
+        errors.extend(check_terminology(target, terminology_rules));
     }
 
     // Score calculation
@@ -304,11 +390,11 @@ pub fn check(
 pub fn check_with_context(
     source: &str,
     target: &str,
-    glossary_terms: &[(String, String)],
+    terminology_rules: &[QaTerminologyRule],
     engine: &str,
     context: &QaSemanticContext<'_>,
 ) -> QaResult {
-    let mut result = check(source, target, glossary_terms, engine);
+    let mut result = check_with_rules(source, target, terminology_rules, engine);
     let source_trimmed = source.trim();
     let target_trimmed = target.trim();
 
@@ -413,7 +499,11 @@ impl QaError {
             QaError::MissingPlaceholder { .. } => 25,
             QaError::LineTooLong { .. } => 10,
             QaError::BomDetected => 15,
-            QaError::GlossaryMismatch { .. } => 15,
+            QaError::TerminologyMismatch { severity, .. } => match severity {
+                QaSeverity::Critical => 35,
+                QaSeverity::Warning => 15,
+                QaSeverity::Info => 0,
+            },
         }
     }
 
@@ -429,7 +519,7 @@ impl QaError {
             QaError::MissingPlaceholder { .. } => "missing_placeholder",
             QaError::LineTooLong { .. } => "line_too_long",
             QaError::BomDetected => "bom_detected",
-            QaError::GlossaryMismatch { .. } => "glossary_mismatch",
+            QaError::TerminologyMismatch { .. } => "terminology_mismatch",
         }
     }
 
@@ -445,6 +535,10 @@ impl QaError {
                 | QaError::InconsistentRepeatedSource { .. }
                 | QaError::MissingPlaceholder { .. }
                 | QaError::BomDetected
+                | QaError::TerminologyMismatch {
+                    severity: QaSeverity::Critical,
+                    ..
+                }
         )
     }
 
@@ -494,11 +588,16 @@ impl QaError {
                 )
             }
             QaError::BomDetected => "UTF-8 BOM detected at start".to_string(),
-            QaError::GlossaryMismatch {
+            QaError::TerminologyMismatch {
                 source_term,
-                expected_target,
+                expected_targets,
+                severity,
+                ..
             } => {
-                format!("Glossary mismatch: \"{source_term}\" → expected \"{expected_target}\"")
+                format!(
+                    "Terminology {severity:?}: \"{source_term}\" → expected one of \"{}\"",
+                    expected_targets.join("\", \"")
+                )
             }
         }
     }
@@ -536,12 +635,15 @@ impl QaError {
                 )
             }
             QaError::BomDetected => "BOM UTF-8 détecté en début de cible".to_string(),
-            QaError::GlossaryMismatch {
+            QaError::TerminologyMismatch {
                 source_term,
-                expected_target,
+                expected_targets,
+                severity,
+                ..
             } => {
                 format!(
-                    "Terme glossaire non respecté : \"{source_term}\" → attendu \"{expected_target}\""
+                    "Terminologie {severity:?} : \"{source_term}\" → une forme attendue parmi \"{}\"",
+                    expected_targets.join("\", \"")
                 )
             }
         }
@@ -756,7 +858,7 @@ mod tests {
         assert_eq!(long_errors.len(), 4);
     }
 
-    // --- check_glossary ---
+    // --- terminology compatibility wrapper ---
 
     fn terms(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
         pairs
@@ -766,21 +868,22 @@ mod tests {
     }
 
     #[test]
-    fn test_glossary_mismatch_detected() {
-        // "魔法使い" appears in source, "Mage" absent from target → GlossaryMismatch
+    fn test_terminology_mismatch_detected() {
         let t = terms(&[("魔法使い", "Mage")]);
         let result = check("魔法使い が現れた！", "A sorcerer appeared!", &t, "mv_mz");
         assert_eq!(result.errors.len(), 1);
         assert!(matches!(
             &result.errors[0],
-            QaError::GlossaryMismatch { source_term, expected_target }
-                if source_term == "魔法使い" && expected_target == "Mage"
+            QaError::TerminologyMismatch { source_term, expected_targets, severity, .. }
+                if source_term == "魔法使い"
+                    && expected_targets == &["Mage"]
+                    && *severity == QaSeverity::Warning
         ));
         assert_eq!(result.score, 85); // 100 - 15
     }
 
     #[test]
-    fn test_glossary_term_present_no_error() {
+    fn test_terminology_term_present_no_error() {
         // "Mage" IS in target (case-insensitive) → no error
         let t = terms(&[("魔法使い", "Mage")]);
         let result = check("魔法使い が現れた！", "A mage appeared!", &t, "mv_mz");
@@ -789,8 +892,8 @@ mod tests {
     }
 
     #[test]
-    fn test_glossary_no_source_term_no_error() {
-        // "魔法使い" not in source → glossary check is skipped
+    fn test_terminology_no_source_term_no_error() {
+        // "魔法使い" not in source → compatibility rule is skipped
         let t = terms(&[("魔法使い", "Mage")]);
         let result = check("戦士 が現れた！", "A warrior appeared!", &t, "mv_mz");
         assert!(result.errors.is_empty());
@@ -798,15 +901,14 @@ mod tests {
     }
 
     #[test]
-    fn test_glossary_empty_terms_no_error() {
-        // Empty glossary → no GlossaryMismatch regardless of target
+    fn test_terminology_empty_terms_no_error() {
         let result = check("魔法使い", "something else", &[], "mv_mz");
         assert!(result.errors.is_empty());
         assert_eq!(result.score, 100);
     }
 
     #[test]
-    fn test_glossary_multiple_mismatches_floor_zero() {
+    fn test_terminology_multiple_mismatches_floor_zero() {
         // 7 mismatches = -105 → floor to 0
         let t = terms(&[
             ("term1", "T1"),
@@ -820,6 +922,78 @@ mod tests {
         let source = "term1 term2 term3 term4 term5 term6 term7";
         let result = check(source, "wrong translation", &t, "mv_mz");
         assert_eq!(result.score, 0);
+    }
+
+    fn rich_rule(
+        review_status: ReviewStatus,
+        enforcement: Enforcement,
+        part_of_speech: PartOfSpeech,
+    ) -> QaTerminologyRule {
+        QaTerminologyRule {
+            entry_id: "entry-1".to_string(),
+            source: "勇者".to_string(),
+            target: "Hero".to_string(),
+            semantic_type: "character".to_string(),
+            part_of_speech,
+            review_status,
+            enforcement,
+            accepted_targets: vec!["The Hero".to_string()],
+        }
+    }
+
+    #[test]
+    fn locked_required_entity_is_critical_and_accepts_variants() {
+        let rule = rich_rule(
+            ReviewStatus::Locked,
+            Enforcement::Required,
+            PartOfSpeech::ProperNoun,
+        );
+        let mismatch = check_with_rules("勇者", "Champion", std::slice::from_ref(&rule), "mv_mz");
+        assert!(matches!(
+            mismatch.errors.as_slice(),
+            [QaError::TerminologyMismatch {
+                severity: QaSeverity::Critical,
+                ..
+            }]
+        ));
+        assert!(mismatch.has_critical_errors());
+        assert!(
+            check_with_rules("勇者", "The Hero arrives", &[rule], "mv_mz")
+                .errors
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn proposed_contextual_and_inflected_terms_never_block() {
+        let proposed = rich_rule(
+            ReviewStatus::Proposed,
+            Enforcement::Required,
+            PartOfSpeech::ProperNoun,
+        );
+        let verb = rich_rule(
+            ReviewStatus::Locked,
+            Enforcement::Required,
+            PartOfSpeech::Verb,
+        );
+        let proposed_result = check_with_rules("勇者", "Champion", &[proposed], "mv_mz");
+        let verb_result = check_with_rules("勇者", "Champion", &[verb], "mv_mz");
+        assert!(matches!(
+            proposed_result.errors.as_slice(),
+            [QaError::TerminologyMismatch {
+                severity: QaSeverity::Info,
+                ..
+            }]
+        ));
+        assert!(!proposed_result.has_critical_errors());
+        assert!(matches!(
+            verb_result.errors.as_slice(),
+            [QaError::TerminologyMismatch {
+                severity: QaSeverity::Warning,
+                ..
+            }]
+        ));
+        assert!(!verb_result.has_critical_errors());
     }
 
     fn semantic_context<'a>(kind: &'a str, neighbors: &'a [String]) -> QaSemanticContext<'a> {

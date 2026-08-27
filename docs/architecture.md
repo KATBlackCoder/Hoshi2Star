@@ -1,8 +1,10 @@
 # Hoshi2Star — Architecture
 
-> Dernière mise à jour : 2026-07-01
+> Dernière mise à jour : 2026-08-27
 > Ce document décrit l'architecture réelle de l'application.
 > À mettre à jour à chaque ajout de module majeur.
+
+La bibliothèque terminologique est détaillée dans [son document d'architecture](architecture/terminology.md) et dans [le guide utilisateur](terminology.md).
 
 ---
 
@@ -16,13 +18,13 @@
 │  App.tsx → invoke() → Tauri IPC ← events h2s://…         │
 ├───────────────────────────────────────────────────────────┤
 │  Commands Layer   src-tauri/src/commands/                 │
-│  project · translate · export · qa · glossary             │
+│  project · translate · export · qa · terminology · pack   │
 ├───────────────────────────────────────────────────────────┤
 │  LLM Layer        src-tauri/src/llm/                      │
 │  tokenizer · provider · batch · pipeline · split · progress│
 ├───────────────────────────────────────────────────────────┤
 │  Core Layer       src-tauri/src/core/                     │
-│  tm · qa · glossary · manifest · report                   │
+│  tm · qa · terminology/ · manifest · report · h2s_pack    │
 ├───────────────────────────────────────────────────────────┤
 │  Engine Layer     src-tauri/src/engines/                  │
 │  detector · mv_mz/ · wolf/ · vx_ace/ (désactivé)          │
@@ -45,7 +47,7 @@
 | Runtime desktop | Tauri | v2 | IPC, plugins système, fenêtre |
 | Backend | Rust stable | 1.75+ | Logique métier, parsers, LLM |
 | Async runtime | tokio | full features | Tâches LLM longues non-bloquantes |
-| Base de données | SQLite via sqlx | 0.8 | Projets, segments, TM, glossaire |
+| Base de données | SQLite via sqlx | 0.8 | Projets, segments, TM, terminologie |
 | Sérialisation | serde + serde_json | — | Structs IPC Rust ↔ TypeScript |
 | Erreurs Rust | thiserror | — | Enum `PipelineError`, `LlmError`, etc. |
 | Frontend | React | 19 | UI composants |
@@ -85,7 +87,8 @@ Tous les `#[tauri::command]` sont déclarés dans des sous-modules et enregistr�
 | `translate.rs` (~400 lignes) | `translate_segments`, `translate_all_segments`, `get_ollama_models` | Toutes les commandes qui déclenchent une interaction LLM. `translate_all_segments` démarre un `tokio::spawn`, crée un `pipeline::CooldownState` (une fois pour tout le projet) et le passe à `pipeline::run` — le cooldown est désormais vérifié par batch (pas par fichier). |
 | `export.rs` | `export_project`, `export_qa_report`, `export_tm`, `export_debug_json`, `debug_inject_file`, `scan_font_status` | Toutes les commandes qui écrivent un fichier sur le disque ou injectent les données du jeu. `debug_inject_file` enforce la complétude avant injection. `scan_font_status` compte les segments déjà préfixés `\f[N]`. `apply_font_prefix` / `persist_font_size` (helpers privés) gèrent le préfixe Wolf RPG taille police. |
 | `qa.rs` (~93 lignes) | `qa_check_segment`, `get_qa_report`, `get_tm_suggestions` | Commandes de lecture QA/TM — pas d'écriture DB. |
-| `glossary.rs` | `get_glossary`, `add_glossary_term`, `update_glossary_term`, `delete_glossary_term`, `extract_glossary_terms`, `extract_wolf_speakers` | CRUD glossaire + extraction LLM des termes depuis Actors/Skills/Items + extraction des noms de personnages Wolf RPG (champ `name` sur types `character`/`actor`/`人物`). |
+| `terminology.rs` | liste/stats, CRUD, scan/cancel, traduction sélectionnée, inspecteur segment, compatibilité `extract_wolf_speakers` | API étroite : validation IPC puis délégation au repository/service/resolver. Aucun SQL terminologique dans React. |
+| `pack_terminology.rs` | mapping import/export terminologique `.h2s` v1 | Couche de compatibilité isolée vers le champ historique `glossary.json`; protège les traductions verrouillées. |
 | `app.rs` | `updater_supported` | Commandes au niveau app, hors couche métier. `updater_supported() -> bool` (`cfg!(windows) || env APPIMAGE`) gate l'UI d'auto-update aux installs réellement updatables (Windows NSIS + Linux AppImage) ; deb/rpm et dev renvoient `false` (ADR-007). |
 
 ### `core/`
@@ -95,8 +98,8 @@ Couche métier pure — pas de `tauri::State`, pas d'`AppHandle`, testable sans 
 | Fichier | Rôle |
 |---------|------|
 | `tm.rs` | Translation Memory : insert, `lookup_exact` (hash SHA-256), `lookup_fuzzy` (Levenshtein normalisé, seuil 80 %, max 5 résultats). Export TMX via `generate_tmx()`. TM globale (ADR-003) — une table `tm_entries` par installation, partagée cross-projet. |
-| `qa.rs` | Checks QA sur chaque segment : placeholders manquants (−25 pts), ligne trop longue en pixels (−10 pts), BOM UTF-8 (−15 pts), terme glossaire non respecté (−15 pts). Score plancher 0. Méthode `QaError::label(&self, lang)` pour les labels localisés. |
-| `glossary.rs` | CRUD des termes glossaire. Deux niveaux : global (`project_id IS NULL`) et projet-local. Injection dans le prompt LLM (30 termes max, filtrés par contenu du batch). |
+| `qa.rs` | Checks QA sur chaque segment : placeholders, largeur, BOM et cohérence terminologique selon révision/enforcement. La preview reste pure. |
+| `terminology/` | Analyse japonaise Lindera, scan incrémental, repository paginé, traduction de candidats et resolver commun au LLM et au QA. Les règles moteur restent dans `engines/*/terminology.rs`. Voir le [document dédié](architecture/terminology.md). |
 | `manifest.rs` | Écrit/lit `.hoshi2star.json` à la racine du dossier jeu. Permet la « smart restore » : si manifest + entrée DB correspondent à la réouverture, le projet est chargé sans ré-extraction. `refresh_stats(pool, project_id)` est le **point unique** de recalcul des stats projet (best-effort), appelé après `update_segment` et après chaque traduction de batch. |
 | `report.rs` | Génère le rapport QA HTML autonome (CSS + JS inline, aucune dépendance externe). Recalcule les erreurs QA au moment de l'export (pas stockées en DB) pour avoir un rapport frais. Filtre interactif par fichier, score, type d'erreur. |
 
@@ -139,7 +142,7 @@ Couche métier pure — pas de `tauri::State`, pas d'`AppHandle`, testable sans 
 | Fichier | Rôle |
 |---------|------|
 | `pool.rs` | Initialise le `SqlitePool` avec `SqlitePoolOptions` (max 5 connexions, foreign keys ON), puis applique les migrations SQL embarquées. Une réparation transactionnelle et idempotente vérifie ensuite `pragma_table_info('source_files')` et ajoute la colonne nullable `translation_secs` uniquement si elle manque. Sont supportées les bases neuves, les snapshots antérieurs à `0004`, les bases dont le ledger SQLx indique `0004` ou plus mais dont la colonne manque, et les bases courantes déjà conformes. La réparation ne réécrit aucune ligne existante ; en cas d'échec elle effectue un rollback et l'erreur demande de sauvegarder le fichier avant de réessayer. Les réglages Tauri étant stockés hors de cette base, ils ne sont pas touchés. |
-| `migrations/` | 5 fichiers SQL immuables : `0001_initial.sql` (projects, source_files, segments), `0002_tm.sql` (tm_entries), `0003_glossary.sql` (glossary_terms), `0004_source_files_translation_secs.sql` (colonne durée de traduction), `0005_tm_unique.sql` (déduplication et unicité de la TM). Les migrations déjà publiées ne sont ni supprimées ni réécrites afin de préserver leurs checksums SQLx. |
+| `migrations/` | Migrations SQL immuables jusqu'à `0008_terminology_library.sql`. `0008` crée entrées, traductions, occurrences, scans et état incrémental, puis migre les données historiques. `glossary_terms` reste une donnée de rollback, sans lecteur applicatif actif. Les migrations publiées ne sont jamais réécrites afin de préserver leurs checksums SQLx. |
 
 ---
 
@@ -149,8 +152,8 @@ Couche métier pure — pas de `tauri::State`, pas d'`AppHandle`, testable sans 
 
 | Fichier | État géré | Thunks / actions |
 |---------|-----------|-----------------|
-| `editor.ts` | `activeFileId`, `activeSegmentId`, `activeSegmentSourceText/TargetText`, `glossaryTerms` | Sélecteurs exportés (`useActiveFileId`, `useGlossaryTerms`, etc.) |
-| `project.ts` | `projects[]`, `activeProjectId`, `sourceFiles[]`, `pendingGlossaryExtract`, `isExtractingGlossary` | `addProject`, `setActiveProject`, `setSourceFiles`, `removeProject`. Thunks `openProject`, `loadAllProjects`, `deleteProject` (font des `invoke()` directement dans le store). |
+| `editor.ts` | `activeFileId`, `activeSegmentId`, textes source/cible actifs | État minimal de l'éditeur et sélecteurs ciblés. Les données terminologiques serveur n'y sont pas dupliquées. |
+| `project.ts` | `projects[]`, `activeProjectId`, `sourceFiles[]` | `addProject`, `setActiveProject`, `setSourceFiles`, `removeProject`. Thunks de cycle de vie projet. |
 | `llm.ts` | `isTranslating`, `translationProgress`, `providerConfig`, `isCooling`, `cooldownRemaining` | `startTranslation`, `startTranslateAll`, `setupTranslationListeners` (factorisation des 7 listeners en un seul helper) |
 | `settings.ts` | Thème, langue, `providerConfig` persisté via `tauri-plugin-store` dans `settings.json` | `loadSettings`, `saveSettings` |
 | `updater.ts` | Machine à états auto-update : `status: idle\|checking\|available\|downloading\|ready\|dismissed\|error`, `version`/`notes`, `downloaded`/`contentLength` (→ %). `dismissed_version` persisté via `tauri-plugin-store` (`updater.json`) | `checkForUpdate` (guard `updater_supported`, silencieux offline/dev, respecte le rejet sauf version plus récente), `startDownload` (callbacks `Started`/`Progress`/`Finished` → %), `dismiss`/`reopen`, `postpone`, `applyAndRestart` (`relaunch()`). Rendu par `UpdateDialog.tsx` (AlertDialog Oui/Non/redémarrer) + `UpdateBadge.tsx` (icône toolbar visible si `dismissed`). Check déclenché une fois au mount dans `App.tsx`. Voir ADR-007. |
@@ -163,7 +166,7 @@ Couche métier pure — pas de `tauri::State`, pas d'`AppHandle`, testable sans 
 | `FileTree.tsx` | Liste les fichiers du projet actif. Clic → sélectionne le fichier actif. Badge durée de traduction (depuis `translation_secs` DB). Bouton "Debug Inject" (`FlaskConical`, hover-only) visible uniquement quand `translatedCount === totalCount > 0`; déclenche `scan_font_status` → `FontSizeDialog` → `debug_inject_file`. Rows : `<div role="button">` (pas `<button>`) pour éviter l'imbrication HTML invalide avec le bouton inject. | `useProjectStore`, `get_source_files`, `scan_font_status`, `debug_inject_file` |
 | `TMPanel.tsx` | Affiche suggestions TM (exact + fuzzy %). Clic applique la suggestion dans le segment actif. | `get_tm_suggestions`, `useEditorStore` |
 | `QAPanel.tsx` | Affiche les erreurs QA live sur le segment actif (recalcul local). Bouton export rapport HTML. | `qa_check_segment`, `export_qa_report` |
-| `GlossaryPanel.tsx` | CRUD inline des termes glossaire. Bouton auto-extraction LLM (Actors/Skills/Items). Bouton "Speakers" — extrait les noms de personnages Wolf RPG via `extract_wolf_speakers`. | `get_glossary`, `add/update/delete_glossary_term`, `extract_glossary_terms`, `extract_wolf_speakers` |
+| `TerminologyInspector.tsx` | Affiche en lecture les termes résolus pour le segment actif et ouvre l'espace de travail pour les modifier. | `get_segment_terminology` |
 | `ProjectList.tsx` | Affiché si aucun projet actif. Liste tous les projets DB avec boutons Continuer / Supprimer. | `list_projects`, `delete_project` |
 
 ### `components/`
@@ -171,7 +174,7 @@ Couche métier pure — pas de `tauri::State`, pas d'`AppHandle`, testable sans 
 | Composant | Rôle |
 |-----------|------|
 | `AppToolbar.tsx` | Barre d'outils principale — boutons Open/Translate/TranslateAll/ExportAll, badge projet actif + moteur, `TranslationTimer`, `CooldownBadge`, barre de progression. Lit les stores directement. |
-| `AppDialogs.tsx` | Toutes les modales conditionnelles de l'application — `SettingsModal`, `AboutModal`, `TranslateAllDialog`, `AlertDialog` export (confirm + blocked), `AlertDialog` glossaire, `FontSizeDialog` export. Reçoit un objet `handlers` depuis `App.tsx`. |
+| `AppDialogs.tsx` | Modales globales de réglages, traduction complète et export. Les dialogues terminologiques restent dans `features/terminology/`. |
 | `SettingsModal.tsx` | Ollama URL + modèle, thème clair/sombre, langue EN/FR. Persisté via `tauri-plugin-store`. |
 | `AboutModal.tsx` | Tagline, auteur, licence MIT, adresses Bitcoin/Ethereum, lien GitHub. |
 | `TranslateAllDialog.tsx` | Stats projet + inputs durée travail / pause avant de lancer `translate_all_segments`. |
@@ -181,18 +184,22 @@ Couche métier pure — pas de `tauri::State`, pas d'`AppHandle`, testable sans 
 
 | Fichier | Rôle |
 |---------|------|
-| `useAppHandlers.ts` | Hook appelé une seule fois dans `App.tsx`. Encapsule les handlers async de l'application (`handleTranslate`, `handleTranslateAll`, `handleTranslateAllStart`, `handleExportAll`, `handleExportConfirm`, `handleExportFontApply`, `handleExportFontSkip`, `handleGlossaryConfirm`, `handleGlossaryDecline`) et les états dialog locaux (`showSettings`, `showAbout`, `exportDialog`, `exportStats`, `showTranslateAll`, `translateAllStats`, `showFontDialog`, `fontScanResult`). `handleExportConfirm` appelle `scan_font_status` puis ouvre `FontSizeDialog` ; `doExport` passe `fontSize`/`replaceExisting` à `export_project`. Gère aussi le listener `h2s://glossary/extraction-done`. |
+| `useAppHandlers.ts` | Actions globales de traduction/export et états de leurs dialogues. La terminologie possède ses mutations et listeners bornés dans `features/terminology/` afin de ne pas regonfler ce hook. |
 
 ### `lib/`
 
 | Fichier | Rôle |
 |---------|------|
-| `types.ts` | Interfaces TypeScript miroirs des structs Rust domain (`Project`, `Segment`, `TmSuggestion`, `QaResult`, `GlossaryTerm`, etc.). |
+| `types.ts` | Interfaces TypeScript miroirs des contrats Rust (`Project`, `Segment`, `TmSuggestion`, `QaResult`, `TerminologyEntry`, etc.). |
 | `constants.ts` | `PH_RE_SOURCE` (MV/MZ) et `PH_RE_WOLF` (Wolf RPG, miroir de `RE_WOLF` Rust). `getPlaceholderRegex(engine)` retourne la regex adaptée au moteur — utilisée par `SourceCell` dans `columns.tsx` pour le highlight des placeholders. `clonePH_RE()` retourne une instance `PH_RE_SOURCE` fraîche avec `lastIndex` remis à zéro pour les usages non-engine-aware. |
 | `format.ts` | `formatDuration(secs)`, `engineLabel(engine)`, `relativeDate(iso)` — helpers partagés par `FileTree.tsx` et `ProjectList.tsx`. |
-| `highlight-utils.tsx` | `buildHighlightedNodes(text, glossaryTerms: string[], phRe: RegExp)` — surbrillance simultanée placeholders (bleu) et termes glossaire (vert). Testable sans shadcn ni stores. |
+| `highlight-utils.tsx` | Surbrillance des codes moteur et autres marqueurs éditoriaux, testable sans shadcn ni stores. |
 | `i18n.ts` | Configuration i18next. Ressources EN/FR dans `src/locales/`. |
 | `utils.ts` | `cn()` — helper Tailwind merge (généré par shadcn). |
+
+### `features/terminology/`
+
+Fonctionnalité autonome chargée à la demande. `TerminologyWorkspace` orchestre de petits composants spécialisés (`Toolbar`, `Table`, `ScanProgress`, dialogues d'édition/traduction). TanStack Query possède les listes/stats serveur et les invalide après mutation; `terminologyUiStore` ne conserve que recherche, filtres, portée et page. La table demande 100 lignes par page et ne charge jamais toute la bibliothèque.
 
 ### `features/editor/`
 
@@ -218,7 +225,7 @@ Clic "Open" → tauri-plugin-dialog → chemin absolu
           → core/manifest.rs : write()          [crée .hoshi2star.json]
   → OpenProjectResult { project, wasRestored }
   → useProjectStore.addProject()
-  → App.tsx : si !wasRestored → pendingGlossaryExtract = project.id
+  → App.tsx : affiche le projet; le scan terminologique reste une action explicite
 ```
 
 ### Traduire un fichier
@@ -227,7 +234,7 @@ Clic "Open" → tauri-plugin-dialog → chemin absolu
 Clic Translate → invoke('translate_segments', { fileId, providerConfig })
   → commands/translate.rs : translate_segments()
       → tokio::spawn (non-bloquant)
-          → core/glossary.rs : list_for_project() [termes filtrés]
+          → core/terminology/resolver.rs [termes présents dans le sous-lot]
           → llm/pipeline.rs : run()
               → llm/batch.rs : group_segments()   [lots de 20]
               → pour chaque lot :

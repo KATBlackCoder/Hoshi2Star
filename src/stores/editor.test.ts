@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/stores/editor";
-import type { GlossaryTerm } from "@/lib/types";
 
 const initialState = useEditorStore.getState();
 
@@ -25,11 +24,5 @@ describe("editor store", () => {
     expect(s.activeSegmentId).toBeNull();
     expect(s.activeSegmentSourceText).toBeNull();
     expect(s.activeSegmentTargetText).toBeNull();
-  });
-
-  it("setGlossaryTerms replaces the term list", () => {
-    const terms = [{ id: "t1", sourceText: "ハルカ" }] as GlossaryTerm[];
-    useEditorStore.getState().setGlossaryTerms(terms);
-    expect(useEditorStore.getState().glossaryTerms).toEqual(terms);
   });
 });
