@@ -11,6 +11,8 @@
     --font-sans: 'Geist Variable', 'Noto Sans JP Variable', sans-serif;
     --color-star: var(--star);
     --color-star-foreground: var(--star-foreground);
+    --color-seal: var(--seal);
+    --color-seal-foreground: var(--seal-foreground);
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -51,11 +53,7 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* ---------------------------------------------------------------------------
- * Thème TENMON 天文 — observatoire nocturne (docs/design/demo-1-tenmon.html)
- * Sombre : nuit indigo, primary violet, accent or stellaire (--star).
- * Clair  : ciel de jour assorti — mêmes teintes, luminosité inversée.
- * ------------------------------------------------------------------------- */
+/* Hoshiyomi / 星詠み工房 — observatoire céleste et sanctuaire de validation. */
 
 :root {
     --surface-raised: color-mix(in srgb, var(--background) 94%, black 6%);
@@ -64,72 +62,76 @@
     --duration-fast: 120ms;
     --duration-normal: 180ms;
     --duration-slow: 240ms;
-    --background: oklch(0.985 0.005 280);
-    --foreground: oklch(0.22 0.03 275);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.22 0.03 275);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.22 0.03 275);
-    --primary: oklch(0.55 0.18 285);
-    --primary-foreground: oklch(0.985 0.005 280);
-    --secondary: oklch(0.955 0.01 280);
-    --secondary-foreground: oklch(0.3 0.04 280);
-    --muted: oklch(0.955 0.01 280);
-    --muted-foreground: oklch(0.5 0.03 278);
-    --accent: oklch(0.94 0.025 285);
-    --accent-foreground: oklch(0.3 0.06 285);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.9 0.015 280);
-    --input: oklch(0.9 0.015 280);
-    --ring: oklch(0.55 0.18 285);
-    --star: oklch(0.72 0.13 80);
-    --star-foreground: oklch(0.985 0.005 280);
+    --background: oklch(0.965 0.018 86);
+    --foreground: oklch(0.24 0.055 274);
+    --card: oklch(0.986 0.011 88);
+    --card-foreground: oklch(0.24 0.055 274);
+    --popover: oklch(0.99 0.009 88);
+    --popover-foreground: oklch(0.24 0.055 274);
+    --primary: oklch(0.43 0.12 274);
+    --primary-foreground: oklch(0.985 0.01 88);
+    --secondary: oklch(0.925 0.025 84);
+    --secondary-foreground: oklch(0.3 0.065 274);
+    --muted: oklch(0.92 0.022 84);
+    --muted-foreground: oklch(0.46 0.045 274);
+    --accent: oklch(0.9 0.04 83);
+    --accent-foreground: oklch(0.31 0.08 274);
+    --destructive: oklch(0.53 0.19 31);
+    --border: oklch(0.82 0.035 80);
+    --input: oklch(0.8 0.04 82);
+    --ring: oklch(0.48 0.12 274);
+    --star: oklch(0.68 0.13 78);
+    --star-foreground: oklch(0.23 0.055 274);
+    --seal: oklch(0.56 0.18 34);
+    --seal-foreground: oklch(0.98 0.012 86);
     --chart-1: oklch(0.55 0.18 285);
     --chart-2: oklch(0.72 0.13 80);
     --chart-3: oklch(0.7 0.11 215);
     --chart-4: oklch(0.7 0.14 160);
     --chart-5: oklch(0.75 0.13 70);
     --radius: 0.625rem;
-    --sidebar: oklch(0.97 0.008 280);
-    --sidebar-foreground: oklch(0.22 0.03 275);
-    --sidebar-primary: oklch(0.55 0.18 285);
-    --sidebar-primary-foreground: oklch(0.985 0.005 280);
-    --sidebar-accent: oklch(0.94 0.025 285);
-    --sidebar-accent-foreground: oklch(0.3 0.06 285);
-    --sidebar-border: oklch(0.9 0.015 280);
-    --sidebar-ring: oklch(0.55 0.18 285);
+    --sidebar: oklch(0.945 0.02 86);
+    --sidebar-foreground: oklch(0.24 0.055 274);
+    --sidebar-primary: oklch(0.43 0.12 274);
+    --sidebar-primary-foreground: oklch(0.985 0.01 88);
+    --sidebar-accent: oklch(0.9 0.04 83);
+    --sidebar-accent-foreground: oklch(0.31 0.08 274);
+    --sidebar-border: oklch(0.82 0.035 80);
+    --sidebar-ring: oklch(0.48 0.12 274);
 }
 
 .dark {
     --surface-raised: color-mix(in srgb, var(--background) 94%, white 6%);
     --shadow-surface: 0 0 0 1px rgb(255 255 255 / 0.08);
     --shadow-surface-hover: 0 0 0 1px rgb(255 255 255 / 0.13);
-    --background: oklch(0.17 0.03 277);
-    --foreground: oklch(0.93 0.015 280);
-    --card: oklch(0.21 0.035 277);
+    --background: oklch(0.135 0.045 273);
+    --foreground: oklch(0.93 0.022 83);
+    --card: oklch(0.18 0.052 273);
     --card-foreground: oklch(0.93 0.015 280);
     --popover: oklch(0.21 0.035 277);
     --popover-foreground: oklch(0.93 0.015 280);
-    --primary: oklch(0.65 0.18 285);
-    --primary-foreground: oklch(0.98 0.01 280);
-    --secondary: oklch(0.26 0.04 277);
+    --primary: oklch(0.72 0.11 78);
+    --primary-foreground: oklch(0.17 0.05 273);
+    --secondary: oklch(0.23 0.055 273);
     --secondary-foreground: oklch(0.93 0.015 280);
-    --muted: oklch(0.25 0.035 277);
-    --muted-foreground: oklch(0.65 0.04 278);
-    --accent: oklch(0.29 0.055 285);
+    --muted: oklch(0.225 0.05 273);
+    --muted-foreground: oklch(0.69 0.045 82);
+    --accent: oklch(0.27 0.068 273);
     --accent-foreground: oklch(0.95 0.015 280);
     --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(0.65 0.08 280 / 14%);
-    --input: oklch(0.65 0.08 280 / 18%);
-    --ring: oklch(0.65 0.18 285);
-    --star: oklch(0.83 0.13 85);
-    --star-foreground: oklch(0.25 0.06 80);
+    --border: oklch(0.72 0.08 82 / 18%);
+    --input: oklch(0.72 0.08 82 / 24%);
+    --ring: oklch(0.78 0.12 80);
+    --star: oklch(0.81 0.13 82);
+    --star-foreground: oklch(0.17 0.05 273);
+    --seal: oklch(0.66 0.18 34);
+    --seal-foreground: oklch(0.98 0.012 86);
     --chart-1: oklch(0.65 0.18 285);
     --chart-2: oklch(0.83 0.13 85);
     --chart-3: oklch(0.78 0.11 215);
     --chart-4: oklch(0.75 0.14 160);
     --chart-5: oklch(0.78 0.13 70);
-    --sidebar: oklch(0.15 0.028 277);
+    --sidebar: oklch(0.12 0.042 273);
     --sidebar-foreground: oklch(0.93 0.015 280);
     --sidebar-primary: oklch(0.65 0.18 285);
     --sidebar-primary-foreground: oklch(0.98 0.01 280);
@@ -146,11 +148,46 @@
   body {
     @apply bg-background text-foreground;
     -webkit-font-smoothing: antialiased;
+    min-width: 0;
+    text-rendering: optimizeLegibility;
     }
   html {
     @apply font-sans;
     -moz-osx-font-smoothing: grayscale;
+    min-width: 0;
+    overflow: hidden;
     }
+  button, a, input, select, textarea { scroll-margin: 4.5rem 1rem 1rem; }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  h1, h2, h3 { text-wrap: balance; }
+  p, li, figcaption { text-wrap: pretty; }
+  [lang="ja"] { line-break: strict; overflow-wrap: anywhere; }
+  .text-safe { min-width: 0; overflow-wrap: anywhere; }
+  .brand-seal {
+    color: var(--star-foreground);
+    background:
+      radial-gradient(circle at center, var(--star) 0 38%, transparent 40%),
+      conic-gradient(from 45deg, transparent 0 12%, var(--star) 13% 15%, transparent 16% 37%, var(--star) 38% 40%, transparent 41% 62%, var(--star) 63% 65%, transparent 66% 87%, var(--star) 88% 90%, transparent 91%);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--star) 52%, transparent), 0 0 18px color-mix(in srgb, var(--star) 20%, transparent);
+  }
+  .observatory-grid {
+    background-image:
+      linear-gradient(to right, color-mix(in srgb, var(--border) 32%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in srgb, var(--border) 26%, transparent) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  .shrine-edge { position: relative; }
+  .shrine-edge::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    border-radius: inherit;
+    background: var(--seal);
+  }
   /* Starfield Tenmon : étoiles fixes discrètes sur la nuit indigo */
   .dark body {
     background-image:
@@ -164,6 +201,11 @@
       radial-gradient(ellipse 80% 60% at 50% -10%, oklch(0.21 0.045 277) 0%, oklch(0.17 0.03 277) 55%, oklch(0.14 0.028 277) 100%);
     background-attachment: fixed;
     }
+  body:not(.dark *) {
+    background-image:
+      repeating-linear-gradient(7deg, rgb(91 69 33 / 0.018) 0 1px, transparent 1px 8px),
+      radial-gradient(ellipse 90% 65% at 50% -15%, oklch(1 0.01 88) 0%, var(--background) 72%);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

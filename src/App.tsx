@@ -25,6 +25,9 @@ import { FileTreePanel } from "@/components/shell/FileTreePanel";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 import { PilotComparisonWorkspace } from "@/components/pilot/PilotComparisonWorkspace";
 import { usePilotStore } from "@/stores/pilot";
+import { PatchWorkflow } from "@/components/patch/PatchWorkflow";
+import { WorkspaceState } from "@/components/common/WorkspaceState";
+import { Images, Play } from "lucide-react";
 
 const TerminologyWorkspace = lazy(() =>
   import("@/features/terminology/TerminologyWorkspace").then((module) => ({
@@ -88,6 +91,10 @@ export default function App() {
           </Suspense>
         ) : mode === "patch" ? (
           <div className="flex h-full flex-col overflow-hidden">
+            <PatchWorkflow
+              onExport={() => void handlers.handleExportAll()}
+              exporting={handlers.isExporting}
+            />
             <AppToolbar
               onOpenAbout={() => handlers.setShowAbout(true)}
               onTranslate={handlers.handleTranslate}
@@ -100,7 +107,7 @@ export default function App() {
             {pilotOpen ? (
               <PilotComparisonWorkspace />
             ) : (
-              <div className="flex min-h-0 flex-1 overflow-hidden">
+              <div className="relative flex min-h-0 flex-1 overflow-hidden">
                 <ResizablePanelGroup
                   orientation="horizontal"
                   className="min-w-0 flex-1 overflow-hidden"
@@ -171,15 +178,14 @@ export default function App() {
 function ModePlaceholder({ mode }: { mode: "player" | "images" }) {
   const { t } = useTranslation();
   return (
-    <div className="grid h-full place-items-center p-8">
-      <div className="max-w-lg rounded-2xl bg-card/80 p-8 text-center shadow-[var(--shadow-surface)] backdrop-blur-sm">
-        <p className="text-balance text-xl font-semibold">
-          {t("modes.comingSoonTitle", { mode: t(`modes.${mode}`) })}
-        </p>
-        <p className="mt-2 text-pretty text-sm leading-6 text-muted-foreground">
-          {t("modes.comingSoonDescription")}
-        </p>
-      </div>
+    <div className="observatory-grid grid h-full place-items-center p-4 sm:p-8">
+      <WorkspaceState
+        className="w-full max-w-lg"
+        icon={mode === "player" ? <Play className="size-4" /> : <Images className="size-4" />}
+        eyebrow="Phase 2"
+        title={t("modes.comingSoonTitle", { mode: t(`modes.${mode}`) })}
+        description={t("modes.comingSoonDescription")}
+      />
     </div>
   );
 }

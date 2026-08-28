@@ -229,6 +229,7 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
             onClick={handleExport}
             disabled={isExporting}
             title={t("qaPanel.export")}
+            aria-label={t("qaPanel.export")}
           >
             <FileDown className="h-3 w-3" />
           </Button>
@@ -253,11 +254,11 @@ export function QAPanel({ sourceText, targetText }: QAPanelProps) {
                 <span>{t("qaPanel.ok")}</span>
               </div>
             ) : (
-              <ul className="flex-1 space-y-1">
+              <ul className="min-w-0 flex-1 space-y-1">
                 {displayedQaResult.errors.map((err, i) => (
                   <li
                     key={i}
-                    className="flex items-start gap-1.5 rounded bg-muted/30 px-2 py-1.5 text-xs"
+                    className="text-safe flex items-start gap-1.5 rounded bg-muted/30 px-2 py-1.5 text-xs leading-5"
                   >
                     {errorIcon(err)}
                     <span className="leading-snug">{errorLabel(err, t)}</span>

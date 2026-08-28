@@ -8,6 +8,7 @@ import { useTerminologyUiStore } from "@/features/terminology/terminologyUiStore
 import type { SegmentTerminologyRule } from "@/lib/types";
 import { useActiveSegmentId } from "@/stores/editor";
 import { useUiStore } from "@/stores/ui";
+import { TerminologyStatusBadge } from "@/features/terminology/TerminologyStatusBadge";
 
 export function TerminologyInspector({
   projectId,
@@ -83,22 +84,27 @@ export function TerminologyInspector({
                     source: rule.source,
                   })}
                 >
-                  <span className="flex items-baseline justify-between gap-3">
-                    <span lang={langPair.split("-")[0]} className="font-medium">
+                  <span className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
+                    <span lang={langPair.split("-")[0]} className="text-safe font-medium">
                       {rule.source}
                     </span>
-                    <span lang={targetLanguage} className="text-sm text-primary">
+                    <span lang={targetLanguage} className="text-safe text-sm text-primary">
                       {rule.target}
                     </span>
                   </span>
                   <span className="mt-2 flex flex-wrap gap-1">
                     <Badge variant="secondary">{rule.semanticType}</Badge>
                     <Badge variant="outline">{rule.partOfSpeech}</Badge>
-                    <Badge variant="outline">{rule.reviewStatus}</Badge>
-                    <Badge variant="outline">{rule.enforcement}</Badge>
+                    <TerminologyStatusBadge
+                      status={rule.reviewStatus}
+                      label={t(`terminology.reviewStatus.${rule.reviewStatus}`)}
+                    />
+                    <Badge variant="outline">
+                      {t(`terminology.enforcementStatus.${rule.enforcement}`)}
+                    </Badge>
                   </span>
                   {rule.acceptedTargets.length > 0 && (
-                    <span className="mt-2 block text-xs text-muted-foreground">
+                    <span className="text-safe mt-2 block text-xs text-muted-foreground">
                       {t("terminologyInspector.variants", {
                         variants: rule.acceptedTargets.join(" · "),
                       })}

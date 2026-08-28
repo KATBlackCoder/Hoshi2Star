@@ -119,7 +119,7 @@ export function ProviderSettings({
         <label htmlFor="settings-provider-url" className="text-xs font-medium">
           {t("settings.llm.urlLabel")}
         </label>
-        <div className="flex gap-2">
+        <div className="flex min-w-0 flex-wrap gap-2 sm:flex-nowrap">
           <Input
             id="settings-provider-url"
             className="min-h-10 text-xs"
@@ -137,6 +137,11 @@ export function ProviderSettings({
             {t("settings.llm.testButton")}
           </Button>
         </div>
+        {!modelsLoading && !modelsError && models.length > 0 && (
+          <p role="status" className="text-[11px] text-primary">
+            {t("settings.llm.testSuccess", { count: models.length })}
+          </p>
+        )}
       </div>
 
       {preset?.requiresApiKey && (

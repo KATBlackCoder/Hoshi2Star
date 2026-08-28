@@ -38,7 +38,7 @@ export function LanguageSettings({
         <h4 className="text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
           {t("settings.translation.section")}
         </h4>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <label className="text-xs font-medium">
               {t("settings.translation.source")}

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import type { TerminologyEntry } from "@/lib/types";
 import { useTranslation } from "react-i18next";
+import { TerminologyStatusBadge } from "./TerminologyStatusBadge";
 
 export function TerminologyTable({
   entries,
@@ -50,8 +51,8 @@ export function TerminologyTable({
       accessorKey: "canonicalText",
       header: t("terminology.sourceTerm"),
       cell: ({ row }) => (
-        <div>
-          <span lang={row.original.sourceLanguage} className="font-medium">
+        <div className="max-w-64 whitespace-normal text-safe">
+          <span lang={row.original.sourceLanguage} className="font-medium leading-5">
             {row.original.canonicalText}
           </span>
           {row.original.reading && (
@@ -84,8 +85,8 @@ export function TerminologyTable({
       header: t("terminology.effectiveTarget"),
       cell: ({ row }) =>
         row.original.translation ? (
-          <div>
-            <span lang={row.original.translation.targetLanguage}>
+          <div className="max-w-72 whitespace-normal text-safe">
+            <span lang={row.original.translation.targetLanguage} className="leading-5">
               {row.original.translation.targetText}
             </span>
             <span className="ml-2 text-xs text-muted-foreground">
@@ -105,11 +106,15 @@ export function TerminologyTable({
     {
       id: "review",
       header: t("terminology.review"),
-      cell: ({ row }) => (
-        <span className="text-xs">
-          {row.original.translation?.reviewStatus ?? "—"}
-        </span>
-      ),
+      cell: ({ row }) => {
+        const status = row.original.translation?.reviewStatus;
+        return status ? (
+          <TerminologyStatusBadge
+            status={status}
+            label={t(`terminology.reviewStatus.${status}`)}
+          />
+        ) : <span className="text-muted-foreground">—</span>;
+      },
     },
     {
       id: "enforcement",
@@ -160,7 +165,7 @@ export function TerminologyTable({
       className="min-h-0 flex-1 overflow-auto rounded-2xl bg-card/80 shadow-[var(--shadow-surface)]"
       aria-label="Terminologie"
     >
-      <Table>
+      <Table className="min-w-[68rem] table-fixed">
         <TableHeader>
           {table.getHeaderGroups().map((group) => (
             <TableRow key={group.id}>

@@ -66,7 +66,12 @@ export function AppDialogs({ handlers }: AppDialogsProps) {
 
       {/* Export All — confirmation (all translated) */}
       <AlertDialog open={exportDialog === "confirm"}>
-        <AlertDialogContent>
+        <AlertDialogContent
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            document.getElementById("patch-gate-export")?.focus();
+          }}
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>
               {t("toolbar.exportAllConfirmTitle")}
@@ -91,7 +96,12 @@ export function AppDialogs({ handlers }: AppDialogsProps) {
 
       {/* Export All — blocked (untranslated segments remain) */}
       <AlertDialog open={exportDialog === "blocked"}>
-        <AlertDialogContent>
+        <AlertDialogContent
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            document.getElementById("patch-gate-export")?.focus();
+          }}
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>
               {t("toolbar.exportAllBlockedTitle")}

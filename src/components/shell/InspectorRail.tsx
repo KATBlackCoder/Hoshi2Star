@@ -76,7 +76,7 @@ export function InspectorRail({
   return (
     <aside
       aria-label={t("inspector.title")}
-      className="flex w-[clamp(20rem,25vw,27.5rem)] shrink-0 flex-col overflow-hidden bg-card/55 shadow-[-1px_0_0_rgb(255_255_255/0.08),-8px_0_24px_rgb(0_0_0/0.08)] backdrop-blur-sm"
+      className="flex w-[clamp(20rem,25vw,27.5rem)] shrink-0 flex-col overflow-hidden bg-card/95 shadow-[-1px_0_0_rgb(255_255_255/0.08),-8px_0_24px_rgb(0_0_0/0.08)] backdrop-blur-sm max-[760px]:absolute max-[760px]:inset-y-0 max-[760px]:right-0 max-[760px]:z-30 max-[760px]:w-[min(20rem,calc(100vw-3rem))] max-[760px]:bg-card"
     >
       <div className="flex min-h-12 shrink-0 items-center gap-1 px-1.5 shadow-[0_1px_0_rgb(255_255_255/0.06)]">
         <div

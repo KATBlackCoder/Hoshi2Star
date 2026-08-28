@@ -28,7 +28,7 @@ interface PackExportDialogProps {
 /**
  * "Share project" dialog — exports the project's translation state as a
  * `.h2s` exchange pack (segments + terminology, TM opt-in) so another
- * Hoshi2Star user can resume the translation on their own copy of the game.
+ * Hoshiyomi user can resume the translation on their own copy of the game.
  * No game file ever enters the pack.
  */
 export function PackExportDialog({
@@ -48,7 +48,7 @@ export function PackExportDialog({
       path = await save({
         title: t("pack.exportTitle"),
         defaultPath: `${projectName}.h2s`,
-        filters: [{ name: "Hoshi2Star pack", extensions: ["h2s"] }],
+        filters: [{ name: "Hoshiyomi pack", extensions: ["h2s"] }],
       });
     } catch (e) {
       toast.error(t("pack.exportError", { error: String(e) }));

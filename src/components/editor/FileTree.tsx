@@ -1,5 +1,4 @@
 import { useTranslation } from "react-i18next";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { useSourceFiles } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
@@ -99,25 +98,25 @@ export function FileTree() {
   }
 
   return (
-    <ScrollArea className="h-full">
+    <div className="h-full overflow-y-auto">
       <div className="p-2 space-y-0.5">
         {files.map((file) => {
           return (
-            <div
+            <button
               key={file.id}
-              role="button"
-              tabIndex={0}
+              type="button"
               onClick={() => setActiveFile(file.id)}
-              onKeyDown={(e) => e.key === "Enter" && setActiveFile(file.id)}
+              aria-current={activeFileId === file.id ? "true" : undefined}
+              title={file.fileName}
               className={cn(
-                "group flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs",
+                "group flex min-h-10 w-full min-w-0 items-center gap-2 rounded px-2 py-1.5 text-left text-xs",
                 "hover:bg-accent hover:text-accent-foreground transition-[background-color,color,transform] cursor-pointer active:scale-[0.96]",
                 activeFileId === file.id &&
                   "bg-accent text-accent-foreground font-medium",
               )}
             >
               {fileIcon(file.fileType)}
-              <span className="truncate flex-1">{file.fileName}</span>
+              <span className="min-w-0 flex-1 truncate">{file.fileName}</span>
               {(file.translatedCount > 0 || file.needsReviewCount > 0) && (
                 <span className="shrink-0 font-mono text-[10px] tabular-nums opacity-80">
                   {file.translatedCount > 0 && (
@@ -144,10 +143,10 @@ export function FileTree() {
                     {formatDuration(file.translationSecs)}
                   </Badge>
                 )}
-            </div>
+            </button>
           );
         })}
       </div>
-    </ScrollArea>
+    </div>
   );
 }

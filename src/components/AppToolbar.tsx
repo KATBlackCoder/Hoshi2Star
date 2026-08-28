@@ -195,7 +195,7 @@ export function AppToolbar({
     const selected = await open({
       multiple: false,
       title: t("pack.importPick"),
-      filters: [{ name: "Hoshi2Star pack", extensions: ["h2s"] }],
+      filters: [{ name: "Hoshiyomi pack", extensions: ["h2s"] }],
     });
     if (!selected) return;
     setIsPreviewingPack(true);
@@ -216,7 +216,7 @@ export function AppToolbar({
   }
 
   return (
-    <div className="flex h-10 shrink-0 items-center gap-3 border-b px-3">
+    <div className="flex min-h-11 min-w-0 shrink-0 items-center gap-2 overflow-x-auto border-b px-2 [scrollbar-width:none] sm:px-3">
       <Button
         size="sm"
         variant="outline"
@@ -269,6 +269,7 @@ export function AppToolbar({
 
       {activeProjectId && (
         <Button
+          id="toolbar-export-all"
           size="sm"
           variant="outline"
           className="h-7 gap-1.5 text-xs"
@@ -308,6 +309,7 @@ export function AppToolbar({
             variant="outline"
             className="hit-area-40 relative h-7 w-7 p-0"
             title={t("pack.shareButton")}
+            aria-label={t("pack.shareButton")}
             onClick={() => setShowPackExport(true)}
             disabled={isTranslating || isPilotRunning}
           >
@@ -318,6 +320,7 @@ export function AppToolbar({
             variant="outline"
             className="hit-area-40 relative h-7 w-7 p-0"
             title={t("pack.importButton")}
+            aria-label={t("pack.importButton")}
             onClick={() => void handleImportPack()}
             disabled={isTranslating || isPreviewingPack || isPilotRunning}
           >
@@ -343,11 +346,13 @@ export function AppToolbar({
       <div className="ml-auto" />
       <UpdateBadge />
       <Button
+        id="about-trigger"
         size="sm"
         variant="ghost"
         className="hit-area-40 relative h-7 w-7 p-0"
         onClick={onOpenAbout}
         title={t("about.title")}
+        aria-label={t("about.title")}
       >
         <Info className="h-4 w-4" />
       </Button>

@@ -65,6 +65,7 @@ interface EditableCellProps {
   totalRows: number;
   onSave: (id: string, text: string) => Promise<void>;
   onTabNext: (currentIndex: number) => void;
+  ariaLabel: string;
 }
 
 const EditableCell = memo(function EditableCell({
@@ -74,6 +75,7 @@ const EditableCell = memo(function EditableCell({
   totalRows,
   onSave,
   onTabNext,
+  ariaLabel,
 }: EditableCellProps) {
   const [value, setValue] = useState(initialValue);
   const savedRef = useRef(initialValue);
@@ -127,7 +129,8 @@ const EditableCell = memo(function EditableCell({
     <textarea
       ref={textareaRef}
       id={`target-input-${rowIndex}`}
-      className="w-full resize-none bg-transparent text-xs outline-none focus:bg-muted/30 rounded px-1 py-0.5 min-h-8"
+      className="min-h-10 w-full resize-none rounded bg-transparent px-1 py-1 text-xs outline-none focus:bg-muted/30"
+      aria-label={ariaLabel}
       value={value}
       rows={1}
       onChange={(e) => setValue(e.target.value)}
@@ -180,7 +183,8 @@ export function createSegmentColumns(
       header: ({ table }) => (
         <input
           type="checkbox"
-          className="h-3.5 w-3.5 cursor-pointer accent-primary"
+          className="size-6 cursor-pointer accent-primary"
+          aria-label={meta.t("segmentGrid.selectAll")}
           checked={table.getIsAllPageRowsSelected()}
           ref={(el) => {
             if (el) el.indeterminate = table.getIsSomePageRowsSelected();
@@ -192,7 +196,8 @@ export function createSegmentColumns(
       cell: ({ row }) => (
         <input
           type="checkbox"
-          className="h-3.5 w-3.5 cursor-pointer accent-primary"
+          className="size-6 cursor-pointer accent-primary"
+          aria-label={`${meta.t("segmentGrid.selectRow")} ${row.index + 1}`}
           checked={row.getIsSelected()}
           onChange={row.getToggleSelectedHandler()}
           onClick={(e) => e.stopPropagation()}
@@ -228,6 +233,7 @@ export function createSegmentColumns(
           totalRows={meta.totalRows}
           onSave={meta.onSave}
           onTabNext={meta.onTabNext}
+          ariaLabel={`${meta.t("segmentGrid.targetInput")} ${ctx.row.index + 1}`}
         />
       ),
     }) as ColumnDef<Segment>,
@@ -271,7 +277,8 @@ export function createSegmentColumns(
         <button
           type="button"
           title={meta.t("segmentGrid.translateRow")}
-          className="flex h-6 w-6 items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-primary/20 text-muted-foreground hover:text-primary transition-all"
+          className="hit-area-40 relative flex h-6 w-6 items-center justify-center rounded opacity-0 text-muted-foreground transition-[background-color,color,opacity] group-hover:opacity-100 hover:bg-primary/20 hover:text-primary focus-visible:opacity-100"
+          aria-label={meta.t("segmentGrid.translateRow")}
           onClick={(e) => {
             e.stopPropagation();
             meta.onTranslate(ctx.row.original.id);

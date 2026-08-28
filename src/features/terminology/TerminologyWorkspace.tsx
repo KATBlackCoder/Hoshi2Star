@@ -31,6 +31,7 @@ import { TerminologyTable } from "./TerminologyTable";
 import { TerminologyToolbar } from "./TerminologyToolbar";
 import { useTerminologyUiStore } from "./terminologyUiStore";
 import { useTranslation } from "react-i18next";
+import { WorkspaceState } from "@/components/common/WorkspaceState";
 
 const PAGE_SIZE = 100;
 
@@ -189,11 +190,11 @@ export function TerminologyWorkspace() {
 
   return (
     <main
-      className="flex h-full min-h-0 flex-col gap-3 overflow-hidden p-4"
+      className="observatory-grid flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden p-3 sm:p-4"
       aria-busy={list.isLoading}
     >
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
+      <header className="flex min-w-0 flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <h1 className="flex items-center gap-2 text-balance text-xl font-semibold">
             <BookOpenText className="size-5 text-primary" />{" "}
             {t("terminology.title")}
@@ -212,7 +213,7 @@ export function TerminologyWorkspace() {
           </p>
         </div>
         {stats.data && (
-          <dl className="flex gap-4 rounded-xl bg-muted/60 px-3 py-2 text-xs">
+          <dl className="flex max-w-full gap-3 overflow-x-auto rounded-xl bg-card/82 px-3 py-2 text-xs shadow-[var(--shadow-surface)] [scrollbar-width:none]">
             <Stat
               label={t("terminology.terms")}
               value={stats.data.totalEntries}
@@ -271,13 +272,15 @@ export function TerminologyWorkspace() {
         />
       )}
       {list.isError ? (
-        <StateMessage
+        <WorkspaceState
           icon={<AlertCircle />}
           title={t("terminology.loadError")}
-          detail={String(list.error)}
+          description={String(list.error)}
+          tone="error"
+          className="flex-1"
         />
       ) : list.isLoading ? (
-        <StateMessage title={t("terminology.loading")} />
+        <WorkspaceState title={t("terminology.loading")} className="flex-1" />
       ) : list.data?.items.length ? (
         <TerminologyTable
           entries={list.data.items}
@@ -287,17 +290,18 @@ export function TerminologyWorkspace() {
           onArchive={setArchiveEntry}
         />
       ) : (
-        <StateMessage
+        <WorkspaceState
           icon={<BookOpenText />}
           title={t("terminology.empty")}
-          detail={t(
+          description={t(
             activeProject
               ? "terminology.emptyProject"
               : "terminology.emptyGlobal",
           )}
+          className="flex-1"
         />
       )}
-      <footer className="flex items-center justify-between text-xs text-muted-foreground">
+      <footer className="flex min-w-0 flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
         <span className="tabular-nums">
           {t("terminology.countSelected", {
             count: list.data?.total ?? 0,
@@ -393,36 +397,6 @@ function Stat({ label, value }: { label: string; value: number }) {
       <dd className="tabular-nums text-sm font-semibold text-foreground">
         {value}
       </dd>
-    </div>
-  );
-}
-function StateMessage({
-  icon,
-  title,
-  detail,
-}: {
-  icon?: React.ReactNode;
-  title: string;
-  detail?: string;
-}) {
-  return (
-    <div className="grid min-h-48 flex-1 place-items-center rounded-2xl bg-card/65 p-8 text-center shadow-[var(--shadow-surface)]">
-      <div>
-        {icon && (
-          <span className="mx-auto mb-3 grid size-10 place-items-center rounded-xl bg-muted text-muted-foreground">
-            {icon}
-          </span>
-        )}
-        <p className="font-medium">{title}</p>
-        {detail && (
-          <p
-            className="mt-1 max-w-xl text-sm text-muted-foreground"
-            role={title.startsWith("Impossible") ? "alert" : undefined}
-          >
-            {detail}
-          </p>
-        )}
-      </div>
     </div>
   );
 }

@@ -50,7 +50,7 @@ export function FileTreePanel({
           type="button"
           variant="ghost"
           size="icon-sm"
-          className="text-muted-foreground"
+          className="hit-area-40 relative text-muted-foreground"
           aria-label={t("fileTree.collapse")}
           onClick={onToggle}
         >

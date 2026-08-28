@@ -13,6 +13,7 @@ interface UiState {
   gridDensity: GridDensity;
   setMode: (mode: AppMode) => void;
   toggleInspector: () => void;
+  openInspector: (tab: InspectorTab) => void;
   setInspectorTab: (tab: InspectorTab) => void;
   setFileTreeOpen: (open: boolean) => void;
   toggleFileTree: () => void;
@@ -30,6 +31,8 @@ export const useUiStore = create<UiState>()(
       setMode: (mode) => set({ mode }),
       toggleInspector: () =>
         set((state) => ({ inspectorOpen: !state.inspectorOpen })),
+      openInspector: (inspectorTab) =>
+        set({ inspectorOpen: true, inspectorTab }),
       setInspectorTab: (inspectorTab) => set({ inspectorTab }),
       setFileTreeOpen: (fileTreeOpen) => set({ fileTreeOpen }),
       toggleFileTree: () =>

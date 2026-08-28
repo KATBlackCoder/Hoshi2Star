@@ -90,7 +90,8 @@ export function TMPanel({ onApply }: TMPanelProps) {
           onClick={handleExport}
           disabled={isExporting}
           title={t("tmPanel.export")}
-          className="hit-area-40 relative rounded p-0.5 hover:bg-accent/40 disabled:opacity-50 transition-colors"
+          aria-label={t("tmPanel.export")}
+          className="hit-area-40 relative grid size-10 place-items-center rounded-lg transition-colors hover:bg-accent/40 disabled:opacity-50"
         >
           <Download className="h-3 w-3" />
         </button>
@@ -123,7 +124,7 @@ export function TMPanel({ onApply }: TMPanelProps) {
             className="mb-1.5 w-full rounded border border-border/50 bg-muted/20 p-2 text-left hover:bg-accent/40 transition-[background-color,transform] active:scale-[0.96]"
           >
             <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="truncate text-[10px] text-muted-foreground">
+              <span className="text-safe line-clamp-2 text-[10px] leading-4 text-muted-foreground">
                 {suggestion.entry.sourceText}
               </span>
               <MatchBadge
@@ -131,7 +132,7 @@ export function TMPanel({ onApply }: TMPanelProps) {
                 matchType={suggestion.matchType}
               />
             </div>
-            <p className="text-xs leading-relaxed">
+            <p className="text-safe text-xs leading-relaxed">
               {suggestion.entry.targetText}
             </p>
           </button>

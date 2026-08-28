@@ -102,7 +102,7 @@ export function TermEditorDialog({
               value={partOfSpeech}
               onChange={(e) => setPartOfSpeech(e.target.value as PartOfSpeech)}
             >
-              {[
+                  {[
                 "noun",
                 "proper_noun",
                 "verb",
@@ -143,7 +143,9 @@ export function TermEditorDialog({
                   }
                 >
                   {["proposed", "approved", "locked"].map((v) => (
-                    <option key={v}>{v}</option>
+                    <option key={v} value={v}>
+                      {t(`terminology.reviewStatus.${v}`)}
+                    </option>
                   ))}
                 </select>
               </Field>
@@ -156,7 +158,9 @@ export function TermEditorDialog({
                   }
                 >
                   {["contextual", "preferred", "required"].map((v) => (
-                    <option key={v}>{v}</option>
+                    <option key={v} value={v}>
+                      {t(`terminology.enforcementStatus.${v}`)}
+                    </option>
                   ))}
                 </select>
               </Field>
