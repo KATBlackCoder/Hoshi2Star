@@ -14,7 +14,7 @@ use hoshi2star_lib::commands::project::{delete_project, open_project};
 use hoshi2star_lib::core::report;
 use hoshi2star_lib::core::terminology::repository;
 use hoshi2star_lib::core::terminology::translator;
-use hoshi2star_lib::core::terminology::types::{Enforcement, ReviewStatus, UpsertTranslationInput};
+use hoshi2star_lib::core::terminology::types::{Enforcement, UpsertTranslationInput};
 use hoshi2star_lib::db;
 use hoshi2star_lib::domain::types::ResourceProfile;
 use hoshi2star_lib::llm::pipeline;
@@ -193,6 +193,7 @@ async fn run_target(target_language: &str, character_target: &str, item_target: 
         &[character.0.clone(), item.0.clone()],
         target_language,
         Some(&project_id),
+        false,
         ResourceProfile::Fast,
         "e2e-local",
         "deterministic",
@@ -200,22 +201,12 @@ async fn run_target(target_language: &str, character_target: &str, item_target: 
     )
     .await
     .unwrap();
-    assert_eq!((summary.requested, summary.proposed), (2, 2));
+    assert_eq!((summary.requested, summary.translated), (2, 2));
     assert_eq!(provider.chat_calls.load(Ordering::Relaxed), 1);
 
-    for (entry_id, target_text, review_status, enforcement) in [
-        (
-            &character.0,
-            character_target,
-            ReviewStatus::Locked,
-            Enforcement::Required,
-        ),
-        (
-            &item.0,
-            item_target,
-            ReviewStatus::Approved,
-            Enforcement::Preferred,
-        ),
+    for (entry_id, target_text, enforcement) in [
+        (&character.0, character_target, Enforcement::Required),
+        (&item.0, item_target, Enforcement::Preferred),
     ] {
         repository::upsert_translation(
             pool,
@@ -224,7 +215,6 @@ async fn run_target(target_language: &str, character_target: &str, item_target: 
                 target_language: target_language.into(),
                 project_id: Some(project_id.clone()),
                 target_text: target_text.into(),
-                review_status,
                 enforcement,
                 confidence: 1.0,
                 provider_id: Some("e2e-local".into()),

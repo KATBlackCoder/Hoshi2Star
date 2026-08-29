@@ -931,10 +931,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_terminology_import_creates_updates_and_preserves_locked_terms() {
+    async fn test_terminology_import_creates_editable_project_overrides() {
         let (pool, _tmp) = test_pool().await;
         seed(&pool).await;
-        for (id, source) in [("e-locked", "勇者"), ("e-update", "剣")] {
+        for (id, source) in [("e-global", "勇者"), ("e-update", "剣")] {
             sqlx::query(
                 "INSERT INTO terminology_entries (\
                     id, source_language, canonical_text, normalized_text, part_of_speech, \
@@ -950,10 +950,10 @@ mod tests {
         }
         sqlx::query(
             "INSERT INTO terminology_translations (\
-                id, entry_id, target_language, project_id, target_text, review_status, enforcement\
+                id, entry_id, target_language, project_id, target_text, enforcement\
              ) VALUES \
-                ('t-locked', 'e-locked', 'en', NULL, 'Brave', 'locked', 'required'), \
-                ('t-update', 'e-update', 'en', 'p1', 'Blade', 'approved', 'preferred')",
+                ('t-global', 'e-global', 'en', NULL, 'Brave', 'required'), \
+                ('t-update', 'e-update', 'en', 'p1', 'Blade', 'preferred')",
         )
         .execute(&pool)
         .await
@@ -980,7 +980,7 @@ mod tests {
         let preview = preview_terminology_import(&pool, "p1", "ja-en", &terms)
             .await
             .unwrap();
-        assert_eq!(preview, (1, 1, 1));
+        assert_eq!(preview, (1, 2, 0));
 
         let mut tx = pool.begin().await.unwrap();
         let (added, updated, conflicts) = import_terminology_terms(&mut tx, "p1", "ja-en", &terms)
@@ -988,9 +988,9 @@ mod tests {
             .unwrap();
         tx.commit().await.unwrap();
 
-        assert_eq!((added, updated, conflicts), (1, 1, 1));
-        let imported: (String, String, String, String, Option<String>) = sqlx::query_as(
-            "SELECT entry.origin, translation.target_text, translation.review_status, \
+        assert_eq!((added, updated, conflicts), (1, 2, 0));
+        let imported: (String, String, String, Option<String>) = sqlx::query_as(
+            "SELECT entry.origin, translation.target_text, \
                     translation.enforcement, translation.project_id \
              FROM terminology_entries entry \
              JOIN terminology_translations translation ON translation.entry_id = entry.id \
@@ -1004,20 +1004,19 @@ mod tests {
             (
                 "import".into(),
                 "Demon Lord".into(),
-                "approved".into(),
                 "preferred".into(),
                 Some("p1".into())
             )
         );
-        let locked: (String, i64) = sqlx::query_as(
+        let global: (String, i64) = sqlx::query_as(
             "SELECT target_text, (SELECT COUNT(*) FROM terminology_translations \
-             WHERE entry_id = 'e-locked' AND project_id = 'p1') \
-             FROM terminology_translations WHERE id = 't-locked'",
+             WHERE entry_id = 'e-global' AND project_id = 'p1') \
+             FROM terminology_translations WHERE id = 't-global'",
         )
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(locked, ("Brave".into(), 0));
+        assert_eq!(global, ("Brave".into(), 1));
 
         sqlx::query("DELETE FROM projects WHERE id = 'p1'")
             .execute(&pool)
@@ -1041,13 +1040,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_pack_export_maps_only_reviewed_visible_terminology_for_each_target() {
+    async fn test_pack_export_maps_every_visible_translation_for_each_target() {
         let (pool, _tmp) = test_pool().await;
         seed(&pool).await;
         for (id, source, semantic) in [
-            ("e-approved", "勇者", "characters"),
-            ("e-locked", "魔王", "characters"),
-            ("e-proposed", "剣", "weapons"),
+            ("e-global", "勇者", "characters"),
+            ("e-project", "魔王", "characters"),
+            ("e-sword", "剣", "weapons"),
             ("e-untranslated", "盾", "armors"),
             ("e-unrelated", "薬", "items"),
             ("e-fr", "宿屋", "locations"),
@@ -1068,13 +1067,13 @@ mod tests {
         }
         sqlx::query(
             "INSERT INTO terminology_translations (\
-                id, entry_id, target_language, project_id, target_text, review_status, enforcement\
+                id, entry_id, target_language, project_id, target_text, enforcement\
              ) VALUES \
-                ('t-approved', 'e-approved', 'en', NULL, 'Hero', 'approved', 'preferred'), \
-                ('t-locked', 'e-locked', 'en', 'p1', 'Demon Lord', 'locked', 'required'), \
-                ('t-proposed', 'e-proposed', 'en', 'p1', 'Sword', 'proposed', 'contextual'), \
-                ('t-unrelated', 'e-unrelated', 'en', NULL, 'Potion', 'approved', 'preferred'), \
-                ('t-fr', 'e-fr', 'fr', 'p1', 'Auberge', 'approved', 'preferred')",
+                ('t-global', 'e-global', 'en', NULL, 'Hero', 'preferred'), \
+                ('t-project', 'e-project', 'en', 'p1', 'Demon Lord', 'required'), \
+                ('t-sword', 'e-sword', 'en', 'p1', 'Sword', 'contextual'), \
+                ('t-unrelated', 'e-unrelated', 'en', NULL, 'Potion', 'preferred'), \
+                ('t-fr', 'e-fr', 'fr', 'p1', 'Auberge', 'preferred')",
         )
         .execute(&pool)
         .await
@@ -1082,7 +1081,7 @@ mod tests {
         sqlx::query(
             "INSERT INTO terminology_occurrences (\
                 entry_id, project_id, segment_id, surface_text, engine_kind, occurrence_count\
-             ) VALUES ('e-approved', 'p1', 's1', '勇者', 'dialogue', 1)",
+             ) VALUES ('e-global', 'p1', 's1', '勇者', 'dialogue', 1)",
         )
         .execute(&pool)
         .await
@@ -1094,6 +1093,11 @@ mod tests {
         assert_eq!(
             english.glossary,
             vec![
+                PackGlossaryTerm {
+                    source_text: "剣".into(),
+                    target_text: "Sword".into(),
+                    domain: "weapons".into(),
+                },
                 PackGlossaryTerm {
                     source_text: "勇者".into(),
                     target_text: "Hero".into(),

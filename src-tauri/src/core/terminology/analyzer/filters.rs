@@ -1,9 +1,15 @@
 use super::LinguisticToken;
+use crate::core::terminology::language::is_reusable_lexical_unit;
 use crate::core::terminology::types::PartOfSpeech;
 
-pub fn is_terminology_candidate(token: &LinguisticToken) -> bool {
+pub const TERMINOLOGY_FILTER_VERSION: &str = "language-pure-lexical-v5";
+
+pub fn is_terminology_candidate(token: &LinguisticToken, source_language: &str) -> bool {
     let lemma = token.lemma.trim();
     if lemma.is_empty() || lemma.chars().all(|character| character.is_ascii_digit()) {
+        return false;
+    }
+    if !is_reusable_lexical_unit(lemma, source_language) {
         return false;
     }
     if !matches!(
@@ -20,17 +26,23 @@ pub fn is_terminology_candidate(token: &LinguisticToken) -> bool {
 
     let mut characters = lemma.chars();
     if let (Some(character), None) = (characters.next(), characters.next()) {
-        if matches!(character, '\u{3040}'..='\u{30ff}') {
+        if is_japanese_syllabary(character) {
             return false;
         }
     }
 
-    lemma.chars().any(|character| {
-        matches!(
-            character,
-            '\u{3040}'..='\u{30ff}' | '\u{3400}'..='\u{4dbf}' | '\u{4e00}'..='\u{9fff}'
-        ) || character.is_ascii_alphabetic()
-    })
+    true
+}
+
+pub fn matches_source_language(text: &str, source_language: &str) -> bool {
+    is_reusable_lexical_unit(text, source_language)
+}
+
+fn is_japanese_syllabary(character: char) -> bool {
+    matches!(
+        character,
+        '\u{3040}'..='\u{30ff}' | '\u{31f0}'..='\u{31ff}' | '\u{ff66}'..='\u{ff9f}'
+    )
 }
 
 #[cfg(test)]
@@ -53,17 +65,71 @@ mod tests {
 
     #[test]
     fn keeps_content_words_and_rejects_noise() {
-        assert!(is_terminology_candidate(&token("勇者", PartOfSpeech::Noun)));
-        assert!(is_terminology_candidate(&token("剣", PartOfSpeech::Noun)));
-        assert!(is_terminology_candidate(&token(
-            "美しい",
-            PartOfSpeech::Adjective
-        )));
-        assert!(!is_terminology_candidate(&token(
-            "は",
-            PartOfSpeech::Unknown
-        )));
-        assert!(!is_terminology_candidate(&token("100", PartOfSpeech::Noun)));
-        assert!(!is_terminology_candidate(&token("を", PartOfSpeech::Noun)));
+        assert!(is_terminology_candidate(
+            &token("勇者", PartOfSpeech::Noun),
+            "ja"
+        ));
+        assert!(is_terminology_candidate(
+            &token("剣", PartOfSpeech::Noun),
+            "ja"
+        ));
+        assert!(is_terminology_candidate(
+            &token("美しい", PartOfSpeech::Adjective),
+            "ja"
+        ));
+        assert!(!is_terminology_candidate(
+            &token("は", PartOfSpeech::Unknown),
+            "ja"
+        ));
+        assert!(!is_terminology_candidate(
+            &token("100", PartOfSpeech::Noun),
+            "ja"
+        ));
+        assert!(!is_terminology_candidate(
+            &token("を", PartOfSpeech::Noun),
+            "ja"
+        ));
+    }
+
+    #[test]
+    fn japanese_source_rejects_ascii_and_mixed_terms() {
+        for text in [
+            "Bad",
+            "Clear",
+            "ED",
+            "EXP",
+            "End",
+            "GP",
+            "EXP獲得",
+            "HP回復量",
+        ] {
+            assert!(!is_terminology_candidate(
+                &token(text, PartOfSpeech::ProperNoun),
+                "ja"
+            ));
+        }
+
+        assert!(is_terminology_candidate(
+            &token("獲得", PartOfSpeech::Noun),
+            "ja-JP"
+        ));
+        assert!(is_terminology_candidate(
+            &token("ﾎﾟｰｼｮﾝ", PartOfSpeech::Noun),
+            "ja"
+        ));
+    }
+
+    #[test]
+    fn script_gate_is_specific_to_the_source_language() {
+        assert!(is_terminology_candidate(
+            &token("Bad", PartOfSpeech::Adjective),
+            "en"
+        ));
+        assert!(is_terminology_candidate(
+            &token("Épée", PartOfSpeech::Noun),
+            "fr"
+        ));
+        assert!(!matches_source_language("EXP", "ja"));
+        assert!(matches_source_language("EXP", "en"));
     }
 }

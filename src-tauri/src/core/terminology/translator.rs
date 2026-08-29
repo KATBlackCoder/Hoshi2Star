@@ -27,8 +27,8 @@ pub type TranslationProgressSink = Arc<dyn Fn(TerminologyTranslationProgress) + 
 #[serde(rename_all = "camelCase")]
 pub struct TranslateTerminologySummary {
     pub requested: usize,
-    pub proposed: usize,
-    pub preserved_locked: usize,
+    pub translated: usize,
+    pub scopes_written: usize,
     pub batches: usize,
 }
 
@@ -75,11 +75,17 @@ pub async fn translate_selected<P: LlmProvider>(
     entry_ids: &[String],
     target_language: &str,
     project_id: Option<&str>,
+    also_global: bool,
     profile: ResourceProfile,
     provider_id: &str,
     model: &str,
     progress_sink: Option<TranslationProgressSink>,
 ) -> Result<TranslateTerminologySummary> {
+    if also_global && project_id.is_none() {
+        return Err(TerminologyError::InvalidInput(
+            "project + global translation requires a project".to_string(),
+        ));
+    }
     let target_language = normalize_language(target_language)?;
     let unique_ids = unique_requested_ids(entry_ids)?;
     let context_limit = policy(profile).1;
@@ -161,68 +167,60 @@ pub async fn translate_selected<P: LlmProvider>(
     }
 
     let mut transaction = pool.begin().await?;
-    let mut proposed = 0;
-    let mut preserved_locked = 0;
+    let mut translated = 0;
+    let mut scopes_written = 0;
     for term in validated {
-        let existing_locked: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM terminology_translations \
-             WHERE entry_id = ? AND target_language = ? \
-             AND ((project_id = ?) OR (project_id IS NULL AND ? IS NULL)) \
-             AND review_status = 'locked')",
-        )
-        .bind(&term.id)
-        .bind(&target_language)
-        .bind(project_id)
-        .bind(project_id)
-        .fetch_one(&mut *transaction)
-        .await?;
-        if existing_locked {
-            preserved_locked += 1;
-            continue;
-        }
         let enforcement = default_enforcement(term.part_of_speech);
-        let translation_id = uuid::Uuid::new_v4().to_string();
-        let query = if project_id.is_some() {
-            "INSERT INTO terminology_translations (\
-                id, entry_id, target_language, project_id, target_text, review_status, \
-                enforcement, confidence, provider_id, model\
-             ) VALUES (?, ?, ?, ?, ?, 'proposed', ?, ?, ?, ?) \
-             ON CONFLICT(entry_id, target_language, project_id) WHERE project_id IS NOT NULL \
-             DO UPDATE SET target_text = excluded.target_text, review_status = 'proposed', \
-                enforcement = excluded.enforcement, confidence = excluded.confidence, \
-                provider_id = excluded.provider_id, model = excluded.model, updated_at = datetime('now')"
+        let scopes = if also_global {
+            vec![project_id, None]
         } else {
-            "INSERT INTO terminology_translations (\
-                id, entry_id, target_language, project_id, target_text, review_status, \
-                enforcement, confidence, provider_id, model\
-             ) VALUES (?, ?, ?, NULL, ?, 'proposed', ?, ?, ?, ?) \
-             ON CONFLICT(entry_id, target_language) WHERE project_id IS NULL \
-             DO UPDATE SET target_text = excluded.target_text, review_status = 'proposed', \
-                enforcement = excluded.enforcement, confidence = excluded.confidence, \
-                provider_id = excluded.provider_id, model = excluded.model, updated_at = datetime('now')"
+            vec![project_id]
         };
-        let mut query = sqlx::query(query)
-            .bind(translation_id)
-            .bind(&term.id)
-            .bind(&target_language);
-        if let Some(project_id) = project_id {
-            query = query.bind(project_id);
+        for scope_project_id in scopes {
+            let translation_id = uuid::Uuid::new_v4().to_string();
+            let query = if scope_project_id.is_some() {
+                "INSERT INTO terminology_translations (\
+                    id, entry_id, target_language, project_id, target_text, enforcement, \
+                    confidence, provider_id, model\
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) \
+                 ON CONFLICT(entry_id, target_language, project_id) WHERE project_id IS NOT NULL \
+                 DO UPDATE SET target_text = excluded.target_text, \
+                    enforcement = excluded.enforcement, confidence = excluded.confidence, \
+                    provider_id = excluded.provider_id, model = excluded.model, updated_at = datetime('now')"
+            } else {
+                "INSERT INTO terminology_translations (\
+                    id, entry_id, target_language, project_id, target_text, enforcement, \
+                    confidence, provider_id, model\
+                 ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?) \
+                 ON CONFLICT(entry_id, target_language) WHERE project_id IS NULL \
+                 DO UPDATE SET target_text = excluded.target_text, \
+                    enforcement = excluded.enforcement, confidence = excluded.confidence, \
+                    provider_id = excluded.provider_id, model = excluded.model, updated_at = datetime('now')"
+            };
+            let mut query = sqlx::query(query)
+                .bind(translation_id)
+                .bind(&term.id)
+                .bind(&target_language);
+            if let Some(scope_project_id) = scope_project_id {
+                query = query.bind(scope_project_id);
+            }
+            query
+                .bind(&term.target)
+                .bind(enforcement.as_str())
+                .bind(term.confidence)
+                .bind(provider_id)
+                .bind(model)
+                .execute(&mut *transaction)
+                .await?;
+            scopes_written += 1;
         }
-        query
-            .bind(&term.target)
-            .bind(enforcement.as_str())
-            .bind(term.confidence)
-            .bind(provider_id)
-            .bind(model)
-            .execute(&mut *transaction)
-            .await?;
-        proposed += 1;
+        translated += 1;
     }
     transaction.commit().await?;
     Ok(TranslateTerminologySummary {
         requested: total,
-        proposed,
-        preserved_locked,
+        translated,
+        scopes_written,
         batches,
     })
 }
@@ -473,7 +471,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn japanese_terms_become_proposals_for_english_and_french() {
+    async fn japanese_terms_become_usable_translations_for_english_and_french() {
         for (language, prefix) in [("en", "Term"), ("fr", "Terme")] {
             let (_directory, pool, ids) = pool_with_entries(2).await;
             let provider = MockProvider::valid(prefix);
@@ -483,6 +481,7 @@ mod tests {
                 &ids,
                 language,
                 None,
+                false,
                 ResourceProfile::Balanced,
                 "mock",
                 "mock-model",
@@ -490,22 +489,16 @@ mod tests {
             )
             .await
             .unwrap();
-            assert_eq!((summary.proposed, summary.batches), (2, 1));
-            let rows: Vec<(String, String, String)> = sqlx::query_as(
-                "SELECT review_status, enforcement, target_language \
+            assert_eq!((summary.translated, summary.batches), (2, 1));
+            let rows: Vec<(String, String)> = sqlx::query_as(
+                "SELECT enforcement, target_language \
                  FROM terminology_translations ORDER BY entry_id",
             )
             .fetch_all(&pool)
             .await
             .unwrap();
-            assert_eq!(
-                rows[0],
-                ("proposed".into(), "preferred".into(), language.into())
-            );
-            assert_eq!(
-                rows[1],
-                ("proposed".into(), "contextual".into(), language.into())
-            );
+            assert_eq!(rows[0], ("preferred".into(), language.into()));
+            assert_eq!(rows[1], ("contextual".into(), language.into()));
         }
     }
 
@@ -533,6 +526,7 @@ mod tests {
                 &ids,
                 "en",
                 None,
+                false,
                 ResourceProfile::Balanced,
                 "mock",
                 "model",
@@ -549,12 +543,48 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn profiles_bound_sequential_batches_and_locked_rows_survive() {
+    async fn project_and_global_scope_writes_both_rows_atomically() {
+        let (_directory, pool, ids) = pool_with_entries(1).await;
+        sqlx::query(
+            "INSERT INTO projects (id, name, engine, game_path, source_language, target_language) \
+             VALUES ('p1', 'Game', 'mv_mz', '/tmp/game', 'ja', 'en')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let summary = translate_selected(
+            &pool,
+            &MockProvider::valid("Term"),
+            &ids,
+            "en",
+            Some("p1"),
+            true,
+            ResourceProfile::Fast,
+            "mock",
+            "model",
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!((summary.translated, summary.scopes_written), (1, 2));
+        let scopes: Vec<Option<String>> = sqlx::query_scalar(
+            "SELECT project_id FROM terminology_translations \
+             WHERE entry_id = ? ORDER BY project_id IS NULL",
+        )
+        .bind(&ids[0])
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(scopes, vec![Some("p1".into()), None]);
+    }
+
+    #[tokio::test]
+    async fn profiles_bound_sequential_batches_and_explicit_retranslation_overwrites() {
         let (_directory, pool, ids) = pool_with_entries(21).await;
         sqlx::query(
             "INSERT INTO terminology_translations (\
-                id, entry_id, target_language, project_id, target_text, review_status, enforcement, confidence\
-             ) VALUES ('locked', ?, 'en', NULL, 'Locked term', 'locked', 'required', 1.0)",
+                id, entry_id, target_language, project_id, target_text, enforcement, confidence\
+             ) VALUES ('existing', ?, 'en', NULL, 'Old term', 'required', 1.0)",
         )
         .bind(&ids[0])
         .execute(&pool)
@@ -567,6 +597,7 @@ mod tests {
             &ids,
             "en",
             None,
+            false,
             ResourceProfile::Balanced,
             "mock",
             "model",
@@ -575,13 +606,14 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(provider.batch_sizes.lock().unwrap().as_slice(), &[20, 1]);
-        assert_eq!((summary.proposed, summary.preserved_locked), (20, 1));
-        let locked: (String, String) = sqlx::query_as(
-            "SELECT target_text, review_status FROM terminology_translations WHERE id = 'locked'",
+        assert_eq!((summary.translated, summary.scopes_written), (21, 21));
+        let target: String = sqlx::query_scalar(
+            "SELECT target_text FROM terminology_translations WHERE entry_id = ? AND project_id IS NULL",
         )
+        .bind(&ids[0])
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(locked, ("Locked term".into(), "locked".into()));
+        assert_eq!(target, "Term entry-000");
     }
 }

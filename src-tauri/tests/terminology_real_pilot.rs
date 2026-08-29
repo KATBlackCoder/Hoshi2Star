@@ -15,7 +15,7 @@ use hoshi2star_lib::core::qa::{self, QaSemanticContext};
 use hoshi2star_lib::core::terminology::repository;
 use hoshi2star_lib::core::terminology::resolver;
 use hoshi2star_lib::core::terminology::translator;
-use hoshi2star_lib::core::terminology::types::{Enforcement, ReviewStatus, UpsertTranslationInput};
+use hoshi2star_lib::core::terminology::types::{Enforcement, UpsertTranslationInput};
 use hoshi2star_lib::db;
 use hoshi2star_lib::domain::types::ResourceProfile;
 use hoshi2star_lib::llm::provider::{
@@ -362,6 +362,7 @@ async fn standgirl_ollama_translates_terms_and_reports_exact_prompt_tokens() {
             &entry_ids,
             target_language,
             Some(&project_id),
+            false,
             ResourceProfile::Fast,
             "ollama",
             &model,
@@ -369,7 +370,7 @@ async fn standgirl_ollama_translates_terms_and_reports_exact_prompt_tokens() {
         )
         .await
         .unwrap();
-        assert_eq!((summary.requested, summary.proposed), (3, 3));
+        assert_eq!((summary.requested, summary.translated), (3, 3));
         let term_call = provider.drain_metrics().into_iter().next().unwrap();
         assert!(term_call.success);
         assert!(term_call.prompt_tokens.is_some());
@@ -390,19 +391,6 @@ async fn standgirl_ollama_translates_terms_and_reports_exact_prompt_tokens() {
         .await
         .unwrap();
         assert_eq!(translated_terms.len(), 3);
-        let review_statuses: Vec<String> = sqlx::query_scalar(
-            "SELECT review_status FROM terminology_translations \
-             WHERE project_id = ? AND target_language = ? AND entry_id IN (?, ?, ?)",
-        )
-        .bind(&project_id)
-        .bind(target_language)
-        .bind(&entry_ids[0])
-        .bind(&entry_ids[1])
-        .bind(&entry_ids[2])
-        .fetch_all(&state.db)
-        .await
-        .unwrap();
-        assert_eq!(review_statuses, vec!["proposed"; 3]);
         let required_target: String = sqlx::query_scalar(
             "SELECT target_text FROM terminology_translations \
              WHERE entry_id = ? AND target_language = ? AND project_id = ?",
@@ -420,7 +408,6 @@ async fn standgirl_ollama_translates_terms_and_reports_exact_prompt_tokens() {
                 target_language: target_language.into(),
                 project_id: Some(project_id.clone()),
                 target_text: required_target.clone(),
-                review_status: ReviewStatus::Locked,
                 enforcement: Enforcement::Required,
                 confidence: 1.0,
                 provider_id: Some("ollama".into()),

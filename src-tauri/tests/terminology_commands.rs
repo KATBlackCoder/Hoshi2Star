@@ -4,13 +4,13 @@ use std::time::Duration;
 
 use hoshi2star_lib::commands::terminology::{
     archive_terminology_entry, cancel_terminology_scan, create_terminology_entry,
-    get_terminology_stats, list_terminology, start_terminology_scan_with_app,
-    upsert_terminology_translation, SCAN_DONE_EVENT,
+    delete_terminology_entries, get_terminology_stats, list_terminology,
+    start_terminology_scan_with_app, upsert_terminology_translation, SCAN_DONE_EVENT,
 };
 use hoshi2star_lib::core::terminology::analyzer::{LinguisticToken, MorphologicalAnalyzer};
 use hoshi2star_lib::core::terminology::service::TerminologyService;
 use hoshi2star_lib::core::terminology::types::{
-    CreateTermInput, Enforcement, EntryStatus, PartOfSpeech, ReviewStatus, TerminologyQuery,
+    CreateTermInput, Enforcement, EntryStatus, PartOfSpeech, TerminologyQuery,
     UpsertTranslationInput,
 };
 use hoshi2star_lib::core::terminology::Result;
@@ -123,7 +123,6 @@ async fn commands_validate_pagination_and_apply_project_translation_override() {
             target_language: "en".into(),
             project_id: None,
             target_text: "Hero".into(),
-            review_status: ReviewStatus::Approved,
             enforcement: Enforcement::Required,
             confidence: 1.0,
             provider_id: None,
@@ -140,7 +139,6 @@ async fn commands_validate_pagination_and_apply_project_translation_override() {
             target_language: "en".into(),
             project_id: Some("p1".into()),
             target_text: "Champion".into(),
-            review_status: ReviewStatus::Locked,
             enforcement: Enforcement::Required,
             confidence: 1.0,
             provider_id: None,
@@ -170,7 +168,8 @@ async fn commands_validate_pagination_and_apply_project_translation_override() {
     let stats = get_terminology_stats("ja".into(), "en".into(), Some("p1".into()), app.state())
         .await
         .unwrap();
-    assert_eq!(stats.locked_translations, 1);
+    assert_eq!(stats.project_translations, 1);
+    assert_eq!(stats.global_translations, 1);
 
     let invalid = list_terminology(
         TerminologyQuery {
@@ -185,6 +184,78 @@ async fn commands_validate_pagination_and_apply_project_translation_override() {
     archive_terminology_entry(entry.id, app.state())
         .await
         .unwrap();
+}
+
+#[tokio::test]
+async fn bulk_delete_is_atomic_and_cascades_related_terminology() {
+    let (_directory, app) = mock_app(0).await;
+    seed_project(&app, 0).await;
+    let first = create_terminology_entry(
+        CreateTermInput {
+            source_language: "ja".into(),
+            canonical_text: "勇者".into(),
+            reading: None,
+            part_of_speech: PartOfSpeech::Noun,
+            semantic_type: "general".into(),
+            sense_key: String::new(),
+        },
+        app.state(),
+    )
+    .await
+    .unwrap();
+    let second = create_terminology_entry(
+        CreateTermInput {
+            source_language: "ja".into(),
+            canonical_text: "魔王".into(),
+            reading: None,
+            part_of_speech: PartOfSpeech::Noun,
+            semantic_type: "general".into(),
+            sense_key: String::new(),
+        },
+        app.state(),
+    )
+    .await
+    .unwrap();
+    upsert_terminology_translation(
+        UpsertTranslationInput {
+            entry_id: first.id.clone(),
+            target_language: "en".into(),
+            project_id: None,
+            target_text: "Hero".into(),
+            enforcement: Enforcement::Required,
+            confidence: 1.0,
+            provider_id: None,
+            model: None,
+            accepted_variants: Vec::new(),
+        },
+        app.state(),
+    )
+    .await
+    .unwrap();
+
+    let deleted = delete_terminology_entries(
+        vec![first.id.clone(), second.id.clone(), first.id],
+        app.state(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(deleted, 2);
+
+    let entry_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM terminology_entries")
+        .fetch_one(&app.state::<AppState>().db)
+        .await
+        .unwrap();
+    let translation_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM terminology_translations")
+            .fetch_one(&app.state::<AppState>().db)
+            .await
+            .unwrap();
+    assert_eq!((entry_count, translation_count), (0, 0));
+
+    let empty = delete_terminology_entries(Vec::new(), app.state())
+        .await
+        .unwrap_err();
+    assert!(empty.contains("at least one terminology entry"));
 }
 
 #[tokio::test]

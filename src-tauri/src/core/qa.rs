@@ -23,7 +23,7 @@
 
 use crate::core::terminology::{
     resolver::QaTerminologyRule,
-    types::{Enforcement, PartOfSpeech, ReviewStatus},
+    types::{Enforcement, PartOfSpeech},
 };
 use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
 use serde::{Deserialize, Serialize};
@@ -232,7 +232,7 @@ fn check_terminology(target: &str, rules: &[QaTerminologyRule]) -> Vec<QaError> 
 }
 
 fn terminology_severity(rule: &QaTerminologyRule) -> QaSeverity {
-    if rule.review_status == ReviewStatus::Proposed || rule.enforcement == Enforcement::Contextual {
+    if rule.enforcement == Enforcement::Contextual {
         return QaSeverity::Info;
     }
     let stable_entity = matches!(
@@ -257,10 +257,7 @@ fn terminology_severity(rule: &QaTerminologyRule) -> QaSeverity {
             | "game_title"
             | "object"
     );
-    if rule.review_status == ReviewStatus::Locked
-        && rule.enforcement == Enforcement::Required
-        && stable_entity
-    {
+    if rule.enforcement == Enforcement::Required && stable_entity {
         QaSeverity::Critical
     } else {
         QaSeverity::Warning
@@ -280,7 +277,6 @@ fn legacy_rules(source: &str, terms: &[(String, String)]) -> Vec<QaTerminologyRu
                     target: target_term.clone(),
                     semantic_type: "general".to_string(),
                     part_of_speech: PartOfSpeech::Unknown,
-                    review_status: ReviewStatus::Approved,
                     enforcement: Enforcement::Preferred,
                     accepted_targets: Vec::new(),
                 })
@@ -951,30 +947,21 @@ mod tests {
         assert_eq!(result.score, 0);
     }
 
-    fn rich_rule(
-        review_status: ReviewStatus,
-        enforcement: Enforcement,
-        part_of_speech: PartOfSpeech,
-    ) -> QaTerminologyRule {
+    fn rich_rule(enforcement: Enforcement, part_of_speech: PartOfSpeech) -> QaTerminologyRule {
         QaTerminologyRule {
             entry_id: "entry-1".to_string(),
             source: "勇者".to_string(),
             target: "Hero".to_string(),
             semantic_type: "character".to_string(),
             part_of_speech,
-            review_status,
             enforcement,
             accepted_targets: vec!["The Hero".to_string()],
         }
     }
 
     #[test]
-    fn locked_required_entity_is_critical_and_accepts_variants() {
-        let rule = rich_rule(
-            ReviewStatus::Locked,
-            Enforcement::Required,
-            PartOfSpeech::ProperNoun,
-        );
+    fn required_entity_is_critical_and_accepts_variants() {
+        let rule = rich_rule(Enforcement::Required, PartOfSpeech::ProperNoun);
         let mismatch = check_with_rules("勇者", "Champion", std::slice::from_ref(&rule), "mv_mz");
         assert!(matches!(
             mismatch.errors.as_slice(),
@@ -992,27 +979,19 @@ mod tests {
     }
 
     #[test]
-    fn proposed_contextual_and_inflected_terms_never_block() {
-        let proposed = rich_rule(
-            ReviewStatus::Proposed,
-            Enforcement::Required,
-            PartOfSpeech::ProperNoun,
-        );
-        let verb = rich_rule(
-            ReviewStatus::Locked,
-            Enforcement::Required,
-            PartOfSpeech::Verb,
-        );
-        let proposed_result = check_with_rules("勇者", "Champion", &[proposed], "mv_mz");
+    fn contextual_and_inflected_terms_never_block() {
+        let contextual = rich_rule(Enforcement::Contextual, PartOfSpeech::ProperNoun);
+        let verb = rich_rule(Enforcement::Required, PartOfSpeech::Verb);
+        let contextual_result = check_with_rules("勇者", "Champion", &[contextual], "mv_mz");
         let verb_result = check_with_rules("勇者", "Champion", &[verb], "mv_mz");
         assert!(matches!(
-            proposed_result.errors.as_slice(),
+            contextual_result.errors.as_slice(),
             [QaError::TerminologyMismatch {
                 severity: QaSeverity::Info,
                 ..
             }]
         ));
-        assert!(!proposed_result.has_critical_errors());
+        assert!(!contextual_result.has_critical_errors());
         assert!(matches!(
             verb_result.errors.as_slice(),
             [QaError::TerminologyMismatch {

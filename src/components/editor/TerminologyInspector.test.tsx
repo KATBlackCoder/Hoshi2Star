@@ -28,7 +28,6 @@ describe("TerminologyInspector", () => {
           target: "Hero",
           semanticType: "character",
           partOfSpeech: "proper_noun",
-          reviewStatus: "locked",
           enforcement: "required",
           acceptedTargets: ["The Hero"],
         },

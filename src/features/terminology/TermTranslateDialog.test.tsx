@@ -27,6 +27,8 @@ const entries: TerminologyEntry[] = [
     confidence: 1,
     occurrenceCount: 2,
     translation: null,
+    hasProjectTranslation: false,
+    hasGlobalTranslation: false,
     contexts: [],
   },
   {
@@ -47,22 +49,23 @@ const entries: TerminologyEntry[] = [
       targetLanguage: "en",
       projectId: null,
       targetText: "Sword",
-      reviewStatus: "approved",
       enforcement: "preferred",
       confidence: 1,
       providerId: null,
       model: null,
       acceptedVariants: [],
     },
+    hasProjectTranslation: false,
+    hasGlobalTranslation: true,
     contexts: [],
   },
 ];
 
-it("estimates tokens and sends only untranslated terms as proposals", async () => {
+it("estimates tokens and sends only untranslated terms for immediate use", async () => {
   let doneHandler:
     | ((payload: {
         jobId: string;
-        summary: { proposed: number } | null;
+        summary: { translated: number; scopesWritten: number } | null;
         error: string | null;
       }) => void)
     | undefined;
@@ -92,13 +95,21 @@ it("estimates tokens and sends only untranslated terms as proposals", async () =
   expect(screen.getByText(/≈ \d+ tokens/)).toBeInTheDocument();
   expect(screen.getByText("qwen-test")).toBeInTheDocument();
   await userEvent.click(
-    screen.getByRole("button", { name: "Créer les propositions" }),
+    screen.getByRole("button", { name: "Traduire" }),
   );
   await waitFor(() =>
     expect(translate).toHaveBeenCalledWith(
-      expect.objectContaining({ entryIds: ["new"], targetLanguage: "en" }),
+      expect.objectContaining({
+        entryIds: ["new"],
+        targetLanguage: "en",
+        scope: "project",
+      }),
     ),
   );
-  doneHandler?.({ jobId: "job", summary: { proposed: 1 }, error: null });
+  doneHandler?.({
+    jobId: "job",
+    summary: { translated: 1, scopesWritten: 1 },
+    error: null,
+  });
   expect(onDone).toHaveBeenCalledOnce();
 });

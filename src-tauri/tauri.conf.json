@@ -15,7 +15,9 @@
       {
         "title": "Hoshiyomi — 星詠み工房",
         "width": 1600,
-        "height": 900
+        "height": 900,
+        "minWidth": 1450,
+        "minHeight": 760
       }
     ],
     "security": {

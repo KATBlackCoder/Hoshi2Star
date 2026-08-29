@@ -5,6 +5,7 @@
 //! dedicated adapters and never leak into this module's repository queries.
 
 pub mod analyzer;
+pub mod language;
 pub mod normalize;
 pub mod repository;
 pub mod resolver;

@@ -187,7 +187,6 @@ async fn validate_patch_schema(pool: &SqlitePool) -> Result<(), sqlx::Error> {
                 "target_language",
                 "project_id",
                 "target_text",
-                "review_status",
                 "enforcement",
             ],
         ),
@@ -437,7 +436,7 @@ mod tests {
                 .fetch_all(&upgraded)
                 .await
                 .unwrap();
-        assert_eq!(versions, (1..=8).collect::<Vec<_>>());
+        assert_eq!(versions, (1..=9).collect::<Vec<_>>());
     }
 
     /// A write failure inside the repair must roll back only that transaction,
@@ -619,7 +618,7 @@ mod tests {
                 .fetch_all(&pool)
                 .await
                 .unwrap();
-        assert_eq!(versions, (1..=8).collect::<Vec<_>>());
+        assert_eq!(versions, (1..=9).collect::<Vec<_>>());
     }
 
     /// Existing inserts remain compatible and receive the historical language
@@ -665,7 +664,7 @@ mod tests {
         sqlx::query(
             "INSERT INTO _sqlx_migrations \
              (version, description, success, checksum, execution_time) \
-             VALUES (9, 'future test migration', TRUE, X'010203', 1)",
+             VALUES (10, 'future test migration', TRUE, X'010203', 1)",
         )
         .execute(&pool)
         .await
@@ -679,7 +678,7 @@ mod tests {
                 .await
                 .unwrap();
         let future_checksum: Vec<u8> =
-            sqlx::query_scalar("SELECT checksum FROM _sqlx_migrations WHERE version = 9")
+            sqlx::query_scalar("SELECT checksum FROM _sqlx_migrations WHERE version = 10")
                 .fetch_one(&reopened)
                 .await
                 .unwrap();

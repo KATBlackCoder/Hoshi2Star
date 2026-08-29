@@ -17,6 +17,8 @@ interface TerminologyUiState {
   setScope: (value: Scope) => void;
   setPage: (value: number) => void;
   toggleSelected: (id: string) => void;
+  setPageSelection: (ids: string[], selected: boolean) => void;
+  removeSelected: (ids: string[]) => void;
   clearSelection: () => void;
 }
 export const useTerminologyUiStore = create<TerminologyUiState>((set) => ({
@@ -39,5 +41,21 @@ export const useTerminologyUiStore = create<TerminologyUiState>((set) => ({
         ? state.selectedIds.filter((value) => value !== id)
         : [...state.selectedIds, id],
     })),
+  setPageSelection: (ids, selected) =>
+    set((state) => {
+      const pageIds = new Set(ids);
+      return {
+        selectedIds: selected
+          ? [...new Set([...state.selectedIds, ...ids])]
+          : state.selectedIds.filter((id) => !pageIds.has(id)),
+      };
+    }),
+  removeSelected: (ids) =>
+    set((state) => {
+      const removedIds = new Set(ids);
+      return {
+        selectedIds: state.selectedIds.filter((id) => !removedIds.has(id)),
+      };
+    }),
   clearSelection: () => set({ selectedIds: [] }),
 }));

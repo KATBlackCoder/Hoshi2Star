@@ -5,6 +5,8 @@ import {
   BookOpenText,
   ChevronLeft,
   ChevronRight,
+  Globe2,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -64,7 +66,19 @@ export function TerminologyWorkspace() {
   );
   const [scanProgress, setScanProgress] =
     useState<TerminologyScanProgress | null>(null);
-  const [translateOpen, setTranslateOpen] = useState(false);
+  const [translateEntry, setTranslateEntry] = useState<
+    TerminologyEntry | null | undefined
+  >(undefined);
+  const [deleteRequest, setDeleteRequest] = useState<{
+    ids: string[];
+    term?: string;
+    bulk?: boolean;
+  } | null>(null);
+  const [globalizeRequest, setGlobalizeRequest] = useState<{
+    mode: "row" | "selected" | "filtered";
+    ids: string[];
+    term?: string;
+  } | null>(null);
 
   const queryInput = {
     sourceLanguage,
@@ -126,7 +140,7 @@ export function TerminologyWorkspace() {
           semanticType: value.semanticType,
           senseKey: "",
         });
-      await terminologyApi.update({
+      const updated = await terminologyApi.update({
         id: editorEntry.id,
         canonicalText: value.canonicalText,
         reading: value.reading,
@@ -135,12 +149,12 @@ export function TerminologyWorkspace() {
         senseKey: editorEntry.senseKey,
         status: editorEntry.status,
       });
+      if (!value.targetText.trim()) return updated;
       return terminologyApi.upsertTranslation({
         entryId: editorEntry.id,
         targetLanguage,
         projectId,
         targetText: value.targetText,
-        reviewStatus: value.reviewStatus,
         enforcement: value.enforcement,
         confidence: 1,
         providerId: null,
@@ -161,6 +175,55 @@ export function TerminologyWorkspace() {
       setArchiveEntry(null);
       await invalidate();
       toast.success(t("terminology.archivedDone"));
+    },
+    onError: (error) => toast.error(String(error)),
+  });
+  const deleteEntries = useMutation({
+    mutationFn: (entryIds: string[]) => terminologyApi.deleteEntries(entryIds),
+    onSuccess: async (deleted, entryIds) => {
+      setDeleteRequest(null);
+      ui.removeSelected(entryIds);
+      const visibleEntries = list.data?.items ?? [];
+      if (
+        ui.page > 0 &&
+        visibleEntries.length > 0 &&
+        visibleEntries.every((entry) => entryIds.includes(entry.id))
+      ) {
+        ui.setPage(ui.page - 1);
+      }
+      await invalidate();
+      toast.success(t("terminology.deletedDone", { count: deleted }));
+    },
+    onError: (error) => toast.error(String(error)),
+  });
+  const globalize = useMutation({
+    mutationFn: async (request: NonNullable<typeof globalizeRequest>) => {
+      if (!activeProject) throw new Error(t("terminology.chooseProject"));
+      if (request.mode === "filtered") {
+        return terminologyApi.globalizeFiltered({
+          ...queryInput,
+          projectId: activeProject.id,
+          page: 0,
+        });
+      }
+      return terminologyApi.globalize({
+        entryIds: request.ids,
+        targetLanguage,
+        projectId: activeProject.id,
+      });
+    },
+    onSuccess: async (summary) => {
+      setGlobalizeRequest(null);
+      ui.clearSelection();
+      await invalidate();
+      toast.success(
+        t("terminology.globalizeDone", {
+          copied: summary.copied,
+          same: summary.alreadyGlobal,
+          conflicts: summary.conflicts,
+          skipped: summary.skipped,
+        }),
+      );
     },
     onError: (error) => toast.error(String(error)),
   });
@@ -223,14 +286,12 @@ export function TerminologyWorkspace() {
               value={stats.data.untranslatedEntries}
             />
             <Stat
-              label={t("terminology.proposed")}
-              value={stats.data.proposedTranslations}
+              label={t("terminology.project")}
+              value={stats.data.projectTranslations}
             />
             <Stat
-              label={t("terminology.validated")}
-              value={
-                stats.data.approvedTranslations + stats.data.lockedTranslations
-              }
+              label={t("terminology.global")}
+              value={stats.data.globalTranslations}
             />
           </dl>
         )}
@@ -263,7 +324,7 @@ export function TerminologyWorkspace() {
         scanning={Boolean(scanProgress)}
         onScan={() => void startScan()}
         onCreate={() => setEditorEntry(null)}
-        onTranslate={() => setTranslateOpen(true)}
+        onTranslate={() => setTranslateEntry(null)}
       />
       {scanProgress && (
         <ScanProgress
@@ -286,8 +347,23 @@ export function TerminologyWorkspace() {
           entries={list.data.items}
           selectedIds={ui.selectedIds}
           onToggleSelected={ui.toggleSelected}
+          onTogglePage={ui.setPageSelection}
+          onTranslate={setTranslateEntry}
           onEdit={setEditorEntry}
+          onGlobalize={(entry) =>
+            setGlobalizeRequest({
+              mode: "row",
+              ids: [entry.id],
+              term: entry.canonicalText,
+            })
+          }
           onArchive={setArchiveEntry}
+          onDelete={(entry) =>
+            setDeleteRequest({
+              ids: [entry.id],
+              term: entry.canonicalText,
+            })
+          }
         />
       ) : (
         <WorkspaceState
@@ -302,12 +378,63 @@ export function TerminologyWorkspace() {
         />
       )}
       <footer className="flex min-w-0 flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span className="tabular-nums">
-          {t("terminology.countSelected", {
-            count: list.data?.total ?? 0,
-            selected: ui.selectedIds.length,
-          })}
-        </span>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <span className="tabular-nums">
+            {t("terminology.countSelected", {
+              count: list.data?.total ?? 0,
+              selected: ui.selectedIds.length,
+            })}
+          </span>
+          {ui.selectedIds.length > 0 && (
+            <>
+              {activeProject && effectiveScope === "project" && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={globalize.isPending}
+                  onClick={() =>
+                    setGlobalizeRequest({
+                      mode: "selected",
+                      ids: [...ui.selectedIds],
+                    })
+                  }
+                >
+                  <Globe2 />
+                  {t("terminology.globalizeSelected", {
+                    count: ui.selectedIds.length,
+                  })}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={deleteEntries.isPending}
+                onClick={() =>
+                  setDeleteRequest({ ids: [...ui.selectedIds], bulk: true })
+                }
+              >
+                <Trash2 />
+                {t("terminology.deleteSelected", {
+                  count: ui.selectedIds.length,
+                })}
+              </Button>
+            </>
+          )}
+          {activeProject &&
+            effectiveScope === "project" &&
+            (stats.data?.projectTranslations ?? 0) > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={globalize.isPending}
+                onClick={() =>
+                  setGlobalizeRequest({ mode: "filtered", ids: [] })
+                }
+              >
+                <Globe2 /> {t("terminology.globalizeFiltered")}
+              </Button>
+            )}
+        </div>
         <div className="flex items-center gap-2">
           <Button
             size="icon-sm"
@@ -345,21 +472,60 @@ export function TerminologyWorkspace() {
           saving={save.isPending}
         />
       )}
-      {translateOpen && (
+      {translateEntry !== undefined && (
         <TermTranslateDialog
           open
-          entries={list.data?.items ?? []}
-          selectedIds={ui.selectedIds}
+          entries={translateEntry ? [translateEntry] : (list.data?.items ?? [])}
+          selectedIds={translateEntry ? [translateEntry.id] : ui.selectedIds}
           targetLanguage={targetLanguage}
-          projectId={projectId}
+          projectId={activeProject?.id ?? null}
+          defaultScope={effectiveScope}
           providerConfig={providerConfig}
-          onOpenChange={setTranslateOpen}
+          onOpenChange={(open) => {
+            if (!open) setTranslateEntry(undefined);
+          }}
           onDone={() => {
             ui.clearSelection();
             void invalidate();
           }}
         />
       )}
+      <AlertDialog
+        open={Boolean(globalizeRequest)}
+        onOpenChange={(open) => {
+          if (!open && !globalize.isPending) setGlobalizeRequest(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("terminology.globalizeTitle")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("terminology.globalizeDescription", {
+                scope:
+                  globalizeRequest?.mode === "filtered"
+                    ? t("terminology.currentFilters")
+                    : globalizeRequest?.term ??
+                      t("terminology.selectedCount", {
+                        count: globalizeRequest?.ids.length ?? 0,
+                      }),
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={globalize.isPending}>
+              {t("terminology.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={globalize.isPending}
+              onClick={() => globalizeRequest && globalize.mutate(globalizeRequest)}
+            >
+              {t("terminology.globalizeConfirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={Boolean(archiveEntry)}
         onOpenChange={(open) => {
@@ -382,6 +548,47 @@ export function TerminologyWorkspace() {
               onClick={() => archiveEntry && archive.mutate(archiveEntry.id)}
             >
               {t("terminology.archived")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={Boolean(deleteRequest)}
+        onOpenChange={(open) => {
+          if (!open && !deleteEntries.isPending) setDeleteRequest(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t(
+                deleteRequest?.bulk
+                  ? "terminology.deleteManyTitle"
+                  : "terminology.deleteTitle",
+              )}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteRequest?.bulk
+                ? t("terminology.deleteManyDescription", {
+                    count: deleteRequest?.ids.length ?? 0,
+                  })
+                : t("terminology.deleteDescription", {
+                    term: deleteRequest?.term ?? "",
+                  })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteEntries.isPending}>
+              {t("terminology.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={deleteEntries.isPending}
+              onClick={() =>
+                deleteRequest && deleteEntries.mutate(deleteRequest.ids)
+              }
+            >
+              {t("terminology.deleteConfirm")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

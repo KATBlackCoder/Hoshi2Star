@@ -891,8 +891,8 @@ mod tests {
                 entry_id, project_id, segment_id, surface_text, engine_kind, occurrence_count\
              ) VALUES ('e1','p1','s1','ハルカ','dialogue',1); \
              INSERT INTO terminology_translations (\
-                id, entry_id, target_language, target_text, review_status, enforcement, confidence\
-             ) VALUES ('t1','e1','en','Haruka','approved','preferred',1.0)",
+                id, entry_id, target_language, target_text, enforcement, confidence\
+             ) VALUES ('t1','e1','en','Haruka','preferred',1.0)",
         )
         .execute(pool)
         .await

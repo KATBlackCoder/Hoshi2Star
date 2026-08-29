@@ -32,7 +32,6 @@ pub(super) async fn export_terms(
                       candidate.updated_at DESC LIMIT 1\
          ) \
          WHERE entry.status = 'active' \
-           AND translation.review_status IN ('approved', 'locked') \
            AND trim(translation.target_text) != '' \
            AND (translation.project_id = ? OR EXISTS (\
                SELECT 1 FROM terminology_occurrences occurrence \
@@ -65,7 +64,6 @@ struct ExistingPackTerm {
     semantic_type: String,
     project_id: Option<String>,
     target_text: Option<String>,
-    review_status: Option<String>,
 }
 
 pub(super) async fn preview_import(
@@ -77,7 +75,7 @@ pub(super) async fn preview_import(
     let (source_language, target_language) = split_lang_pair(lang_pair)?;
     let rows: Vec<ExistingPackTerm> = sqlx::query_as(
         "SELECT entry.id AS entry_id, entry.normalized_text, entry.semantic_type, \
-                translation.project_id, translation.target_text, translation.review_status \
+                translation.project_id, translation.target_text \
          FROM terminology_entries entry \
          LEFT JOIN terminology_translations translation \
            ON translation.entry_id = entry.id AND translation.target_language = ? \
@@ -99,7 +97,7 @@ pub(super) async fn preview_import(
             .push(row);
     }
 
-    let (mut creates, mut updates, mut conflicts) = (0_u32, 0_u32, 0_u32);
+    let (mut creates, mut updates, conflicts) = (0_u32, 0_u32, 0_u32);
     for term in non_empty_terms(terms) {
         let normalized = normalize_term(&term.source_text, source_language)
             .map_err(|error| error.to_string())?;
@@ -121,15 +119,13 @@ pub(super) async fn preview_import(
             });
         match effective {
             Some(current) if current.target_text.as_deref() == Some(term.target_text.trim()) => {}
-            Some(current) if current.review_status.as_deref() == Some("locked") => conflicts += 1,
             _ => updates += 1,
         }
     }
     Ok((creates, updates, conflicts))
 }
 
-/// Import the historical v1 payload as project-scoped approved terminology.
-/// Locked effective translations are never overwritten or masked.
+/// Import the historical v1 payload as immediately usable project terminology.
 pub(super) async fn import_terms(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     project_id: &str,
@@ -137,7 +133,7 @@ pub(super) async fn import_terms(
     terms: &[PackGlossaryTerm],
 ) -> Result<(u32, u32, u32), String> {
     let (source_language, target_language) = split_lang_pair(lang_pair)?;
-    let (mut added, mut updated, mut conflicts) = (0_u32, 0_u32, 0_u32);
+    let (mut added, mut updated, conflicts) = (0_u32, 0_u32, 0_u32);
     for term in non_empty_terms(terms) {
         let normalized_text = normalize_term(&term.source_text, source_language)
             .map_err(|error| error.to_string())?;
@@ -172,8 +168,8 @@ pub(super) async fn import_terms(
             .map_err(|error| error.to_string())?;
         }
 
-        let effective: Option<(String, String, String, Option<String>)> = sqlx::query_as(
-            "SELECT id, target_text, review_status, project_id \
+        let effective: Option<(String, String, Option<String>)> = sqlx::query_as(
+            "SELECT id, target_text, project_id \
              FROM terminology_translations \
              WHERE entry_id = ? AND target_language = ? \
                AND (project_id = ? OR project_id IS NULL) \
@@ -188,15 +184,8 @@ pub(super) async fn import_terms(
         .map_err(|error| error.to_string())?;
         if effective
             .as_ref()
-            .is_some_and(|(_, target, _, _)| target == term.target_text.trim())
+            .is_some_and(|(_, target, _)| target == term.target_text.trim())
         {
-            continue;
-        }
-        if effective
-            .as_ref()
-            .is_some_and(|(_, _, review, _)| review == "locked")
-        {
-            conflicts += 1;
             continue;
         }
 
@@ -213,7 +202,7 @@ pub(super) async fn import_terms(
         if let Some(translation_id) = project_translation {
             sqlx::query(
                 "UPDATE terminology_translations SET target_text = ?, \
-                    review_status = 'approved', enforcement = 'preferred', confidence = 1.0, \
+                    enforcement = 'preferred', confidence = 1.0, \
                     provider_id = NULL, model = NULL, updated_at = datetime('now') WHERE id = ?",
             )
             .bind(term.target_text.trim())
@@ -226,8 +215,8 @@ pub(super) async fn import_terms(
             sqlx::query(
                 "INSERT INTO terminology_translations (\
                     id, entry_id, target_language, project_id, target_text, \
-                    review_status, enforcement, confidence\
-                 ) VALUES (?, ?, ?, ?, ?, 'approved', 'preferred', 1.0)",
+                    enforcement, confidence\
+                 ) VALUES (?, ?, ?, ?, ?, 'preferred', 1.0)",
             )
             .bind(uuid::Uuid::new_v4().to_string())
             .bind(&entry_id)

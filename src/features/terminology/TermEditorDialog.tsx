@@ -13,7 +13,6 @@ import type {
   PartOfSpeech,
   TerminologyEnforcement,
   TerminologyEntry,
-  TerminologyReviewStatus,
 } from "@/lib/types";
 import { useTranslation } from "react-i18next";
 
@@ -23,7 +22,6 @@ export interface TermEditorValue {
   partOfSpeech: PartOfSpeech;
   semanticType: string;
   targetText: string;
-  reviewStatus: TerminologyReviewStatus;
   enforcement: TerminologyEnforcement;
 }
 
@@ -56,16 +54,10 @@ export function TermEditorDialog({
   const [targetText, setTargetText] = useState(
     entry?.translation?.targetText ?? "",
   );
-  const [reviewStatus, setReviewStatus] = useState<TerminologyReviewStatus>(
-    entry?.translation?.reviewStatus ?? "approved",
-  );
   const [enforcement, setEnforcement] = useState<TerminologyEnforcement>(
     entry?.translation?.enforcement ?? "preferred",
   );
-  const valid =
-    canonicalText.trim() &&
-    semanticType.trim() &&
-    (!entry || targetText.trim());
+  const valid = canonicalText.trim() && semanticType.trim();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent aria-busy={saving}>
@@ -134,21 +126,6 @@ export function TermEditorDialog({
                   onChange={(e) => setTargetText(e.target.value)}
                 />
               </Field>
-              <Field label={t("terminology.review")}>
-                <select
-                  className="h-10 w-full rounded-lg border bg-background px-2"
-                  value={reviewStatus}
-                  onChange={(e) =>
-                    setReviewStatus(e.target.value as TerminologyReviewStatus)
-                  }
-                >
-                  {["proposed", "approved", "locked"].map((v) => (
-                    <option key={v} value={v}>
-                      {t(`terminology.reviewStatus.${v}`)}
-                    </option>
-                  ))}
-                </select>
-              </Field>
               <Field label={t("terminology.enforcement")}>
                 <select
                   className="h-10 w-full rounded-lg border bg-background px-2"
@@ -180,7 +157,6 @@ export function TermEditorDialog({
                 partOfSpeech,
                 semanticType,
                 targetText,
-                reviewStatus,
                 enforcement,
               })
             }

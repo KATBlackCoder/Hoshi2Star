@@ -42,12 +42,13 @@ const ENTRY: TerminologyEntry = {
   origin: "engine",
   confidence: 1,
   occurrenceCount: 12,
+  hasProjectTranslation: true,
+  hasGlobalTranslation: false,
   translation: {
     id: "t1",
     targetLanguage: "en",
     projectId: "p1",
     targetText: "Hero",
-    reviewStatus: "approved",
     enforcement: "required",
     confidence: 1,
     providerId: null,
@@ -56,12 +57,20 @@ const ENTRY: TerminologyEntry = {
   },
   contexts: [],
 };
+const SECOND_ENTRY: TerminologyEntry = {
+  ...ENTRY,
+  id: "e2",
+  canonicalText: "魔王",
+  normalizedText: "魔王",
+  reading: "マオウ",
+  occurrenceCount: 4,
+  translation: null,
+};
 const STATS: TerminologyStats = {
   totalEntries: 1,
   untranslatedEntries: 0,
-  proposedTranslations: 0,
-  approvedTranslations: 1,
-  lockedTranslations: 0,
+  projectTranslations: 1,
+  globalTranslations: 0,
 };
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -127,7 +136,9 @@ describe("TerminologyWorkspace", () => {
     await userEvent.click(
       screen.getByRole("checkbox", { name: "Sélectionner 勇者" }),
     );
-    expect(screen.getByText("201 termes · 1 sélectionnés")).toBeInTheDocument();
+    expect(
+      screen.getByText("Termes : 201 · Sélection : 1"),
+    ).toBeInTheDocument();
     await userEvent.click(
       screen.getByRole("button", { name: "Page suivante" }),
     );
@@ -135,6 +146,83 @@ describe("TerminologyWorkspace", () => {
       expect(
         calls.some((call) => JSON.stringify(call).includes('"page":1')),
       ).toBe(true),
+    );
+  });
+
+  it("selects the visible page and exposes a confirmed bulk delete", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "get_terminology_stats") return STATS;
+      if (cmd === "list_terminology") {
+        return {
+          items: [ENTRY, SECOND_ENTRY],
+          total: 2,
+          page: 0,
+          pageSize: 100,
+        };
+      }
+      return null;
+    });
+    render(<TerminologyWorkspace />, { wrapper });
+
+    await screen.findByText("Hero");
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Sélectionner toute la page" }),
+    );
+
+    expect(screen.getByText("Termes : 2 · Sélection : 2")).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: "Sélectionner 勇者" }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Sélectionner 魔王" }),
+    ).toBeChecked();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Supprimer la sélection (2)" }),
+    );
+    expect(
+      screen.getByRole("alertdialog", {
+        name: "Supprimer les termes sélectionnés ?",
+      }),
+    ).toHaveTextContent("2 termes");
+  });
+
+  it("opens translation for one row and permanently deletes it after confirmation", async () => {
+    const deleteCalls: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "get_terminology_stats") return STATS;
+      if (cmd === "list_terminology") {
+        return { items: [ENTRY], total: 1, page: 0, pageSize: 100 };
+      }
+      if (cmd === "delete_terminology_entries") {
+        deleteCalls.push(args);
+        return 1;
+      }
+      return null;
+    });
+    render(<TerminologyWorkspace />, { wrapper });
+
+    await screen.findByText("Hero");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Traduire 勇者" }),
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Traduire les termes" }),
+    ).toHaveTextContent("Sélection manuelle (1)");
+    await userEvent.click(screen.getByRole("button", { name: "Annuler" }));
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Supprimer 勇者" }),
+    );
+    expect(
+      screen.getByRole("alertdialog", { name: "Supprimer ce terme ?" }),
+    ).toHaveTextContent("勇者");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Supprimer définitivement" }),
+    );
+
+    await waitFor(() =>
+      expect(deleteCalls).toContainEqual({ entryIds: ["e1"] }),
     );
   });
 
@@ -162,6 +250,39 @@ describe("TerminologyWorkspace", () => {
           );
         }),
       ).toBe(true),
+    );
+  });
+
+  it("copies a project translation globally only after confirmation", async () => {
+    const globalizeCalls: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "get_terminology_stats") return STATS;
+      if (cmd === "list_terminology") {
+        return { items: [ENTRY], total: 1, page: 0, pageSize: 100 };
+      }
+      if (cmd === "globalize_terminology_translations") {
+        globalizeCalls.push(args);
+        return { copied: 1, alreadyGlobal: 0, conflicts: 0, skipped: 0 };
+      }
+      return null;
+    });
+    render(<TerminologyWorkspace />, { wrapper });
+    await screen.findByText("Hero");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Rendre 勇者 global" }),
+    );
+    expect(
+      screen.getByRole("alertdialog", {
+        name: "Copier vers la bibliothèque globale ?",
+      }),
+    ).toHaveTextContent("jamais remplacée");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Copier globalement" }),
+    );
+    await waitFor(() =>
+      expect(globalizeCalls).toContainEqual({
+        input: { entryIds: ["e1"], targetLanguage: "en", projectId: "p1" },
+      }),
     );
   });
 

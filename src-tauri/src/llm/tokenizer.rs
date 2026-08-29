@@ -149,10 +149,16 @@ impl Tokenizer {
         let mut map = PlaceholderMap::new();
         let mut counter = 0usize;
 
+        // Structural edge decoration belongs to the game UI, not to the word
+        // being translated. Protect it exactly like an engine placeholder so
+        // `-----エネミー` can become `-----Enemy` without teaching the glossary
+        // that dashes are part of the term.
+        let protected_edges = protect_edge_decoration(text, &mut map, &mut counter);
+
         // Pass 1 — name box structure only (name left inline, translatable).
         let pass1 = match engine {
             Engine::MvMz | Engine::MzOnly => RE_NAMEBOX
-                .replace_all(text, |caps: &regex::Captures| {
+                .replace_all(&protected_edges, |caps: &regex::Captures| {
                     let open = format!("⟦ph_{counter}⟧");
                     counter += 1;
                     let close = format!("⟦ph_{counter}⟧");
@@ -162,7 +168,7 @@ impl Tokenizer {
                     format!("{open}{}{close}", &caps[1])
                 })
                 .into_owned(),
-            Engine::Wolf => text.to_string(),
+            Engine::Wolf => protected_edges,
         };
 
         // Pass 2 — engine placeholder patterns on the remaining text.
@@ -241,6 +247,68 @@ impl Tokenizer {
     }
 }
 
+fn protect_edge_decoration(text: &str, map: &mut PlaceholderMap, counter: &mut usize) -> String {
+    fn is_boundary(character: char, leading: bool) -> bool {
+        character.is_alphanumeric()
+            || character.is_alphabetic()
+            || matches!(character, 'ー' | '々' | '〆' | 'ヶ' | 'ヵ')
+            || character == '\\'
+            || (!leading && character == ']')
+    }
+
+    let prefix_end = text
+        .char_indices()
+        .find_map(|(index, character)| is_boundary(character, true).then_some(index))
+        .unwrap_or(text.len());
+    let suffix_start = text
+        .char_indices()
+        .rev()
+        .find_map(|(index, character)| {
+            is_boundary(character, false).then_some(index + character.len_utf8())
+        })
+        .unwrap_or(0)
+        .max(prefix_end);
+
+    fn should_protect(value: &str) -> bool {
+        let decoration = value
+            .chars()
+            .filter(|character| !character.is_whitespace())
+            .collect::<Vec<_>>();
+        decoration.len() >= 2
+            && decoration[0].is_ascii_punctuation()
+            && decoration
+                .iter()
+                .all(|character| *character == decoration[0])
+    }
+
+    let protect_prefix = should_protect(&text[..prefix_end]);
+    let protect_suffix = suffix_start > prefix_end && should_protect(&text[suffix_start..]);
+    let effective_prefix_end = if protect_prefix { prefix_end } else { 0 };
+    let effective_suffix_start = if protect_suffix {
+        suffix_start
+    } else {
+        text.len()
+    };
+    let prefix = &text[..effective_prefix_end];
+    let middle = &text[effective_prefix_end..effective_suffix_start];
+    let suffix = &text[effective_suffix_start..];
+    let mut result = String::new();
+    if !prefix.is_empty() {
+        let token = format!("⟦ph_{}⟧", *counter);
+        *counter += 1;
+        map.insert(token.clone(), prefix.to_string());
+        result.push_str(&token);
+    }
+    result.push_str(middle);
+    if !suffix.is_empty() {
+        let token = format!("⟦ph_{}⟧", *counter);
+        *counter += 1;
+        map.insert(token.clone(), suffix.to_string());
+        result.push_str(&token);
+    }
+    result
+}
+
 // ---------------------------------------------------------------------------
 // Tests (all 10 from docs/engines/mv-mz-placeholders.md)
 // ---------------------------------------------------------------------------
@@ -280,6 +348,17 @@ mod tests {
         let tokenized = Tokenizer::tokenize(original, Engine::MvMz);
         let restored = Tokenizer::restore(&tokenized.text, &tokenized.map).unwrap();
         assert_eq!(restored, original);
+    }
+
+    #[test]
+    fn decorative_edges_round_trip_without_entering_the_lexical_text() {
+        let tokenized = Tokenizer::tokenize("-----エネミー", Engine::MvMz);
+        assert_eq!(tokenized.text, "⟦ph_0⟧エネミー");
+        assert_eq!(tokenized.map.get("⟦ph_0⟧").unwrap(), "-----");
+        assert_eq!(
+            Tokenizer::restore("⟦ph_0⟧Enemy", &tokenized.map).unwrap(),
+            "-----Enemy"
+        );
     }
 
     // 4. Rejet si UUID manquant en sortie LLM

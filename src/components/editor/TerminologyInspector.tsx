@@ -8,7 +8,6 @@ import { useTerminologyUiStore } from "@/features/terminology/terminologyUiStore
 import type { SegmentTerminologyRule } from "@/lib/types";
 import { useActiveSegmentId } from "@/stores/editor";
 import { useUiStore } from "@/stores/ui";
-import { TerminologyStatusBadge } from "@/features/terminology/TerminologyStatusBadge";
 
 export function TerminologyInspector({
   projectId,
@@ -95,10 +94,6 @@ export function TerminologyInspector({
                   <span className="mt-2 flex flex-wrap gap-1">
                     <Badge variant="secondary">{rule.semanticType}</Badge>
                     <Badge variant="outline">{rule.partOfSpeech}</Badge>
-                    <TerminologyStatusBadge
-                      status={rule.reviewStatus}
-                      label={t(`terminology.reviewStatus.${rule.reviewStatus}`)}
-                    />
                     <Badge variant="outline">
                       {t(`terminology.enforcementStatus.${rule.enforcement}`)}
                     </Badge>

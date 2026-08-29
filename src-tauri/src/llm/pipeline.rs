@@ -1247,8 +1247,8 @@ mod tests {
             .unwrap();
             sqlx::query(
                 "INSERT INTO terminology_translations (\
-                    id, entry_id, target_language, target_text, review_status, enforcement, confidence\
-                 ) VALUES (?, ?, 'en', ?, 'locked', 'required', 1.0)",
+                    id, entry_id, target_language, target_text, enforcement, confidence\
+                 ) VALUES (?, ?, 'en', ?, 'required', 1.0)",
             )
             .bind(format!("translation-{entry_id}"))
             .bind(entry_id)

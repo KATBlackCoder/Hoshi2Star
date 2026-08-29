@@ -81,12 +81,6 @@ string_enum!(TermOrigin {
     Import => "import",
 });
 
-string_enum!(ReviewStatus {
-    Proposed => "proposed",
-    Approved => "approved",
-    Locked => "locked",
-});
-
 string_enum!(Enforcement {
     Contextual => "contextual",
     Preferred => "preferred",
@@ -100,7 +94,6 @@ pub struct TerminologyTranslationView {
     pub target_language: String,
     pub project_id: Option<String>,
     pub target_text: String,
-    pub review_status: ReviewStatus,
     pub enforcement: Enforcement,
     pub confidence: f64,
     pub provider_id: Option<String>,
@@ -134,6 +127,8 @@ pub struct TerminologyEntryView {
     pub confidence: f64,
     pub occurrence_count: i64,
     pub translation: Option<TerminologyTranslationView>,
+    pub has_project_translation: bool,
+    pub has_global_translation: bool,
     pub contexts: Vec<TerminologyContextView>,
 }
 
@@ -208,7 +203,6 @@ pub struct UpsertTranslationInput {
     pub target_language: String,
     pub project_id: Option<String>,
     pub target_text: String,
-    pub review_status: ReviewStatus,
     pub enforcement: Enforcement,
     pub confidence: f64,
     pub provider_id: Option<String>,
@@ -222,9 +216,33 @@ pub struct UpsertTranslationInput {
 pub struct TerminologyStats {
     pub total_entries: i64,
     pub untranslated_entries: i64,
-    pub proposed_translations: i64,
-    pub approved_translations: i64,
-    pub locked_translations: i64,
+    pub project_translations: i64,
+    pub global_translations: i64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TranslationScope {
+    Project,
+    Global,
+    Both,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GlobalizeTranslationsInput {
+    pub entry_ids: Vec<String>,
+    pub target_language: String,
+    pub project_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GlobalizeTranslationsSummary {
+    pub copied: u64,
+    pub already_global: u64,
+    pub conflicts: u64,
+    pub skipped: u64,
 }
 
 #[cfg(test)]

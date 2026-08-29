@@ -115,7 +115,7 @@ async fn insert_segment(
 }
 
 #[tokio::test]
-async fn scan_is_incremental_merges_occurrences_and_preserves_engine_semantics() {
+async fn scan_is_incremental_merges_occurrences_and_promotes_engine_semantics() {
     let (_directory, pool) = test_pool().await;
     seed_project(&pool, "p1").await;
     insert_segment(&pool, "p1", "s1", "勇者 勇者 走る", "dialogue").await;
@@ -125,7 +125,7 @@ async fn scan_is_incremental_merges_occurrences_and_preserves_engine_semantics()
 
     let first = service.scan_project(&pool, "p1", None).await.unwrap();
     assert_eq!((first.total, first.analyzed, first.skipped), (2, 2, 0));
-    assert_eq!(first.discovered, 3);
+    assert_eq!(first.discovered, 2);
     assert_eq!(analyzer.calls(), 2);
 
     let occurrences: Vec<(String, String, i64)> = sqlx::query_as(
@@ -137,7 +137,7 @@ async fn scan_is_incremental_merges_occurrences_and_preserves_engine_semantics()
     .fetch_all(&pool)
     .await
     .unwrap();
-    assert!(occurrences.contains(&("general".into(), "勇者".into(), 2)));
+    assert!(occurrences.contains(&("character".into(), "勇者".into(), 2)));
     assert!(occurrences.contains(&("character".into(), "勇者".into(), 1)));
 
     let second = service.scan_project(&pool, "p1", None).await.unwrap();
@@ -181,6 +181,60 @@ async fn scan_is_incremental_merges_occurrences_and_preserves_engine_semantics()
     .await
     .unwrap();
     assert_eq!((character_entries, character_occurrences), (1, 0));
+}
+
+#[tokio::test]
+async fn japanese_scan_rejects_ascii_only_analyzer_and_engine_terms() {
+    let (_directory, pool) = test_pool().await;
+    seed_project(&pool, "script-filter").await;
+    insert_segment(
+        &pool,
+        "script-filter",
+        "dialogue",
+        "Bad EXP獲得 Clear -----エネミー ぐにつけあがってくるんだからね",
+        "dialogue",
+    )
+    .await;
+    insert_segment(&pool, "script-filter", "system", "EXP", "system_term").await;
+    insert_segment(&pool, "script-filter", "map", "ED", "map_name").await;
+    insert_segment(
+        &pool,
+        "script-filter",
+        "sentence",
+        "お金を 手に入れた！",
+        "system_term",
+    )
+    .await;
+
+    let service = TerminologyService::new(Arc::new(FakeAnalyzer::new()), 1);
+    let summary = service
+        .scan_project(&pool, "script-filter", None)
+        .await
+        .unwrap();
+    let terms: Vec<(String, String)> = sqlx::query_as(
+        "SELECT canonical_text, semantic_type FROM terminology_entries ORDER BY canonical_text",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    let analyzer_version: String = sqlx::query_scalar(
+        "SELECT analyzer_version FROM terminology_scans WHERE project_id = 'script-filter'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(summary.discovered, 4);
+    assert_eq!(
+        terms,
+        vec![
+            ("お金を".into(), "general".into()),
+            ("エネミー".into(), "general".into()),
+            ("手に入れた".into(), "general".into()),
+            ("獲得".into(), "general".into())
+        ]
+    );
+    assert!(analyzer_version.ends_with("+language-pure-lexical-v5"));
 }
 
 #[tokio::test]

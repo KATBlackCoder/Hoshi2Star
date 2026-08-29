@@ -1,4 +1,10 @@
-import { BookOpenCheck, Languages, Plus, Search } from "lucide-react";
+import {
+  BookOpenCheck,
+  ChevronDown,
+  Languages,
+  Plus,
+  Search,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { PartOfSpeech, TerminologyEntryStatus } from "@/lib/types";
@@ -136,18 +142,28 @@ function Filter({
   return (
     <label className="shrink-0 text-xs text-muted-foreground">
       {label}
-      <select
-        className="mt-1 block h-10 rounded-lg border bg-background px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        disabled={disabled}
-      >
-        {options.map(([option, text]) => (
-          <option value={option} key={option}>
-            {text}
-          </option>
-        ))}
-      </select>
+      <span className="relative mt-1 block">
+        <select
+          className="block h-10 appearance-none rounded-lg border border-input bg-transparent py-1 pl-2.5 pr-8 text-sm text-foreground transition-[background-color,border-color,box-shadow] duration-[var(--duration-fast)] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 dark:bg-input/30 dark:disabled:bg-input/80 dark:[color-scheme:dark]"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          disabled={disabled}
+        >
+          {options.map(([option, text]) => (
+            <option
+              className="bg-popover text-popover-foreground"
+              value={option}
+              key={option}
+            >
+              {text}
+            </option>
+          ))}
+        </select>
+        <ChevronDown
+          className="pointer-events-none absolute right-2 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground"
+          aria-hidden="true"
+        />
+      </span>
     </label>
   );
 }

@@ -12,8 +12,9 @@ use crate::core::terminology::resolver::{self, QaTerminologyRule};
 use crate::core::terminology::scanner::{ScanEvent, ScanEventSink};
 use crate::core::terminology::translator::{self, TranslationProgressSink};
 use crate::core::terminology::types::{
-    CreateTermInput, PaginatedTerminology, TerminologyEntryView, TerminologyQuery,
-    TerminologyStats, TerminologyTranslationView, UpdateTermInput, UpsertTranslationInput,
+    CreateTermInput, GlobalizeTranslationsInput, GlobalizeTranslationsSummary,
+    PaginatedTerminology, TerminologyEntryView, TerminologyQuery, TerminologyStats,
+    TerminologyTranslationView, TranslationScope, UpdateTermInput, UpsertTranslationInput,
 };
 use crate::domain::types::ProviderConfig;
 use crate::engines::wolf::extractor::extract_wolf_speaker_names;
@@ -37,6 +38,7 @@ pub struct TranslateTerminologyCommandInput {
     pub entry_ids: Vec<String>,
     pub target_language: String,
     pub project_id: Option<String>,
+    pub scope: TranslationScope,
     pub provider_config: ProviderConfig,
 }
 
@@ -248,6 +250,16 @@ pub async fn archive_terminology_entry(
 }
 
 #[tauri::command]
+pub async fn delete_terminology_entries(
+    entry_ids: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<u64, String> {
+    repository::delete_entries(&state.db, &entry_ids)
+        .await
+        .map_err(stable_error)
+}
+
+#[tauri::command]
 pub async fn upsert_terminology_translation(
     input: UpsertTranslationInput,
     state: State<'_, AppState>,
@@ -256,6 +268,35 @@ pub async fn upsert_terminology_translation(
         ensure_project(&state, project_id).await?;
     }
     repository::upsert_translation(&state.db, &input)
+        .await
+        .map_err(stable_error)
+}
+
+#[tauri::command]
+pub async fn globalize_terminology_translations(
+    input: GlobalizeTranslationsInput,
+    state: State<'_, AppState>,
+) -> Result<GlobalizeTranslationsSummary, String> {
+    ensure_project(&state, &input.project_id).await?;
+    repository::globalize_translations(
+        &state.db,
+        &input.entry_ids,
+        &input.target_language,
+        &input.project_id,
+    )
+    .await
+    .map_err(stable_error)
+}
+
+#[tauri::command]
+pub async fn globalize_filtered_terminology_translations(
+    query: TerminologyQuery,
+    state: State<'_, AppState>,
+) -> Result<GlobalizeTranslationsSummary, String> {
+    if let Some(project_id) = query.project_id.as_deref() {
+        ensure_project(&state, project_id).await?;
+    }
+    repository::globalize_filtered_translations(&state.db, &query)
         .await
         .map_err(stable_error)
 }
@@ -318,6 +359,13 @@ pub async fn translate_terminology_entries(
     if let Some(project_id) = input.project_id.as_deref() {
         ensure_project(&state, project_id).await?;
     }
+    if matches!(
+        input.scope,
+        TranslationScope::Project | TranslationScope::Both
+    ) && input.project_id.is_none()
+    {
+        return Err("terminology: project scope requires a project".into());
+    }
     let job_id = uuid::Uuid::new_v4().to_string();
     let response = StartTerminologyTranslationResponse {
         job_id: job_id.clone(),
@@ -365,12 +413,18 @@ pub async fn translate_terminology_entries(
                 }),
             );
         });
+        let (translation_project_id, also_global) = match input.scope {
+            TranslationScope::Project => (input.project_id.as_deref(), false),
+            TranslationScope::Global => (None, false),
+            TranslationScope::Both => (input.project_id.as_deref(), true),
+        };
         let result = translator::translate_selected(
             &pool,
             &provider,
             &input.entry_ids,
             &input.target_language,
-            input.project_id.as_deref(),
+            translation_project_id,
+            also_global,
             input.provider_config.resource_profile,
             &input.provider_config.provider_id,
             &input.provider_config.model,

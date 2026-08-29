@@ -129,17 +129,16 @@ async fn legacy_glossary_migrates_without_losing_scope_or_languages() {
         ]
     );
 
-    let translations: Vec<(String, Option<String>, String, String, String, String)> =
-        sqlx::query_as(
-            "SELECT tt.target_language, tt.project_id, tt.target_text, \
-                    tt.review_status, tt.enforcement, te.canonical_text \
+    let translations: Vec<(String, Option<String>, String, String, String)> = sqlx::query_as(
+        "SELECT tt.target_language, tt.project_id, tt.target_text, \
+                    tt.enforcement, te.canonical_text \
              FROM terminology_translations tt \
              JOIN terminology_entries te ON te.id = tt.entry_id \
              ORDER BY tt.target_language, tt.project_id IS NOT NULL, tt.project_id",
-        )
-        .fetch_all(&migrated)
-        .await
-        .unwrap();
+    )
+    .fetch_all(&migrated)
+    .await
+    .unwrap();
     assert_eq!(
         translations,
         vec![
@@ -147,23 +146,13 @@ async fn legacy_glossary_migrates_without_losing_scope_or_languages() {
                 "en".to_string(),
                 None,
                 "Hero".to_string(),
-                "approved".to_string(),
                 "required".to_string(),
-                "勇者".to_string(),
-            ),
-            (
-                "en".to_string(),
-                Some("p1".to_string()),
-                "Champion".to_string(),
-                "proposed".to_string(),
-                "preferred".to_string(),
                 "勇者".to_string(),
             ),
             (
                 "fr".to_string(),
                 None,
                 "Héros".to_string(),
-                "approved".to_string(),
                 "required".to_string(),
                 "勇者".to_string(),
             ),
@@ -213,7 +202,7 @@ async fn fresh_schema_and_repeated_startup_are_idempotent() {
             .fetch_all(&reopened)
             .await
             .unwrap();
-    assert_eq!(versions, (1..=8).collect::<Vec<_>>());
+    assert_eq!(versions, (1..=9).collect::<Vec<_>>());
 
     let tables: Vec<String> = sqlx::query_scalar(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'terminology_%' \

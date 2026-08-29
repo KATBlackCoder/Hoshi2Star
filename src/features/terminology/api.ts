@@ -6,7 +6,7 @@ import type {
   TerminologyEnforcement,
   TerminologyEntry,
   TerminologyEntryStatus,
-  TerminologyReviewStatus,
+  GlobalizeTranslationsSummary,
   TerminologyScanDone,
   TerminologyScanProgress,
   TerminologyStats,
@@ -58,12 +58,13 @@ export const terminologyApi = {
   }) => invoke<TerminologyEntry>("update_terminology_entry", { input }),
   archive: (entryId: string) =>
     invoke<void>("archive_terminology_entry", { entryId }),
+  deleteEntries: (entryIds: string[]) =>
+    invoke<number>("delete_terminology_entries", { entryIds }),
   upsertTranslation: (input: {
     entryId: string;
     targetLanguage: string;
     projectId: string | null;
     targetText: string;
-    reviewStatus: TerminologyReviewStatus;
     enforcement: TerminologyEnforcement;
     confidence: number;
     providerId: string | null;
@@ -79,8 +80,22 @@ export const terminologyApi = {
     entryIds: string[];
     targetLanguage: string;
     projectId: string | null;
+    scope: "project" | "global" | "both";
     providerConfig: ProviderConfig;
   }) => invoke<{ jobId: string }>("translate_terminology_entries", { input }),
+  globalize: (input: {
+    entryIds: string[];
+    targetLanguage: string;
+    projectId: string;
+  }) =>
+    invoke<GlobalizeTranslationsSummary>("globalize_terminology_translations", {
+      input,
+    }),
+  globalizeFiltered: (query: TerminologyListInput) =>
+    invoke<GlobalizeTranslationsSummary>(
+      "globalize_filtered_terminology_translations",
+      { query },
+    ),
   onScanProgress: (
     handler: (payload: TerminologyScanProgress) => void,
   ): Promise<UnlistenFn> =>
@@ -109,7 +124,7 @@ export const terminologyApi = {
   onTranslateDone: (
     handler: (payload: {
       jobId: string;
-      summary: { proposed: number } | null;
+      summary: { translated: number; scopesWritten: number } | null;
       error: string | null;
     }) => void,
   ): Promise<UnlistenFn> =>
@@ -117,7 +132,7 @@ export const terminologyApi = {
       handler(
         event.payload as {
           jobId: string;
-          summary: { proposed: number } | null;
+          summary: { translated: number; scopesWritten: number } | null;
           error: string | null;
         },
       ),

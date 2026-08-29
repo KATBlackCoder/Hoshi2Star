@@ -17,13 +17,14 @@ const entry: TerminologyEntry = {
   origin: "engine",
   confidence: 1,
   occurrenceCount: 1,
+  hasProjectTranslation: false,
+  hasGlobalTranslation: true,
   contexts: [],
   translation: {
     id: "t1",
     targetLanguage: "en",
     projectId: null,
     targetText: "Hero",
-    reviewStatus: "proposed",
     enforcement: "preferred",
     confidence: 0.8,
     providerId: null,
@@ -32,7 +33,7 @@ const entry: TerminologyEntry = {
   },
 };
 
-it("edits, approves or locks a term only after explicit save", async () => {
+it("edits a usable term and its enforcement only after explicit save", async () => {
   const onSave = vi.fn();
   render(
     <TermEditorDialog
@@ -47,7 +48,6 @@ it("edits, approves or locks a term only after explicit save", async () => {
   const target = screen.getByLabelText("Traduction EN");
   await userEvent.clear(target);
   await userEvent.type(target, "Champion");
-  await userEvent.selectOptions(screen.getByLabelText("Révision"), "locked");
   await userEvent.selectOptions(
     screen.getByLabelText("Application"),
     "required",
@@ -57,7 +57,6 @@ it("edits, approves or locks a term only after explicit save", async () => {
   expect(onSave).toHaveBeenCalledWith(
     expect.objectContaining({
       targetText: "Champion",
-      reviewStatus: "locked",
       enforcement: "required",
     }),
   );

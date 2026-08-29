@@ -7,8 +7,11 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, Sqlite, SqlitePool, Transaction};
 
-use super::analyzer::filters::is_terminology_candidate;
+use super::analyzer::filters::{
+    is_terminology_candidate, matches_source_language, TERMINOLOGY_FILTER_VERSION,
+};
 use super::analyzer::{LinguisticToken, MorphologicalAnalyzer};
+use super::language::{is_reusable_lexical_unit, source_lexical_spans};
 use super::normalize::normalize_term;
 use super::types::PartOfSpeech;
 use super::{Result, TerminologyError};
@@ -132,7 +135,12 @@ pub async fn scan_project(
             project.engine
         ))
     })?;
-    let analyzer_version = format!("{}+{}", analyzer.version(), adapter.version());
+    let analyzer_version = format!(
+        "{}+{}+{}",
+        analyzer.version(),
+        adapter.version(),
+        TERMINOLOGY_FILTER_VERSION
+    );
     let total: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM segments segment \
          JOIN source_files file ON file.id = segment.source_file_id \
@@ -296,6 +304,9 @@ async fn scan_pages(
     } else {
         ScanStatus::Completed
     };
+    if status == ScanStatus::Completed {
+        archive_orphaned_automatic_entries(pool).await?;
+    }
     sqlx::query(
         "UPDATE terminology_scans SET status = ?, processed_segments = ?, \
          discovered_entries = ?, finished_at = datetime('now') WHERE id = ?",
@@ -366,7 +377,31 @@ fn analyze_segment(
         speaker: segment.speaker.as_deref(),
         context_json: segment.context_json.as_deref(),
     };
-    let seeds = adapter.seeds(&context);
+    let seeds = adapter
+        .seeds(&context)
+        .into_iter()
+        .flat_map(|seed| {
+            let spans = source_lexical_spans(&seed.source_text, source_language);
+            let contains_sentence_boundary = seed
+                .source_text
+                .chars()
+                .any(|character| matches!(character, '。' | '！' | '？' | '!' | '?'));
+            if spans.len() == 1
+                && !contains_sentence_boundary
+                && is_reusable_lexical_unit(&spans[0], source_language)
+            {
+                Some(EngineTermSeed {
+                    source_text: spans.into_iter().next().expect("one lexical span"),
+                    semantic_type: seed.semantic_type.clone(),
+                    part_of_speech: seed.part_of_speech,
+                    confidence: seed.confidence,
+                })
+            } else {
+                None
+            }
+        })
+        .filter(|seed| matches_source_language(&seed.source_text, source_language))
+        .collect::<Vec<_>>();
     let seed_keys = seeds
         .iter()
         .filter_map(|seed| normalize_term(&seed.source_text, source_language).ok())
@@ -378,7 +413,24 @@ fn analyze_segment(
     let safe_text = adapter.text_for_morphology(&context);
     let tokens = analyzer.analyze(&safe_text)?;
     let mut token_terms: HashMap<(String, String), AnalyzedTerm> = HashMap::new();
-    for token in tokens.into_iter().filter(is_terminology_candidate) {
+    for token in tokens.into_iter().flat_map(|token| {
+        source_lexical_spans(&token.lemma, source_language)
+            .into_iter()
+            .map(move |span| LinguisticToken {
+                surface: span.clone(),
+                lemma: span,
+                reading: None,
+                part_of_speech: token.part_of_speech,
+                pos_detail: token.pos_detail.clone(),
+                conjugation: token.conjugation.clone(),
+                byte_start: token.byte_start,
+                byte_end: token.byte_end,
+                is_unknown: token.is_unknown,
+            })
+    }) {
+        if !is_terminology_candidate(&token, source_language) {
+            continue;
+        }
         let normalized = normalize_term(&token.lemma, source_language)?;
         if seed_keys.contains(&normalized) {
             continue;
@@ -437,34 +489,61 @@ async fn persist_segment(
     let mut discovered = 0_i64;
     for term in &analyzed.terms {
         let normalized = normalize_term(&term.canonical_text, source_language)?;
-        let new_id = uuid::Uuid::new_v4().to_string();
-        let entry_id: String = sqlx::query_scalar(
-            "INSERT INTO terminology_entries (\
-                id, source_language, canonical_text, normalized_text, reading, \
-                part_of_speech, semantic_type, sense_key, status, origin, confidence\
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, '', 'active', ?, ?) \
-             ON CONFLICT(source_language, normalized_text, semantic_type, sense_key) \
-             DO UPDATE SET \
-                reading = COALESCE(terminology_entries.reading, excluded.reading), \
-                origin = CASE \
-                    WHEN terminology_entries.origin IN ('manual', 'import') THEN terminology_entries.origin \
-                    WHEN excluded.origin = 'engine' THEN 'engine' \
-                    ELSE terminology_entries.origin END, \
-                confidence = MAX(terminology_entries.confidence, excluded.confidence), \
-                updated_at = datetime('now') \
-             RETURNING id",
+        let existing_id: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM terminology_entries \
+             WHERE source_language = ? AND normalized_text = ? AND sense_key = '' \
+             ORDER BY CASE WHEN semantic_type = 'general' THEN 1 ELSE 0 END, \
+                      CASE origin WHEN 'manual' THEN 0 WHEN 'import' THEN 1 ELSE 2 END, id \
+             LIMIT 1",
         )
-        .bind(&new_id)
         .bind(source_language)
-        .bind(term.canonical_text.trim())
         .bind(&normalized)
-        .bind(&term.reading)
-        .bind(term.part_of_speech.as_str())
-        .bind(&term.semantic_type)
-        .bind(term.origin)
-        .bind(term.confidence)
-        .fetch_one(&mut **transaction)
+        .fetch_optional(&mut **transaction)
         .await?;
+        let new_id = uuid::Uuid::new_v4().to_string();
+        let entry_id: String = if let Some(existing_id) = existing_id {
+            sqlx::query(
+                "UPDATE terminology_entries SET \
+                    reading = COALESCE(reading, ?), \
+                    part_of_speech = CASE WHEN part_of_speech = 'unknown' THEN ? ELSE part_of_speech END, \
+                    semantic_type = CASE \
+                        WHEN semantic_type = 'general' AND ? != 'general' THEN ? \
+                        ELSE semantic_type END, \
+                    origin = CASE \
+                        WHEN origin IN ('manual', 'import') THEN origin \
+                        WHEN ? = 'engine' THEN 'engine' ELSE origin END, \
+                    confidence = MAX(confidence, ?), status = 'active', updated_at = datetime('now') \
+                 WHERE id = ?",
+            )
+            .bind(&term.reading)
+            .bind(term.part_of_speech.as_str())
+            .bind(&term.semantic_type)
+            .bind(&term.semantic_type)
+            .bind(term.origin)
+            .bind(term.confidence)
+            .bind(&existing_id)
+            .execute(&mut **transaction)
+            .await?;
+            existing_id
+        } else {
+            sqlx::query_scalar(
+                "INSERT INTO terminology_entries (\
+                    id, source_language, canonical_text, normalized_text, reading, \
+                    part_of_speech, semantic_type, sense_key, status, origin, confidence\
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, '', 'active', ?, ?) RETURNING id",
+            )
+            .bind(&new_id)
+            .bind(source_language)
+            .bind(term.canonical_text.trim())
+            .bind(&normalized)
+            .bind(&term.reading)
+            .bind(term.part_of_speech.as_str())
+            .bind(&term.semantic_type)
+            .bind(term.origin)
+            .bind(term.confidence)
+            .fetch_one(&mut **transaction)
+            .await?
+        };
         if entry_id == new_id {
             discovered += 1;
         }
@@ -515,6 +594,20 @@ async fn persist_segment(
     .execute(&mut **transaction)
     .await?;
     Ok(discovered)
+}
+
+async fn archive_orphaned_automatic_entries(pool: &SqlitePool) -> Result<()> {
+    sqlx::query(
+        "UPDATE terminology_entries SET status = 'archived', updated_at = datetime('now') \
+         WHERE status = 'active' AND origin IN ('engine', 'lindera') \
+           AND NOT EXISTS (SELECT 1 FROM terminology_occurrences occurrence \
+                           WHERE occurrence.entry_id = terminology_entries.id) \
+           AND NOT EXISTS (SELECT 1 FROM terminology_translations translation \
+                           WHERE translation.entry_id = terminology_entries.id)",
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 fn segment_hash(segment: &SegmentRow, analyzer_version: &str) -> String {

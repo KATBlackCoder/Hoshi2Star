@@ -2,7 +2,7 @@ use std::fs;
 
 use hoshi2star_lib::core::terminology::repository;
 use hoshi2star_lib::core::terminology::translator;
-use hoshi2star_lib::core::terminology::types::{Enforcement, ReviewStatus, UpsertTranslationInput};
+use hoshi2star_lib::core::terminology::types::{Enforcement, UpsertTranslationInput};
 use hoshi2star_lib::domain::types::ResourceProfile;
 use hoshi2star_lib::llm::provider::LlmProvider;
 use serde::Serialize;
@@ -21,7 +21,6 @@ struct ReviewRow {
     semantic_type: String,
     part_of_speech: String,
     confidence: f64,
-    review_status: String,
     enforcement: String,
 }
 
@@ -73,7 +72,7 @@ pub async fn prepare<P: LlmProvider>(
     }
 
     for (source, target) in [("六花", "Rikka"), ("凛", "Rin")] {
-        lock_known_name(workspace, source, target, model).await?;
+        set_known_name(workspace, source, target, model).await?;
     }
     write_review_snapshot(workspace).await
 }
@@ -90,6 +89,7 @@ async fn translate<P: LlmProvider>(
         entry_ids,
         "en",
         Some(&workspace.project_id),
+        false,
         ResourceProfile::Fast,
         "ollama",
         model,
@@ -98,14 +98,14 @@ async fn translate<P: LlmProvider>(
     .await
     .map(|summary| {
         eprintln!(
-            "[terminology] proposed {}/{} terms",
-            summary.proposed, summary.requested
+            "[terminology] translated {}/{} terms",
+            summary.translated, summary.requested
         );
     })
     .map_err(|error| error.to_string())
 }
 
-async fn lock_known_name(
+async fn set_known_name(
     workspace: &PilotWorkspace,
     source: &str,
     target: &str,
@@ -130,7 +130,6 @@ async fn lock_known_name(
                 target_language: "en".into(),
                 project_id: Some(workspace.project_id.clone()),
                 target_text: target.into(),
-                review_status: ReviewStatus::Locked,
                 enforcement: Enforcement::Required,
                 confidence: 1.0,
                 provider_id: Some("manual-pilot".into()),
@@ -148,7 +147,7 @@ async fn write_review_snapshot(workspace: &PilotWorkspace) -> Result<(), String>
     let sql = format!(
         "SELECT entry.canonical_text AS source, translation.target_text AS target, \
                 entry.semantic_type, entry.part_of_speech, translation.confidence, \
-                translation.review_status, translation.enforcement \
+                translation.enforcement \
          FROM terminology_entries entry \
          JOIN terminology_occurrences occurrence ON occurrence.entry_id = entry.id \
          JOIN terminology_translations translation ON translation.entry_id = entry.id \

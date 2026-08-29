@@ -3,15 +3,17 @@ use std::str::FromStr;
 
 use sqlx::{FromRow, QueryBuilder, Sqlite, SqlitePool};
 
+use super::language::is_reusable_lexical_unit;
 use super::normalize::{clean_optional_text, normalize_language, normalize_term};
 use super::types::{
-    CreateTermInput, Enforcement, EntryStatus, PaginatedTerminology, PartOfSpeech, ReviewStatus,
-    TermOrigin, TerminologyContextView, TerminologyEntryView, TerminologyQuery, TerminologyStats,
-    TerminologyTranslationView, UpdateTermInput, UpsertTranslationInput,
+    CreateTermInput, Enforcement, EntryStatus, GlobalizeTranslationsSummary, PaginatedTerminology,
+    PartOfSpeech, TermOrigin, TerminologyContextView, TerminologyEntryView, TerminologyQuery,
+    TerminologyStats, TerminologyTranslationView, UpdateTermInput, UpsertTranslationInput,
 };
 use super::{Result, TerminologyError};
 
 const MAX_PAGE_SIZE: i64 = 200;
+const MAX_DELETE_ENTRIES: usize = 10_000;
 const CONTEXTS_PER_ENTRY: i64 = 3;
 
 #[derive(Debug, FromRow)]
@@ -32,11 +34,12 @@ struct EntryRow {
     target_language: Option<String>,
     translation_project_id: Option<String>,
     target_text: Option<String>,
-    review_status: Option<String>,
     enforcement: Option<String>,
     translation_confidence: Option<f64>,
     provider_id: Option<String>,
     model: Option<String>,
+    has_project_translation: i64,
+    has_global_translation: i64,
 }
 
 #[derive(Debug, FromRow)]
@@ -55,7 +58,6 @@ struct TranslationRow {
     target_language: String,
     project_id: Option<String>,
     target_text: String,
-    review_status: String,
     enforcement: String,
     confidence: f64,
     provider_id: Option<String>,
@@ -167,10 +169,30 @@ pub async fn list(pool: &SqlitePool, query: &TerminologyQuery) -> Result<Paginat
                 translation.target_language AS target_language, \
                 translation.project_id AS translation_project_id, \
                 translation.target_text AS target_text, \
-                translation.review_status AS review_status, \
                 translation.enforcement AS enforcement, \
                 translation.confidence AS translation_confidence, \
-                translation.provider_id AS provider_id, translation.model AS model \
+                translation.provider_id AS provider_id, translation.model AS model, \
+                EXISTS(SELECT 1 FROM terminology_translations project_copy \
+                       WHERE project_copy.entry_id = entry.id \
+                         AND project_copy.target_language = ",
+    );
+    page_builder.push_bind(query.target_language.trim().to_lowercase());
+    if let Some(project_id) = query.project_id.as_deref() {
+        page_builder
+            .push(" AND project_copy.project_id = ")
+            .push_bind(project_id);
+    } else {
+        page_builder.push(" AND 0");
+    }
+    page_builder.push(
+        ") AS has_project_translation, \
+                EXISTS(SELECT 1 FROM terminology_translations global_copy \
+                       WHERE global_copy.entry_id = entry.id \
+                         AND global_copy.target_language = ",
+    );
+    page_builder.push_bind(query.target_language.trim().to_lowercase());
+    page_builder.push(
+        " AND global_copy.project_id IS NULL) AS has_global_translation \
          FROM terminology_entries entry",
     );
     push_occurrence_join(&mut page_builder, query.project_id.as_deref());
@@ -309,7 +331,6 @@ impl EntryRow {
             self.translation_id,
             self.target_language,
             self.target_text,
-            self.review_status,
             self.enforcement,
             self.translation_confidence,
         ) {
@@ -317,7 +338,6 @@ impl EntryRow {
                 Some(id),
                 Some(target_language),
                 Some(target_text),
-                Some(review),
                 Some(enforcement),
                 Some(confidence),
             ) => Some(TerminologyTranslationView {
@@ -326,13 +346,12 @@ impl EntryRow {
                 target_language,
                 project_id: self.translation_project_id,
                 target_text,
-                review_status: ReviewStatus::from_str(&review)?,
                 enforcement: Enforcement::from_str(&enforcement)?,
                 confidence,
                 provider_id: self.provider_id,
                 model: self.model,
             }),
-            (None, None, None, None, None, None) => None,
+            (None, None, None, None, None) => None,
             _ => {
                 return Err(TerminologyError::InvalidInput(format!(
                     "incomplete translation row for entry {}",
@@ -356,6 +375,8 @@ impl EntryRow {
             confidence: self.confidence,
             occurrence_count: self.occurrence_count,
             translation,
+            has_project_translation: self.has_project_translation != 0,
+            has_global_translation: self.has_global_translation != 0,
         })
     }
 }
@@ -366,6 +387,12 @@ pub async fn create_entry(
 ) -> Result<TerminologyEntryView> {
     let source_language = normalize_language(&input.source_language)?;
     let canonical_text = input.canonical_text.trim();
+    if !is_reusable_lexical_unit(canonical_text, &source_language) {
+        return Err(TerminologyError::InvalidInput(
+            "the terminology source must be one short lexical unit in its declared language"
+                .to_string(),
+        ));
+    }
     let normalized_text = normalize_term(canonical_text, &source_language)?;
     let semantic_type = normalized_semantic_type(&input.semantic_type)?;
     let id = uuid::Uuid::new_v4().to_string();
@@ -403,6 +430,8 @@ pub async fn create_entry(
         confidence: 1.0,
         occurrence_count: 0,
         translation: None,
+        has_project_translation: false,
+        has_global_translation: false,
         contexts: Vec::new(),
     })
 }
@@ -418,6 +447,12 @@ pub async fn update_entry(
             .await?
             .ok_or_else(|| TerminologyError::NotFound(input.id.clone()))?;
     let canonical_text = input.canonical_text.trim();
+    if !is_reusable_lexical_unit(canonical_text, &source_language) {
+        return Err(TerminologyError::InvalidInput(
+            "the terminology source must be one short lexical unit in its declared language"
+                .to_string(),
+        ));
+    }
     let normalized_text = normalize_term(canonical_text, &source_language)?;
     let semantic_type = normalized_semantic_type(&input.semantic_type)?;
     let reading = clean_optional_text(input.reading.as_deref());
@@ -453,6 +488,8 @@ pub async fn update_entry(
         confidence: current_confidence(pool, &input.id).await?,
         occurrence_count: occurrence_count(pool, &input.id, None).await?,
         translation: None,
+        has_project_translation: false,
+        has_global_translation: false,
         contexts: Vec::new(),
     })
 }
@@ -469,6 +506,48 @@ pub async fn archive_entry(pool: &SqlitePool, entry_id: &str) -> Result<()> {
         return Err(TerminologyError::NotFound(entry_id.to_string()));
     }
     Ok(())
+}
+
+pub async fn delete_entries(pool: &SqlitePool, entry_ids: &[String]) -> Result<u64> {
+    if entry_ids.is_empty() {
+        return Err(TerminologyError::InvalidInput(
+            "at least one terminology entry is required".to_string(),
+        ));
+    }
+    if entry_ids.len() > MAX_DELETE_ENTRIES {
+        return Err(TerminologyError::InvalidInput(format!(
+            "at most {MAX_DELETE_ENTRIES} terminology entries can be deleted at once"
+        )));
+    }
+
+    let mut unique_ids = HashSet::with_capacity(entry_ids.len());
+    for entry_id in entry_ids {
+        let entry_id = entry_id.trim();
+        if entry_id.is_empty() {
+            return Err(TerminologyError::InvalidInput(
+                "terminology entry ids must not be empty".to_string(),
+            ));
+        }
+        unique_ids.insert(entry_id);
+    }
+
+    let mut transaction = pool.begin().await?;
+    let mut deleted = 0_u64;
+    for entry_id in unique_ids {
+        deleted += sqlx::query("DELETE FROM terminology_entries WHERE id = ?")
+            .bind(entry_id)
+            .execute(&mut *transaction)
+            .await?
+            .rows_affected();
+    }
+    transaction.commit().await?;
+
+    if deleted == 0 {
+        return Err(TerminologyError::NotFound(
+            "terminology entries".to_string(),
+        ));
+    }
+    Ok(deleted)
 }
 
 pub async fn upsert_translation(
@@ -493,12 +572,12 @@ pub async fn upsert_translation(
     if let Some(project_id) = input.project_id.as_deref() {
         sqlx::query(
             "INSERT INTO terminology_translations (\
-                id, entry_id, target_language, project_id, target_text, review_status, \
+                id, entry_id, target_language, project_id, target_text, \
                 enforcement, confidence, provider_id, model\
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) \
              ON CONFLICT(entry_id, target_language, project_id) WHERE project_id IS NOT NULL \
              DO UPDATE SET target_text = excluded.target_text, \
-                review_status = excluded.review_status, enforcement = excluded.enforcement, \
+                enforcement = excluded.enforcement, \
                 confidence = excluded.confidence, provider_id = excluded.provider_id, \
                 model = excluded.model, updated_at = datetime('now')",
         )
@@ -507,7 +586,6 @@ pub async fn upsert_translation(
         .bind(&target_language)
         .bind(project_id)
         .bind(target_text)
-        .bind(input.review_status.as_str())
         .bind(input.enforcement.as_str())
         .bind(input.confidence)
         .bind(&input.provider_id)
@@ -517,12 +595,12 @@ pub async fn upsert_translation(
     } else {
         sqlx::query(
             "INSERT INTO terminology_translations (\
-                id, entry_id, target_language, project_id, target_text, review_status, \
+                id, entry_id, target_language, project_id, target_text, \
                 enforcement, confidence, provider_id, model\
-             ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?) \
+             ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?) \
              ON CONFLICT(entry_id, target_language) WHERE project_id IS NULL \
              DO UPDATE SET target_text = excluded.target_text, \
-                review_status = excluded.review_status, enforcement = excluded.enforcement, \
+                enforcement = excluded.enforcement, \
                 confidence = excluded.confidence, provider_id = excluded.provider_id, \
                 model = excluded.model, updated_at = datetime('now')",
         )
@@ -530,7 +608,6 @@ pub async fn upsert_translation(
         .bind(&input.entry_id)
         .bind(&target_language)
         .bind(target_text)
-        .bind(input.review_status.as_str())
         .bind(input.enforcement.as_str())
         .bind(input.confidence)
         .bind(&input.provider_id)
@@ -540,7 +617,7 @@ pub async fn upsert_translation(
     }
 
     let row: TranslationRow = sqlx::query_as(
-        "SELECT id, target_language, project_id, target_text, review_status, enforcement, \
+        "SELECT id, target_language, project_id, target_text, enforcement, \
                 confidence, provider_id, model FROM terminology_translations \
          WHERE entry_id = ? AND target_language = ? AND \
                ((project_id = ?) OR (project_id IS NULL AND ? IS NULL))",
@@ -585,13 +662,191 @@ pub async fn upsert_translation(
         target_language: row.target_language,
         project_id: row.project_id,
         target_text: row.target_text,
-        review_status: ReviewStatus::from_str(&row.review_status)?,
         enforcement: Enforcement::from_str(&row.enforcement)?,
         confidence: row.confidence,
         provider_id: row.provider_id,
         model: row.model,
         accepted_variants,
     })
+}
+
+#[derive(Debug, FromRow)]
+struct PromotionSourceRow {
+    id: String,
+    entry_id: String,
+    target_language: String,
+    project_id: Option<String>,
+    target_text: String,
+    enforcement: String,
+    confidence: f64,
+    provider_id: Option<String>,
+    model: Option<String>,
+}
+
+pub async fn globalize_translations(
+    pool: &SqlitePool,
+    entry_ids: &[String],
+    target_language: &str,
+    project_id: &str,
+) -> Result<GlobalizeTranslationsSummary> {
+    if entry_ids.is_empty() || entry_ids.len() > MAX_DELETE_ENTRIES {
+        return Err(TerminologyError::InvalidInput(format!(
+            "select between 1 and {MAX_DELETE_ENTRIES} project translations"
+        )));
+    }
+    let mut seen = HashSet::with_capacity(entry_ids.len());
+    let entry_ids = entry_ids
+        .iter()
+        .map(|id| id.trim())
+        .filter(|id| !id.is_empty() && seen.insert((*id).to_string()))
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    if entry_ids.is_empty() {
+        return Err(TerminologyError::InvalidInput(
+            "translation ids must not be empty".to_string(),
+        ));
+    }
+    let target_language = normalize_language(target_language)?;
+    let mut builder = QueryBuilder::<Sqlite>::new(
+        "SELECT id FROM terminology_translations WHERE target_language = ",
+    );
+    builder
+        .push_bind(target_language)
+        .push(" AND project_id = ")
+        .push_bind(project_id)
+        .push(" AND entry_id IN (");
+    let mut separated = builder.separated(",");
+    for entry_id in &entry_ids {
+        separated.push_bind(entry_id);
+    }
+    separated.push_unseparated(") ORDER BY id");
+    let ids: Vec<String> = builder.build_query_scalar().fetch_all(pool).await?;
+    let mut summary = globalize_translation_ids(pool, &ids).await?;
+    summary.skipped += entry_ids.len().saturating_sub(ids.len()) as u64;
+    Ok(summary)
+}
+
+pub async fn globalize_filtered_translations(
+    pool: &SqlitePool,
+    query: &TerminologyQuery,
+) -> Result<GlobalizeTranslationsSummary> {
+    validate_query(query)?;
+    let project_id = query.project_id.as_deref().ok_or_else(|| {
+        TerminologyError::InvalidInput(
+            "a project is required to promote filtered translations".to_string(),
+        )
+    })?;
+    let mut builder =
+        QueryBuilder::<Sqlite>::new("SELECT project_translation.id FROM terminology_entries entry");
+    push_occurrence_join(&mut builder, Some(project_id));
+    builder
+        .push(
+            " JOIN terminology_translations project_translation \
+               ON project_translation.entry_id = entry.id \
+              AND project_translation.target_language = ",
+        )
+        .push_bind(query.target_language.trim().to_lowercase())
+        .push(" AND project_translation.project_id = ")
+        .push_bind(project_id);
+    push_common_filters(&mut builder, query);
+    builder.push(" ORDER BY entry.normalized_text, entry.id");
+    let ids: Vec<String> = builder.build_query_scalar().fetch_all(pool).await?;
+    if ids.is_empty() {
+        return Ok(GlobalizeTranslationsSummary {
+            copied: 0,
+            already_global: 0,
+            conflicts: 0,
+            skipped: 0,
+        });
+    }
+    globalize_translation_ids(pool, &ids).await
+}
+
+async fn globalize_translation_ids(
+    pool: &SqlitePool,
+    ids: &[String],
+) -> Result<GlobalizeTranslationsSummary> {
+    if ids.is_empty() {
+        return Ok(GlobalizeTranslationsSummary {
+            copied: 0,
+            already_global: 0,
+            conflicts: 0,
+            skipped: 0,
+        });
+    }
+    let mut builder = QueryBuilder::<Sqlite>::new(
+        "SELECT id, entry_id, target_language, project_id, target_text, enforcement, \
+                confidence, provider_id, model FROM terminology_translations WHERE id IN (",
+    );
+    let mut separated = builder.separated(",");
+    for id in ids {
+        separated.push_bind(id);
+    }
+    separated.push_unseparated(") ORDER BY id");
+    let sources: Vec<PromotionSourceRow> = builder.build_query_as().fetch_all(pool).await?;
+
+    let mut summary = GlobalizeTranslationsSummary {
+        copied: 0,
+        already_global: 0,
+        conflicts: 0,
+        skipped: ids.len().saturating_sub(sources.len()) as u64,
+    };
+    let mut transaction = pool.begin().await?;
+    for source in sources {
+        if source.project_id.is_none() {
+            summary.skipped += 1;
+            continue;
+        }
+        let global: Option<(String, String)> = sqlx::query_as(
+            "SELECT id, target_text FROM terminology_translations \
+             WHERE entry_id = ? AND target_language = ? AND project_id IS NULL",
+        )
+        .bind(&source.entry_id)
+        .bind(&source.target_language)
+        .fetch_optional(&mut *transaction)
+        .await?;
+        if let Some((_global_id, global_target)) = global {
+            if normalize_term(&global_target, &source.target_language)?
+                == normalize_term(&source.target_text, &source.target_language)?
+            {
+                summary.already_global += 1;
+            } else {
+                summary.conflicts += 1;
+            }
+            continue;
+        }
+
+        let global_id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO terminology_translations (\
+                id, entry_id, target_language, project_id, target_text, enforcement, \
+                confidence, provider_id, model\
+             ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?)",
+        )
+        .bind(&global_id)
+        .bind(&source.entry_id)
+        .bind(&source.target_language)
+        .bind(&source.target_text)
+        .bind(&source.enforcement)
+        .bind(source.confidence)
+        .bind(&source.provider_id)
+        .bind(&source.model)
+        .execute(&mut *transaction)
+        .await?;
+        sqlx::query(
+            "INSERT INTO terminology_target_variants \
+                (id, translation_id, text, normalized_text) \
+             SELECT lower(hex(randomblob(16))), ?, text, normalized_text \
+             FROM terminology_target_variants WHERE translation_id = ?",
+        )
+        .bind(&global_id)
+        .bind(&source.id)
+        .execute(&mut *transaction)
+        .await?;
+        summary.copied += 1;
+    }
+    transaction.commit().await?;
+    Ok(summary)
 }
 
 pub async fn stats(
@@ -609,10 +864,9 @@ pub async fn stats(
     };
     let mut builder = QueryBuilder::<Sqlite>::new(
         "SELECT COUNT(*), \
-           SUM(CASE WHEN effective.review_status IS NULL THEN 1 ELSE 0 END), \
-           SUM(CASE WHEN effective.review_status = 'proposed' THEN 1 ELSE 0 END), \
-           SUM(CASE WHEN effective.review_status = 'approved' THEN 1 ELSE 0 END), \
-           SUM(CASE WHEN effective.review_status = 'locked' THEN 1 ELSE 0 END) \
+           SUM(CASE WHEN effective.id IS NULL THEN 1 ELSE 0 END), \
+           SUM(CASE WHEN project_copy.id IS NOT NULL THEN 1 ELSE 0 END), \
+           SUM(CASE WHEN global_copy.id IS NOT NULL THEN 1 ELSE 0 END) \
          FROM terminology_entries entry",
     );
     push_occurrence_join(&mut builder, project_id);
@@ -632,16 +886,34 @@ pub async fn stats(
     } else {
         builder.push(" AND candidate.project_id IS NULL LIMIT 1) ");
     }
+    builder.push(
+        " LEFT JOIN terminology_translations project_copy \
+        ON project_copy.entry_id = entry.id AND project_copy.target_language = ",
+    );
+    builder.push_bind(query.target_language.clone());
+    if let Some(project_id) = project_id {
+        builder
+            .push(" AND project_copy.project_id = ")
+            .push_bind(project_id);
+    } else {
+        builder.push(" AND 0");
+    }
+    builder.push(
+        " LEFT JOIN terminology_translations global_copy \
+        ON global_copy.entry_id = entry.id AND global_copy.target_language = ",
+    );
+    builder
+        .push_bind(query.target_language.clone())
+        .push(" AND global_copy.project_id IS NULL ");
     push_common_filters(&mut builder, &query);
 
-    let counts: (i64, Option<i64>, Option<i64>, Option<i64>, Option<i64>) =
+    let counts: (i64, Option<i64>, Option<i64>, Option<i64>) =
         builder.build_query_as().fetch_one(pool).await?;
     Ok(TerminologyStats {
         total_entries: counts.0,
         untranslated_entries: counts.1.unwrap_or(0),
-        proposed_translations: counts.2.unwrap_or(0),
-        approved_translations: counts.3.unwrap_or(0),
-        locked_translations: counts.4.unwrap_or(0),
+        project_translations: counts.2.unwrap_or(0),
+        global_translations: counts.3.unwrap_or(0),
     })
 }
 
@@ -765,7 +1037,6 @@ mod tests {
             target_language: "en".to_string(),
             project_id: project_id.map(ToOwned::to_owned),
             target_text: target.to_string(),
-            review_status: ReviewStatus::Approved,
             enforcement: Enforcement::Preferred,
             confidence: 1.0,
             provider_id: None,
@@ -813,12 +1084,65 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn crud_normalizes_updates_archives_and_rejects_empty_targets() {
+    async fn global_promotion_copies_without_overwriting_conflicts_and_survives_project_delete() {
         let (_file, pool) = database().await;
-        let entry = create_entry(&pool, &new_term("  ＲＰＧ　勇者  "))
+        let hero = create_entry(&pool, &new_term("勇者")).await.unwrap();
+        let sword = create_entry(&pool, &new_term("剣")).await.unwrap();
+        upsert_translation(&pool, &translation(&hero.id, "Hero", Some("p1")))
             .await
             .unwrap();
-        assert_eq!(entry.normalized_text, "RPG 勇者");
+        upsert_translation(&pool, &translation(&sword.id, "Blade", Some("p1")))
+            .await
+            .unwrap();
+        upsert_translation(&pool, &translation(&sword.id, "Sword", None))
+            .await
+            .unwrap();
+
+        let first = globalize_translations(&pool, &[hero.id.clone(), sword.id.clone()], "en", "p1")
+            .await
+            .unwrap();
+        assert_eq!(
+            first,
+            GlobalizeTranslationsSummary {
+                copied: 1,
+                already_global: 0,
+                conflicts: 1,
+                skipped: 0,
+            }
+        );
+
+        let filtered = globalize_filtered_translations(
+            &pool,
+            &TerminologyQuery {
+                project_id: Some("p1".into()),
+                ..TerminologyQuery::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(filtered.already_global, 1);
+        assert_eq!(filtered.conflicts, 1);
+
+        sqlx::query("DELETE FROM projects WHERE id = 'p1'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let global_target: String = sqlx::query_scalar(
+            "SELECT target_text FROM terminology_translations \
+             WHERE entry_id = ? AND target_language = 'en' AND project_id IS NULL",
+        )
+        .bind(&hero.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(global_target, "Hero");
+    }
+
+    #[tokio::test]
+    async fn crud_normalizes_updates_archives_and_rejects_empty_targets() {
+        let (_file, pool) = database().await;
+        let entry = create_entry(&pool, &new_term("  勇者  ")).await.unwrap();
+        assert_eq!(entry.normalized_text, "勇者");
 
         let updated = update_entry(
             &pool,
@@ -881,7 +1205,7 @@ mod tests {
         let stats = stats(&pool, "ja", "en", None).await.unwrap();
         assert_eq!(stats.total_entries, 2);
         assert_eq!(stats.untranslated_entries, 1);
-        assert_eq!(stats.approved_translations, 1);
+        assert_eq!(stats.global_translations, 1);
     }
 
     #[tokio::test]

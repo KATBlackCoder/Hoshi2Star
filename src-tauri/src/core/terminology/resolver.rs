@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use sqlx::{FromRow, QueryBuilder, Sqlite, SqlitePool};
 
-use super::types::{Enforcement, PartOfSpeech, ReviewStatus};
+use super::types::{Enforcement, PartOfSpeech};
 use super::Result;
 use crate::llm::provider::{terminology_prompt_fragment, TerminologyHint};
 
@@ -32,7 +32,6 @@ struct HintRow {
     part_of_speech: String,
     translation_id: String,
     target: String,
-    review_status: String,
     enforcement: String,
 }
 
@@ -44,7 +43,6 @@ pub struct QaTerminologyRule {
     pub target: String,
     pub semantic_type: String,
     pub part_of_speech: PartOfSpeech,
-    pub review_status: ReviewStatus,
     pub enforcement: Enforcement,
     pub accepted_targets: Vec<String>,
 }
@@ -58,7 +56,6 @@ struct QaRuleRow {
     part_of_speech: String,
     translation_id: String,
     target: String,
-    review_status: String,
     enforcement: String,
 }
 
@@ -78,7 +75,7 @@ pub async fn resolve_for_request(
         "SELECT entry.canonical_text AS source, \
                 entry.semantic_type, entry.part_of_speech, \
                 translation.id AS translation_id, translation.target_text AS target, \
-                translation.review_status, translation.enforcement \
+                translation.enforcement \
          FROM terminology_occurrences occurrence \
          JOIN terminology_entries entry ON entry.id = occurrence.entry_id \
          JOIN terminology_translations translation ON translation.id = (\
@@ -114,11 +111,7 @@ pub async fn resolve_for_request(
     let variants = load_variants(pool, &translation_ids).await?;
     let mut candidates = Vec::with_capacity(rows.len());
     for row in rows {
-        let review_status = ReviewStatus::from_str(&row.review_status)?;
-        let mut enforcement = Enforcement::from_str(&row.enforcement)?;
-        if review_status == ReviewStatus::Proposed && enforcement == Enforcement::Required {
-            enforcement = Enforcement::Preferred;
-        }
+        let enforcement = Enforcement::from_str(&row.enforcement)?;
         let accepted_targets = variants
             .get(&row.translation_id)
             .cloned()
@@ -155,8 +148,7 @@ pub async fn resolve_qa_rules_for_segments(
             "SELECT occurrence.segment_id, entry.id AS entry_id, \
                     entry.canonical_text AS source, entry.semantic_type, \
                     entry.part_of_speech, translation.id AS translation_id, \
-                    translation.target_text AS target, translation.review_status, \
-                    translation.enforcement \
+                    translation.target_text AS target, translation.enforcement \
              FROM terminology_occurrences occurrence \
              JOIN terminology_entries entry ON entry.id = occurrence.entry_id \
              JOIN terminology_translations translation ON translation.id = (\
@@ -206,7 +198,6 @@ pub async fn resolve_qa_rules_for_segments(
             target: row.target,
             semantic_type: row.semantic_type,
             part_of_speech: PartOfSpeech::from_str(&row.part_of_speech)?,
-            review_status: ReviewStatus::from_str(&row.review_status)?,
             enforcement: Enforcement::from_str(&row.enforcement)?,
             accepted_targets: variants
                 .get(&row.translation_id)
@@ -312,36 +303,21 @@ mod tests {
             .await
             .unwrap();
         }
-        for (id, entry, project, target, review, enforcement) in [
-            ("t-global", "e1", None, "Hero", "approved", "required"),
-            (
-                "t-project",
-                "e1",
-                Some("p1"),
-                "Champion",
-                "approved",
-                "preferred",
-            ),
-            (
-                "t-proposed",
-                "e2",
-                None,
-                "Demon King",
-                "proposed",
-                "required",
-            ),
-            ("t-unused", "e3", None, "Sword", "locked", "required"),
+        for (id, entry, project, target, enforcement) in [
+            ("t-global", "e1", None, "Hero", "required"),
+            ("t-project", "e1", Some("p1"), "Champion", "preferred"),
+            ("t-demon", "e2", None, "Demon King", "required"),
+            ("t-unused", "e3", None, "Sword", "required"),
         ] {
             sqlx::query(
                 "INSERT INTO terminology_translations (\
-                    id, entry_id, target_language, project_id, target_text, review_status, enforcement, confidence\
-                 ) VALUES (?, ?, 'en', ?, ?, ?, ?, 1.0)",
+                    id, entry_id, target_language, project_id, target_text, enforcement, confidence\
+                 ) VALUES (?, ?, 'en', ?, ?, ?, 1.0)",
             )
             .bind(id)
             .bind(entry)
             .bind(project)
             .bind(target)
-            .bind(review)
             .bind(enforcement)
             .execute(&pool)
             .await
@@ -374,18 +350,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn proposed_translation_can_never_be_required() {
+    async fn existing_translation_keeps_required_enforcement() {
         let (_directory, pool) = seeded_pool().await;
         let hints = resolve_for_request(&pool, &["s2".into()], "en", 2_000)
             .await
             .unwrap();
         assert_eq!(hints.len(), 1);
         assert_eq!(hints[0].target, "Demon King");
-        assert_eq!(hints[0].enforcement, Enforcement::Preferred);
+        assert_eq!(hints[0].enforcement, Enforcement::Required);
     }
 
     #[tokio::test]
-    async fn qa_rules_remain_segment_scoped_and_keep_review_semantics() {
+    async fn qa_rules_remain_segment_scoped_and_keep_enforcement() {
         let (_directory, pool) = seeded_pool().await;
         let rules = resolve_qa_rules_for_segments(&pool, &["s1".into(), "s2".into()], "en")
             .await
@@ -394,7 +370,6 @@ mod tests {
         assert_eq!(rules["s1"][0].target, "Champion");
         assert_eq!(rules["s1"][0].accepted_targets, vec!["The Champion"]);
         assert_eq!(rules["s2"].len(), 1);
-        assert_eq!(rules["s2"][0].review_status, ReviewStatus::Proposed);
         assert_eq!(rules["s2"][0].enforcement, Enforcement::Required);
     }
 

@@ -25,9 +25,10 @@ use commands::qa::{get_qa_report, get_tm_suggestions, qa_check_segment};
 use commands::search::search_segments;
 use commands::terminology::{
     archive_terminology_entry, cancel_terminology_scan, create_terminology_entry,
-    extract_wolf_speakers, get_segment_terminology, get_terminology_stats, list_terminology,
-    start_terminology_scan, translate_terminology_entries, update_terminology_entry,
-    upsert_terminology_translation,
+    delete_terminology_entries, extract_wolf_speakers, get_segment_terminology,
+    get_terminology_stats, globalize_filtered_terminology_translations,
+    globalize_terminology_translations, list_terminology, start_terminology_scan,
+    translate_terminology_entries, update_terminology_entry, upsert_terminology_translation,
 };
 use commands::translate::{get_provider_models, translate_all_segments, translate_segments};
 use state::AppState;
@@ -93,7 +94,10 @@ pub fn run() {
             create_terminology_entry,
             update_terminology_entry,
             archive_terminology_entry,
+            delete_terminology_entries,
             upsert_terminology_translation,
+            globalize_terminology_translations,
+            globalize_filtered_terminology_translations,
             start_terminology_scan,
             cancel_terminology_scan,
             translate_terminology_entries,

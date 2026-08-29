@@ -21,6 +21,7 @@ export function TermTranslateDialog({
   selectedIds,
   targetLanguage,
   projectId,
+  defaultScope,
   providerConfig,
   onOpenChange,
   onDone,
@@ -30,6 +31,7 @@ export function TermTranslateDialog({
   selectedIds: string[];
   targetLanguage: string;
   projectId: string | null;
+  defaultScope?: "project" | "global";
   providerConfig: ProviderConfig;
   onOpenChange: (open: boolean) => void;
   onDone: () => void;
@@ -37,8 +39,8 @@ export function TermTranslateDialog({
   const [selectionMode, setSelectionMode] = useState<SelectionMode>(
     selectedIds.length ? "selected" : "untranslated",
   );
-  const [scope, setScope] = useState<"project" | "global">(
-    projectId ? "project" : "global",
+  const [scope, setScope] = useState<"project" | "global" | "both">(
+    defaultScope ?? (projectId ? "project" : "global"),
   );
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState({ processed: 0, total: 0 });
@@ -72,7 +74,7 @@ export function TermTranslateDialog({
         activeJobId.current = null;
         if (event.error) toast.error(event.error);
         else
-          toast.success(`${event.summary?.proposed ?? 0} propositions créées`);
+          toast.success(`${event.summary?.translated ?? 0} termes traduits`);
         setRunning(false);
         onDone();
         onOpenChange(false);
@@ -82,7 +84,8 @@ export function TermTranslateDialog({
       const started = await terminologyApi.translate({
         entryIds: ids,
         targetLanguage,
-        projectId: scope === "project" ? projectId : null,
+        projectId,
+        scope,
         providerConfig,
       });
       activeJobId.current = started.jobId;
@@ -97,10 +100,10 @@ export function TermTranslateDialog({
     <Dialog open={open} onOpenChange={running ? undefined : onOpenChange}>
       <DialogContent aria-busy={running}>
         <DialogHeader>
-          <DialogTitle>Traduire les termes proposés</DialogTitle>
+          <DialogTitle>Traduire les termes</DialogTitle>
           <DialogDescription>
-            Le modèle suggère des termes {targetLanguage.toUpperCase()}. Ils
-            resteront « proposés » jusqu’à votre validation explicite.
+            Chaque traduction {targetLanguage.toUpperCase()} validée est
+            immédiatement utilisable dans la portée choisie et reste modifiable.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -127,12 +130,15 @@ export function TermTranslateDialog({
               className="mt-1 h-10 w-full rounded-lg border bg-background px-2 text-sm"
               value={scope}
               onChange={(event) =>
-                setScope(event.target.value as "project" | "global")
+                setScope(
+                  event.target.value as "project" | "global" | "both",
+                )
               }
               disabled={running || !projectId}
             >
               <option value="project">Projet actif</option>
               <option value="global">Bibliothèque globale</option>
+              <option value="both">Projet actif + bibliothèque globale</option>
             </select>
           </label>
         </div>
@@ -171,7 +177,7 @@ export function TermTranslateDialog({
             onClick={() => void start()}
             disabled={running || !ids.length}
           >
-            <Sparkles /> {running ? "Traduction…" : "Créer les propositions"}
+            <Sparkles /> {running ? "Traduction…" : "Traduire"}
           </Button>
         </DialogFooter>
       </DialogContent>

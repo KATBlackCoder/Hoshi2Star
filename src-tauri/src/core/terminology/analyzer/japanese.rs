@@ -153,7 +153,7 @@ mod tests {
                 .analyze(&safe_text)
                 .unwrap()
                 .into_iter()
-                .filter(is_terminology_candidate)
+                .filter(|token| is_terminology_candidate(token, "ja"))
                 .collect::<Vec<_>>();
 
             for expected in case.expected {

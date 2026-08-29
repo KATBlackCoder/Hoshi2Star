@@ -191,7 +191,6 @@ export type PartOfSpeech =
   | "expression"
   | "unknown";
 export type TerminologyEntryStatus = "active" | "ignored" | "archived";
-export type TerminologyReviewStatus = "proposed" | "approved" | "locked";
 export type TerminologyEnforcement = "contextual" | "preferred" | "required";
 
 export interface SegmentTerminologyRule {
@@ -200,7 +199,6 @@ export interface SegmentTerminologyRule {
   target: string;
   semanticType: string;
   partOfSpeech: PartOfSpeech;
-  reviewStatus: TerminologyReviewStatus;
   enforcement: TerminologyEnforcement;
   acceptedTargets: string[];
 }
@@ -210,7 +208,6 @@ export interface TerminologyTranslation {
   targetLanguage: string;
   projectId: string | null;
   targetText: string;
-  reviewStatus: TerminologyReviewStatus;
   enforcement: TerminologyEnforcement;
   confidence: number;
   providerId: string | null;
@@ -240,6 +237,8 @@ export interface TerminologyEntry {
   confidence: number;
   occurrenceCount: number;
   translation: TerminologyTranslation | null;
+  hasProjectTranslation: boolean;
+  hasGlobalTranslation: boolean;
   contexts: TerminologyContext[];
 }
 
@@ -253,9 +252,15 @@ export interface PaginatedTerminology {
 export interface TerminologyStats {
   totalEntries: number;
   untranslatedEntries: number;
-  proposedTranslations: number;
-  approvedTranslations: number;
-  lockedTranslations: number;
+  projectTranslations: number;
+  globalTranslations: number;
+}
+
+export interface GlobalizeTranslationsSummary {
+  copied: number;
+  alreadyGlobal: number;
+  conflicts: number;
+  skipped: number;
 }
 
 export interface TerminologyScanProgress {
