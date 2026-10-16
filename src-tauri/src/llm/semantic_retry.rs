@@ -20,6 +20,10 @@ pub(crate) struct SemanticRetryRequest<'a> {
     pub segment_id: &'a str,
     pub terminology_rules: &'a [QaTerminologyRule],
     pub prompt_context: Option<&'a SegmentPromptContext>,
+    /// Persisted kind/context (independent of the prompt policy) so the retry
+    /// is judged by the same placeholder rule as the first attempt.
+    pub segment_kind: &'a str,
+    pub context_json: Option<&'a str>,
     pub qa_neighbors: &'a QaNeighborContext,
 }
 
@@ -33,14 +37,11 @@ pub(crate) async fn retry<P: LlmProvider>(
     provider: &P,
     db: &SqlitePool,
 ) -> SemanticRetryOutcome {
-    let segment_kind = request
-        .prompt_context
-        .map(|context| context.segment_kind.as_str())
-        .unwrap_or("unknown");
     let qa_context = qa::QaSemanticContext {
         source_language: &request.translation_context.source_lang,
         target_language: &request.translation_context.target_lang,
-        segment_kind,
+        segment_kind: request.segment_kind,
+        context_json: request.context_json,
         neighbor_sources: &request.qa_neighbors.sources,
         neighbor_targets: &request.qa_neighbors.targets,
     };

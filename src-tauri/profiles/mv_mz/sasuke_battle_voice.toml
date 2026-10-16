@@ -1,0 +1,12 @@
+# BattleVoiceMZ — option label only (addCommand(strBattleVoice, 'battleVoice')).
+# The saved setting is keyed by the 'battleVoice' symbol, not by the label.
+
+[plugin]
+name = "SASUKE/BattleVoiceMZ"
+title = "Battle voices (BattleVoiceMZ)"
+verified_sha256 = ["ccbae6cf8fcc23c8cd619a28e9731a63242e27356f68cf361d8e7d29350d3815"]
+reference = "BattleVoiceMZ: 'Battle Voice Name at Option' → Window_Options.addCommand label (config key is the symbol 'battleVoice')."
+
+[[display]]
+path = "Battle Voice Name at Option"
+visible_in = "Options menu entry"

@@ -1,0 +1,21 @@
+{
+  "displayName": "始まりの村",
+  "note": "",
+  "events": [
+    null,
+    {
+      "id": 1,
+      "name": "EV001",
+      "note": "",
+      "pages": [
+        {
+          "list": [
+            { "code": 101, "indent": 0, "parameters": ["", 0, 0, 2, "恵"] },
+            { "code": 401, "indent": 0, "parameters": ["ようこそ！"] },
+            { "code": 0, "indent": 0, "parameters": [] }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -2,6 +2,7 @@
 // registered via a single generate_handler![...] in lib.rs.
 
 pub mod app;
+pub mod coverage;
 pub mod export;
 pub mod pack;
 mod pack_terminology;

@@ -1,0 +1,10 @@
+# NRP_SeamlessEncounter — EncounterList[].Note is an editor label.
+
+[plugin]
+name = "NRP/NRP_SeamlessEncounter"
+title = "Seamless encounters (NRP_SeamlessEncounter)"
+verified_sha256 = ["37b84f16dac3944dfaa326d58ff9c5c397f13ac43e42145dbe525ffabba2611d"]
+reference = "NRP_SeamlessEncounter v1.03: EncounterList[].Note unused at runtime."
+
+[[memo]]
+path = "EncounterList[].Note"

@@ -1,0 +1,12 @@
+# MPP_ChoiceEX — "Choice Help Commands" are command names the plugin matches
+# against event commands.
+
+[plugin]
+name = "MokuseiPengin/MPP_ChoiceEX"
+title = "Extended choices (MPP_ChoiceEX)"
+verified_sha256 = ["e6a2d7c1beb4ae653526275339d33172eb6866aa7eedf391f51f768823622aa6"]
+reference = "MPP_ChoiceEX: Choice Help Commands parsed as command names and matched literally."
+
+[[blocked]]
+path = "Choice Help Commands[]"
+reason = "Command names matched against event commands; translating them breaks choice help."

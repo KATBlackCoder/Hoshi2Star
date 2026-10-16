@@ -1,0 +1,66 @@
+# SkillCost — extra skill costs.
+# ItemCostName is drawn after the item count. Every *MetaName parameter is the
+# NOTE-TAG KEY skills use to declare costs (Potadra_meta(skill.meta, key)):
+# translating one makes every such cost silently disappear.
+
+[plugin]
+name = "Potetodoragon/SkillCost"
+title = "Skill costs (SkillCost)"
+verified_sha256 = ["4d43a776a71c4654d6bfbbda5220bebb74dc66d07b51b6daa83113a6767c6f62"]
+reference = "SkillCost: ItemCostName → drawText suffix; *MetaName → Potadra_meta(skill.meta, name) note-tag keys."
+
+[[display]]
+path = "ItemCostName"
+visible_in = "Item-cost suffix in skill lists"
+
+[[blocked]]
+path = "HpCostMetaName"
+reason = "Note-tag key: skills declare this cost with <key:value>; translating the key makes the cost disappear."
+
+[[blocked]]
+path = "GoldCostMetaName"
+reason = "Note-tag key: skills declare this cost with <key:value>; translating the key makes the cost disappear."
+
+[[blocked]]
+path = "ItemCostMetaName"
+reason = "Note-tag key: skills declare this cost with <key:value>; translating the key makes the cost disappear."
+
+[[blocked]]
+path = "WeaponCostMetaName"
+reason = "Note-tag key: skills declare this cost with <key:value>; translating the key makes the cost disappear."
+
+[[blocked]]
+path = "ArmorCostMetaName"
+reason = "Note-tag key: skills declare this cost with <key:value>; translating the key makes the cost disappear."
+
+[[blocked]]
+path = "ItemRateCostMetaName"
+reason = "Note-tag key: skills declare this cost with <key:value>; translating the key makes the cost disappear."
+
+[[blocked]]
+path = "WeaponRateCostMetaName"
+reason = "Note-tag key: skills declare this cost with <key:value>; translating the key makes the cost disappear."
+
+[[blocked]]
+path = "ArmorRateCostMetaName"
+reason = "Note-tag key: skills declare this cost with <key:value>; translating the key makes the cost disappear."
+
+[[blocked]]
+path = "HpRateCostMetaName"
+reason = "Note-tag key: skills declare this cost with <key:value>; translating the key makes the cost disappear."
+
+[[blocked]]
+path = "MpRateCostMetaName"
+reason = "Note-tag key: skills declare this cost with <key:value>; translating the key makes the cost disappear."
+
+[[blocked]]
+path = "GoldRateCostMetaName"
+reason = "Note-tag key: skills declare this cost with <key:value>; translating the key makes the cost disappear."
+
+[[blocked]]
+path = "MaxHpRateCostMetaName"
+reason = "Note-tag key: skills declare this cost with <key:value>; translating the key makes the cost disappear."
+
+[[blocked]]
+path = "MaxMpRateCostMetaName"
+reason = "Note-tag key: skills declare this cost with <key:value>; translating the key makes the cost disappear."

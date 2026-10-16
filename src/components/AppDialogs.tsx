@@ -13,6 +13,10 @@ import { SettingsModal } from "@/components/settings/SettingsModal";
 import { AboutModal } from "@/components/AboutModal";
 import { TranslateAllDialog } from "@/components/TranslateAllDialog";
 import { FontSizeDialog } from "@/components/FontSizeDialog";
+import { TextCoverageDialog } from "@/components/TextCoverageDialog";
+import { ExportLocaleOption } from "@/components/ExportLocaleOption";
+import { ExportIntegrityDialog } from "@/components/ExportIntegrityDialog";
+import { useProjectStore } from "@/stores/project";
 import type { useAppHandlers } from "@/hooks/useAppHandlers";
 
 // ---------------------------------------------------------------------------
@@ -27,6 +31,7 @@ interface AppDialogsProps {
 
 export function AppDialogs({ handlers }: AppDialogsProps) {
   const { t } = useTranslation();
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
 
   const {
     showSettings,
@@ -37,10 +42,15 @@ export function AppDialogs({ handlers }: AppDialogsProps) {
     translateAllStats,
     showFontDialog,
     fontScanResult,
+    exportPreflight,
+    switchLocale,
+    integrityIssues,
     setShowSettings,
     setShowAbout,
     setExportDialog,
     setShowTranslateAll,
+    setSwitchLocale,
+    setIntegrityIssues,
     handleExportConfirm,
     handleExportFontApply,
     handleExportFontSkip,
@@ -83,6 +93,13 @@ export function AppDialogs({ handlers }: AppDialogsProps) {
               })}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {exportPreflight?.locale && (
+            <ExportLocaleOption
+              option={exportPreflight.locale}
+              checked={switchLocale}
+              onCheckedChange={setSwitchLocale}
+            />
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setExportDialog(null)}>
               {t("toolbar.exportAllNo")}
@@ -131,6 +148,12 @@ export function AppDialogs({ handlers }: AppDialogsProps) {
         />
       )}
 
+      <ExportIntegrityDialog
+        issues={integrityIssues}
+        onClose={() => setIntegrityIssues(null)}
+      />
+
+      <TextCoverageDialog projectId={activeProjectId} />
     </>
   );
 }

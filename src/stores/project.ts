@@ -8,6 +8,7 @@ import type {
   ProjectStats,
   SourceFile,
 } from "@/lib/types";
+import { applyPostOpenCoverage, openCoverageDialog } from "@/stores/coverage";
 import { useSettingsStore } from "@/stores/settings";
 import { useUiStore } from "@/stores/ui";
 
@@ -125,6 +126,30 @@ export async function openProject(
         translated: stats.translatedCount,
       }),
     );
+  }
+
+  if (project.engine === "mv_mz") {
+    // Optional plugin/system text: offered, never enabled behind the user's
+    // back. Best-effort, never blocks opening.
+    try {
+      const outcome = await applyPostOpenCoverage(project.id, wasRestored);
+      if (outcome.kind !== "none") {
+        toast.info(
+          outcome.kind === "available"
+            ? t("coverage.available", { count: outcome.categories })
+            : t("coverage.undecided"),
+          {
+            duration: 15000,
+            action: {
+              label: t("coverage.reviewAction"),
+              onClick: () => void openCoverageDialog(project.id),
+            },
+          },
+        );
+      }
+    } catch (err) {
+      toast.warning(t("coverage.scanFailed", { error: String(err) }));
+    }
   }
 
   return { project, wasRestored };

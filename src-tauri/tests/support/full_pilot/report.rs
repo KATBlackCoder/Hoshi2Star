@@ -77,11 +77,18 @@ pub async fn summarize_named(
     .await
     .map_err(|error| error.to_string())?;
     let metrics = read_metrics(&workspace.metrics_path())?;
-    let export =
-        match export_project(workspace.project_id.clone(), None, false, workspace.state()).await {
-            Ok(path) => format!("valid:{path}"),
-            Err(error) => format!("blocked:{error}"),
-        };
+    let export = match export_project(
+        workspace.project_id.clone(),
+        None,
+        false,
+        None,
+        workspace.state(),
+    )
+    .await
+    {
+        Ok(path) => format!("valid:{path}"),
+        Err(error) => format!("blocked:{error}"),
+    };
     Ok(VariantSummary {
         variant: workspace.variant.clone(),
         total_segments: qa.total_segments,

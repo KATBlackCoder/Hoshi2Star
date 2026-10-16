@@ -22,6 +22,7 @@ fn semantic_check(
             source_language: "ja",
             target_language,
             segment_kind,
+            context_json: None,
             neighbor_sources: &[],
             neighbor_targets: &[],
         },

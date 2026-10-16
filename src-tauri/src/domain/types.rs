@@ -63,6 +63,9 @@ pub struct Segment {
     pub speaker: Option<String>,
     pub branch_path: Option<String>,
     pub context_json: Option<String>,
+    /// Optional text category (None = core extraction).
+    #[sqlx(default)]
+    pub text_category: Option<String>,
     pub target_text: String,
     pub status: String,
     pub qa_score: Option<i64>,
@@ -94,6 +97,9 @@ pub struct SegmentSearchHit {
     pub speaker: Option<String>,
     pub branch_path: Option<String>,
     pub context_json: Option<String>,
+    /// Optional text category (None = core extraction).
+    #[sqlx(default)]
+    pub text_category: Option<String>,
     pub target_text: String,
     pub status: String,
     pub qa_score: Option<i64>,

@@ -1,0 +1,13 @@
+[
+  null,
+  {
+    "id": 1,
+    "name": "判定",
+    "list": [
+      { "code": 108, "indent": 0, "parameters": ["炎 と 鞭 のメモ（エディタ専用）"] },
+      { "code": 355, "indent": 0, "parameters": ["$gameActors.actor(1).name() === '恵'"] },
+      { "code": 401, "indent": 0, "parameters": ["判定が終わった。"] },
+      { "code": 0, "indent": 0, "parameters": [] }
+    ]
+  }
+]

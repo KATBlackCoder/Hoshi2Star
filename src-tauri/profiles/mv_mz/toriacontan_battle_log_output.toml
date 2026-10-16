@@ -1,0 +1,19 @@
+# BattleLogOutput (Triacontane) — OUTPUT_LOG plugin command.
+# args.message is split on "\n" and each line drawn with drawTextEx (escape
+# codes work). Arguments go through PluginCommonBase, which turns "true",
+# "false", numbers and JSON text into other types → must stay plain text.
+
+[plugin]
+name = "Toriacontan/BattleLogOutput"
+title = "Battle log messages (BattleLogOutput)"
+verified_sha256 = ["77c2ca074384e41aaf277c27a5287b61019f4653d7670426f44e3bea46cb0de5"]
+reference = "BattleLogOutput: OUTPUT_LOG args.message → Window_BattleLog addText per line (drawTextEx), via PluginManagerEx argument conversion."
+coerces_values = true
+
+[[command_arg]]
+command = "OUTPUT_LOG"
+arg = "message"
+title = "Battle log messages (BattleLogOutput)"
+visible_in = "Battle log"
+message = true
+escape_codes = true

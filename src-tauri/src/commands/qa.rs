@@ -85,6 +85,19 @@ async fn check_segment_live(
         .as_ref()
         .map(|value| value.2.as_str())
         .unwrap_or("fr");
+    // Persisted kind/context select the segment's placeholder syntax
+    // (`%n` templates); unknown for free-form checks without a segment.
+    let segment_facts: Option<(String, Option<String>)> = match segment_id {
+        Some(segment_id) => {
+            sqlx::query_as("SELECT segment_kind, context_json FROM segments WHERE id = ?")
+                .bind(segment_id)
+                .fetch_optional(db)
+                .await
+                .ok()
+                .flatten()
+        }
+        None => None,
+    };
     let terminology_rules = match segment_id {
         Some(segment_id) => {
             resolver::resolve_qa_rules_for_segments(db, &[segment_id.to_string()], target_language)
@@ -103,7 +116,12 @@ async fn check_segment_live(
         &qa::QaSemanticContext {
             source_language,
             target_language,
-            segment_kind: "unknown",
+            segment_kind: segment_facts
+                .as_ref()
+                .map_or("unknown", |(kind, _)| kind.as_str()),
+            context_json: segment_facts
+                .as_ref()
+                .and_then(|(_, context)| context.as_deref()),
             neighbor_sources: &[],
             neighbor_targets: &[],
         },

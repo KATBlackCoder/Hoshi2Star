@@ -198,6 +198,7 @@
     "empty": "Traduction vide",
     "qaError": {
       "missing_placeholder": "Code manquant",
+      "missing_format_specifier": "Valeur manquante",
       "line_too_long": "Ligne trop longue",
       "bom_detected": "BOM détecté",
       "terminology_mismatch": "Terminologie non respectée"
@@ -307,6 +308,7 @@
     "exportError": "Échec de l'export : {{error}}",
     "errors": {
       "missing_placeholder": "Placeholder manquant : {{name}}",
+      "missing_format_specifier": "Valeur {{name}} manquante : le jeu affiche le message sans elle",
       "line_too_long": "Ligne {{line}} trop large ({{units}} / {{maxUnits}} unités — {{chars}} caractères)",
       "bom_detected": "BOM UTF-8 détecté en début de cible",
       "empty_translation": "La traduction est vide",
@@ -315,7 +317,16 @@
       "suspicious_expansion": "Expansion suspecte : {{sourceChars}} → {{targetChars}} caractères",
       "context_leak": "Contexte voisin recopié : {{neighbor}}",
       "inconsistent_repeated_source": "La même source possède {{variants}} traductions différentes",
-      "terminology_mismatch": "{{severity}} — {{source}} doit utiliser {{target}}"
+      "terminology_mismatch": "{{severity}} — {{source}} doit utiliser {{target}}",
+      "constraint": {
+        "plain_text_value": "Ce plugin convertit les valeurs : la traduction ne doit pas être seulement un nombre, true/false ou du JSON",
+        "no_escape_codes": "Affiché en texte brut ici : les codes d'échappement apparaîtraient tels quels",
+        "other": "Enfreint une règle d'affichage : {{rule}}",
+        "keke_skill_type": "Recherché dans les balises de commandes de combat : un seul mot, sans espaces, `,` `/` `>` `:` ni chiffres",
+        "keke_skill_type_unique": "Un autre type de compétence a la même traduction : les commandes de combat pointeraient vers le mauvais type",
+        "keke_tag_field": "Dans une balise de note : `,` ou `>` casserait la commande de combat",
+        "keke_no_spaces": "Le plugin supprime les espaces ici (« Whip Attack » s'affiche « WhipAttack »)"
+      }
     },
     "severity": {
       "critical": "Critique",
@@ -528,5 +539,118 @@
     "reportTerminologyConflicts": "Conflits terminologiques verrouillés (terme local conservé)",
     "reportTm": "Entrées de TM ajoutées",
     "reportBackup": "Sauvegarde écrite avant l'import : {{path}}"
+  },
+  "coverage": {
+    "toolbar": "Couverture du texte",
+    "toolbarHint": "Texte des plugins et du système hors extraction standard",
+    "title": "Couverture du texte",
+    "description": "Texte visible par le joueur hors extraction standard (paramètres de plugins, listes System, noms de cartes…). Chaque option indique où le texte apparaît et ce que son activation modifie. Tout ce qui casserait le jeu ne peut pas être activé.",
+    "scanning": "Analyse des fichiers du jeu…",
+    "unsupported": "Ce moteur n'a pas de catégories de texte optionnelles.",
+    "nothingFound": "Aucun texte supplémentaire visible par le joueur n'a été trouvé.",
+    "state": {
+      "verified": "Traduction sûre",
+      "linked": "Modifications liées nécessaires",
+      "blocked": "Traduction impossible sans risque"
+    },
+    "stateHint": {
+      "verified": "Texte d'affichage qu'aucun plugin, script ou balise de note n'utilise comme identifiant.",
+      "linked": "Utilisé comme identifiant ailleurs ; Hoshi2Star réécrit chaque référence dans le même export et le vérifie.",
+      "blocked": "Utilisé comme identifiant à un endroit que Hoshi2Star ne peut pas mettre à jour. Le traduire casserait le jeu : il reste dans la langue d'origine."
+    },
+    "textCount": "{{count}} textes",
+    "translatedCount": "{{done}}/{{total}} traduits",
+    "visibleIn": "Visible dans :",
+    "showDetails": "Afficher les détails",
+    "hideDetails": "Masquer les détails",
+    "consequences": "Ce que l'activation modifie",
+    "constraints": "Règles de traduction",
+    "samples": "Exemples",
+    "references": "Utilisé comme identifiant à {{count}} endroit(s)",
+    "moreReferences": "…et {{count}} de plus",
+    "site": {
+      "note": "balise de note",
+      "script": "script",
+      "plugin_command": "commande de plugin",
+      "plugin_command_arg": "argument de commande de plugin",
+      "plugin_param": "paramètre de plugin",
+      "plugin_source": "code du plugin"
+    },
+    "constraint": {
+      "keep_format_specifiers": "Conserver chaque %1, %2…",
+      "no_escape_codes": "Texte brut uniquement : des codes comme \\C[n] ou \\FS[n] s'afficheraient tels quels",
+      "plain_text_value": "Doit rester du texte brut : le plugin convertit true/false, les nombres et le JSON",
+      "keke_skill_type": "Un seul mot : sans espaces, `,` `/` `>` `:` ni chiffres ASCII, et différent des autres types de compétence",
+      "keke_tag_field": "Pas de `,` ni de `>` (ils casseraient la balise de note)",
+      "keke_no_spaces": "Le plugin supprime les espaces (« Whip Attack » → « WhipAttack »)"
+    },
+    "category": {
+      "system": {
+        "skill_types": {
+          "title": "Noms des types de compétence",
+          "visibleIn": "Onglets du menu Compétences et commande Compétence en combat"
+        },
+        "equip_types": {
+          "title": "Noms des emplacements d'équipement",
+          "visibleIn": "Libellés des emplacements de l'écran Équipement"
+        },
+        "elements": {
+          "title": "Noms des éléments",
+          "visibleIn": "Uniquement là où un plugin les affiche (ex. faiblesses du bestiaire) ; absent des menus par défaut"
+        },
+        "weapon_types": {
+          "title": "Noms des types d'arme",
+          "visibleIn": "Uniquement là où un plugin les affiche ; absent des menus par défaut"
+        },
+        "armor_types": {
+          "title": "Noms des types d'armure",
+          "visibleIn": "Uniquement là où un plugin les affiche ; absent des menus par défaut"
+        }
+      },
+      "map": {
+        "display_name": {
+          "title": "Noms affichés des cartes",
+          "visibleIn": "Bandeau du nom de carte affiché à l'entrée d'une carte"
+        }
+      },
+      "notetag": {
+        "keke_command": {
+          "labels": {
+            "title": "Libellés des commandes de combat (balises Keke)",
+            "visibleIn": "Commandes des personnages en combat"
+          }
+        }
+      }
+    },
+    "reconstructedNotice": "Le dossier du jeu contenait déjà un export Hoshi2Star. Les fichiers d'origine ont été reconstruits depuis la base du projet : les exports repartent toujours du jeu non traduit.",
+    "driftNotice": "Certains textes extraits ne correspondent plus aux fichiers du jeu ({{files}}). Le jeu a peut-être été mis à jour depuis la création du projet.",
+    "pluginsUnreadable": "js/plugins.js n'a pas pu être lu de façon sûre ({{error}}) ; les paramètres de plugins ne sont ni analysés ni proposés.",
+    "coreWarningsTitle": "Traductions existantes aussi utilisées comme identifiants ({{count}})",
+    "coreWarningsHint": "Ces textes font déjà partie de l'extraction standard. Ils sont aussi comparés ou recherchés quelque part : vérifiez que leur traduction ne casse pas ces endroits.",
+    "busyTranslating": "Attendez la fin de la traduction avant de modifier les catégories.",
+    "close": "Fermer",
+    "save": "Enregistrer",
+    "saved": "Couverture du texte mise à jour",
+    "saveError": "Impossible de mettre à jour la couverture du texte : {{error}}",
+    "linkedConfirmTitle": "Activer les modifications liées ?",
+    "linkedConfirmDesc": "Ces catégories modifient d'autres données du jeu dans le même export. Lisez les conséquences ci-dessous.",
+    "linkedConfirmCancel": "Annuler",
+    "linkedConfirmAccept": "J'ai compris, activer",
+    "available": "{{count}} catégories de texte optionnelles (texte de plugins et de l'interface système) peuvent être traduites sans risque. Rien n'a été activé.",
+    "undecided": "Le texte optionnel des plugins et de l'interface système peut être examiné pour la traduction dans Couverture du texte.",
+    "reviewAction": "Examiner",
+    "scanFailed": "Impossible d'analyser le texte supplémentaire : {{error}}",
+    "notCoveredTitle": "Texte de plugin non couvert ({{count}})",
+    "notCoveredHint": "Ces paramètres de plugin contiennent du texte, mais aucun profil vérifié ne prouve qu'ils servent seulement à l'affichage : ils restent non traduits. Un indice est une supposition tirée du code du plugin, jamais une garantie.",
+    "notCoveredHintLabel": "Indice :"
+  },
+  "exportLocale": {
+    "label": "Changer aussi le réglage de langue du jeu ({{current}} → {{target}})",
+    "hint": "Facultatif et désactivé par défaut. Seul `locale` dans System.json change ; les conséquences ci-dessous viennent du code de ce jeu.",
+    "codeLines": "Lignes de code qui lisent ce réglage ({{count}})"
+  },
+  "exportIntegrity": {
+    "title": "Export bloqué par le contrôle d'intégrité",
+    "description": "Aucun fichier n'a été écrit. Le contrôle compare chaque fichier produit avec l'original et a trouvé des changements non prévus :"
   }
 }

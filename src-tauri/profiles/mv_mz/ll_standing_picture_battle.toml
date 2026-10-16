@@ -1,0 +1,10 @@
+# LL_StandingPictureBattle — sbCommandPictures[].memo is an editor label.
+
+[plugin]
+name = "LL/LL_StandingPictureBattle"
+title = "Battle standing pictures (LL_StandingPictureBattle)"
+verified_sha256 = ["5001fa0a66cc7211caa20cf57a6317f3b14e6f29ea0e7e7a377e499f888f3575"]
+reference = "LL_StandingPictureBattle: memo fields unused at runtime."
+
+[[memo]]
+path = "sbCommandPictures[].memo"

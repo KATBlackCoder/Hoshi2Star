@@ -1,0 +1,12 @@
+# MessageWindowHidden (Triacontane) — triggerButton holds input/button names
+# compared against pressed keys (param.triggerButton.some(...)).
+
+[plugin]
+name = "Toriacontan/MessageWindowHidden"
+title = "Hide message window (MessageWindowHidden)"
+verified_sha256 = ["62af5d0098c346a25351b9dfcb4c4b769594e727c2927f3acf053306176a2084"]
+reference = "MessageWindowHidden: triggerButton values compared against input names."
+
+[[blocked]]
+path = "triggerButton[]"
+reason = "Input/button names compared against the pressed key; translating them disables the shortcut."

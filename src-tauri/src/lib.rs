@@ -11,9 +11,10 @@ pub mod state;
 pub mod utils;
 
 use commands::app::updater_supported;
+use commands::coverage::{get_text_coverage_status, scan_text_coverage, set_text_categories};
 use commands::export::{
     debug_inject_file, export_debug_json, export_project, export_qa_report, export_tm,
-    scan_font_status, strip_font_prefixes,
+    preflight_export, scan_font_status, strip_font_prefixes,
 };
 use commands::pack::{apply_h2s_import, export_h2s_pack, preview_h2s_import};
 use commands::pilot::{prepare_mv_mz_pilot, run_mv_mz_pilot};
@@ -43,7 +44,8 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
-            let db_path = app.path().app_data_dir()?.join("hoshi2star.db");
+            let data_dir = app.path().app_data_dir()?;
+            let db_path = data_dir.join("hoshi2star.db");
 
             // Ensure the data directory exists before connecting
             if let Some(parent) = db_path.parent() {
@@ -55,7 +57,7 @@ pub fn run() {
             let pool = tauri::async_runtime::block_on(db::pool::init(&path_str))
                 .map_err(|e| e.to_string())?;
 
-            app.manage(AppState::new(pool).map_err(|error| error.to_string())?);
+            app.manage(AppState::new(pool, data_dir).map_err(|error| error.to_string())?);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -65,6 +67,7 @@ pub fn run() {
             search_segments,
             update_segment,
             export_project,
+            preflight_export,
             translate_segments,
             get_tm_suggestions,
             get_qa_report,
@@ -101,6 +104,9 @@ pub fn run() {
             start_terminology_scan,
             cancel_terminology_scan,
             translate_terminology_entries,
+            get_text_coverage_status,
+            scan_text_coverage,
+            set_text_categories,
         ]);
 
     #[cfg(debug_assertions)]

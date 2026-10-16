@@ -1,0 +1,19 @@
+# DamageSeEffective (Triacontane) — weakness/resistance damage sounds.
+# damageSeList[].message is pushed to the battle log (addText); `label` is an
+# editor memo. Parameters go through PluginCommonBase (value coercion).
+
+[plugin]
+name = "Toriacontan/DamageSeEffective"
+title = "Damage sound messages (DamageSeEffective)"
+verified_sha256 = ["3e6deea6aabb1b9ea6e2b79e7b7f412e83d334c0011eb47bf79b2bb929d42da6"]
+reference = "DamageSeEffective: damageSeList[].message → BattleLog addText; label unused at runtime."
+coerces_values = true
+
+[[display]]
+path = "damageSeList[].message"
+visible_in = "Battle log line when the damage sound plays"
+message = true
+escape_codes = true
+
+[[memo]]
+path = "damageSeList[].label"

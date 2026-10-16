@@ -1,0 +1,11 @@
+# ChangeEquipOnBattleMZ — battle party command label.
+
+[plugin]
+name = "ChangeEquipOnBattleMZ"
+title = "Equip in battle (ChangeEquipOnBattleMZ)"
+verified_sha256 = ["4b5e5bb3e58ff6727ed7c9b4ebec2075c3e5c375448009ed52b5712135daf179"]
+reference = "ChangeEquipOnBattleMZ: commandName → addCommand(commandName, 'equip')."
+
+[[display]]
+path = "commandName"
+visible_in = "Battle party command"

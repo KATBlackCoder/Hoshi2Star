@@ -9,6 +9,11 @@ use super::{
 
 const NEIGHBOR_RADIUS: i64 = 2;
 
+/// Ids bound per query. SQLite caps bound variables per statement (999 on
+/// older builds, 32766 on newer ones); a full-project audit can pass every
+/// segment id, so the `IN (...)` list is always chunked.
+const ID_CHUNK: usize = 400;
+
 pub(super) async fn build(
     db: &SqlitePool,
     segment_ids: &[String],
@@ -17,37 +22,10 @@ pub(super) async fn build(
         return Ok(Vec::new());
     }
 
-    let mut query = QueryBuilder::<Sqlite>::new(
-        "SELECT c.id AS center_id, c.segment_kind AS center_kind, \
-                c.scene_id AS center_scene_id, c.sequence_index AS center_sequence, \
-                c.speaker AS center_speaker, c.branch_path AS center_branch_path, \
-                n.segment_kind AS neighbor_kind, n.sequence_index AS neighbor_sequence, \
-                n.speaker AS neighbor_speaker, n.source_text AS neighbor_text, \
-                n.target_text AS neighbor_target \
-         FROM segments c \
-         LEFT JOIN segments n \
-           ON c.scene_id IS NOT NULL \
-          AND c.sequence_index IS NOT NULL \
-          AND c.segment_kind IN ('dialogue', 'scrolling_text', 'plugin_text') \
-          AND n.source_file_id = c.source_file_id \
-          AND n.scene_id = c.scene_id \
-          AND n.branch_path IS c.branch_path \
-          AND n.sequence_index BETWEEN c.sequence_index - ",
-    );
-    query
-        .push_bind(NEIGHBOR_RADIUS)
-        .push(" AND c.sequence_index + ")
-        .push_bind(NEIGHBOR_RADIUS)
-        .push(" AND n.id <> c.id WHERE c.id IN (");
-    {
-        let mut ids = query.separated(", ");
-        for id in segment_ids {
-            ids.push_bind(id);
-        }
+    let mut rows = Vec::new();
+    for chunk in segment_ids.chunks(ID_CHUNK) {
+        rows.extend(fetch_rows(db, chunk).await?);
     }
-    query.push(") ORDER BY c.rowid, n.sequence_index");
-
-    let rows = query.build_query_as::<JoinedRow>().fetch_all(db).await?;
     let mut contexts: HashMap<String, SegmentContextBundle> =
         HashMap::with_capacity(segment_ids.len());
 
@@ -65,7 +43,7 @@ pub(super) async fn build(
             };
             SegmentContextBundle {
                 prompt: Some(SegmentPromptContext {
-                    segment_kind: row.center_kind,
+                    segment_kind: row.center_kind.clone(),
                     scene_id,
                     speaker,
                     branch_path,
@@ -73,6 +51,8 @@ pub(super) async fn build(
                     following: Vec::with_capacity(NEIGHBOR_RADIUS as usize),
                 }),
                 qa_neighbors: QaNeighborContext::default(),
+                segment_kind: Some(row.center_kind),
+                context_json: row.center_context_json,
             }
         });
 
@@ -116,6 +96,44 @@ pub(super) async fn build(
         .collect())
 }
 
+async fn fetch_rows(
+    db: &SqlitePool,
+    segment_ids: &[String],
+) -> Result<Vec<JoinedRow>, sqlx::Error> {
+    let mut query = QueryBuilder::<Sqlite>::new(
+        "SELECT c.id AS center_id, c.segment_kind AS center_kind, \
+                c.scene_id AS center_scene_id, c.sequence_index AS center_sequence, \
+                c.speaker AS center_speaker, c.branch_path AS center_branch_path, \
+                c.context_json AS center_context_json, \
+                n.segment_kind AS neighbor_kind, n.sequence_index AS neighbor_sequence, \
+                n.speaker AS neighbor_speaker, n.source_text AS neighbor_text, \
+                n.target_text AS neighbor_target \
+         FROM segments c \
+         LEFT JOIN segments n \
+           ON c.scene_id IS NOT NULL \
+          AND c.sequence_index IS NOT NULL \
+          AND c.segment_kind IN ('dialogue', 'scrolling_text', 'plugin_text') \
+          AND n.source_file_id = c.source_file_id \
+          AND n.scene_id = c.scene_id \
+          AND n.branch_path IS c.branch_path \
+          AND n.sequence_index BETWEEN c.sequence_index - ",
+    );
+    query
+        .push_bind(NEIGHBOR_RADIUS)
+        .push(" AND c.sequence_index + ")
+        .push_bind(NEIGHBOR_RADIUS)
+        .push(" AND n.id <> c.id WHERE c.id IN (");
+    {
+        let mut ids = query.separated(", ");
+        for id in segment_ids {
+            ids.push_bind(id);
+        }
+    }
+    query.push(") ORDER BY c.rowid, n.sequence_index");
+
+    query.build_query_as::<JoinedRow>().fetch_all(db).await
+}
+
 #[derive(Debug, FromRow)]
 struct JoinedRow {
     center_id: String,
@@ -124,6 +142,7 @@ struct JoinedRow {
     center_sequence: Option<i64>,
     center_speaker: Option<String>,
     center_branch_path: Option<String>,
+    center_context_json: Option<String>,
     neighbor_kind: Option<String>,
     neighbor_sequence: Option<i64>,
     neighbor_speaker: Option<String>,
@@ -237,6 +256,34 @@ mod tests {
             contexts[2].prompt.as_ref().unwrap().speaker.as_deref(),
             Some("仲間")
         );
+    }
+
+    #[tokio::test]
+    async fn id_lists_larger_than_one_chunk_keep_order_and_context() {
+        let (pool, _temp) = seeded_db().await;
+        // 1 000 missing ids around the real ones force three chunks and put
+        // seeded rows on both sides of a chunk boundary.
+        let mut ids: Vec<String> = (0..ID_CHUNK - 1).map(|i| format!("missing-{i}")).collect();
+        ids.push("center".to_string());
+        ids.push("s1".to_string());
+        ids.extend((0..1_000).map(|i| format!("missing-tail-{i}")));
+
+        let contexts = build(&pool, &ids).await.unwrap();
+
+        assert_eq!(contexts.len(), ids.len());
+        let center = contexts[ID_CHUNK - 1].prompt.as_ref().unwrap();
+        assert_eq!(center.previous.len(), 2);
+        assert_eq!(center.following.len(), 2);
+        assert_eq!(
+            contexts[ID_CHUNK]
+                .prompt
+                .as_ref()
+                .unwrap()
+                .speaker
+                .as_deref(),
+            Some("仲間")
+        );
+        assert_eq!(contexts[0], SegmentContextBundle::default());
     }
 
     #[tokio::test]

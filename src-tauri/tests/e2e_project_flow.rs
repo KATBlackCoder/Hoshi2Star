@@ -20,7 +20,8 @@ use std::path::{Path, PathBuf};
 use hoshi2star_lib::commands::export::export_project;
 use hoshi2star_lib::commands::pilot::prepare_mv_mz_pilot;
 use hoshi2star_lib::commands::project::{
-    debug_dump_segments, get_segments, get_source_files, open_project, update_segment,
+    debug_dump_segments, delete_project, get_segments, get_source_files, open_project,
+    update_segment,
 };
 use hoshi2star_lib::commands::qa::get_qa_report;
 use hoshi2star_lib::db;
@@ -409,7 +410,10 @@ fn tree_digest(root: &Path) -> [u8; 32] {
 async fn mock_app(db_path: &str) -> tauri::App<tauri::test::MockRuntime> {
     let pool = db::pool::init(db_path).await.expect("pool init");
     mock_builder()
-        .manage(AppState::new(pool).expect("terminology service"))
+        .manage(
+            AppState::new(pool, std::path::PathBuf::from(format!("{db_path}.data")))
+                .expect("terminology service"),
+        )
         .build(mock_context(noop_assets()))
         .expect("mock app build")
 }
@@ -484,7 +488,7 @@ async fn mv_open_translate_export_round_trip() {
         .await
         .expect("update_segment");
 
-    let zip_path = export_project(project.id.clone(), None, true, app.state())
+    let zip_path = export_project(project.id.clone(), None, true, None, app.state())
         .await
         .expect("export_project");
 
@@ -493,6 +497,109 @@ async fn mv_open_translate_export_round_trip() {
     assert!(
         zip_entry_contains(Path::new(&zip_path), &file_zip_path, MARKER.as_bytes()),
         "exported {file_zip_path} must contain the injected translation"
+    );
+}
+
+/// Every entry of an exported archive, by name.
+fn zip_entries(zip_path: &Path) -> BTreeMap<String, Vec<u8>> {
+    let file = std::fs::File::open(zip_path).unwrap();
+    let mut archive = zip::ZipArchive::new(file).unwrap();
+    let mut entries = BTreeMap::new();
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).unwrap();
+        let mut bytes = Vec::new();
+        entry.read_to_end(&mut bytes).unwrap();
+        entries.insert(entry.name().to_string(), bytes);
+    }
+    entries
+}
+
+/// Users unzip `hoshi2star.zip` over the game folder. Export must keep
+/// deriving from the pristine originals — both with a snapshot and for a
+/// legacy project whose snapshot has to be reconstructed from that folder.
+#[tokio::test]
+async fn mv_export_is_idempotent_after_unzipping_over_the_game() {
+    let (temporary, app, project) = opened_mv_fixture("fr").await;
+    let snapshot = app
+        .state::<AppState>()
+        .data_dir
+        .join("originals")
+        .join(&project.id);
+    assert!(
+        snapshot.join("snapshot.json").is_file(),
+        "open_project captures the pristine snapshot"
+    );
+
+    let files = get_source_files(project.id.clone(), app.state())
+        .await
+        .unwrap();
+    for file in &files {
+        let page = get_segments(project.id.clone(), file.id.clone(), 0, 100_000, app.state())
+            .await
+            .unwrap();
+        for segment in &page.items {
+            // Same source → same target (canonical kinds must stay consistent),
+            // and every placeholder is kept, so the QA gate accepts the target.
+            let digest = hex::encode(Sha256::digest(segment.source_text.as_bytes()));
+            let syntax = TokEngine::for_segment(
+                "mv_mz",
+                &segment.segment_kind,
+                segment.context_json.as_deref(),
+            );
+            let placeholders =
+                hoshi2star_lib::llm::tokenizer::Tokenizer::tokenize(&segment.source_text, syntax)
+                    .map
+                    .into_values()
+                    .collect::<Vec<_>>()
+                    .join(" ");
+            update_segment(
+                segment.id.clone(),
+                format!("{MARKER}-{} {placeholders}", &digest[..8]),
+                app.state(),
+            )
+            .await
+            .unwrap();
+        }
+    }
+    let first = zip_entries(Path::new(
+        &export_project(project.id.clone(), Some(22), true, None, app.state())
+            .await
+            .expect("first export"),
+    ));
+    assert!(!first.is_empty());
+
+    let game_root = temporary.path().join("game");
+    for (name, bytes) in &first {
+        std::fs::write(game_root.join(name), bytes).unwrap();
+    }
+    let second = zip_entries(Path::new(
+        &export_project(project.id.clone(), Some(22), true, None, app.state())
+            .await
+            .expect("export over an unzipped folder"),
+    ));
+    assert_eq!(
+        second, first,
+        "export must not re-inject into its own output"
+    );
+
+    // Legacy project: no snapshot yet, game folder already translated.
+    std::fs::remove_dir_all(&snapshot).unwrap();
+    let third = zip_entries(Path::new(
+        &export_project(project.id.clone(), Some(22), true, None, app.state())
+            .await
+            .expect("export after reconstructing the snapshot"),
+    ));
+    assert_eq!(
+        third, first,
+        "reconstruction must recover the exact originals"
+    );
+
+    delete_project(project.id.clone(), app.state())
+        .await
+        .unwrap();
+    assert!(
+        !snapshot.exists(),
+        "deleting the project removes its snapshot"
     );
 }
 
@@ -527,7 +634,7 @@ async fn mv_export_allows_a_non_critical_width_warning() {
     .expect("save warning-only translation");
     assert_eq!(updated.qa_score, Some(90));
 
-    export_project(project.id, None, true, app.state())
+    export_project(project.id, None, true, None, app.state())
         .await
         .expect("a warning-only project must remain exportable");
 }
@@ -560,7 +667,7 @@ async fn mv_export_blocks_a_missing_placeholder_at_score_75() {
         .expect("save structurally invalid translation");
     assert_eq!(updated.qa_score, Some(75));
 
-    let error = export_project(project.id, None, true, app.state())
+    let error = export_project(project.id, None, true, None, app.state())
         .await
         .expect_err("a missing placeholder must block export");
     assert!(error.contains("Export bloqué"));
@@ -851,7 +958,7 @@ async fn wolf_common_events_open_translate_export_round_trip() {
         .await
         .expect("update_segment B");
 
-    let zip_path = export_project(project.id.clone(), None, true, app.state())
+    let zip_path = export_project(project.id.clone(), None, true, None, app.state())
         .await
         .expect("export_project");
 

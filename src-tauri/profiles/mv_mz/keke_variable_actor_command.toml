@@ -1,0 +1,27 @@
+# Keke_VariableActorCommand — reviewed source (no @version header; pinned by hash).
+#
+# 用語・自動戦闘 → addCommand label of the auto-battle command.
+# アイコン配置 and キャンセルボタン自動移動 are compared against literal option
+# strings (`keke_cancelAutoRepos == "無効"`, `pos == "左上に配置"`…): translating
+# them silently changes behaviour.
+
+[plugin]
+name = "keke/Keke_VariableActorCommand"
+title = "Variable actor commands (Keke_VariableActorCommand)"
+verified_sha256 = ["d460097ba00d5061d4b78e68482c0a9729aa52ddb612911f240a5d173b65feda"]
+reference = "Keke_VariableActorCommand: 用語・自動戦闘 → addCommand; アイコン配置 / キャンセルボタン自動移動 compared against literal option values; <コマンド|cmd|command:TYPE,order,label,icon,help> note tags (makeCommandListFree/totalAllMetaArray/metaAll)."
+# Command tags: label = display; TYPE `スキル/NAME` looks NAME up in
+# $dataSystem.skillTypes (implemented in engines/mv_mz/keke.rs).
+note_tag_families = ["keke_command"]
+
+[[display]]
+path = "用語・自動戦闘"
+visible_in = "Battle auto-battle command"
+
+[[blocked]]
+path = "アイコン配置"
+reason = "Option value compared literally by the plugin; translating it changes where command icons are placed."
+
+[[blocked]]
+path = "キャンセルボタン自動移動"
+reason = "Option value compared literally (== \"無効\" / \"上に配置\"…); translating it changes how the cancel button is repositioned."

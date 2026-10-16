@@ -1,0 +1,72 @@
+# NUUN_EnemyBook (enemy book / bestiary) — reviewed against Ver.2.23.4.
+#
+# Display fields reach Window_Command.addCommand / drawText (plain text) or,
+# for AnalyzeMissMessage, the battle log via String.format.
+# `paramName` is drawn as the row label; when empty the plugin falls back to a
+# hard-coded Japanese label chosen by `DateSelect` (Window_EnemyBook switch).
+# EnemyBookCategory[].CategoryKey is matched against enemy <CategoryKey:…>
+# note tags and is deliberately NOT listed as display text.
+
+[plugin]
+name = "nuun/NUUN_EnemyBook"
+title = "Enemy book (NUUN_EnemyBook)"
+# Pinned by source hash: a `@version` header is shared by edited copies.
+verified_sha256 = ["d4c32f2bd39394bfe56b244f2caf234e88869821558aba57d5bc5e9fd0d830b5"]
+reference = "NUUN_EnemyBook Ver.2.23.4: CommandName/EnemyInfoCommandName → addCommand; CategoryName, PageCategoryName → addCommand; ContentName → completion counter text; AnalyzeMissMessage → format(%1 target, %2 user); paramName → row labels."
+
+[[display]]
+path = "CommandName"
+visible_in = "Main menu command opening the bestiary"
+
+[[display]]
+path = "EnemyInfoCommandName"
+visible_in = "Battle command showing enemy information"
+
+[[display]]
+path = "EnemyBookCategory[].CategoryName"
+visible_in = "Bestiary category tabs"
+
+[[display]]
+path = "PercentContent[].ContentName"
+visible_in = "Bestiary completion counters"
+
+[[display]]
+path = "PageSetting[].PageCategoryName"
+visible_in = "Bestiary page tabs"
+
+[[display]]
+path = "InfoPageSetting[].PageCategoryName"
+visible_in = "Battle enemy-info page tabs"
+
+[[display]]
+path = "AnalyzeSkillMode[].AnalyzeMissMessage"
+visible_in = "Battle log when an Analyze skill misses"
+message = true
+template = true
+escape_codes = true
+
+[[display]]
+path = "PageList*[].paramName"
+visible_in = "Bestiary row labels"
+
+[[fill_in]]
+path = "PageList*[].paramName"
+key_field = "DateSelect"
+visible_in = "Bestiary row labels (built-in Japanese defaults)"
+
+[fill_in.defaults]
+"31" = "獲得金額"
+"32" = "倒した数"
+"40" = "耐性属性"
+"41" = "弱点属性"
+"42" = "無効属性"
+"44" = "吸収属性"
+"45" = "耐性ステート"
+"46" = "弱点ステート"
+"47" = "無効ステート"
+"50" = "弱点デバフ"
+"51" = "耐性デバフ"
+"52" = "無効デバフ"
+"121" = "耐性属性"
+"122" = "耐性ステート"
+"500" = "←→キー：ページ切り替え"

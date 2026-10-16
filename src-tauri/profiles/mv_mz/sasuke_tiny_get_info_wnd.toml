@@ -1,0 +1,24 @@
+# TinyGetInfoWndMZ — item gain/loss popup.
+# textGainItem / textLoseItem are String.format templates (%1 = item or money word).
+
+[plugin]
+name = "SASUKE/TinyGetInfoWndMZ"
+title = "Item gain popup (TinyGetInfoWndMZ)"
+verified_sha256 = ["abe6e7ce44e4132fa1eed159d82a8f8e5493c40ee5a4f48a4c6198a9a10cb9b9"]
+reference = "TinyGetInfoWndMZ: textGainItem/textLoseItem → .format(item name); wordMoney → inserted into those templates."
+
+[[display]]
+path = "textGainItem"
+visible_in = "Popup when an item is obtained"
+message = true
+template = true
+
+[[display]]
+path = "textLoseItem"
+visible_in = "Popup when an item is lost"
+message = true
+template = true
+
+[[display]]
+path = "wordMoney"
+visible_in = "Currency word inside the gain/loss popup"

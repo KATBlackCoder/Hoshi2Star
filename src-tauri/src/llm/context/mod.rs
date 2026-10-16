@@ -8,6 +8,8 @@ mod mv_mz;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
+use crate::llm::tokenizer::Engine as TokEngine;
+
 /// Prompt-shaping policy owned by an engine adapter.
 ///
 /// The provider remains generic: it receives already-sanitised context and
@@ -62,6 +64,22 @@ pub struct QaNeighborContext {
 pub struct SegmentContextBundle {
     pub prompt: Option<SegmentPromptContext>,
     pub qa_neighbors: QaNeighborContext,
+    /// Persisted segment facts, available whatever the prompt-context policy:
+    /// placeholder syntax and QA must not depend on whether neighbours are sent.
+    pub segment_kind: Option<String>,
+    pub context_json: Option<String>,
+}
+
+impl SegmentContextBundle {
+    /// Placeholder syntax for this segment (see [`TokEngine::for_segment`]).
+    /// Rows absent from the DB fall back to the project engine's default.
+    pub fn tokenizer(&self, project_engine: &str) -> TokEngine {
+        TokEngine::for_segment(
+            project_engine,
+            self.segment_kind.as_deref().unwrap_or("unknown"),
+            self.context_json.as_deref(),
+        )
+    }
 }
 
 /// Build contexts in the same order as `segment_ids`.

@@ -1,4 +1,12 @@
+pub mod coverage;
 pub mod decryptor;
 pub mod extractor;
 pub mod injector;
+pub mod integrity;
+pub mod json_span;
+pub mod keke;
+pub mod locale;
+pub mod originals;
+pub mod plugins_js;
+pub mod profiles;
 pub mod terminology;

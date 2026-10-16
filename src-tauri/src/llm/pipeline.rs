@@ -30,7 +30,7 @@ use crate::llm::progress::{
 use crate::llm::provider::{LlmError, LlmProvider, PromptContextPolicy, TranslationContext};
 use crate::llm::semantic_retry::{self, SemanticRetryRequest};
 use crate::llm::split::{llm_translate_with_split, PipelineBatchMetrics};
-use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
+use crate::llm::tokenizer::Tokenizer;
 use serde::Serialize;
 use sqlx::SqlitePool;
 use std::time::{Duration, Instant};
@@ -420,7 +420,14 @@ where
             PromptContextPolicy::EngineOwned => bundle.prompt.clone(),
         })
         .collect::<Vec<_>>();
-    let (unique_segs, idx_map) = batch::dedup_with_context(segments, &prompt_contexts);
+    // Placeholder syntax comes from persisted segment facts, never from the
+    // prompt policy: `%1` in a System term must be protected either way.
+    let placeholder_syntaxes = context_bundles
+        .iter()
+        .map(|bundle| bundle.tokenizer(&context.engine))
+        .collect::<Vec<_>>();
+    let (unique_segs, idx_map) =
+        batch::dedup_with_context(segments, &prompt_contexts, &placeholder_syntaxes);
 
     // Translation table: (translated_text, from_tm, needs_review)
     let mut translations: Vec<Option<(String, bool, bool)>> = vec![None; batch_len];
@@ -498,10 +505,12 @@ where
 
     // Translate remaining segments via LLM with adaptive split on failure
     if !to_translate.is_empty() {
-        let tok_engine = TokEngine::from_project_engine(&context.engine);
         let tokenized: Vec<_> = to_translate
             .iter()
-            .map(|&i| Tokenizer::tokenize(&unique_segs[i].text, tok_engine))
+            .map(|&i| {
+                let segment = &unique_segs[i];
+                Tokenizer::tokenize(&segment.text, placeholder_syntaxes[segment.original_index])
+            })
             .collect();
 
         let mut request_context = context.clone();
@@ -592,14 +601,19 @@ where
         let (mut raw_target, from_tm, provider_needs_review) =
             translations[index].take().unwrap_or_default();
         let prompt_context = prompt_contexts.get(index).and_then(Option::as_ref);
-        let qa_neighbors = &context_bundles[index].qa_neighbors;
-        let segment_kind = prompt_context
-            .map(|value| value.segment_kind.as_str())
+        let bundle = &context_bundles[index];
+        let qa_neighbors = &bundle.qa_neighbors;
+        let segment_kind = bundle
+            .segment_kind
+            .as_deref()
+            .or_else(|| prompt_context.map(|value| value.segment_kind.as_str()))
             .unwrap_or("unknown");
+        let context_json = bundle.context_json.as_deref();
         let qa_context = qa::QaSemanticContext {
             source_language: &context.source_lang,
             target_language: &context.target_lang,
             segment_kind,
+            context_json,
             neighbor_sources: &qa_neighbors.sources,
             neighbor_targets: &qa_neighbors.targets,
         };
@@ -614,10 +628,7 @@ where
         if !provider_needs_review && qa_result.has_critical_errors() {
             pipeline_metrics.semantic_rejections += 1;
             if !from_tm {
-                let tokenized = Tokenizer::tokenize(
-                    source_text,
-                    TokEngine::from_project_engine(&context.engine),
-                );
+                let tokenized = Tokenizer::tokenize(source_text, placeholder_syntaxes[index]);
                 let retry = semantic_retry::retry(
                     SemanticRetryRequest {
                         source_text,
@@ -626,6 +637,8 @@ where
                         segment_id: id,
                         terminology_rules: segment_rules,
                         prompt_context,
+                        segment_kind,
+                        context_json,
                         qa_neighbors,
                     },
                     provider,
@@ -1308,6 +1321,62 @@ mod tests {
 
         assert_eq!(results[0].translated_text, r"Hero \V[1]");
         assert_eq!(provider.last_context().segment_contexts, vec![None]);
+    }
+
+    #[tokio::test]
+    async fn system_term_format_specifiers_are_protected_under_every_context_policy() {
+        for policy in [
+            PromptContextPolicy::EngineOwned,
+            PromptContextPolicy::Disabled,
+        ] {
+            let (db, _f) = test_db().await;
+            sqlx::query(
+                "INSERT INTO projects (id, name, engine, game_path) \
+                 VALUES ('p1', 'Test', 'mv_mz', '/tmp')",
+            )
+            .execute(&db)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO source_files (id, project_id, file_name, file_path, file_type) \
+                 VALUES ('fs', 'p1', 'System.json', '/tmp/System.json', 'system')",
+            )
+            .execute(&db)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO segments (id, source_file_id, json_key, source_text, segment_kind) \
+                 VALUES ('term', 'fs', '/terms/messages/actorDamage', ?, 'system_term')",
+            )
+            .bind("%1は%2のダメージを受けた！")
+            .execute(&db)
+            .await
+            .unwrap();
+            // The provider can only echo `%n` back if they were sent as tokens.
+            let provider =
+                MockProvider::new(vec![Ok(vec!["⟦ph_0⟧ took ⟦ph_1⟧ damage!".to_string()])]);
+            let mut context = ctx();
+            context.prompt_context_policy = policy;
+
+            let results = run_inner(
+                vec![("term".to_string(), "%1は%2のダメージを受けた！".to_string())],
+                &provider,
+                context,
+                &db,
+                None,
+                None,
+                None,
+                |_, _| {},
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(
+                results[0].translated_text, "%1 took %2 damage!",
+                "{policy:?}"
+            );
+            assert!(!results[0].needs_review, "{policy:?}");
+        }
     }
 
     #[tokio::test]

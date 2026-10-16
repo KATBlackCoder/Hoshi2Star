@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use sqlx::{QueryBuilder, Sqlite};
 
 use crate::{
-    core::{manifest, qa, tm},
+    core::{manifest, originals, qa, tm},
     domain::types::*,
     engines::{
         detector::{detect_engine, guess_wolf_version_from_structure, Engine},
@@ -85,9 +85,11 @@ pub async fn open_project(
                     project,
                     was_restored: true,
                 });
-            } else {
+            } else if originals::is_project_id(&mf.project_id) {
                 // Manifest exists but project was deleted from DB — reuse the same ID
                 preserved_project_id = Some(mf.project_id.clone());
+            } else {
+                log::warn!("ignoring malformed project id in the manifest of {path}");
             }
         }
         Ok(None) => {}
@@ -191,6 +193,18 @@ pub async fn open_project(
         .map_err(|error| format!("extraction worker failed: {error}"))??;
 
     tx.commit().await.map_err(|e| e.to_string())?;
+
+    // Snapshot the pristine MV/MZ files now, while extraction guarantees disk ==
+    // source. A reused project id must not inherit an older snapshot. Failure is
+    // not fatal: export captures (and reconstructs) lazily.
+    if engine_str == "mv_mz" {
+        originals::remove_snapshot(&state.data_dir, &project_id);
+        if let Err(error) =
+            originals::ensure_mv_mz_snapshot(&state.db, &state.data_dir, &project_id).await
+        {
+            log::warn!("snapshot capture failed for {path}: {error}; export will retry");
+        }
+    }
 
     // Write manifest (best-effort — never fail open_project if this errors)
     let manifest_data = manifest::ManifestData::new(
@@ -298,7 +312,7 @@ pub async fn get_segments(
     let items = sqlx::query_as::<_, Segment>(
         "SELECT id, source_file_id, json_key, source_text, target_text, \
                 segment_kind, scene_id, sequence_index, speaker, branch_path, \
-                context_json, status, qa_score, created_at, updated_at \
+                context_json, text_category, status, qa_score, created_at, updated_at \
          FROM segments WHERE source_file_id = ? \
          ORDER BY rowid LIMIT ? OFFSET ?",
     )
@@ -332,14 +346,27 @@ pub async fn update_segment(
     state: tauri::State<'_, AppState>,
 ) -> Result<Segment, String> {
     // Fetch source_text + project context for QA, TM and manifest refresh.
-    let (source_text, engine, project_id, source_lang, target_lang): (
+    let (source_text, segment_kind, context_json, engine, project_id, source_lang, target_lang): (
+        String,
+        String,
+        Option<String>,
         String,
         String,
         String,
         String,
-        String,
-    ) = sqlx::query_as::<_, (String, String, String, String, String)>(
-        "SELECT s.source_text, p.engine, p.id, \
+    ) = sqlx::query_as::<
+        _,
+        (
+            String,
+            String,
+            Option<String>,
+            String,
+            String,
+            String,
+            String,
+        ),
+    >(
+        "SELECT s.source_text, s.segment_kind, s.context_json, p.engine, p.id, \
                 COALESCE(p.source_language, 'ja'), \
                 COALESCE(p.target_language, 'en') \
              FROM segments s \
@@ -356,8 +383,16 @@ pub async fn update_segment(
     let (stored_target, status, qa_score) = if is_empty {
         ("", "untranslated", None)
     } else {
-        // QA check — use the project's engine for correct placeholder patterns.
-        let qa_result = qa::check(&source_text, &target_text, &[], &engine);
+        // QA check — the project's engine plus the segment's own placeholder
+        // syntax (System terms / plugin templates protect bare `%n`).
+        let qa_result = qa::check_segment(
+            &source_text,
+            &target_text,
+            &[],
+            &engine,
+            &segment_kind,
+            context_json.as_deref(),
+        );
         (
             target_text.as_str(),
             "translated",
@@ -392,7 +427,7 @@ pub async fn update_segment(
     sqlx::query_as::<_, Segment>(
         "SELECT id, source_file_id, json_key, source_text, target_text, \
                 segment_kind, scene_id, sequence_index, speaker, branch_path, \
-                context_json, status, qa_score, created_at, updated_at \
+                context_json, text_category, status, qa_score, created_at, updated_at \
          FROM segments WHERE id = ?",
     )
     .bind(&id)
@@ -502,6 +537,7 @@ pub async fn delete_project(
         let manifest_path = std::path::Path::new(&path).join(".hoshi2star.json");
         let _ = std::fs::remove_file(manifest_path);
     }
+    originals::remove_snapshot(&state.data_dir, &project_id);
 
     Ok(())
 }

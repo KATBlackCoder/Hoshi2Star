@@ -161,6 +161,24 @@ async fn validate_patch_schema(pool: &SqlitePool) -> Result<(), sqlx::Error> {
                 "speaker",
                 "branch_path",
                 "context_json",
+                "text_category",
+            ],
+        ),
+        (
+            "project_text_categories",
+            &["project_id", "category_key", "enabled", "accepted_at"],
+        ),
+        (
+            "parked_segments",
+            &[
+                "project_id",
+                "category_key",
+                "file_name",
+                "json_key",
+                "source_text",
+                "target_text",
+                "status",
+                "qa_score",
             ],
         ),
         (
@@ -229,6 +247,12 @@ async fn validate_patch_schema(pool: &SqlitePool) -> Result<(), sqlx::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Versions embedded in this build, so these tests don't need editing for
+    /// every new migration.
+    fn embedded_versions() -> Vec<i64> {
+        MIGRATOR.iter().map(|migration| migration.version).collect()
+    }
     use sqlx::migrate::Migrate;
     use sqlx::FromRow;
     use tempfile::NamedTempFile;
@@ -436,7 +460,7 @@ mod tests {
                 .fetch_all(&upgraded)
                 .await
                 .unwrap();
-        assert_eq!(versions, (1..=9).collect::<Vec<_>>());
+        assert_eq!(versions, embedded_versions());
     }
 
     /// A write failure inside the repair must roll back only that transaction,
@@ -618,7 +642,7 @@ mod tests {
                 .fetch_all(&pool)
                 .await
                 .unwrap();
-        assert_eq!(versions, (1..=9).collect::<Vec<_>>());
+        assert_eq!(versions, embedded_versions());
     }
 
     /// Existing inserts remain compatible and receive the historical language
@@ -664,7 +688,7 @@ mod tests {
         sqlx::query(
             "INSERT INTO _sqlx_migrations \
              (version, description, success, checksum, execution_time) \
-             VALUES (10, 'future test migration', TRUE, X'010203', 1)",
+             VALUES (99, 'future test migration', TRUE, X'010203', 1)",
         )
         .execute(&pool)
         .await
@@ -678,7 +702,7 @@ mod tests {
                 .await
                 .unwrap();
         let future_checksum: Vec<u8> =
-            sqlx::query_scalar("SELECT checksum FROM _sqlx_migrations WHERE version = 10")
+            sqlx::query_scalar("SELECT checksum FROM _sqlx_migrations WHERE version = 99")
                 .fetch_one(&reopened)
                 .await
                 .unwrap();

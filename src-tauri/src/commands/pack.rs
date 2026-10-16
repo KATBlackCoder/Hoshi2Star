@@ -89,8 +89,18 @@ async fn build_project_pack(
 
     // Deterministic order (file, then extraction order) so duplicate keys
     // keep a stable ordinal on both machines.
-    let segments: Vec<(String, String, String, String, String, Option<i64>)> = sqlx::query_as(
-        "SELECT sf.file_name, s.json_key, s.source_text, s.target_text, s.status, s.qa_score \
+    #[allow(clippy::type_complexity)]
+    let segments: Vec<(
+        String,
+        String,
+        String,
+        String,
+        String,
+        Option<i64>,
+        Option<String>,
+    )> = sqlx::query_as(
+        "SELECT sf.file_name, s.json_key, s.source_text, s.target_text, s.status, s.qa_score, \
+                s.text_category \
          FROM segments s JOIN source_files sf ON s.source_file_id = sf.id \
          WHERE sf.project_id = ? AND s.target_text != '' \
          ORDER BY sf.file_name ASC, s.rowid ASC",
@@ -139,13 +149,24 @@ async fn build_project_pack(
         segments: segments
             .into_iter()
             .map(
-                |(file_name, json_key, source_text, target_text, status, qa_score)| PackSegment {
+                |(
                     file_name,
                     json_key,
                     source_text,
                     target_text,
                     status,
                     qa_score,
+                    text_category,
+                )| {
+                    PackSegment {
+                        file_name,
+                        json_key,
+                        source_text,
+                        target_text,
+                        status,
+                        qa_score,
+                        text_category,
+                    }
                 },
             )
             .collect(),
@@ -734,6 +755,7 @@ mod tests {
             target_text: target.into(),
             status: status.into(),
             qa_score: Some(100),
+            text_category: None,
         }
     }
 

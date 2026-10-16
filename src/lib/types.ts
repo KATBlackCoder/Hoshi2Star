@@ -44,6 +44,26 @@ export interface FontScanResult {
   engine: string;
 }
 
+/** A line of engine or plugin code that reads the game's language setting. */
+export interface LocaleUse {
+  location: string;
+  code: string;
+}
+
+/** Optional switch of System.json `locale` to the target language (MV 1.6+ / MZ). */
+export interface LocaleOption {
+  current: string;
+  target: string;
+  consequences: string[];
+  uses: LocaleUse[];
+}
+
+/** Options offered before an export (`preflight_export`). */
+export interface ExportPreflight {
+  /** `null` when the game has no language setting or it already matches. */
+  locale: LocaleOption | null;
+}
+
 export interface ProjectStats {
   fileCount: number;
   totalSegments: number;
@@ -69,6 +89,8 @@ export interface Segment {
   branchPath: string | null;
   /** Versioned engine-specific facts; never interpreted as another engine's schema. */
   contextJson: string | null;
+  /** Optional text category (`null` = core extraction). */
+  textCategory?: string | null;
   targetText: string;
   status: SegmentStatus;
   qaScore: number | null;
@@ -156,7 +178,9 @@ export type QaErrorType =
       source_term: string;
       expected_targets: string[];
       severity: "critical" | "warning" | "info";
-    };
+    }
+  | { type: "constraint_violation"; rule: string }
+  | { type: "missing_format_specifier"; placeholder: string };
 
 export interface QaResult {
   score: number;
@@ -493,4 +517,90 @@ export interface PilotRunReport {
   baseline: PilotVariantSummary;
   contextual: PilotVariantSummary;
   changedCount: number;
+}
+
+// ---------------------------------------------------------------------------
+// Optional text coverage (MV/MZ plugin & system UI text)
+// ---------------------------------------------------------------------------
+
+export type CategoryState = "verified" | "linked" | "blocked";
+
+/** `get_text_coverage_status`: answered without scanning the game. */
+export interface CoverageStatus {
+  supported: boolean;
+  hasDecisions: boolean;
+}
+export type CategoryGroup =
+  | "system"
+  | "map"
+  | "plugin"
+  | "plugin_command"
+  | "note_tag";
+export type ReferenceSite =
+  | "note"
+  | "script"
+  | "plugin_command"
+  | "plugin_command_arg"
+  | "plugin_param"
+  | "plugin_source";
+
+export interface CoverageReference {
+  text: string;
+  site: ReferenceSite;
+  location: string;
+  excerpt: string;
+}
+
+export interface CoverageConstraint {
+  rule: string;
+}
+
+export interface CoverageCategory {
+  key: string;
+  title: string;
+  group: CategoryGroup;
+  state: CategoryState;
+  enabled: boolean;
+  decided: boolean;
+  defaultEnabled: boolean;
+  visibleIn: string;
+  consequences: string[];
+  constraints: CoverageConstraint[];
+  segmentCount: number;
+  translatedCount: number;
+  samples: string[];
+  references: CoverageReference[];
+  referenceCount: number;
+  blockedReason: string | null;
+}
+
+export interface CoverageCoreWarning {
+  segmentKind: string;
+  source: string;
+  references: CoverageReference[];
+}
+
+export interface CoverageNotCovered {
+  plugin: string;
+  field: string;
+  sample: string;
+  reason: string;
+  hint: string | null;
+}
+
+export interface CoverageView {
+  supported: boolean;
+  hasDecisions: boolean;
+  reconstructed: boolean;
+  driftedFiles: { file: string; pointers: number }[];
+  pluginsUnreadable: string | null;
+  categories: CoverageCategory[];
+  coreWarnings: CoverageCoreWarning[];
+  notCovered: CoverageNotCovered[];
+}
+
+export interface CategoryChange {
+  categoryKey: string;
+  enabled: boolean;
+  acceptConsequences?: boolean;
 }

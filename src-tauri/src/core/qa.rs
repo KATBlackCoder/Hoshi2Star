@@ -26,8 +26,10 @@ use crate::core::terminology::{
     types::{Enforcement, PartOfSpeech},
 };
 use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::sync::LazyLock;
 
 // ---------------------------------------------------------------------------
 // Config
@@ -128,6 +130,17 @@ pub enum QaError {
         expected_targets: Vec<String>,
         severity: QaSeverity,
     },
+    /// The translation breaks a rule of the code that displays it (from the
+    /// segment's `context_json.constraints`, e.g. plugin value conversion).
+    ConstraintViolation {
+        rule: String,
+    },
+    /// A `%n` of a format template (System term, plugin message) is missing:
+    /// the game shows the message without that value. Unlike a lost escape
+    /// code it cannot break anything, so it never blocks an export.
+    MissingFormatSpecifier {
+        placeholder: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -162,6 +175,9 @@ pub struct QaSemanticContext<'a> {
     pub source_language: &'a str,
     pub target_language: &'a str,
     pub segment_kind: &'a str,
+    /// Persisted `segments.context_json`; selects `%n` template protection
+    /// through [`TokEngine::for_segment`].
+    pub context_json: Option<&'a str>,
     pub neighbor_sources: &'a [String],
     pub neighbor_targets: &'a [String],
 }
@@ -328,8 +344,26 @@ pub fn check(
     legacy_terms: &[(String, String)],
     engine: &str,
 ) -> QaResult {
+    check_segment(source, target, legacy_terms, engine, "unknown", None)
+}
+
+/// [`check`] for a persisted segment: `segment_kind`/`context_json` refine the
+/// placeholder syntax (`%n` format templates, see [`TokEngine::for_segment`]).
+pub fn check_segment(
+    source: &str,
+    target: &str,
+    legacy_terms: &[(String, String)],
+    engine: &str,
+    segment_kind: &str,
+    context_json: Option<&str>,
+) -> QaResult {
     let terminology_rules = legacy_rules(source, legacy_terms);
-    check_with_rules(source, target, &terminology_rules, engine)
+    let tok_engine = TokEngine::for_segment(engine, segment_kind, context_json);
+    let mut result = check_with_rules(source, target, &terminology_rules, engine, tok_engine);
+    for error in check_constraints(source, target, context_json) {
+        result.add_error(error);
+    }
+    result
 }
 
 fn check_with_rules(
@@ -337,10 +371,10 @@ fn check_with_rules(
     target: &str,
     terminology_rules: &[QaTerminologyRule],
     engine: &str,
+    tok_engine: TokEngine,
 ) -> QaResult {
     let mut errors: Vec<QaError> = Vec::new();
 
-    let tok_engine = TokEngine::from_project_engine(engine);
     let line_config = if engine == "wolf" {
         LineWidthConfig::wolf_default()
     } else {
@@ -359,8 +393,11 @@ fn check_with_rules(
     let mut seen: HashSet<&str> = HashSet::new();
     for original in tokenized.map.values() {
         if seen.insert(original.as_str()) && !target.contains(original.as_str()) {
-            errors.push(QaError::MissingPlaceholder {
-                placeholder: original.clone(),
+            let placeholder = original.clone();
+            errors.push(if is_format_specifier(original) {
+                QaError::MissingFormatSpecifier { placeholder }
+            } else {
+                QaError::MissingPlaceholder { placeholder }
             });
         }
     }
@@ -391,7 +428,11 @@ pub fn check_with_context(
     engine: &str,
     context: &QaSemanticContext<'_>,
 ) -> QaResult {
-    let mut result = check_with_rules(source, target, terminology_rules, engine);
+    let tok_engine = TokEngine::for_segment(engine, context.segment_kind, context.context_json);
+    let mut result = check_with_rules(source, target, terminology_rules, engine, tok_engine);
+    result
+        .errors
+        .extend(check_constraints(source, target, context.context_json));
     let source_trimmed = source.trim();
     let target_trimmed = target.trim();
 
@@ -477,7 +518,89 @@ fn shares_word_sequence(left: &str, right: &str, minimum_words: usize) -> bool {
     })
 }
 
-fn contains_source_script(text: &str, source_language: &str) -> bool {
+/// Bare `%1`, `%2`… — only tokenized for format templates
+/// (see [`TokEngine::for_segment`]).
+fn is_format_specifier(placeholder: &str) -> bool {
+    placeholder
+        .strip_prefix('%')
+        .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Constraint names written by MV/MZ text categories in `context_json`.
+const CONSTRAINT_PLAIN_TEXT: &str = "plain_text_value";
+const CONSTRAINT_NO_ESCAPES: &str = "no_escape_codes";
+const CONSTRAINT_KEKE_SKILL_TYPE: &str = "keke_skill_type";
+/// Report-level: two skill types translated to the same name.
+pub const CONSTRAINT_KEKE_SKILL_TYPE_UNIQUE: &str = "keke_skill_type_unique";
+const CONSTRAINT_KEKE_TAG_FIELD: &str = "keke_tag_field";
+const CONSTRAINT_KEKE_NO_SPACES: &str = "keke_no_spaces";
+
+/// Rules whose violation breaks the game (not merely its looks).
+fn is_critical_constraint(rule: &str) -> bool {
+    matches!(
+        rule,
+        CONSTRAINT_PLAIN_TEXT
+            | CONSTRAINT_KEKE_SKILL_TYPE
+            | CONSTRAINT_KEKE_SKILL_TYPE_UNIQUE
+            | CONSTRAINT_KEKE_TAG_FIELD
+    )
+}
+
+static RE_ESCAPE_CODE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\\(?:[A-Za-z]+\[[^\]]*\]|[{}<>|.!^$])").expect("RE_ESCAPE_CODE must compile")
+});
+static RE_JS_NUMBER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[+-]?(?:(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?|Infinity)$")
+        .expect("RE_JS_NUMBER must compile")
+});
+
+/// Checks driven by `context_json.constraints` (unknown rules are ignored).
+fn check_constraints(source: &str, target: &str, context_json: Option<&str>) -> Vec<QaError> {
+    let rules: Vec<String> = context_json
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .and_then(|value| value.get("constraints").cloned())
+        .and_then(|value| value.as_array().cloned())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|rule| rule.as_str().map(str::to_string))
+        .collect();
+    let mut errors = Vec::new();
+    for rule in rules {
+        let violated = match rule.as_str() {
+            CONSTRAINT_PLAIN_TEXT => is_converted_by_plugins(target),
+            CONSTRAINT_NO_ESCAPES => {
+                RE_ESCAPE_CODE.is_match(target) && !RE_ESCAPE_CODE.is_match(source)
+            }
+            CONSTRAINT_KEKE_SKILL_TYPE => {
+                crate::engines::mv_mz::keke::invalid_skill_type_name(target).is_some()
+            }
+            CONSTRAINT_KEKE_TAG_FIELD => target.contains([',', '>']),
+            CONSTRAINT_KEKE_NO_SPACES => target
+                .chars()
+                .any(crate::engines::mv_mz::keke::is_js_whitespace),
+            _ => false,
+        };
+        if violated {
+            errors.push(QaError::ConstraintViolation { rule });
+        }
+    }
+    errors
+}
+
+/// Mirrors PluginCommonBase `convertVariables`/`_paramReplacer`: these values
+/// stop being strings before the plugin sees them.
+fn is_converted_by_plugins(target: &str) -> bool {
+    let trimmed = target.trim();
+    target == "true"
+        || target == "false"
+        || RE_JS_NUMBER.is_match(trimmed)
+        || ((trimmed.starts_with('[') || trimmed.starts_with('{'))
+            && serde_json::from_str::<serde_json::Value>(trimmed).is_ok())
+}
+
+/// `true` when `text` contains characters of `source_language`'s script
+/// (only meaningful for languages with a distinctive script).
+pub(crate) fn contains_source_script(text: &str, source_language: &str) -> bool {
     text.chars().any(|character| match source_language {
         "ja" => matches!(
             character,
@@ -520,6 +643,7 @@ impl QaError {
             QaError::ContextLeak { .. } => 60,
             QaError::InconsistentRepeatedSource { .. } => 50,
             QaError::MissingPlaceholder { .. } => 25,
+            QaError::MissingFormatSpecifier { .. } => 15,
             QaError::LineTooLong { .. } => 10,
             QaError::BomDetected => 15,
             QaError::TerminologyMismatch { severity, .. } => match severity {
@@ -527,6 +651,13 @@ impl QaError {
                 QaSeverity::Warning => 15,
                 QaSeverity::Info => 0,
             },
+            QaError::ConstraintViolation { rule } => {
+                if is_critical_constraint(rule) {
+                    40
+                } else {
+                    10
+                }
+            }
         }
     }
 
@@ -540,14 +671,19 @@ impl QaError {
             QaError::ContextLeak { .. } => "context_leak",
             QaError::InconsistentRepeatedSource { .. } => "inconsistent_repeated_source",
             QaError::MissingPlaceholder { .. } => "missing_placeholder",
+            QaError::MissingFormatSpecifier { .. } => "missing_format_specifier",
             QaError::LineTooLong { .. } => "line_too_long",
             QaError::BomDetected => "bom_detected",
             QaError::TerminologyMismatch { .. } => "terminology_mismatch",
+            QaError::ConstraintViolation { .. } => "constraint_violation",
         }
     }
 
     /// Critical errors must not be silently exported as completed work.
     pub fn is_critical(&self) -> bool {
+        if let QaError::ConstraintViolation { rule } = self {
+            return is_critical_constraint(rule);
+        }
         matches!(
             self,
             QaError::EmptyTranslation
@@ -600,6 +736,9 @@ impl QaError {
             QaError::MissingPlaceholder { placeholder } => {
                 format!("Missing placeholder: {placeholder}")
             }
+            QaError::MissingFormatSpecifier { placeholder } => {
+                format!("Missing value {placeholder}: the game shows the message without it")
+            }
             QaError::LineTooLong {
                 line,
                 units,
@@ -611,6 +750,30 @@ impl QaError {
                 )
             }
             QaError::BomDetected => "UTF-8 BOM detected at start".to_string(),
+            QaError::ConstraintViolation { rule } => match rule.as_str() {
+                CONSTRAINT_PLAIN_TEXT => "This plugin converts values: the translation must not \
+                     be only a number, true/false or JSON"
+                    .to_string(),
+                CONSTRAINT_NO_ESCAPES => {
+                    "Drawn as plain text here: escape codes would be shown literally".to_string()
+                }
+                CONSTRAINT_KEKE_SKILL_TYPE => "Looked up in battle-command tags: one word, no \
+                     spaces, `,` `/` `>` `:` or digits"
+                    .to_string(),
+                CONSTRAINT_KEKE_SKILL_TYPE_UNIQUE => {
+                    "Another skill type has the same translation: battle commands would \
+                     point to the wrong type"
+                        .to_string()
+                }
+                CONSTRAINT_KEKE_TAG_FIELD => {
+                    "Inside a note tag: `,` or `>` would break the battle command".to_string()
+                }
+                CONSTRAINT_KEKE_NO_SPACES => {
+                    "The plugin removes spaces here (\"Whip Attack\" shows as \"WhipAttack\")"
+                        .to_string()
+                }
+                other => format!("Breaks display rule: {other}"),
+            },
             QaError::TerminologyMismatch {
                 source_term,
                 expected_targets,
@@ -647,6 +810,9 @@ impl QaError {
             QaError::MissingPlaceholder { placeholder } => {
                 format!("Placeholder manquant : {placeholder}")
             }
+            QaError::MissingFormatSpecifier { placeholder } => {
+                format!("Valeur {placeholder} manquante : le jeu affiche le message sans elle")
+            }
             QaError::LineTooLong {
                 line,
                 units,
@@ -658,6 +824,29 @@ impl QaError {
                 )
             }
             QaError::BomDetected => "BOM UTF-8 détecté en début de cible".to_string(),
+            QaError::ConstraintViolation { rule } => match rule.as_str() {
+                CONSTRAINT_PLAIN_TEXT => "Ce plugin convertit les valeurs : la traduction ne doit \
+                     pas être seulement un nombre, true/false ou du JSON"
+                    .to_string(),
+                CONSTRAINT_NO_ESCAPES => "Affiché en texte brut ici : les codes d'échappement \
+                     apparaîtraient tels quels"
+                    .to_string(),
+                CONSTRAINT_KEKE_SKILL_TYPE => {
+                    "Recherché dans les balises de commandes de combat : \
+                     un seul mot, sans espaces, `,` `/` `>` `:` ni chiffres"
+                        .to_string()
+                }
+                CONSTRAINT_KEKE_SKILL_TYPE_UNIQUE => "Un autre type de compétence a la même \
+                     traduction : les commandes de combat pointeraient vers le mauvais type"
+                    .to_string(),
+                CONSTRAINT_KEKE_TAG_FIELD => "Dans une balise de note : `,` ou `>` casserait la \
+                     commande de combat"
+                    .to_string(),
+                CONSTRAINT_KEKE_NO_SPACES => "Le plugin supprime les espaces ici (« Whip Attack » \
+                     s'affiche « WhipAttack »)"
+                    .to_string(),
+                other => format!("Enfreint une règle d'affichage : {other}"),
+            },
             QaError::TerminologyMismatch {
                 source_term,
                 expected_targets,
@@ -962,7 +1151,13 @@ mod tests {
     #[test]
     fn required_entity_is_critical_and_accepts_variants() {
         let rule = rich_rule(Enforcement::Required, PartOfSpeech::ProperNoun);
-        let mismatch = check_with_rules("勇者", "Champion", std::slice::from_ref(&rule), "mv_mz");
+        let mismatch = check_with_rules(
+            "勇者",
+            "Champion",
+            std::slice::from_ref(&rule),
+            "mv_mz",
+            TokEngine::MvMz,
+        );
         assert!(matches!(
             mismatch.errors.as_slice(),
             [QaError::TerminologyMismatch {
@@ -971,19 +1166,24 @@ mod tests {
             }]
         ));
         assert!(mismatch.has_critical_errors());
-        assert!(
-            check_with_rules("勇者", "The Hero arrives", &[rule], "mv_mz")
-                .errors
-                .is_empty()
-        );
+        assert!(check_with_rules(
+            "勇者",
+            "The Hero arrives",
+            &[rule],
+            "mv_mz",
+            TokEngine::MvMz
+        )
+        .errors
+        .is_empty());
     }
 
     #[test]
     fn contextual_and_inflected_terms_never_block() {
         let contextual = rich_rule(Enforcement::Contextual, PartOfSpeech::ProperNoun);
         let verb = rich_rule(Enforcement::Required, PartOfSpeech::Verb);
-        let contextual_result = check_with_rules("勇者", "Champion", &[contextual], "mv_mz");
-        let verb_result = check_with_rules("勇者", "Champion", &[verb], "mv_mz");
+        let contextual_result =
+            check_with_rules("勇者", "Champion", &[contextual], "mv_mz", TokEngine::MvMz);
+        let verb_result = check_with_rules("勇者", "Champion", &[verb], "mv_mz", TokEngine::MvMz);
         assert!(matches!(
             contextual_result.errors.as_slice(),
             [QaError::TerminologyMismatch {
@@ -1007,9 +1207,142 @@ mod tests {
             source_language: "ja",
             target_language: "fr",
             segment_kind: kind,
+            context_json: None,
             neighbor_sources: neighbors,
             neighbor_targets: &[],
         }
+    }
+
+    #[test]
+    fn format_specifiers_are_protected_only_where_the_engine_formats_them() {
+        // System terms: a dropped %2 loses the damage value from the battle
+        // message → reported, as a warning.
+        let term = check_with_context(
+            "%1は%2のダメージを受けた！",
+            "%1 took damage!",
+            &[],
+            "mv_mz",
+            &semantic_context("system_term", &[]),
+        );
+        assert!(!term.has_critical_errors());
+        assert!(term.errors.iter().any(
+            |e| matches!(e, QaError::MissingFormatSpecifier { placeholder } if placeholder == "%2")
+        ));
+
+        // Plugin templates opt in through context_json.
+        let template_context = QaSemanticContext {
+            context_json: Some(r#"{"placeholderSyntax":"format"}"#),
+            ..semantic_context("plugin_message", &[])
+        };
+        let template = check_with_context(
+            "%1をゲットです！",
+            "Got it!",
+            &[],
+            "mv_mz",
+            &template_context,
+        );
+        // A lost `%n` only drops a value from the message: a warning.
+        assert!(matches!(
+            template.errors.as_slice(),
+            [QaError::MissingFormatSpecifier { placeholder }] if placeholder == "%1"
+        ));
+        assert!(!template.has_critical_errors());
+
+        // Dialogue: bare %1 is ordinary text, not a placeholder.
+        let dialogue = check_with_context(
+            "成功率は%1です",
+            "The success rate is high",
+            &[],
+            "mv_mz",
+            &semantic_context("dialogue", &[]),
+        );
+        assert!(!dialogue.errors.iter().any(|e| matches!(
+            e,
+            QaError::MissingPlaceholder { .. } | QaError::MissingFormatSpecifier { .. }
+        )));
+
+        // Persisted-segment entry point used by the editor applies the same rule.
+        let edited = check_segment("%1の攻撃！", "Attack!", &[], "mv_mz", "system_term", None);
+        assert!(matches!(
+            edited.errors.as_slice(),
+            [QaError::MissingFormatSpecifier { placeholder }] if placeholder == "%1"
+        ));
+        assert!(!edited.has_critical_errors());
+    }
+
+    #[test]
+    fn plugin_constraints_flag_coerced_values_and_new_escape_codes() {
+        let plain = Some(r#"{"constraints":["plain_text_value"]}"#);
+        for coerced in [
+            "true",
+            "false",
+            "42",
+            " 3.5 ",
+            "-1e3",
+            "Infinity",
+            "[1,2]",
+            "{\"a\":1}",
+        ] {
+            let result = check_segment(
+                "敵が逃げた！",
+                coerced,
+                &[],
+                "mv_mz",
+                "plugin_message",
+                plain,
+            );
+            assert!(
+                result
+                    .errors
+                    .iter()
+                    .any(|e| matches!(e, QaError::ConstraintViolation { rule } if rule == "plain_text_value")),
+                "{coerced:?} must be rejected"
+            );
+            assert!(result.has_critical_errors(), "{coerced:?}");
+        }
+        for fine in [
+            "The enemy fled!",
+            "True story",
+            "[Battle] begins",
+            "0x10",
+            "1,000 gold",
+        ] {
+            let result = check_segment("敵が逃げた！", fine, &[], "mv_mz", "plugin_message", plain);
+            assert!(
+                !result
+                    .errors
+                    .iter()
+                    .any(|e| matches!(e, QaError::ConstraintViolation { .. })),
+                "{fine:?} must pass"
+            );
+        }
+
+        let no_escapes = Some(r#"{"constraints":["no_escape_codes"]}"#);
+        let added = check_segment(
+            "武器",
+            r"\C[2]Weapon",
+            &[],
+            "mv_mz",
+            "system_type",
+            no_escapes,
+        );
+        assert!(added.errors.iter().any(
+            |e| matches!(e, QaError::ConstraintViolation { rule } if rule == "no_escape_codes")
+        ));
+        // Cosmetic only: never blocks export.
+        assert!(!added.has_critical_errors());
+        let kept = check_segment(
+            r"\C[2]武器",
+            r"\C[2]Weapon",
+            &[],
+            "mv_mz",
+            "system_type",
+            no_escapes,
+        );
+        assert!(!kept
+            .errors
+            .iter()
+            .any(|e| matches!(e, QaError::ConstraintViolation { .. })));
     }
 
     #[test]
@@ -1093,6 +1426,7 @@ mod tests {
                 source_language: "ja",
                 target_language: "en",
                 segment_kind: "dialogue",
+                context_json: None,
                 neighbor_sources: &[],
                 neighbor_targets: &translated_neighbors,
             },

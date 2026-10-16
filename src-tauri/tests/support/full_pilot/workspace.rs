@@ -62,7 +62,7 @@ pub async fn prepare(config: &PilotConfig, variant: &str) -> Result<PilotWorkspa
         .await
         .map_err(|error| error.to_string())?;
     let app = mock_builder()
-        .manage(AppState::new(pool).map_err(|error| error.to_string())?)
+        .manage(AppState::new(pool, root.join("app-data")).map_err(|error| error.to_string())?)
         .build(mock_context(noop_assets()))
         .map_err(|error| error.to_string())?;
     let opened = open_project(

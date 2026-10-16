@@ -222,6 +222,15 @@ impl PilotWorkspace {
     async fn close(self) -> bool {
         self.pool.close().await;
         let database_path = self.database_path;
+        // On Windows the SQLite worker can release its file handle shortly
+        // after the pool reports closed, so an immediate delete may fail.
+        // Retry briefly (≤ 1 s) before declaring the cleanup failed.
+        for _ in 0..40 {
+            if std::fs::remove_file(&database_path).is_ok() || !database_path.exists() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
         drop(self.temporary_directory);
         !database_path.exists()
     }
@@ -481,7 +490,14 @@ fn build_variant(
     source_language: &str,
     target_language: &str,
 ) -> PilotVariantResult {
-    let qa = qa::check(&segment.source_text, &result.translated_text, &[], "mv_mz");
+    let qa = qa::check_segment(
+        &segment.source_text,
+        &result.translated_text,
+        &[],
+        "mv_mz",
+        &segment.segment_kind,
+        None,
+    );
     let mut quality_flags = Vec::new();
     if result.translated_text.trim().is_empty() {
         quality_flags.push(PilotQualityFlag::EmptyTranslation);

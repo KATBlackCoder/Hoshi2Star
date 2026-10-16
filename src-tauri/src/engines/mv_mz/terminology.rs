@@ -28,11 +28,8 @@ impl EngineTerminologyAdapter for MvMzTerminologyAdapter {
     }
 
     fn text_for_morphology(&self, segment: &EngineSegmentContext<'_>) -> String {
-        let tokenizer_engine = if segment.segment_kind == "system_term" {
-            TokenizerEngine::MzOnly
-        } else {
-            TokenizerEngine::MvMz
-        };
+        let tokenizer_engine =
+            TokenizerEngine::for_segment("mv_mz", segment.segment_kind, segment.context_json);
         let tokenized = Tokenizer::tokenize(segment.source_text, tokenizer_engine);
         tokenized
             .map
@@ -56,6 +53,8 @@ fn classify(segment: &EngineSegmentContext<'_>) -> Option<(&'static str, PartOfS
         "common_event_name" => Some(("event", noun)),
         "system_term" => Some(("system", noun)),
         "game_title" => Some(("title", proper_noun)),
+        "system_type" => Some(("system", noun)),
+        "map_display_name" => Some(("place", proper_noun)),
         _ => None,
     }
 }

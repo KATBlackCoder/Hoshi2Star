@@ -160,6 +160,18 @@ mod tests {
     }
 
     #[test]
+    fn test_inject_to_bytes_preserves_key_order_and_floats() {
+        // Guards the serde_json `preserve_order` + `float_roundtrip` features:
+        // losing either silently reorders keys or perturbs JS-written floats.
+        let raw = r#"{"zeta":1,"alpha":0.30000000000000004,"mid":"テキスト","beta":[1.5e-7,2]}"#;
+        let out = inject_to_bytes(raw, &[("/mid", "text")]).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            r#"{"zeta":1,"alpha":0.30000000000000004,"mid":"text","beta":[1.5e-7,2]}"#
+        );
+    }
+
+    #[test]
     fn test_inject_error_key_not_found() {
         let mut json = json!({ "name": "テスト" });
         let result = inject(&mut json, &[("/nonexistent", "value")]);

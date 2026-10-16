@@ -33,6 +33,8 @@ pub enum FileClass {
     VxAce,
     /// RPG Maker MV/MZ JSON (`map`, `actors`, … — the default).
     Json,
+    /// RPG Maker MV/MZ `js/plugins.js` (`plugins_js`, optional plugin text).
+    PluginsJs,
 }
 
 /// Classify a `source_files.file_type` into its [`FileClass`].
@@ -41,6 +43,8 @@ pub fn classify_file_type(file_type: &str) -> FileClass {
         FileClass::Wolf
     } else if file_type.starts_with("vx_") {
         FileClass::VxAce
+    } else if file_type == "plugins_js" {
+        FileClass::PluginsJs
     } else {
         FileClass::Json
     }

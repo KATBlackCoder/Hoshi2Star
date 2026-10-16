@@ -2,9 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mockIPC } from "@tauri-apps/api/mocks";
 
 const toastSuccess = vi.fn();
+const toastWarning = vi.fn();
+const toastInfo = vi.fn();
 vi.mock("sonner", () => ({
   toast: {
     success: (...args: unknown[]) => toastSuccess(...args),
+    warning: (...args: unknown[]) => toastWarning(...args),
+    info: (...args: unknown[]) => toastInfo(...args),
     error: vi.fn(),
   },
 }));
@@ -14,8 +18,9 @@ import {
   loadAllProjects,
   useProjectStore,
 } from "@/stores/project";
-import type { Project, ProjectStats } from "@/lib/types";
+import type { CoverageView, Project, ProjectStats } from "@/lib/types";
 import { useSettingsStore } from "@/stores/settings";
+import { useCoverageStore } from "@/stores/coverage";
 
 const initialState = useProjectStore.getState();
 
@@ -39,9 +44,60 @@ const STATS: ProjectStats = {
   reviewedCount: 0,
 };
 
+/** Nothing optional to offer: the post-open coverage step is a no-op. */
+const EMPTY_COVERAGE: CoverageView = {
+  supported: true,
+  hasDecisions: false,
+  reconstructed: false,
+  driftedFiles: [],
+  pluginsUnreadable: null,
+  categories: [],
+  coreWarnings: [],
+  notCovered: [],
+};
+
+const CATEGORY = {
+  title: "Equipment slot names",
+  group: "system" as const,
+  enabled: false,
+  decided: false,
+  visibleIn: "Equip screen",
+  consequences: [],
+  constraints: [],
+  translatedCount: 0,
+  samples: [],
+  references: [],
+  referenceCount: 0,
+  blockedReason: null,
+};
+
+const OFFERED: CoverageView = {
+  ...EMPTY_COVERAGE,
+  categories: [
+    {
+      ...CATEGORY,
+      key: "system.equip_types",
+      state: "verified",
+      defaultEnabled: true,
+      segmentCount: 2,
+    },
+    {
+      ...CATEGORY,
+      key: "system.skill_types",
+      state: "blocked",
+      defaultEnabled: false,
+      segmentCount: 3,
+      blockedReason: "looked up by name",
+    },
+  ],
+};
+
 beforeEach(() => {
   toastSuccess.mockClear();
+  toastWarning.mockClear();
+  toastInfo.mockClear();
   useProjectStore.setState(initialState, true);
+  useCoverageStore.setState({ open: false, view: null, error: null });
 });
 
 describe("project store — openProject thunk", () => {
@@ -56,6 +112,8 @@ describe("project store — openProject thunk", () => {
           return [];
         case "get_project_stats":
           return STATS;
+        case "scan_text_coverage":
+          return EMPTY_COVERAGE;
         default:
           throw new Error(`unexpected command: ${cmd}`);
       }
@@ -85,6 +143,8 @@ describe("project store — openProject thunk", () => {
           return [];
         case "get_project_stats":
           return STATS;
+        case "get_text_coverage_status":
+          return { supported: true, hasDecisions: true };
         default:
           throw new Error(`unexpected command: ${cmd}`);
       }
@@ -92,6 +152,8 @@ describe("project store — openProject thunk", () => {
 
     await openProject("/tmp/game");
     expect(useProjectStore.getState().projects).toHaveLength(1);
+    expect(toastWarning).not.toHaveBeenCalled();
+    expect(toastInfo).not.toHaveBeenCalled();
   });
 
   it("updates a restored project without duplicating its library card", async () => {
@@ -105,6 +167,9 @@ describe("project store — openProject thunk", () => {
       }
       if (cmd === "get_source_files") return [];
       if (cmd === "get_project_stats") return STATS;
+      if (cmd === "get_text_coverage_status") {
+        return { supported: true, hasDecisions: true };
+      }
       throw new Error(`unexpected command: ${cmd}`);
     });
 
@@ -112,6 +177,83 @@ describe("project store — openProject thunk", () => {
 
     expect(useProjectStore.getState().projects).toHaveLength(1);
     expect(useProjectStore.getState().projects[0].name).toBe("Updated title");
+  });
+
+  it("offers the coverage review after a fresh MV/MZ extraction without enabling anything", async () => {
+    const calls: string[] = [];
+    mockIPC((cmd) => {
+      calls.push(cmd);
+      switch (cmd) {
+        case "open_project":
+          return { project: PROJECT, wasRestored: false };
+        case "get_source_files":
+          return [];
+        case "get_project_stats":
+          return STATS;
+        case "scan_text_coverage":
+          return OFFERED;
+        default:
+          throw new Error(`unexpected command: ${cmd}`);
+      }
+    });
+
+    await openProject("/tmp/game");
+
+    expect(calls).not.toContain("set_text_categories");
+    expect(toastInfo).toHaveBeenCalledTimes(1);
+    // Only the verified category counts: the blocked one can never be enabled.
+    expect(toastInfo.mock.calls[0][0]).toContain("1");
+    const options = toastInfo.mock.calls[0][1] as {
+      action: { onClick: () => void };
+    };
+    expect(useCoverageStore.getState().open).toBe(false);
+    options.action.onClick();
+    expect(useCoverageStore.getState().open).toBe(true);
+  });
+
+  it("offers the review of an undecided restored project without scanning it", async () => {
+    const calls: string[] = [];
+    mockIPC((cmd) => {
+      calls.push(cmd);
+      switch (cmd) {
+        case "open_project":
+          return { project: PROJECT, wasRestored: true };
+        case "get_source_files":
+          return [];
+        case "get_project_stats":
+          return STATS;
+        case "get_text_coverage_status":
+          return { supported: true, hasDecisions: false };
+        default:
+          throw new Error(`unexpected command: ${cmd}`);
+      }
+    });
+
+    await openProject("/tmp/game");
+
+    expect(calls).not.toContain("scan_text_coverage");
+    expect(toastInfo).toHaveBeenCalledTimes(1);
+    expect(useCoverageStore.getState().open).toBe(false);
+  });
+
+  it("never fails opening when the coverage scan fails", async () => {
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "open_project":
+          return { project: PROJECT, wasRestored: false };
+        case "get_source_files":
+          return [];
+        case "get_project_stats":
+          return STATS;
+        default:
+          throw new Error("scan exploded");
+      }
+    });
+
+    const result = await openProject("/tmp/game");
+
+    expect(result.project.id).toBe("p1");
+    expect(toastWarning).toHaveBeenCalled();
   });
 
   it("propagates a backend failure to the caller without touching the store", async () => {

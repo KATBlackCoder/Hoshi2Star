@@ -103,6 +103,10 @@ pub struct PackSegment {
     pub status: String,
     #[serde(default)]
     pub qa_score: Option<i64>,
+    /// Optional text category of the sender (absent for core segments and
+    /// for packs written before categories existed; format stays v1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_category: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -272,6 +276,7 @@ mod tests {
                     target_text: "Hello".into(),
                     status: "translated".into(),
                     qa_score: Some(100),
+                    text_category: None,
                 },
                 PackSegment {
                     file_name: "CommonEvent.dat".into(),
@@ -280,6 +285,7 @@ mod tests {
                     target_text: "Goodbye".into(),
                     status: "reviewed".into(),
                     qa_score: None,
+                    text_category: None,
                 },
             ],
             glossary: vec![PackGlossaryTerm {

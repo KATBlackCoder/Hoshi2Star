@@ -21,7 +21,10 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# preserve_order: injected game JSON must keep its key order (it otherwise only
+# arrives transitively through marshal-rs). float_roundtrip: numbers written by
+# JavaScript (e.g. 0.30000000000000004) must survive parse → serialize exactly.
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 tokio = { version = "1", features = ["full"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "macros"] }
 thiserror = "2"
@@ -59,4 +62,4 @@ tauri = { version = "2", features = ["test"] }
 # Integration tests read the exported archive; not re-exposed from [dependencies].
 zip = { version = "2", default-features = false, features = ["deflate"] }
 # Phase 8 characterization test parses the debug-dump JSON.
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }

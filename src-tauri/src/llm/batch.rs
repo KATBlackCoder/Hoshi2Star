@@ -12,6 +12,7 @@
 
 use crate::core::tm::hash_source;
 use crate::llm::context::SegmentPromptContext;
+use crate::llm::tokenizer::Engine as TokEngine;
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -37,6 +38,9 @@ pub struct UniqueSegment {
 pub struct DedupKey {
     pub source_hash: String,
     pub prompt_context: Option<SegmentPromptContext>,
+    /// Equal text tokenized under different placeholder syntaxes (e.g. a
+    /// `%1` System term vs. a dialogue line) must not share one LLM unit.
+    pub placeholder_syntax: TokEngine,
 }
 
 // ---------------------------------------------------------------------------
@@ -64,7 +68,8 @@ pub fn dedup_by_hash(
     segments: &[(String, String)],
 ) -> (Vec<UniqueSegment>, HashMap<String, Vec<usize>>) {
     let contexts = vec![None; segments.len()];
-    let (unique, contextual_map) = dedup_with_context(segments, &contexts);
+    let syntaxes = vec![TokEngine::MvMz; segments.len()];
+    let (unique, contextual_map) = dedup_with_context(segments, &contexts, &syntaxes);
     let idx_map = contextual_map
         .into_iter()
         .map(|(key, positions)| (key.source_hash, positions))
@@ -72,12 +77,14 @@ pub fn dedup_by_hash(
     (unique, idx_map)
 }
 
-/// Deduplicate equal source strings only when their prompt contexts are also
-/// equal. This prevents one ambiguous line from borrowing another speaker or
-/// scene merely because the source text is identical.
+/// Deduplicate equal source strings only when their prompt contexts and
+/// placeholder syntaxes are also equal. This prevents one ambiguous line from
+/// borrowing another speaker or scene merely because the source text is
+/// identical. `syntaxes[i]` defaults to `MvMz` when missing.
 pub fn dedup_with_context(
     segments: &[(String, String)],
     contexts: &[Option<SegmentPromptContext>],
+    syntaxes: &[TokEngine],
 ) -> (Vec<UniqueSegment>, HashMap<DedupKey, Vec<usize>>) {
     let mut unique: Vec<UniqueSegment> = Vec::with_capacity(segments.len());
     let mut idx_map: HashMap<DedupKey, Vec<usize>> = HashMap::with_capacity(segments.len());
@@ -87,6 +94,7 @@ pub fn dedup_with_context(
         let dedup_key = DedupKey {
             source_hash: hash.clone(),
             prompt_context: contexts.get(orig_idx).cloned().flatten(),
+            placeholder_syntax: syntaxes.get(orig_idx).copied().unwrap_or(TokEngine::MvMz),
         };
         let positions = idx_map.entry(dedup_key.clone()).or_default();
         let is_first = positions.is_empty();
@@ -196,7 +204,7 @@ mod tests {
         ];
         let contexts = vec![prompt_context("勇者"), prompt_context("魔王")];
 
-        let (unique, _) = dedup_with_context(&segments, &contexts);
+        let (unique, _) = dedup_with_context(&segments, &contexts, &[]);
 
         assert_eq!(unique.len(), 2);
     }
@@ -209,9 +217,25 @@ mod tests {
         ];
         let contexts = vec![prompt_context("勇者"), prompt_context("勇者")];
 
-        let (unique, index_map) = dedup_with_context(&segments, &contexts);
+        let (unique, index_map) = dedup_with_context(&segments, &contexts, &[]);
 
         assert_eq!(unique.len(), 1);
         assert_eq!(index_map.values().next().unwrap(), &[0, 1]);
+    }
+
+    #[test]
+    fn equal_text_with_different_placeholder_syntax_is_not_deduplicated() {
+        let segments = vec![
+            ("term".to_string(), "%1の攻撃！".to_string()),
+            ("line".to_string(), "%1の攻撃！".to_string()),
+        ];
+
+        let (unique, _) = dedup_with_context(
+            &segments,
+            &[None, None],
+            &[TokEngine::MzOnly, TokEngine::MvMz],
+        );
+
+        assert_eq!(unique.len(), 2);
     }
 }

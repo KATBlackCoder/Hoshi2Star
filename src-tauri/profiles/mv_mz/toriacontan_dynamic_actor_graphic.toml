@@ -1,0 +1,10 @@
+# DynamicActorGraphic (Triacontane) — list[].name is an editor label.
+
+[plugin]
+name = "Toriacontan/DynamicActorGraphic"
+title = "Dynamic actor graphics (DynamicActorGraphic)"
+verified_sha256 = ["4cd3d1f267418f3900e9745065ba4ec48f2aacc59c007b039601ff5e90298534"]
+reference = "DynamicActorGraphic: list[].name unused at runtime."
+
+[[memo]]
+path = "list[].name"

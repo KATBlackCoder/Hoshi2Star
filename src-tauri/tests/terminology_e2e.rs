@@ -99,7 +99,7 @@ fn copy_tree(source: &Path, destination: &Path) {
 async fn mock_app(database: &Path) -> tauri::App<tauri::test::MockRuntime> {
     let pool = db::pool::init(database.to_str().unwrap()).await.unwrap();
     mock_builder()
-        .manage(AppState::new(pool).unwrap())
+        .manage(AppState::new(pool, database.with_extension("data")).unwrap())
         .build(mock_context(noop_assets()))
         .unwrap()
 }
@@ -266,7 +266,7 @@ async fn run_target(target_language: &str, character_target: &str, item_target: 
     let (qa, _) = report::preview_project(pool, &project_id).await.unwrap();
     assert_eq!(qa.critical_count, 0);
     assert!(qa.terminology_issues.is_empty());
-    let zip_path = export_project(project_id.clone(), None, false, app.state())
+    let zip_path = export_project(project_id.clone(), None, false, None, app.state())
         .await
         .unwrap();
     assert_valid_export(Path::new(&zip_path), character_target);

@@ -13,6 +13,7 @@ import {
   FlaskConical,
   Info,
   Languages,
+  ListChecks,
   Loader2,
   PackageOpen,
   Play,
@@ -20,6 +21,7 @@ import {
   Snowflake,
 } from "lucide-react";
 import { openProject, useProjectStore } from "@/stores/project";
+import { openCoverageDialog } from "@/stores/coverage";
 import {
   useIsTranslating,
   useTranslationProgress,
@@ -282,6 +284,20 @@ export function AppToolbar({
             <Download className="h-3.5 w-3.5" />
           )}
           {t("toolbar.exportAll")}
+        </Button>
+      )}
+
+      {activeProjectId && activeProject?.engine === "mv_mz" && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 gap-1.5 text-xs"
+          title={t("coverage.toolbarHint")}
+          onClick={() => void openCoverageDialog(activeProjectId)}
+          disabled={isTranslating || isPilotRunning}
+        >
+          <ListChecks className="h-3.5 w-3.5" />
+          {t("coverage.toolbar")}
         </Button>
       )}
 

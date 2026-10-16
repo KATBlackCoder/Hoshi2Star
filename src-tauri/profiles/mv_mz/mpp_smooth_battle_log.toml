@@ -1,0 +1,11 @@
+# MPP_SmoothBattleLog — battle party command that opens the past log.
+
+[plugin]
+name = "MokuseiPengin/MPP_SmoothBattleLog"
+title = "Battle log (MPP_SmoothBattleLog)"
+verified_sha256 = ["5567fc87ca1f602d0e3ebbaf7d9bffa0bbf8c12660d4c3f1a81481220924c68f"]
+reference = "MPP_SmoothBattleLog: 'Log Command' → addCommand(param_LogCommand, 'pastLog')."
+
+[[display]]
+path = "Log Command"
+visible_in = "Battle party command opening the log"

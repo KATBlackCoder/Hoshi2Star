@@ -28,7 +28,7 @@ async fn export_succeeds_after_repairing_translation_secs() {
 
     sqlx::query(
         "INSERT INTO projects (id, name, engine, game_path) \
-         VALUES ('p1', 'Historical project', 'mv_mz', ?)",
+         VALUES ('1b4e28ba-2fa1-41d2-883f-0016d3cca427', 'Historical project', 'mv_mz', ?)",
     )
     .bind(game_dir.to_str().unwrap())
     .execute(&pool)
@@ -36,7 +36,7 @@ async fn export_succeeds_after_repairing_translation_secs() {
     .unwrap();
     sqlx::query(
         "INSERT INTO source_files (id, project_id, file_name, file_path, file_type) \
-         VALUES ('f1', 'p1', 'Actors.json', ?, 'actors')",
+         VALUES ('f1', '1b4e28ba-2fa1-41d2-883f-0016d3cca427', 'Actors.json', ?, 'actors')",
     )
     .bind(actors_path.to_str().unwrap())
     .execute(&pool)
@@ -63,13 +63,25 @@ async fn export_succeeds_after_repairing_translation_secs() {
         .await
         .expect("startup should repair the historical schema");
     let app = mock_builder()
-        .manage(AppState::new(repaired).expect("terminology service"))
+        .manage(
+            AppState::new(
+                repaired,
+                std::path::PathBuf::from(format!("{db_path}.data")),
+            )
+            .expect("terminology service"),
+        )
         .build(mock_context(noop_assets()))
         .expect("mock app build");
 
-    let zip_path = export_project("p1".to_string(), None, true, app.state())
-        .await
-        .expect("export should succeed after schema repair");
+    let zip_path = export_project(
+        "1b4e28ba-2fa1-41d2-883f-0016d3cca427".to_string(),
+        None,
+        true,
+        None,
+        app.state(),
+    )
+    .await
+    .expect("export should succeed after schema repair");
 
     let zip_file = std::fs::File::open(zip_path).unwrap();
     let mut archive = zip::ZipArchive::new(zip_file).unwrap();

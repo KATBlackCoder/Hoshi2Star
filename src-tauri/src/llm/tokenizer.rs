@@ -82,7 +82,7 @@ static RE_MZONLY: LazyLock<Regex> = LazyLock::new(|| {
 /// - `MvMz`   — Patterns A + B + D(`[%n]`). Use for MV games and MZ dialogue.
 /// - `MzOnly` — Patterns C + A + B + D(`%n`). Use for MZ `System.json > terms` only.
 /// - `Wolf`   — Wolf RPG specific patterns (ruby, DB refs, sys vars, alignment).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Engine {
     /// RPG Maker MV *or* MZ dialogue files — patterns A, B, D[%n]
     MvMz,
@@ -103,6 +103,49 @@ impl Engine {
             Engine::MvMz
         }
     }
+
+    /// Placeholder syntax for one persisted segment — the single rule shared by
+    /// the LLM pipeline, QA and terminology.
+    ///
+    /// RPG Maker formats System terms (`terms.messages`) and plugin message
+    /// templates with `String.prototype.format`, whose bare `%1`, `%2`… must
+    /// survive translation. Those segments use [`Engine::MzOnly`], the only
+    /// pattern set that tokenizes bare `%n`; its extra MZ-only codes never occur
+    /// in MV text, so it is safe for both. Templates declare themselves via
+    /// `{"placeholderSyntax":"format"}` in `context_json`. Everything else keeps
+    /// [`Engine::from_project_engine`].
+    pub fn for_segment(
+        project_engine: &str,
+        segment_kind: &str,
+        context_json: Option<&str>,
+    ) -> Self {
+        let base = Self::from_project_engine(project_engine);
+        if base != Engine::MvMz {
+            return base;
+        }
+        if segment_kind == "system_term" || declares_format_template(context_json) {
+            Engine::MzOnly
+        } else {
+            Engine::MvMz
+        }
+    }
+}
+
+/// `context_json` key/value through which an extractor marks a segment as a
+/// `%n` format template (see [`Engine::for_segment`]).
+pub const PLACEHOLDER_SYNTAX_KEY: &str = "placeholderSyntax";
+pub const PLACEHOLDER_SYNTAX_FORMAT: &str = "format";
+
+fn declares_format_template(context_json: Option<&str>) -> bool {
+    context_json
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .and_then(|value| {
+            value
+                .get(PLACEHOLDER_SYNTAX_KEY)
+                .and_then(serde_json::Value::as_str)
+                .map(|syntax| syntax == PLACEHOLDER_SYNTAX_FORMAT)
+        })
+        .unwrap_or(false)
 }
 
 /// Map from token (`⟦ph_0⟧`) to original placeholder (`\V[12]`).
@@ -387,6 +430,38 @@ mod tests {
             result,
             Err(TokenizerError::DuplicatePlaceholder { .. })
         ));
+    }
+
+    #[test]
+    fn for_segment_selects_format_syntax_only_for_templates() {
+        let template = Some(r#"{"placeholderSyntax":"format","plugin":"X"}"#);
+        let cases: &[(&str, &str, Option<&str>, Engine)] = &[
+            ("mv_mz", "system_term", None, Engine::MzOnly),
+            ("mv_mz", "plugin_message", template, Engine::MzOnly),
+            ("mv_mz", "dialogue", None, Engine::MvMz),
+            (
+                "mv_mz",
+                "dialogue",
+                Some(r#"{"placeholderSyntax":"other"}"#),
+                Engine::MvMz,
+            ),
+            ("mv_mz", "dialogue", Some("not json"), Engine::MvMz),
+            ("mv_mz", "unknown", None, Engine::MvMz),
+            ("vx_ace", "system_term", None, Engine::MzOnly),
+            ("wolf", "system_term", template, Engine::Wolf),
+        ];
+        for (engine, kind, context, expected) in cases {
+            assert_eq!(
+                Engine::for_segment(engine, kind, *context),
+                *expected,
+                "{engine}/{kind}/{context:?}"
+            );
+        }
+        let tokenized = Tokenizer::tokenize(
+            "%1は%2のダメージを受けた！",
+            Engine::for_segment("mv_mz", "system_term", None),
+        );
+        assert_eq!(tokenized.map.len(), 2);
     }
 
     // 6. Texte sans placeholder → inchangé

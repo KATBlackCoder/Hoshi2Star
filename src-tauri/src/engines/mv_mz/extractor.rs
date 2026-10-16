@@ -41,6 +41,15 @@ pub enum SegmentKind {
     /// Player-facing text owned by a narrowly supported plugin command.
     PluginText,
     GameTitle,
+    /// System.json type list entry (skill/equip/element/weapon/armor type) —
+    /// optional text category.
+    SystemType,
+    /// Map `displayName` (map name popup) — optional text category.
+    MapDisplayName,
+    /// Short plugin label (menu/option/command names) — optional category.
+    PluginUiText,
+    /// Plugin sentence or template (battle log, popups) — optional category.
+    PluginMessage,
 }
 
 impl SegmentKind {
@@ -68,6 +77,10 @@ impl SegmentKind {
             Self::SystemTerm => "system_term",
             Self::PluginText => "plugin_text",
             Self::GameTitle => "game_title",
+            Self::SystemType => "system_type",
+            Self::MapDisplayName => "map_display_name",
+            Self::PluginUiText => "plugin_ui_text",
+            Self::PluginMessage => "plugin_message",
         }
     }
 }

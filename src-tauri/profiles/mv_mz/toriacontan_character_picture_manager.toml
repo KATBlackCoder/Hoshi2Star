@@ -1,0 +1,13 @@
+# CharacterPictureManager (Triacontane) — standing pictures.
+# PictureList[].Name is an editor label (never read). Note: when a FileList
+# entry sets `Speaker`, the plugin compares the message speaker name with the
+# actor's name, so those two translations must stay identical.
+
+[plugin]
+name = "Toriacontan/CharacterPictureManager"
+title = "Standing pictures (CharacterPictureManager)"
+verified_sha256 = ["56077fa3d44202e3ccee193d5f5a35e4c5ab0378cfded3e586efa6c95e47d340"]
+reference = "CharacterPictureManager: PictureList[].Name unused at runtime."
+
+[[memo]]
+path = "PictureList[].Name"

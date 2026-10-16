@@ -1,0 +1,10 @@
+# TriggerOnEquipAndState (Triacontane) — list[].name is an editor label.
+
+[plugin]
+name = "Toriacontan/TriggerOnEquipAndState"
+title = "Equip/state triggers (TriggerOnEquipAndState)"
+verified_sha256 = ["2fab9086db513b31c1ea0940374ee15b62367bdc1a654ad9a35f70dc9a697ed3"]
+reference = "TriggerOnEquipAndState: list[].name unused at runtime."
+
+[[memo]]
+path = "list[].name"

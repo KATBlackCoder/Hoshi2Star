@@ -63,7 +63,11 @@ async fn mock_app(delay_ms: u64) -> (tempfile::TempDir, tauri::App<tauri::test::
         1,
     ));
     let app = mock_builder()
-        .manage(AppState::with_terminology(pool, service))
+        .manage(AppState::with_terminology(
+            pool,
+            service,
+            directory.path().join("app-data"),
+        ))
         .build(mock_context(noop_assets()))
         .unwrap();
     (directory, app)

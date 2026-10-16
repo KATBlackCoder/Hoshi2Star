@@ -1,0 +1,10 @@
+[
+  null,
+  {
+    "id": 1,
+    "name": "革の鞭",
+    "description": "しなやかな鞭。",
+    "note": "<コマンド:スキル/鞭,48,鞭攻撃,76>",
+    "damage": { "formula": "a.atk * 4 - b.def * 2" }
+  }
+]

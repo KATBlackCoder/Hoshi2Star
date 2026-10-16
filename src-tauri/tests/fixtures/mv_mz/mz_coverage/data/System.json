@@ -1,0 +1,18 @@
+{
+  "gameTitle": "範囲テスト MZ",
+  "currencyUnit": "マナ",
+  "locale": "ja_JP",
+  "skillTypes": ["", "魔術", "鞭"],
+  "equipTypes": ["", "武器", "衣装"],
+  "armorTypes": ["", "軽装防具"],
+  "weaponTypes": ["", "剣"],
+  "elements": ["", "物理", "炎"],
+  "terms": {
+    "basic": ["レベル"],
+    "commands": ["戦う"],
+    "params": ["攻撃力"],
+    "messages": {
+      "actorDamage": "%1は%2のダメージを受けた！"
+    }
+  }
+}

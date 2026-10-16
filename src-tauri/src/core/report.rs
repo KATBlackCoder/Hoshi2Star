@@ -67,6 +67,8 @@ async fn evaluate_project(
         source_language: String,
         target_language: String,
         segment_kind: String,
+        context_json: Option<String>,
+        text_category: Option<String>,
         status: String,
     }
 
@@ -81,6 +83,8 @@ async fn evaluate_project(
             COALESCE(p.source_language, 'ja') AS source_language,
             COALESCE(p.target_language, 'en') AS target_language,
             s.segment_kind,
+            s.context_json,
+            s.text_category,
             s.status
          FROM segments s
          JOIN source_files sf ON s.source_file_id = sf.id
@@ -119,6 +123,23 @@ async fn evaluate_project(
         }
     }
 
+    // Skill types looked up by name inside battle-command tags must stay
+    // distinct after translation (indexOf would pick the first match).
+    let mut skill_type_targets = std::collections::HashMap::<String, usize>::new();
+    for row in &rows {
+        if row.text_category.as_deref() == Some("system.skill_types")
+            && row
+                .context_json
+                .as_deref()
+                .is_some_and(|context| context.contains("keke_skill_type"))
+            && !row.target_text.trim().is_empty()
+        {
+            *skill_type_targets
+                .entry(row.target_text.trim().to_string())
+                .or_default() += 1;
+        }
+    }
+
     let mut details = Vec::new();
     let mut ok_count = 0_i64;
     let mut critical_count = 0_i64;
@@ -131,6 +152,7 @@ async fn evaluate_project(
             source_language: &row.source_language,
             target_language: &row.target_language,
             segment_kind: &row.segment_kind,
+            context_json: row.context_json.as_deref(),
             neighbor_sources: &qa_neighbors.sources,
             neighbor_targets: &qa_neighbors.targets,
         };
@@ -150,6 +172,15 @@ async fn evaluate_project(
         if variant_count > 1 {
             result.add_error(QaError::InconsistentRepeatedSource {
                 variants: variant_count,
+            });
+        }
+        if row.text_category.as_deref() == Some("system.skill_types")
+            && skill_type_targets
+                .get(row.target_text.trim())
+                .is_some_and(|count| *count > 1)
+        {
+            result.add_error(QaError::ConstraintViolation {
+                rule: qa::CONSTRAINT_KEKE_SKILL_TYPE_UNIQUE.to_string(),
             });
         }
         let critical = result.has_critical_errors();
@@ -294,6 +325,7 @@ struct Labels {
     err_expansion: &'static str,
     err_context: &'static str,
     err_inconsistent: &'static str,
+    err_constraint: &'static str,
 }
 
 fn labels(lang: &str) -> Labels {
@@ -326,6 +358,7 @@ fn labels(lang: &str) -> Labels {
             err_line_long: "Ligne trop longue",
             err_bom: "BOM UTF-8",
             err_terminology: "Terminologie",
+            err_constraint: "Règle d'affichage",
             err_empty: "Vide",
             err_unchanged: "Source inchangée",
             err_source_script: "Écriture source",
@@ -362,6 +395,7 @@ fn labels(lang: &str) -> Labels {
             err_line_long: "Line too long",
             err_bom: "BOM detected",
             err_terminology: "Terminology mismatch",
+            err_constraint: "Display rule",
             err_empty: "Empty",
             err_unchanged: "Unchanged source",
             err_source_script: "Source script",
@@ -430,7 +464,9 @@ pub fn generate_qa_html(
     for d in details {
         for e in &d.errors {
             match e {
-                QaError::MissingPlaceholder { .. } => count_missing_ph += 1,
+                QaError::MissingPlaceholder { .. } | QaError::MissingFormatSpecifier { .. } => {
+                    count_missing_ph += 1
+                }
                 QaError::LineTooLong { .. } => count_line_long += 1,
                 QaError::BomDetected => count_bom += 1,
                 QaError::TerminologyMismatch { .. } => count_terminology += 1,
@@ -439,7 +475,8 @@ pub fn generate_qa_html(
                 | QaError::SourceScriptRemaining { .. }
                 | QaError::SuspiciousExpansion { .. }
                 | QaError::ContextLeak { .. }
-                | QaError::InconsistentRepeatedSource { .. } => count_semantic += 1,
+                | QaError::InconsistentRepeatedSource { .. }
+                | QaError::ConstraintViolation { .. } => count_semantic += 1,
             }
         }
     }
@@ -497,6 +534,7 @@ td{{padding:7px 10px;vertical-align:top}}
 .err-dot.line_too_long{{background:#f59e0b}}
 .err-dot.bom_detected{{background:#f59e0b}}
 .err-dot.terminology_mismatch{{background:#a78bfa}}
+.err-dot.constraint_violation{{background:#ef4444}}
 .err-dot.empty_translation,.err-dot.unchanged_source,.err-dot.source_script_remaining,.err-dot.suspicious_expansion,.err-dot.context_leak,.err-dot.inconsistent_repeated_source{{background:#ef4444}}
 .source-text,.target-text{{max-width:280px;word-break:break-word;white-space:pre-wrap;font-family:monospace;font-size:11px;color:#ddd}}
 .source-text{{color:#94a3b8}}
@@ -593,6 +631,7 @@ td{{padding:7px 10px;vertical-align:top}}
 <label><input type="checkbox" class="err-filter" value="suspicious_expansion" checked> {err_expansion}</label>
 <label><input type="checkbox" class="err-filter" value="context_leak" checked> {err_context}</label>
 <label><input type="checkbox" class="err-filter" value="inconsistent_repeated_source" checked> {err_inconsistent}</label>
+<label><input type="checkbox" class="err-filter" value="constraint_violation" checked> {err_constraint}</label>
 </div>
 </div>
 "#,
@@ -610,6 +649,7 @@ td{{padding:7px 10px;vertical-align:top}}
         err_expansion = lbl.err_expansion,
         err_context = lbl.err_context,
         err_inconsistent = lbl.err_inconsistent,
+        err_constraint = lbl.err_constraint,
     );
 
     // Table

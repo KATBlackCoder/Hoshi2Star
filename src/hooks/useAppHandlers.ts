@@ -5,7 +5,23 @@ import { toast } from "sonner";
 import { useProjectStore } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { useLlmStore } from "@/stores/llm";
-import type { FontScanResult, ProjectStats } from "@/lib/types";
+import type {
+  ExportPreflight,
+  FontScanResult,
+  ProjectStats,
+} from "@/lib/types";
+
+const INTEGRITY_ERROR_PREFIX = "Export blocked: the integrity check found";
+
+/** Problem lines of an export refused by the integrity check, else `null`. */
+export function integrityIssuesOf(error: string): string[] | null {
+  if (!error.startsWith(INTEGRITY_ERROR_PREFIX)) return null;
+  return error
+    .split("\n")
+    .slice(1)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -26,6 +42,10 @@ export function useAppHandlers() {
     null,
   );
   const [isExporting, setIsExporting] = useState(false);
+  const [exportPreflight, setExportPreflight] =
+    useState<ExportPreflight | null>(null);
+  const [switchLocale, setSwitchLocale] = useState(false);
+  const [integrityIssues, setIntegrityIssues] = useState<string[] | null>(null);
 
   const { t } = useTranslation();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
@@ -39,9 +59,27 @@ export function useAppHandlers() {
         projectId: activeProjectId,
       });
       setExportStats(stats);
-      setExportDialog(stats.untranslatedCount > 0 ? "blocked" : "confirm");
+      if (stats.untranslatedCount > 0) {
+        setExportDialog("blocked");
+        return;
+      }
+      // Optional switches are offered per export and always start off.
+      setSwitchLocale(false);
+      setExportPreflight(await loadPreflight(activeProjectId));
+      setExportDialog("confirm");
     } catch (err) {
       toast.error(t("toasts.exportError", { error: String(err) }));
+    }
+  }
+
+  async function loadPreflight(
+    projectId: string,
+  ): Promise<ExportPreflight | null> {
+    try {
+      return await invoke<ExportPreflight>("preflight_export", { projectId });
+    } catch {
+      // Non-fatal: the optional switches are simply not offered.
+      return null;
     }
   }
 
@@ -71,10 +109,16 @@ export function useAppHandlers() {
         projectId: activeProjectId,
         fontSize,
         replaceExisting,
+        setLocale: exportPreflight?.locale ? switchLocale : null,
       });
       toast.success(t("toasts.exportSuccess"), { description: zipPath });
     } catch (err) {
-      toast.error(t("toasts.exportError", { error: String(err) }));
+      const issues = integrityIssuesOf(String(err));
+      if (issues) {
+        setIntegrityIssues(issues);
+      } else {
+        toast.error(t("toasts.exportError", { error: String(err) }));
+      }
     } finally {
       setIsExporting(false);
     }
@@ -149,11 +193,16 @@ export function useAppHandlers() {
     showFontDialog,
     fontScanResult,
     isExporting,
+    exportPreflight,
+    switchLocale,
+    integrityIssues,
     // Setters
     setShowSettings,
     setShowAbout,
     setExportDialog,
     setShowTranslateAll,
+    setSwitchLocale,
+    setIntegrityIssues,
     // Handlers
     handleExportAll,
     handleExportConfirm,

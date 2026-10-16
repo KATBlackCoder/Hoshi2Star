@@ -5,6 +5,30 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+### Added
+- Add optional text categories for RPG Maker MV/MZ: player-visible text outside the standard `data/*.json` extraction can now be translated without breaking the game. Covered: System lists (`skillTypes`, `equipTypes`, `elements`, `weaponTypes`, `armorTypes`), map display names, `js/plugins.js` display parameters, MZ plugin-command display arguments (e.g. BattleLogOutput battle-log lines), NUUN_EnemyBook built-in labels (filled into their empty parameters) and Keke_VariableActorCommand battle-command labels in note tags. A new "Text coverage" dialog lists every category with where it appears, its exact consequences, its constraints, samples and locations. Each category is in one of four states:
+  - **verified**: pre-ticked in the dialog, enabled only when you apply;
+  - **linked**: opt-in, and you confirm its consequences first;
+  - **blocked**: can never be enabled, and the dialog shows the reason and the locations;
+  - **not covered**: report only.
+
+  To decide the state, a reference scanner searches notes, scripts, move routes, damage formulas, plugin commands and enabled plugins' parameters and code. A text that another part of the game looks up by name is never offered unless every lookup can be rewritten. Disabling a category parks its translations so you can restore them later (migration `0010`). Nothing is enabled automatically: after opening a project, a notice offers the review.
+- Add 16 curated MV/MZ plugin profiles (embedded TOML). Each profile is pinned to the hash of the reviewed plugin source. Profiles separate display text from enumerations, note-tag keys, key bindings and editor-only memos. A plugin without a verified profile is only reported, never extracted.
+- Add linked skill-type renames for Keke_VariableActorCommand: translating a skill type also rewrites every `<コマンド:スキル/NAME…>` tag in all database notes. A differential check verifies at export that every battle command still resolves to the same skill type or skill.
+- Add an export integrity gate for MV/MZ. Before anything is written, it checks that:
+  - every output file still parses;
+  - only planned values changed, and each one still held its source text;
+  - `plugins.js` kept the same plugins and status, and its untouched lines are byte-identical.
+
+  A refused export now opens a dialog that lists the problems instead of showing a toast.
+- Add pristine-original snapshots for MV/MZ projects (`<app-data>/originals/<project>/`). Exports always start from the untouched game files, so exporting twice gives identical archives, even after a previous export was unzipped over `data/`. Originals are reconstructed from the project database when the game folder already holds an export. Snapshots follow game updates: a game file that is neither the original nor one of Hoshi2Star's exports replaces the snapshot, so an export never restores an older version of the game. Restored projects are snapshotted on demand, not when they are opened.
+- Add an optional "switch the game's language setting" export option (MV 1.6+ / MZ, unticked on every export). The new `preflight_export` command finds the engine and plugin code lines that read `System.json` `locale` and lists only the consequences that actually change for this game, such as enemy letters, the name-input keyboard, fonts and affected plugins. The edit goes through the integrity gate like any other change.
+- Add QA constraint checks for plugin and note-tag text: `plain_text_value` and the Keke `keke_skill_type`, `keke_skill_type_unique` and `keke_tag_field` rules are critical; `no_escape_codes` and `keke_no_spaces` are cosmetic.
+
+### Changed
+- Change MV/MZ placeholder protection to work per segment: `system_term` segments and plugin `%n` templates now protect `%1`/`%2` in the pipeline, QA, the report and batch dedup. A translation that lost a `%n` gets a new QA warning (`missing_format_specifier`). It does not block export, because the game then only shows the message without that value.
+- Change the MV/MZ export font-size prefix (`\FS[n]`) to apply only to core map segments. Optional categories such as map display names are drawn without escape codes, so a prefix would show up literally.
+
 ## [0.4.10] — 2026-07-07
 
 ### Added
