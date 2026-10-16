@@ -22,3 +22,10 @@ template = true
 [[display]]
 path = "wordMoney"
 visible_in = "Currency word inside the gain/loss popup"
+
+# Window_GetInfo.drawContents draws the description up to its first line break
+# with drawText at 28 px into boxWidth − 384 px (an <info:…> note tag replaces it).
+[layout]
+neutral = true
+plain_description_first_line = true
+notes = ["The get-item popup shows the first line of item, weapon and armor descriptions at 28 px, squeezed into 424 px; an <info:…> note tag replaces it."]

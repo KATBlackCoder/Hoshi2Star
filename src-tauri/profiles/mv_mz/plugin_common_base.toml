@@ -1,0 +1,13 @@
+# PluginCommonBase — shared base of Triacontane's MZ plugins.
+# Window_Base.convertEscapeCharacters additionally expands \S[n] and \SS[x]
+# (switch / self-switch values printed as true/false); nothing else changes.
+
+[plugin]
+name = "PluginCommonBase"
+title = "Plugin common base (PluginCommonBase)"
+verified_sha256 = ["37a7b5d2a87014340fdbaf7e096175167a7a86ad4d65374d373b10cc274d2d88"]
+reference = 'PluginCommonBase: convertEscapeCharacters → PluginManagerEx.convertEscapeCharacters (\S[n], \SS[x]).'
+
+[layout]
+neutral = true
+inserted_codes = ["S", "SS"]

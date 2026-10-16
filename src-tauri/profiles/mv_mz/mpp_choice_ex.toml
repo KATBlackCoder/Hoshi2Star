@@ -10,3 +10,8 @@ reference = "MPP_ChoiceEX: Choice Help Commands parsed as command names and matc
 [[blocked]]
 path = "Choice Help Commands[]"
 reason = "Command names matched against event commands; translating them breaks choice help."
+
+# newPage / processNewLine hooks only reposition choices shown inside the box.
+[layout]
+neutral = true
+notes = ["Its choiceInMessage command draws choices inside the message box under the text; text fitting does not account for that layout."]

@@ -3,10 +3,12 @@ import {
   Database,
   PanelRightClose,
   ShieldCheck,
+  WrapText,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { TerminologyInspector } from "@/components/editor/TerminologyInspector";
 import { QAPanel } from "@/components/editor/QAPanel";
+import { TextFitPreviewPanel } from "@/components/editor/TextFitPreviewPanel";
 import { TMPanel } from "@/components/editor/TMPanel";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -27,6 +29,7 @@ const TABS: Array<{
   { id: "tm", labelKey: "inspector.tm", icon: Database },
   { id: "qa", labelKey: "inspector.qa", icon: ShieldCheck },
   { id: "terminology", labelKey: "inspector.terminology", icon: BookMarked },
+  { id: "preview", labelKey: "inspector.preview", icon: WrapText },
 ];
 
 export function InspectorRail({
@@ -82,7 +85,7 @@ export function InspectorRail({
         <div
           role="tablist"
           aria-label={t("inspector.tools")}
-          className="grid min-w-0 flex-1 grid-cols-3 gap-1"
+          className="grid min-w-0 flex-1 grid-cols-4 gap-1"
         >
           {TABS.map(({ id, labelKey, icon: Icon }) => (
             <button
@@ -128,6 +131,8 @@ export function InspectorRail({
           <TMPanel />
         ) : inspectorTab === "qa" ? (
           <QAPanel sourceText={sourceText} targetText={targetText} />
+        ) : inspectorTab === "preview" ? (
+          <TextFitPreviewPanel />
         ) : (
           <TerminologyInspector projectId={projectId} langPair={langPair} />
         )}

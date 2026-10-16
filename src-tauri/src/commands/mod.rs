@@ -11,4 +11,5 @@ pub mod project;
 pub mod qa;
 pub mod search;
 pub mod terminology;
+pub mod text_fit;
 pub mod translate;

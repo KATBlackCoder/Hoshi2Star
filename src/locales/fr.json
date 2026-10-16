@@ -115,7 +115,8 @@
     "tm": "Mémoire",
     "qa": "QA",
     "terminology": "Terminologie",
-    "close": "Fermer l’inspecteur"
+    "close": "Fermer l’inspecteur",
+    "preview": "Aperçu"
   },
   "toolbar": {
     "openGame": "Ouvrir un jeu",
@@ -652,5 +653,68 @@
   "exportIntegrity": {
     "title": "Export bloqué par le contrôle d'intégrité",
     "description": "Aucun fichier n'a été écrit. Le contrôle compare chaque fichier produit avec l'original et a trouvé des changements non prévus :"
+  },
+  "textFit": {
+    "toolbar": "Mise en page",
+    "toolbarHint": "Ajuste dialogues et descriptions aux fenêtres de texte du jeu à l'export",
+    "title": "Mise en page du texte",
+    "description": "À l'export, met en page les dialogues et descriptions traduits dans les vraies fenêtres de texte du jeu, mesurés avec la police du jeu. Vos traductions elles-mêmes ne sont jamais modifiées.",
+    "loading": "Mesure des fenêtres de texte du jeu…",
+    "enableDialogue": "Ajuster les dialogues (Afficher un message)",
+    "enableDialogueHint": "Messages des cartes, événements communs et combats.",
+    "enableDescriptions": "Ajuster les descriptions et profils",
+    "enableDescriptionsHint": "Descriptions d'objets, compétences, armes et armures (fenêtre d'aide de 2 lignes) et profils des personnages.",
+    "lineBreaks": "Retours à la ligne",
+    "lineBreaksReflow": "Recomposer chaque message (recommandé)",
+    "lineBreaksKeep": "Garder mes retours, couper les lignes trop longues",
+    "overflow": "Quand un texte est trop long pour sa fenêtre",
+    "overflowNewPage": "Continuer sur une nouvelle page (recommandé)",
+    "overflowShrink": "Réduire la police, puis une nouvelle page",
+    "overflowLeave": "Le laisser et le signaler",
+    "minFontSize": "Taille minimale lors d'une réduction (px)",
+    "dialogueFontSize": "Taille de police des dialogues (px)",
+    "dialogueFontSizeHint": "Vide : la taille du jeu ({{size}} px). La taille choisie à l'export la fixe aussi.",
+    "detected": "Détecté dans ce jeu",
+    "box": "Fenêtre de message : {{width}} px de texte ({{face}} px avec un portrait), {{lines}} lignes par page.",
+    "help": "Fenêtre d'aide : {{width}} px de texte, 2 lignes.",
+    "fontMeasured": "Police : {{file}} à {{size}} px, mesurée depuis le fichier de police du jeu.",
+    "fontEstimated": "Police : largeurs estimées — {{error}}",
+    "shrinkNote": "Réduire la police place plus de mots par ligne ; une 5e ligne n'apparaît qu'à 19 px ou moins, car la première ligne d'une fenêtre garde toujours sa pleine hauteur.",
+    "warnings": "Plugins susceptibles de modifier la mise en page",
+    "warningHooks": "redéfinit {{hooks}}",
+    "notes": "Remarques des plugins vérifiés",
+    "missing": "Caractères absents de la police du jeu (dessinés avec une police de secours, largeurs estimées) : {{chars}}",
+    "summary": "Avec ces réglages",
+    "dialogueCounts": "Dialogues : {{total}} messages — {{fits}} tiennent tels quels, {{rewrapped}} recomposés, {{newPage}} continuent sur une nouvelle page, {{shrunk}} réduits, {{tooLong}} encore trop longs, {{skipped}} non ajustés.",
+    "descriptionCounts": "Descriptions : {{total}} — {{fits}} tiennent telles quelles, {{rewrapped}} recomposées, {{shrunk}} réduites, {{tooLong}} encore trop longues, {{skipped}} non ajustées.",
+    "review": "À vérifier",
+    "open": "Ouvrir",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "saved": "Réglages de mise en page enregistrés",
+    "exportSummary": "Mise en page : {{rewrapped}} recomposés, {{newPage}} sur une nouvelle page, {{shrunk}} réduits, {{tooLong}} encore trop longs.",
+    "outcome": {
+      "fits": "Tient tel quel",
+      "rewrapped": "Recomposé",
+      "newPage": "Continue sur {{pages}} pages",
+      "shrunk": "Réduit à {{size}} px",
+      "tooLong": "Encore trop long : {{reason}}",
+      "skipped": "Non ajusté : {{reason}}"
+    },
+    "preview": {
+      "title": "Aperçu en jeu",
+      "empty": "Sélectionnez une ligne de dialogue ou une description pour la voir telle que le jeu l'affichera.",
+      "mzOnly": "L'aperçu en jeu est disponible pour les jeux RPG Maker MZ.",
+      "notFitted": "Ce texte n'est pas mis en page par l'ajustement.",
+      "loading": "Mise en page…",
+      "off": "La mise en page est désactivée — voici ce qu'elle ferait.",
+      "page": "Page {{page}} sur {{count}}",
+      "portrait": "Portrait",
+      "overflow": "Dépasse le bord de la fenêtre",
+      "lineBreaks": "Retours à la ligne",
+      "overflowLabel": "Si trop long",
+      "default": "Réglage du projet",
+      "asTranslated": "Exporter ce texte exactement tel que traduit"
+    }
   }
 }

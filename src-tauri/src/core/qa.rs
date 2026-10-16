@@ -164,6 +164,17 @@ impl QaResult {
 
     pub fn add_error(&mut self, error: QaError) {
         self.errors.push(error);
+        self.rescore();
+    }
+
+    /// Drop line-width warnings: text fitting lays this text out at export.
+    pub fn drop_line_width(&mut self) {
+        self.errors
+            .retain(|error| !matches!(error, QaError::LineTooLong { .. }));
+        self.rescore();
+    }
+
+    fn rescore(&mut self) {
         let penalty: i32 = self.errors.iter().map(QaError::penalty).sum();
         self.score = (100 - penalty).max(0) as u8;
     }

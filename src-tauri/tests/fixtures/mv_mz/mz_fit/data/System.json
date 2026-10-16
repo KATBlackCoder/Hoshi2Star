@@ -1,0 +1,50 @@
+{
+  "gameTitle": "フィット MZ",
+  "currencyUnit": "円",
+  "locale": "ja_JP",
+  "skillTypes": [
+    "",
+    "魔法"
+  ],
+  "equipTypes": [
+    "",
+    "武器"
+  ],
+  "armorTypes": [
+    "",
+    "服"
+  ],
+  "weaponTypes": [
+    "",
+    "杖"
+  ],
+  "elements": [
+    "",
+    "物理"
+  ],
+  "terms": {
+    "basic": [
+      "レベル"
+    ],
+    "commands": [
+      "戦う"
+    ],
+    "params": [
+      "攻撃力"
+    ],
+    "messages": {}
+  },
+  "advanced": {
+    "gameId": 1,
+    "screenWidth": 816,
+    "screenHeight": 624,
+    "uiAreaWidth": 816,
+    "uiAreaHeight": 624,
+    "mainFontFilename": "mplus-1m-regular.woff",
+    "numberFontFilename": "",
+    "fallbackFonts": "Verdana, sans-serif",
+    "fontSize": 26,
+    "screenScale": 1,
+    "windowOpacity": 192
+  }
+}

@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::core::terminology::service::TerminologyService;
 use crate::core::terminology::Result;
+use crate::engines::mv_mz::layout::font::FontCache;
 use crate::engines::mv_mz::profiles::ProfileSet;
 
 /// Global application state managed by Tauri.
@@ -18,6 +19,8 @@ pub struct AppState {
     pub data_dir: PathBuf,
     /// Verified MV/MZ plugin profiles (the embedded set; replaceable in tests).
     pub plugin_profiles: Arc<ProfileSet>,
+    /// The last game font decoded for text fitting.
+    pub game_fonts: FontCache,
 }
 
 impl AppState {
@@ -27,6 +30,7 @@ impl AppState {
             terminology: TerminologyService::embedded_japanese()?,
             data_dir,
             plugin_profiles: Arc::new(ProfileSet::embedded().clone()),
+            game_fonts: FontCache::default(),
         })
     }
 
@@ -40,6 +44,7 @@ impl AppState {
             terminology,
             data_dir,
             plugin_profiles: Arc::new(ProfileSet::embedded().clone()),
+            game_fonts: FontCache::default(),
         }
     }
 }

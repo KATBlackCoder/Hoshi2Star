@@ -1,0 +1,11 @@
+# NUUN_Base — resetFontSettings additionally clears NUUN's own font-face cache.
+
+[plugin]
+name = "nuun/NUUN_Base"
+title = "NUUN base (NUUN_Base)"
+# Reviewed Ver.1.7.12, pinned by source hash (edited copies keep the header).
+verified_sha256 = ["6643e71d487d95e90f9ed3af57df3ca61750cf5eee9a3e84f4477e5d25187085"]
+reference = "NUUN_Base: resetFontSettings → NuunManager.resetFontFace (cache only)."
+
+[layout]
+neutral = true

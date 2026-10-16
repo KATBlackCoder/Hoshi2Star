@@ -81,6 +81,22 @@ const EMBEDDED: &[(&str, &str)] = &[
         "mpp_choice_ex.toml",
         include_str!("../../../profiles/mv_mz/mpp_choice_ex.toml"),
     ),
+    (
+        "plugin_common_base.toml",
+        include_str!("../../../profiles/mv_mz/plugin_common_base.toml"),
+    ),
+    (
+        "toriacontan_template_event.toml",
+        include_str!("../../../profiles/mv_mz/toriacontan_template_event.toml"),
+    ),
+    (
+        "nuun_base.toml",
+        include_str!("../../../profiles/mv_mz/nuun_base.toml"),
+    ),
+    (
+        "toriacontan_message_skip.toml",
+        include_str!("../../../profiles/mv_mz/toriacontan_message_skip.toml"),
+    ),
 ];
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -97,6 +113,9 @@ pub struct PluginProfile {
     pub memo: Vec<MemoRule>,
     #[serde(default)]
     pub command_arg: Vec<CommandArgRule>,
+    /// How the plugin affects message/help text layout (text fitting).
+    #[serde(default)]
+    pub layout: Option<LayoutRule>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -185,6 +204,26 @@ pub struct CommandArgRule {
     pub escape_codes: bool,
 }
 
+/// What a reviewed plugin does to message and help-window text layout.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct LayoutRule {
+    /// Its hooks on text functions do not change where text is drawn, how
+    /// wide it is or where pages break.
+    #[serde(default)]
+    pub neutral: bool,
+    /// Escape codes it adds that print a value (`S`, `SS`, `SV`…).
+    #[serde(default)]
+    pub inserted_codes: Vec<String>,
+    /// Draws the first line of item/weapon/armor descriptions as plain text
+    /// elsewhere (escape codes would show literally there).
+    #[serde(default)]
+    pub plain_description_first_line: bool,
+    /// Shown to the user in the text fitting dialog.
+    #[serde(default)]
+    pub notes: Vec<String>,
+}
+
 /// A loaded, validated set of profiles.
 #[derive(Debug, Clone, Default)]
 pub struct ProfileSet {
@@ -252,6 +291,13 @@ impl PluginProfile {
         for family in &self.plugin.note_tag_families {
             if family != crate::engines::mv_mz::keke::FAMILY {
                 return Err(format!("unknown note-tag family {family}"));
+            }
+        }
+        if let Some(layout) = &self.layout {
+            for code in &layout.inserted_codes {
+                if code.is_empty() || !code.chars().all(|c| c.is_ascii_uppercase()) {
+                    return Err(format!("invalid inserted escape code {code}"));
+                }
             }
         }
         for hash in &self.plugin.verified_sha256 {

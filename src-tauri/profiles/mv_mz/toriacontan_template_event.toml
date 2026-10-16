@@ -1,0 +1,12 @@
+# TemplateEvent — convertEscapeCharacters only prepares the self-switch key;
+# PluginManagerEx gains \SV[x] (self variable value printed as a number).
+
+[plugin]
+name = "Toriacontan/TemplateEvent"
+title = "Template events (TemplateEvent)"
+verified_sha256 = ["c756eda364f1e62d5dfcd9199564da4eb396493a10fe791c6b5772b7fe04bcdc"]
+reference = 'TemplateEvent: convertEscapeCharacters → generateSelfSwitchKey; convertEscapeCharactersEx (\SV[x]).'
+
+[layout]
+neutral = true
+inserted_codes = ["SV"]

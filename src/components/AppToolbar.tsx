@@ -19,9 +19,11 @@ import {
   Play,
   Share2,
   Snowflake,
+  WrapText,
 } from "lucide-react";
 import { openProject, useProjectStore } from "@/stores/project";
 import { openCoverageDialog } from "@/stores/coverage";
+import { openTextFitDialog } from "@/stores/textFit";
 import {
   useIsTranslating,
   useTranslationProgress,
@@ -298,6 +300,20 @@ export function AppToolbar({
         >
           <ListChecks className="h-3.5 w-3.5" />
           {t("coverage.toolbar")}
+        </Button>
+      )}
+
+      {activeProjectId && activeProject?.engine === "mv_mz" && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 gap-1.5 text-xs"
+          title={t("textFit.toolbarHint")}
+          onClick={() => void openTextFitDialog(activeProjectId)}
+          disabled={isTranslating || isPilotRunning}
+        >
+          <WrapText className="h-3.5 w-3.5" />
+          {t("textFit.toolbar")}
         </Button>
       )}
 

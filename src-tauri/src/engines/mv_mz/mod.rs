@@ -5,6 +5,7 @@ pub mod injector;
 pub mod integrity;
 pub mod json_span;
 pub mod keke;
+pub mod layout;
 pub mod locale;
 pub mod originals;
 pub mod plugins_js;

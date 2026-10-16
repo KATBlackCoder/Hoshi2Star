@@ -182,6 +182,30 @@ async fn validate_patch_schema(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             ],
         ),
         (
+            "project_text_fit",
+            &[
+                "project_id",
+                "enabled_dialogue",
+                "enabled_descriptions",
+                "line_breaks",
+                "overflow",
+                "min_font_size",
+                "dialogue_font_size",
+            ],
+        ),
+        (
+            "text_fit_overrides",
+            &[
+                "project_id",
+                "file_name",
+                "pointer",
+                "source_hash",
+                "line_breaks",
+                "overflow",
+                "disabled",
+            ],
+        ),
+        (
             "tm_entries",
             &["source_hash", "source_text", "target_text", "lang_pair"],
         ),

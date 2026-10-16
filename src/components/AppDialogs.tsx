@@ -16,6 +16,8 @@ import { FontSizeDialog } from "@/components/FontSizeDialog";
 import { TextCoverageDialog } from "@/components/TextCoverageDialog";
 import { ExportLocaleOption } from "@/components/ExportLocaleOption";
 import { ExportIntegrityDialog } from "@/components/ExportIntegrityDialog";
+import { ExportFitSummary } from "@/components/ExportFitSummary";
+import { TextFitDialog } from "@/components/TextFitDialog";
 import { useProjectStore } from "@/stores/project";
 import type { useAppHandlers } from "@/hooks/useAppHandlers";
 
@@ -43,6 +45,7 @@ export function AppDialogs({ handlers }: AppDialogsProps) {
     showFontDialog,
     fontScanResult,
     exportPreflight,
+    exportFit,
     switchLocale,
     integrityIssues,
     setShowSettings,
@@ -93,6 +96,7 @@ export function AppDialogs({ handlers }: AppDialogsProps) {
               })}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {exportFit && <ExportFitSummary scan={exportFit} />}
           {exportPreflight?.locale && (
             <ExportLocaleOption
               option={exportPreflight.locale}
@@ -154,6 +158,8 @@ export function AppDialogs({ handlers }: AppDialogsProps) {
       />
 
       <TextCoverageDialog projectId={activeProjectId} />
+
+      <TextFitDialog projectId={activeProjectId} />
     </>
   );
 }

@@ -5,7 +5,9 @@
 
 use crate::core::qa::{self, QaError, QaSemanticContext};
 use crate::core::terminology::resolver;
+use crate::core::text_fit;
 use crate::domain::types::{QaReport, QaTerminologyIssue};
+use crate::engines::mv_mz::layout::message::is_fitted_segment;
 use crate::llm::context::{self, PromptContextClass};
 use crate::utils::text::escape_xml;
 use serde::{Deserialize, Serialize};
@@ -70,6 +72,7 @@ async fn evaluate_project(
         context_json: Option<String>,
         text_category: Option<String>,
         status: String,
+        json_key: String,
     }
 
     let rows = sqlx::query_as::<_, Row>(
@@ -85,7 +88,8 @@ async fn evaluate_project(
             s.segment_kind,
             s.context_json,
             s.text_category,
-            s.status
+            s.status,
+            s.json_key
          FROM segments s
          JOIN source_files sf ON s.source_file_id = sf.id
          JOIN projects p ON sf.project_id = p.id
@@ -109,6 +113,8 @@ async fn evaluate_project(
         .await
         .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
 
+    let (fit_dialogue, fit_descriptions) = text_fit::enabled_kinds(pool, project_id).await;
+    let fit_mv_mz = engine == "mv_mz";
     let mut variants =
         std::collections::HashMap::<(String, String), std::collections::HashSet<String>>::new();
     for row in &rows {
@@ -166,6 +172,18 @@ async fn evaluate_project(
             &row.engine,
             &semantic_context,
         );
+        // Text fitting lays these out at export: raw line width does not matter.
+        if fit_mv_mz
+            && is_fitted_segment(
+                &row.file_name,
+                &row.json_key,
+                &row.segment_kind,
+                fit_dialogue,
+                fit_descriptions,
+            )
+        {
+            result.drop_line_width();
+        }
         let variant_count = variants
             .get(&(row.segment_kind.clone(), row.source_text.clone()))
             .map_or(0, std::collections::HashSet::len);

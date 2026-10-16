@@ -31,6 +31,10 @@ use commands::terminology::{
     globalize_terminology_translations, list_terminology, start_terminology_scan,
     translate_terminology_entries, update_terminology_entry, upsert_terminology_translation,
 };
+use commands::text_fit::{
+    get_game_font, get_text_fit, preview_text_fit, scan_text_fit, set_text_fit,
+    set_text_fit_override,
+};
 use commands::translate::{get_provider_models, translate_all_segments, translate_segments};
 use state::AppState;
 use tauri::Manager;
@@ -68,6 +72,12 @@ pub fn run() {
             update_segment,
             export_project,
             preflight_export,
+            get_text_fit,
+            scan_text_fit,
+            set_text_fit,
+            set_text_fit_override,
+            preview_text_fit,
+            get_game_font,
             translate_segments,
             get_tm_suggestions,
             get_qa_report,

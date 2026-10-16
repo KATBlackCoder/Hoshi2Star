@@ -604,3 +604,143 @@ export interface CategoryChange {
   enabled: boolean;
   acceptConsequences?: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Text fitting (RPG Maker MZ)
+// ---------------------------------------------------------------------------
+
+export type LineBreaks = "reflow" | "keep";
+export type FitOverflow = "new_page" | "shrink" | "leave";
+
+export interface TextFitSettings {
+  enabledDialogue: boolean;
+  enabledDescriptions: boolean;
+  lineBreaks: LineBreaks;
+  overflow: FitOverflow;
+  minFontSize: number;
+  /** Dialogue font size emitted at every page start (`null` = the game's). */
+  dialogueFontSize: number | null;
+}
+
+export interface TextFitGeometry {
+  fontSize: number;
+  fontFile: string | null;
+  boxWidth: number;
+  lineHeight: number;
+  message: { innerWidth: number; innerHeight: number };
+  help: { textX: number; textWidth: number; innerHeight: number };
+}
+
+export interface TextFitFont {
+  file: string | null;
+  /** Widths come from the game's font file (otherwise estimated). */
+  loaded: boolean;
+  error: string | null;
+}
+
+export interface TextFitLayoutWarning {
+  plugin: string;
+  hooks: string[];
+}
+
+export interface TextFitView {
+  supported: boolean;
+  reason: string | null;
+  settings: TextFitSettings;
+  geometry: TextFitGeometry | null;
+  font: TextFitFont | null;
+  warnings: TextFitLayoutWarning[];
+  notes: string[];
+}
+
+export type FitOutcome =
+  | { kind: "fits" }
+  | { kind: "rewrapped" }
+  | { kind: "newPage"; pages: number }
+  | { kind: "shrunk"; size: number }
+  | { kind: "tooLong"; reason: string }
+  | { kind: "skipped"; reason: string };
+
+export interface FitCounts {
+  total: number;
+  fits: number;
+  rewrapped: number;
+  newPage: number;
+  shrunk: number;
+  tooLong: number;
+  skipped: number;
+}
+
+export interface FitRow {
+  fileId: string;
+  fileName: string;
+  pointer: string;
+  description: boolean;
+  segmentId: string | null;
+  outcome: FitOutcome;
+  sample: string;
+}
+
+export interface FitScan {
+  dialogue: FitCounts;
+  descriptions: FitCounts;
+  rows: FitRow[];
+  /** Characters the game font lacks (drawn with a fallback font). */
+  missingChars: Array<{ character: string; count: number }>;
+}
+
+export interface FitRunView {
+  text: string;
+  x: number;
+  width: number;
+  fontSize: number;
+  color: number;
+  icon: boolean;
+}
+
+export interface FitLineView {
+  runs: FitRunView[];
+  y: number;
+  height: number;
+  right: number;
+  overflow: boolean;
+  clipped: boolean;
+}
+
+export interface FitPageView {
+  lines: FitLineView[];
+}
+
+export interface FitOverride {
+  lineBreaks: LineBreaks | null;
+  overflow: FitOverflow | null;
+  disabled: boolean;
+}
+
+export interface FitItem {
+  pointer: string;
+  description: boolean;
+  face: boolean;
+  lines: string[];
+  segmentIds: Array<string | null>;
+  texts: string[];
+  sourceHash: string;
+  override: FitOverride | null;
+  fitted: {
+    outcome: FitOutcome;
+    values: Array<string | null>;
+    pages: FitPageView[];
+  };
+}
+
+export interface TextFitPreview {
+  fileName: string;
+  item: FitItem;
+  /** Fitting is on for this kind of text (otherwise: what it would do). */
+  enabled: boolean;
+  innerWidth: number;
+  innerHeight: number;
+  textX: number;
+  limit: number;
+  fontSize: number;
+}

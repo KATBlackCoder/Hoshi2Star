@@ -1,0 +1,11 @@
+# MessageSkip — adds skip/auto icons to the message window (no layout hooks).
+
+[plugin]
+name = "Toriacontan/MessageSkip"
+title = "Message skip (MessageSkip)"
+verified_sha256 = ["ff7667bebef5b6346d3f020f4a87f911d830e2ffa964a0b7ad8838157920c934"]
+reference = "MessageSkip: Sprite_Frame icon at (width − icon, height − icon) of Window_Message."
+
+[layout]
+neutral = true
+notes = ["While skip or auto mode is on, a status icon is drawn in the message box's bottom-right corner; it can cover the end of the 4th line."]

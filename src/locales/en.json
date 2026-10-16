@@ -115,7 +115,8 @@
     "tm": "Memory",
     "qa": "QA",
     "terminology": "Terminology",
-    "close": "Close inspector"
+    "close": "Close inspector",
+    "preview": "Preview"
   },
   "toolbar": {
     "openGame": "Open Game",
@@ -652,5 +653,68 @@
   "exportIntegrity": {
     "title": "Export blocked by the integrity check",
     "description": "No file was written. The check compares every output file with the original and found changes that were not planned:"
+  },
+  "textFit": {
+    "toolbar": "Text fitting",
+    "toolbarHint": "Wrap dialogue and descriptions to the game's text boxes at export",
+    "title": "Text fitting",
+    "description": "Lays translated dialogue and descriptions out to the game's real text boxes when you export, measured with the game's own font. Your translations themselves are never changed.",
+    "loading": "Measuring the game's text boxes…",
+    "enableDialogue": "Fit dialogue (Show Text)",
+    "enableDialogueHint": "Messages in maps, common events and battles.",
+    "enableDescriptions": "Fit descriptions and profiles",
+    "enableDescriptionsHint": "Item, skill, weapon and armor descriptions (2-line help box) and actor profiles.",
+    "lineBreaks": "Line breaks",
+    "lineBreaksReflow": "Reflow each message (recommended)",
+    "lineBreaksKeep": "Keep my line breaks, split long lines",
+    "overflow": "When a text is too long for its box",
+    "overflowNewPage": "Continue on a new page (recommended)",
+    "overflowShrink": "Shrink the font, then a new page",
+    "overflowLeave": "Leave it and report it",
+    "minFontSize": "Smallest font size when shrinking (px)",
+    "dialogueFontSize": "Dialogue font size (px)",
+    "dialogueFontSizeHint": "Empty: the game's size ({{size}} px). The font size chosen when exporting also sets it.",
+    "detected": "Detected in this game",
+    "box": "Message box: {{width}} px of text ({{face}} px with a portrait), {{lines}} lines per page.",
+    "help": "Help box: {{width}} px of text, 2 lines.",
+    "fontMeasured": "Font: {{file}} at {{size}} px, measured from the game's font file.",
+    "fontEstimated": "Font: widths estimated — {{error}}",
+    "shrinkNote": "Shrinking fits more words on each line; it only adds a 5th line at 19 px or less, because the first line of a box always keeps its full height.",
+    "warnings": "Plugins that may change the text layout",
+    "warningHooks": "overrides {{hooks}}",
+    "notes": "Notes from reviewed plugins",
+    "missing": "Characters the game font lacks (drawn with a fallback font, widths estimated): {{chars}}",
+    "summary": "With these settings",
+    "dialogueCounts": "Dialogue: {{total}} messages — {{fits}} fit as translated, {{rewrapped}} rewrapped, {{newPage}} continue on a new page, {{shrunk}} shrunk, {{tooLong}} still too long, {{skipped}} not fitted.",
+    "descriptionCounts": "Descriptions: {{total}} — {{fits}} fit as translated, {{rewrapped}} rewrapped, {{shrunk}} shrunk, {{tooLong}} still too long, {{skipped}} not fitted.",
+    "review": "To review",
+    "open": "Open",
+    "save": "Save",
+    "cancel": "Cancel",
+    "saved": "Text fitting settings saved",
+    "exportSummary": "Text fitting: {{rewrapped}} rewrapped, {{newPage}} on a new page, {{shrunk}} shrunk, {{tooLong}} still too long.",
+    "outcome": {
+      "fits": "Fits as translated",
+      "rewrapped": "Rewrapped",
+      "newPage": "Continues on {{pages}} pages",
+      "shrunk": "Shrunk to {{size}} px",
+      "tooLong": "Still too long: {{reason}}",
+      "skipped": "Not fitted: {{reason}}"
+    },
+    "preview": {
+      "title": "In-game preview",
+      "empty": "Select a dialogue line or a description to see it as the game will show it.",
+      "mzOnly": "The in-game preview is available for RPG Maker MZ games.",
+      "notFitted": "This text is not laid out by text fitting.",
+      "loading": "Laying out…",
+      "off": "Text fitting is off — this is what it would do.",
+      "page": "Page {{page}} of {{count}}",
+      "portrait": "Portrait",
+      "overflow": "Runs past the edge of the box",
+      "lineBreaks": "Line breaks",
+      "overflowLabel": "If too long",
+      "default": "Project default",
+      "asTranslated": "Export this text exactly as translated"
+    }
   }
 }

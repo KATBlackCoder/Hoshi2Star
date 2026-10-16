@@ -3,8 +3,9 @@
 use sqlx::SqlitePool;
 
 use crate::{
-    core::{qa, report, terminology::resolver, tm},
+    core::{qa, report, terminology::resolver, text_fit, tm},
     domain::types::QaReport,
+    engines::mv_mz::layout::message::is_fitted_segment,
     state::AppState,
 };
 
@@ -87,15 +88,15 @@ async fn check_segment_live(
         .unwrap_or("fr");
     // Persisted kind/context select the segment's placeholder syntax
     // (`%n` templates); unknown for free-form checks without a segment.
-    let segment_facts: Option<(String, Option<String>)> = match segment_id {
-        Some(segment_id) => {
-            sqlx::query_as("SELECT segment_kind, context_json FROM segments WHERE id = ?")
-                .bind(segment_id)
-                .fetch_optional(db)
-                .await
-                .ok()
-                .flatten()
-        }
+    let segment_facts: Option<(String, Option<String>, String, String)> = match segment_id {
+        Some(segment_id) => sqlx::query_as(
+            "SELECT s.segment_kind, s.context_json, s.json_key, sf.file_name FROM segments s              JOIN source_files sf ON sf.id = s.source_file_id WHERE s.id = ?",
+        )
+        .bind(segment_id)
+        .fetch_optional(db)
+        .await
+        .ok()
+        .flatten(),
         None => None,
     };
     let terminology_rules = match segment_id {
@@ -108,7 +109,7 @@ async fn check_segment_live(
         }
         None => Vec::new(),
     };
-    qa::check_with_context(
+    let mut result = qa::check_with_context(
         source_text,
         target_text,
         &terminology_rules,
@@ -118,14 +119,25 @@ async fn check_segment_live(
             target_language,
             segment_kind: segment_facts
                 .as_ref()
-                .map_or("unknown", |(kind, _)| kind.as_str()),
+                .map_or("unknown", |(kind, ..)| kind.as_str()),
             context_json: segment_facts
                 .as_ref()
-                .and_then(|(_, context)| context.as_deref()),
+                .and_then(|(_, context, ..)| context.as_deref()),
             neighbor_sources: &[],
             neighbor_targets: &[],
         },
-    )
+    );
+    // Text fitting lays dialogue/descriptions out at export: their raw
+    // line width does not matter.
+    if let (Some(pid), Some((kind, _, key, file_name))) = (project_id, &segment_facts) {
+        if resolved_engine == "mv_mz" {
+            let (dialogue, descriptions) = text_fit::enabled_kinds(db, pid).await;
+            if is_fitted_segment(file_name, key, kind, dialogue, descriptions) {
+                result.drop_line_width();
+            }
+        }
+    }
+    result
 }
 
 /// Return a QA summary for all segments in a project.

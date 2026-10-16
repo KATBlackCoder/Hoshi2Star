@@ -7,8 +7,10 @@ import { useEditorStore } from "@/stores/editor";
 import { useLlmStore } from "@/stores/llm";
 import type {
   ExportPreflight,
+  FitScan,
   FontScanResult,
   ProjectStats,
+  TextFitView,
 } from "@/lib/types";
 
 const INTEGRITY_ERROR_PREFIX = "Export blocked: the integrity check found";
@@ -44,6 +46,7 @@ export function useAppHandlers() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportPreflight, setExportPreflight] =
     useState<ExportPreflight | null>(null);
+  const [exportFit, setExportFit] = useState<FitScan | null>(null);
   const [switchLocale, setSwitchLocale] = useState(false);
   const [integrityIssues, setIntegrityIssues] = useState<string[] | null>(null);
 
@@ -66,6 +69,7 @@ export function useAppHandlers() {
       // Optional switches are offered per export and always start off.
       setSwitchLocale(false);
       setExportPreflight(await loadPreflight(activeProjectId));
+      setExportFit(await loadFitSummary(activeProjectId));
       setExportDialog("confirm");
     } catch (err) {
       toast.error(t("toasts.exportError", { error: String(err) }));
@@ -79,6 +83,22 @@ export function useAppHandlers() {
       return await invoke<ExportPreflight>("preflight_export", { projectId });
     } catch {
       // Non-fatal: the optional switches are simply not offered.
+      return null;
+    }
+  }
+
+  /** What text fitting will do at export (only when it is enabled). */
+  async function loadFitSummary(projectId: string): Promise<FitScan | null> {
+    try {
+      const view = await invoke<TextFitView>("get_text_fit", { projectId });
+      const { enabledDialogue, enabledDescriptions } = view.settings;
+      if (!view.supported || !(enabledDialogue || enabledDescriptions))
+        return null;
+      return await invoke<FitScan>("scan_text_fit", {
+        projectId,
+        settings: null,
+      });
+    } catch {
       return null;
     }
   }
@@ -194,6 +214,7 @@ export function useAppHandlers() {
     fontScanResult,
     isExporting,
     exportPreflight,
+    exportFit,
     switchLocale,
     integrityIssues,
     // Setters

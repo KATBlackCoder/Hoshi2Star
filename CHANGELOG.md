@@ -24,10 +24,22 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - Add pristine-original snapshots for MV/MZ projects (`<app-data>/originals/<project>/`). Exports always start from the untouched game files, so exporting twice gives identical archives, even after a previous export was unzipped over `data/`. Originals are reconstructed from the project database when the game folder already holds an export. Snapshots follow game updates: a game file that is neither the original nor one of Hoshi2Star's exports replaces the snapshot, so an export never restores an older version of the game. Restored projects are snapshotted on demand, not when they are opened.
 - Add an optional "switch the game's language setting" export option (MV 1.6+ / MZ, unticked on every export). The new `preflight_export` command finds the engine and plugin code lines that read `System.json` `locale` and lists only the consequences that actually change for this game, such as enemy letters, the name-input keyboard, fonts and affected plugins. The edit goes through the integrity gate like any other change.
 - Add QA constraint checks for plugin and note-tag text: `plain_text_value` and the Keke `keke_skill_type`, `keke_skill_type_unique` and `keke_tag_field` rules are critical; `no_escape_codes` and `keke_no_spaces` are cosmetic.
+- Add text fitting for RPG Maker MZ (off by default, toolbar "Text fitting"). At export, dialogue and item/skill/weapon/armor descriptions and actor profiles are laid out to the game's real text boxes, measured with the game's own font file (TTF/OTF/WOFF). Your translations in the editor are never rewritten. How it works:
+  - The usable width accounts for portraits. The box height is checked with the engine's exact line-height rules.
+  - A message that already fits is left alone.
+  - Otherwise lines are rewrapped evenly (or only the too-long ones are split). A text that is still too tall continues on a new page that starts with a sentence, shrinks the font down to a chosen minimum, or is left as is and reported.
+  - Timed and auto-closing messages never get an extra page.
+  - Each block of lines is written back into its own commands, so no event command is ever added or removed.
+  - Every value is re-checked before export: same text, same escape codes in the same order. A text that fails the check is exported as translated, like any text fitting leaves alone (it keeps the export's per-line font prefix).
+  - A `\FS[n]` you wrote at the start of a line is kept. It is only removed when the export replaces existing font codes.
+  - Fitting can only be enabled for games where export can fit (MZ).
+
+  A new "Preview" tab draws the selected message or description as the game will show it, using the game's font, with per-text choices. The settings dialog shows the detected box and font, plugin warnings, characters missing from the font, live counts for the settings being edited, and the texts to review. The export confirmation summarises what fitting will do. Widths match Chromium's measurement exactly; replaying the results through the game's own engine code gave zero differences over 2,480 messages. The export font size becomes the dialogue size and is emitted once per page.
 
 ### Changed
 - Change MV/MZ placeholder protection to work per segment: `system_term` segments and plugin `%n` templates now protect `%1`/`%2` in the pipeline, QA, the report and batch dedup. A translation that lost a `%n` gets a new QA warning (`missing_format_specifier`). It does not block export, because the game then only shows the message without that value.
 - Change the MV/MZ export font-size prefix (`\FS[n]`) to apply only to core map segments. Optional categories such as map display names are drawn without escape codes, so a prefix would show up literally.
+- Change the "line too long" QA warning so it is no longer reported for dialogue and descriptions that text fitting lays out at export (when fitting is enabled).
 
 ## [0.4.10] — 2026-07-07
 

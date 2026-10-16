@@ -9,7 +9,12 @@ vi.mock("sonner", () => ({
 import { toast } from "sonner";
 import { integrityIssuesOf, useAppHandlers } from "@/hooks/useAppHandlers";
 import { useProjectStore } from "@/stores/project";
-import type { ExportPreflight, ProjectStats } from "@/lib/types";
+import type {
+  ExportPreflight,
+  FitScan,
+  ProjectStats,
+  TextFitView,
+} from "@/lib/types";
 
 const initialProject = useProjectStore.getState();
 
@@ -42,15 +47,26 @@ interface MockOptions {
   untranslated: number;
   preflight?: ExportPreflight | Error;
   exportResult?: string | Error;
+  fit?: { view: TextFitView; scan: FitScan };
 }
 
 /** Mock the backend; returns the arguments of every `export_project` call. */
-function mockBackend({ untranslated, preflight, exportResult }: MockOptions) {
+function mockBackend({
+  untranslated,
+  preflight,
+  exportResult,
+  fit,
+}: MockOptions) {
   const exportCalls: unknown[] = [];
   mockIPC((cmd, args) => {
     switch (cmd) {
       case "get_project_stats":
         return statsWith(untranslated);
+      case "get_text_fit":
+        if (!fit) throw new Error("text fitting not mocked");
+        return fit.view;
+      case "scan_text_fit":
+        return fit?.scan;
       case "preflight_export":
         if (preflight instanceof Error) throw preflight;
         return preflight ?? { locale: null };
@@ -157,5 +173,57 @@ describe("useAppHandlers — integrity refusals", () => {
 
   it("keeps other export errors as toasts", () => {
     expect(integrityIssuesOf("Export bloqué : 2 segment(s)")).toBeNull();
+  });
+});
+
+describe("useAppHandlers — text fitting summary", () => {
+  const counts = {
+    total: 4,
+    fits: 1,
+    rewrapped: 2,
+    newPage: 1,
+    shrunk: 0,
+    tooLong: 0,
+    skipped: 0,
+  };
+  const scan: FitScan = {
+    dialogue: counts,
+    descriptions: counts,
+    rows: [],
+    missingChars: [],
+  };
+  const view = (enabledDialogue: boolean): TextFitView => ({
+    supported: true,
+    reason: null,
+    settings: {
+      enabledDialogue,
+      enabledDescriptions: false,
+      lineBreaks: "reflow",
+      overflow: "new_page",
+      minFontSize: 20,
+      dialogueFontSize: null,
+    },
+    geometry: null,
+    font: null,
+    warnings: [],
+    notes: [],
+  });
+
+  it("loads what fitting will do when it is enabled", async () => {
+    mockBackend({ untranslated: 0, fit: { view: view(true), scan } });
+    const { result } = renderHook(() => useAppHandlers());
+    await act(async () => {
+      await result.current.handleExportAll();
+    });
+    expect(result.current.exportFit).toEqual(scan);
+  });
+
+  it("shows nothing when fitting is off", async () => {
+    mockBackend({ untranslated: 0, fit: { view: view(false), scan } });
+    const { result } = renderHook(() => useAppHandlers());
+    await act(async () => {
+      await result.current.handleExportAll();
+    });
+    expect(result.current.exportFit).toBeNull();
   });
 });
