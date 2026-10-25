@@ -77,6 +77,12 @@ Copie de la session 2 (`XDG_DATA_HOME=…/test/_session2/xdg-data`), projet jeta
 - **Corrigé pendant l'essai** : le message de panne conseillait « Tout traduire » même pour une sélection ⇒ « relancez la traduction » (fr/en). Vitest `llm.test.ts` : 13 OK.
 - Délai de 180 s : jamais atteint pendant l'essai.
 
+## Gate cloud (2026-10-25)
+
+- Le gate ne tourne plus sur le poste de l'utilisateur (il gèle) : vérification en session cloud.
+- Premier essai bloqué : le fork `wolfrpg-map-parser` n'existait plus ; réglé par RW0 (PR #11), puis `main` fusionné dans la branche (`98236f1`).
+- Gate cloud du 2026-10-25 sur `98236f1` (R1 + `main` avec RW0) : fmt OK, typecheck OK, Vitest 133 OK (35 fichiers), clippy `--locked -D warnings` OK, `cargo test --locked` 695 OK / 0 échec / 12 ignorés, lint 0 erreur (10 avertissements, les mêmes que sur `main`) ; tests R1 ciblés et tests RW0 tous verts. Le commit `53d6217` (compte des noms réparés), jamais compilé avant, passe.
+
 ## Tâches ROADMAP cochées
 
 - Aucune.

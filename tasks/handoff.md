@@ -15,7 +15,8 @@ traiter les retours de sportsfan30 (F95zone) et étudier RuneTranslate avec REA.
 - **RW0** (retrait de `wolfrpg-map-parser`, fork supprimé de GitHub, plus aucun clone neuf ne compilait) : branche `chore/remove-wolfrpg-map-parser` ; code et tests faits, **gate cloud vert** sur `32d36ad` (681 tests Rust, 124 Vitest, clippy, lint) ; plan et détail : `tasks/todo.md` (« Plan — RW0 »), `docs/journal/2026-10-25-rw0-retrait-wolfrpg-map-parser.md`. Wolf v2 est refusé à l'ouverture et à l'export avec un message dédié.
 - **R1** (panne du fournisseur) : branche `fix/r1-provider-outage`, PR #10 ouverte (commits `7be55e4`, `53d6217`), essai réel fait ; son gate cloud a échoué faute de pouvoir récupérer le fork. Son suivi détaillé (plan R1, journal R1) est sur sa branche.
 - **RW0 fusionné** le 2026-10-25 (PR #11, `252bcff`). `main` a été fusionné dans `fix/r1-provider-outage` (fusion plutôt que rebase : le hook du projet interdit le push forcé) ; conflits résolus en gardant les deux côtés (CHANGELOG : Fixed + Removed ; `tasks/todo.md` : plans R1 et RW0).
-- **Prochaine action exacte** : lire le rapport de la session cloud « gate R1 » (lancé après cette fusion) ; corriger s'il échoue ; puis fusion de la PR #10 par l'utilisateur ; ensuite plan détaillé du lot R2.
+- **R1 vérifié** : gate cloud du 2026-10-25 sur `98236f1` (R1 + `main` avec RW0) : fmt OK, typecheck OK, Vitest 133 OK (35 fichiers), clippy `--locked -D warnings` OK, `cargo test --locked` 695 OK / 0 échec / 12 ignorés, lint 0 erreur (10 avertissements, les mêmes que sur `main`) ; tests R1 ciblés et tests RW0 tous verts.
+- **Prochaine action exacte** : fusion de la PR #10 par l'utilisateur ; ensuite plan détaillé du lot R2 (export sûr après mise à jour du jeu), sans code avant validation.
 - À corriger à part : le hook PreToolUse qui interdit les installations npm/yarn bloque aussi l'installation pnpm (sous-chaîne) ; contourné par `pnpm i`.
 
 ## Session 3 (2026-10-25, Claude) — reprise
