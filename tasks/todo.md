@@ -1,6 +1,6 @@
 # Tasks — Hoshi2Star
 
-## Analyse complète de l'app — préparation (2026-10-25) — NON DÉMARRÉ
+## Analyse complète de l'app (2026-10-25) — SESSIONS 1 À 3 FAITES, Wolf (2 bis) à faire
 
 Session dédiée, à lancer à part. Prompt prêt : `docs/plans/2026-10-25-analyse-complete-app.md`
 (méthode « deeper, not bigger » de Felix Rieseberg). Aucun code avant la fin de l'analyse.
@@ -8,12 +8,36 @@ Session dédiée, à lancer à part. Prompt prêt : `docs/plans/2026-10-25-analy
 - [x] Outillage : `.mcp.json` corrigé, MCP `tauri` cassé supprimé, Context7 ajouté,
       skills Tauri de Codex liés pour Claude (vérifié : `claude mcp list` connecté, 2026-10-25).
 - [ ] Plugin officiel `code-review` : installé par l'utilisateur ? À vérifier en début de session.
-- [ ] Lancer l'analyse en 3 sessions (découpage dans le plan) ; livrable `docs/audit/2026-10-analyse-complete.md`.
-      Sessions 1 et 2 (MV/MZ) faites le 2026-10-25 ; session 3 à faire.
+- [x] Lancer l'analyse en 3 sessions (découpage dans le plan) ; livrable `docs/audit/2026-10-analyse-complete.md`.
+      Sessions 1, 2 (MV/MZ) et 3 faites le 2026-10-25. Reste : session 2 bis (Wolf, après REA).
 - [ ] **À corriger, demande utilisateur du 2026-10-25 (constat P-6 / S-L2) :** quand Ollama ou un autre fournisseur tombe pendant
       une traduction, afficher **une seule** notification, pas un toast par segment. La rafale a
       saturé WebKitGTK (8,7 Go), qui s'est tué lui-même. À traiter avec S-L2 : arrêter l'exécution sur échec
-      du fournisseur, ne pas écrire la source comme cible. Rattacher à un lot en session 3. Aucun code avant ce lot.
+      du fournisseur, ne pas écrire la source comme cible. **Rattaché au lot R1** (ci-dessous). Aucun code avant son plan.
+
+## Lots de fiabilisation R (analyse complète, session 3, 2026-10-25) — NON DÉMARRÉ
+
+Détail, preuves et critères : `docs/audit/2026-10-analyse-complete.md`, « Lots proposés ».
+Un plan détaillé par lot avant tout code. Ordre conseillé : R1, R2, R3, R4, R5, puis R6 à R10.
+Les cases sportsfan30 (A–D) ci-dessous restent la liste détaillée de R4, R8, R9, R10.
+
+- [ ] **R1 — Panne du fournisseur : arrêt propre et une seule notification** (majeur, priorité 1, M) :
+      S-L2 / audit B, P-6, S-L4, demande utilisateur (une seule notification) ; ne jamais écraser
+      une cible non vide sur échec technique (retraduction par sélection, `translate.rs:34-41`). `split.rs:155-161`,
+      `pipeline.rs:315`, `:577-593`, `stores/llm.ts:224-230`, `translate.rs:241`.
+- [ ] **R2 — Export sûr après une mise à jour du jeu** (bloquant, M–L) : S-X1 / audit F, P-2 ; inclut
+      la reconstruction du snapshot (`engines/mv_mz/originals.rs:320-345`).
+- [ ] **R3 — Dépendances** (majeur, S) : rustls / webpki (S-D2), zip (S-D1), `deny.toml` (S-D4, S-D5). Modifie `Cargo.lock`.
+- [ ] **R4 — Export partiel et par fichier** (S–M) : lot A sportsfan30 + S-X5 (jamais d'écriture en place).
+- [ ] **R5 — Éditeur fiable** (majeur, S chacun) : S-U1, S-U2, S-U3, S-U4.
+- [ ] **R6 — Qualité des cibles LLM** (majeur, M) : P-5a (détection incomplète), S-L1, reste du point A
+      (`%n` des `skill_message`/`state_message`, perte de `%n` non critique), S-L3, S-L5. Absorbe 2c du 2026-07-14.
+- [ ] **R7 — Projets copiés et anciens** (M) : S-C4, S-C5, audit E, langue par défaut (S-C7, P-9).
+- [ ] **R8 — QA lisible et révisable** (M) : lot B sportsfan30, audit D, S-X7, S-C6.
+- [ ] **R9 — Navigation recherche** (S) : lot C sportsfan30.
+- [ ] **R10 — Couverture MV/MZ** (à évaluer) : commandes 320/324/325, text fitting MV (lot D sportsfan30), `plugins.js` sur jeu réel.
+- [ ] **RW — Wolf** : après la session 2 bis ; points non vérifiés sur jeu réel.
+- [ ] Plus tard : S-C1, S-C2, S-C3, S-E3, S-E4, S-X6, S-X8 ; mineurs S-L6–L8, S-U5, S-U6, S-E10, S-E12. Non fait : S-E9 (VX Ace désactivé), S-D3.
 
 ## Études REA d'applications tierces (2026-10-25)
 
@@ -28,7 +52,9 @@ les idées retenues deviennent un plan ici.
 
 Contexte : jeu MV, Hoshi2Star v0.4.10, travail par petits lots testés en jeu.
 Constats vérifiés dans le code de `main` (`de76e64`) le 2026-10-25. Chaque lot aura son
-plan détaillé avant implémentation ; à confirmer après l'analyse complète.
+plan détaillé avant implémentation. **Session 3 (2026-10-25)** : A, C, D confirmés ; B confirmé en
+partie (le score QA est bien calculé en continu, ce sont les filtres qui gênent). Rattachements :
+lot A → R4, lot B → R8, lot C → R9, lot D → R10 (voir « Lots de fiabilisation R »).
 
 **Lot A — Export partiel (priorité 1, bloque son flux de travail)**
 - [ ] Autoriser l'export d'un projet partiellement traduit, avec avertissement : le backend

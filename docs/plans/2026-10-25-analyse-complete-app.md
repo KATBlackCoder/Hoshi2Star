@@ -1,6 +1,6 @@
 # Analyse complète de Hoshi2Star — préparation de session
 
-**Date :** 2026-10-25 — Claude. **Statut :** sessions 1 et 2 (MV/MZ, Wolf reporté) faites le 2026-10-25 (rapport `docs/audit/2026-10-analyse-complete.md`) ; session 3 à faire.
+**Date :** 2026-10-25 — Claude. **Statut :** sessions 1, 2 (MV/MZ, Wolf reporté) et 3 faites le 2026-10-25 (rapport `docs/audit/2026-10-analyse-complete.md`) ; reste la session 2 bis (Wolf, après REA).
 **Méthode :** prompt « deeper, not bigger » de Felix Rieseberg (ingénieur Claude, *How to be more
 ambitious: a tutorial for humans with models*, 13/10/2026). Avant d'écrire la demande, on répond à
 4 questions, puis on réécrit la demande pour exiger exactement ça :
@@ -106,7 +106,7 @@ Livrable unique enrichi au fil des sessions : `docs/audit/2026-10-analyse-comple
   - Aller-retour octet pour octet sans traduction ; traduction d'un petit échantillon ; QA ; export.
   - Point d'arrêt possible après chaque moteur (consigner l'avancement dans `tasks/handoff.md`).
   - Livrable : section « Parcours réels » avec preuves ; exports prêts à tester en jeu par l'utilisateur.
-- [ ] **Session 3 — Vérifications ciblées et rapport final**
+- [x] **Session 3 — Vérifications ciblées et rapport final** — faite le 2026-10-25 (lots R1–R10 et RW proposés ; Wolf classé « non vérifié sur jeu réel »).
   - Reproduire ou réfuter les 4 retours de sportsfan30 et les points A–F de l'audit du 2026-09-05.
   - Seconde relecture indépendante des constats bloquants.
   - Livrable : synthèse d'une page, liste priorisée (gravité, effort, preuve), ce qu'on ne fait

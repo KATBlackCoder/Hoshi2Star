@@ -1,0 +1,95 @@
+# Preuves — session 3 (vérifications ciblées), 2026-10-25, Claude
+# Base : main @ e537f67 (v0.4.10). Aucun code applicatif modifié.
+# Probes : docs/audit/2026-10-analyse-complete.session3.probes.rs (adaptation des probes
+# du 2026-09-05 à l'API actuelle ; l'original ne compile plus : TranslationContext.glossary_terms,
+# QaSemanticContext, AppState, export_project ont changé). Copiée temporairement dans
+# src-tauri/tests/, exécutée, puis supprimée (git status identique avant/après).
+
+======== Commande
+cp docs/audit/2026-10-analyse-complete.session3.probes.rs src-tauri/tests/zz_audit_probe_session3.rs
+cargo test --manifest-path src-tauri/Cargo.toml --test zz_audit_probe_session3 -- --nocapture --test-threads=1
+rm src-tauri/tests/zz_audit_probe_session3.rs
+
+======== Sortie (lignes PROBE)
+PROBE A2 restore: Ok("\\C[0]Hello\\C[2] ⟦ph_99⟧")
+PROBE A2 qa: score=100 critical=false
+PROBE A kind=system_term ctx=None: engine=MzOnly protected=2 qa_score=70 critical=false
+PROBE A kind=unknown ctx=None: engine=MvMz protected=0 qa_score=100 critical=false
+PROBE A kind=dialogue ctx=None: engine=MvMz protected=0 qa_score=100 critical=false
+PROBE A kind=plugin_message ctx=Some("{\"placeholderSyntax\":\"format\"}"): engine=MzOnly protected=2 qa_score=70 critical=false
+PROBE A qa::check (kind unknown): score=100 critical=false
+PROBE B pipeline: Ok, needs_review=true target="こんにちは"
+PROBE B db: status=needs_review target="こんにちは" resumable_by_translate_all=0
+PROBE C map: 1 segments ["Hello!"]
+PROBE C system: 1 segments ["Demo"]
+PROBE D fr->en Potion: score=40 critical=true errors=[UnchangedSource]
+PROBE D ja->zh 魔法: score=0 critical=true errors=[UnchangedSource, SourceScriptRemaining { source_language: "ja" }]
+PROBE E reopen: restored=true same_id=true target_lang=fr segments_with_kind=0
+PROBE F inject: result_ok=true value="Old translated item"
+PROBE LotA partial export (1/3 translated): Ok("zip written")
+PROBE SQL33000: Ok len=33000
+test result: ok. 9 passed; 0 failed
+
+Lecture :
+- A : score 70 = 2 × MissingFormatSpecifier (15 points chacun, qa.rs:657), non critique (qa.rs:697-713).
+- C : extract_map/extract_system seuls ; displayName et listes System sont des catégories
+  optionnelles (engines/mv_mz/coverage/mod.rs:405-436, :506-530), hors de ces deux fonctions.
+
+======== Point A sur les jeux réels (base copiée de la session 2, lecture seule)
+sqlite3 "file:test/_session2/xdg-data/com.blackat.hoshi2star/hoshi2star.db?mode=ro" \
+  "… where source_text glob '*%[0-9]*' group by projet, segment_kind" (colonne 4 = context_json avec placeholderSyntax)
+Stand Girl   system_term   74  0
+Stand Girl   skill_message 14  0   (deux projets StandGirl, ancien + neuf : chaque ligne compte double)
+Stand Girl   state_message  6  0
+借金JK       skill_message 140 0
+借金JK       state_message  41 0
+借金JK       system_term    38 0
+MV RJ432000  system_term    38 0
+MV RJ432000  skill_message   3 0
+=> skill_message + state_message avec %n et sans protection : 194 segments distincts
+   (MV 3, StandGirl 10 — compté deux fois ci-dessus car deux projets —, 借金JK 181).
+Exemple (借金JK, Skills.json /1/message1) : « %1の攻撃！ » (4 caractères + code).
+Runtime : rmmz_windows.js:5697 fmt.format(subject.name(), item.name) ; :5847 stateText.format(target.name()) ;
+rpg_windows.js (MV):5073 item.message1.format(item.name).
+
+======== Point E : projets anciens réels
+Aucun projet de la base copiée n'a de segment_kind='unknown' (StandGirl ancien créé le 2026-08-29,
+après la migration 0007 du 2026-08-26). E n'est démontrable que par la probe (synthétique).
+Aucune réindexation dans le code : grep "reindex|backfill" sur src-tauri/src = 0 résultat.
+
+======== Retours sportsfan30 (lecture du code)
+Lot A  useAppHandlers.ts:65-67 : stats.untranslatedCount > 0 => setExportDialog("blocked") ; textes fr.json:138-139.
+       Backend : export partiel accepté (PROBE LotA). debug_inject_file refuse si un segment vide
+       (export.rs:1076-1087) et écrit en place dans le jeu (export.rs:1172, :1209, :1232 ; S-X5).
+       Statut « fichier ignoré » : aucune occurrence pour source_files (grep "ignored" : seulement terminologie).
+Lot B  qa_score écrit par le pipeline (pipeline.rs:153-163, :172-174) et par update_segment
+       (project.rs:405-412), en plus de l'audit (report.rs:291-296). Insertion à l'extraction sans qa_score
+       (project.rs:992-994) => NULL => « — » (columns.tsx:251-252) pour tout segment jamais traduit.
+       Filtres : « QA : Erreurs uniquement » = score < 100 (SegmentGrid.tsx:179-183), avertissements compris ;
+       « QA : Score < 70 » (fr.json:271) ≠ erreurs critiques (qa.rs:697) : la perte de deux %n donne 70
+       (non critique, exclue du filtre) ; un ContextLeak seul donne 40 (critique, inclus).
+       Aucun filtre par type d'erreur (SegmentSearchBar.tsx:76-86).
+Lot C  GlobalSearchResults.tsx:160-162 : setActiveFile + setActiveSegment, sans défilement ;
+       SegmentGrid.tsx n'appelle scrollToIndex que pour Tab (:346).
+       Emplacement : hit.jsonKey brut (GlobalSearchResults.tsx:417).
+       Numéro de ligne : ctx.row.index + 1 (columns.tsx:214) sur data = filteredSegments (SegmentGrid.tsx:376).
+Lot D  text_fit.rs:129-132 : sans js/rmmz_core.js => « Text fitting is available for RPG Maker MZ games ».
+
+Commandes de lecture utilisées (depuis la racine du dépôt) :
+  rg -n 'setExportDialog\("blocked"\)' src -g '*.ts' -g '*.tsx'
+  sed -n 1060,1100p src-tauri/src/commands/export.rs
+  sed -n 148,182p src-tauri/src/llm/pipeline.rs ; sed -n 400,415p src-tauri/src/commands/project.rs
+  rg -n "INSERT INTO segments" -A3 src-tauri/src/commands/project.rs
+  sed -n 170,200p src/components/editor/SegmentGrid.tsx ; sed -n 76,90p src/components/editor/SegmentSearchBar.tsx
+  rg -n "filterQaErrors|filterQaCritical" src/locales/fr.json src/locales/en.json
+  sed -n 640,720p src-tauri/src/core/qa.rs
+  sed -n 150,175p src/components/editor/GlobalSearchResults.tsx ; sed -n 205,216p src/features/editor/columns.tsx
+  rg -n "useVirtualizer|scrollToIndex|data:" src/components/editor/SegmentGrid.tsx
+  sed -n 120,135p src-tauri/src/commands/text_fit.rs
+  sed -n 25,60p src-tauri/src/commands/translate.rs   (sélection explicite sans filtre de statut, l.34-41)
+  sed -n 320,346p src-tauri/src/engines/mv_mz/originals.rs   (règle stale_export, relecture)
+
+======== Notification par segment (S-L2 / demande utilisateur)
+Émission : pipeline.rs:315 (h2s://llm/placeholder-warning, un événement par segment).
+Réception : stores/llm.ts:128-135 ; toast.warning par segment : stores/llm.ts:224-230.
+Reprise : translate.rs:241 (status='untranslated' OR target_text='') => 0 segment après panne (PROBE B).

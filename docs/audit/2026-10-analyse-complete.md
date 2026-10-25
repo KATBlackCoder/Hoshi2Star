@@ -7,7 +7,7 @@
 |---|---|---|---|
 | 1 — carte et contrôles automatiques | 2026-10-25 | Claude | Architecture, Menaces, Constats statiques, À confirmer sur jeux réels |
 | 2 — parcours réels sur jeux (MV/MZ ; Wolf reporté) | 2026-10-25 | Claude | Parcours réels |
-| 3 — vérifications ciblées et rapport final | à faire | | Synthèse, liste priorisée, lots |
+| 3 — vérifications ciblées et rapport final | 2026-10-25 | Claude | Synthèse, Vérifications ciblées, Liste priorisée, Ce qu'on ne fait pas, Lots proposés |
 
 ## Lecture du rapport
 
@@ -30,6 +30,29 @@
 
 Aucun code applicatif n'a été modifié et aucun jeu réel n'a été ouvert.
 Sorties brutes des outils : `docs/audit/2026-10-analyse-complete.preuves.txt`.
+
+---
+
+## Synthèse
+
+**État au 2026-10-25** (`main` @ `e537f67`, v0.4.10), après trois sessions : carte et contrôles automatiques, parcours réels sur 3 jeux MV/MZ, vérifications ciblées et relecture indépendante. Wolf n'a pas été testé sur jeu réel.
+
+**Ce qui marche, prouvé sur jeux réels.**
+- Aller-retour MV/MZ fidèle : 36 352 pointeurs justes sur 36 352, aucune autre valeur modifiée (P-1).
+- Échantillons traduits, exportés et joués dans le navigateur intégré sans erreur (MV et 2 jeux MZ).
+- Plusieurs points de l'audit du 05/09 sont corrigés ou en partie : `%n` des messages système et plugins, `displayName` et listes System (catégories optionnelles), limite SQL à 33 000 segments.
+
+**Ce qui empêche une release sûre.**
+1. **S-X1 (bloquant).** Après une mise à jour du jeu, l'export écrit les traductions sur d'autres lignes, sans message. En MV, une traduction devient un nom de fichier de visage et **la partie se bloque au premier événement** (vérifié en jeu). La relecture a trouvé pire : la reconstruction du snapshot peut remettre du japonais dans des champs non textuels, sans le signaler.
+2. **S-L2 (majeur, priorité 1).** Une panne du fournisseur transforme tous les segments restants en « à réviser » avec la source comme cible, sans message d'erreur. Un toast par segment a fait tomber la webview (8,7 Go). « Tout traduire » ne reprend rien. Pendant une retraduction par sélection, la panne écraserait des traductions existantes (déduit du code).
+
+**Ce qui gêne le travail au quotidien.** Export partiel refusé par l'interface (sportsfan30), app bloquée par « Traduire » sans fichier, mauvais projet traduit après un changement de projet, saisie perdue, jeu copié qui rouvre l'original, répliques voisines recopiées dans les cibles et pas toujours détectées, QA aux filtres trompeurs qui bloque des traductions justes.
+
+**Les 4 retours de sportsfan30.** Trois confirmés (export partiel, recherche, text fitting MZ seulement). Le quatrième (QA) est confirmé en partie : le score est bien calculé en continu, ce sont les filtres et l'absence de type d'erreur qui gênent.
+
+**Recommandation.** Avant toute fonctionnalité : R1 (panne du fournisseur, une seule notification), R2 (export sûr après mise à jour), R3 (dépendances, petit), puis R4 et R5 (export partiel, éditeur fiable). Ces cinq lots couvrent les deux blocages et les gênes les plus visibles. Effort estimé : 5 à 8 jours, plan détaillé par lot avant le code.
+
+**Incertitudes.** Wolf non testé. Comportement exact sous NW.js non vérifié (navigateur intégré seulement). Base et jeu de sportsfan30 non disponibles. Efforts déduits, pas mesurés.
 
 ---
 
@@ -651,7 +674,7 @@ Preuves :
   - l'entrée OK est sans effet et aucun écran d'erreur n'apparaît : **la partie est bloquée dès le premier événement** ;
   - sous NW.js (Game.exe), le comportement exact reste à confirmer par l'utilisateur.
 - Zip de reproduction pour l'essai en jeu : `zips/MV_SX1_repro_after_update.zip`. Map051, événement d'ouverture de la carte de départ : 401 ajouté avant le 101 ; la traduction se retrouve en `101.parameters[0]` = `"\\n<Haruka>Let's go to school."` (`mv-17`).
-- Le snapshot note la dérive de 2 pointeurs seulement sur 14 (`snapshot.json`, `drift`). L'export ne la lit pas.
+- Le snapshot note la dérive de 2 pointeurs seulement sur 14 (`snapshot.json`, `drift`). L'export ne la lit pas. Explication en session 3 (relecture) : la règle `stale_export` remet les autres à la source sans les compter.
 - MZ (StandGirl), deux essais : l'issue dépend de la **structure de la page**, pas du moteur. L'export échoue dès qu'un pointeur décalé devient invalide, et réussit en silence sinon (comme en MV).
   - `Map001.json` : le décalage tombe sur un choix 102. L'export **échoue en entier** avec `key not found in JSON: /events/2/pages/0/list/6/parameters/0/0`.
   - `Map004.json`, page sans choix : le nom de locuteur MZ (`101.parameters[4]`) devient invalide quand un 401 glisse à sa place. L'export échoue avec `key not found in JSON: /events/2/pages/0/list/30/parameters/4`.
@@ -792,3 +815,223 @@ La liste détaillée, réplique par réplique, est hors Git : `test/_session2/A-
   - choix Oui/Non fonctionnel ;
   - une réplique décalée (P-5a) ;
   - compteurs `\V[n]` et texte agrandi `\{`.
+
+---
+
+## Vérifications ciblées (session 3)
+
+**Session 3 — 2026-10-25, Claude.** `main` @ `e537f67`. Aucun code applicatif modifié.
+
+Méthode :
+- Les probes de l'audit du 2026-09-05 ne compilent plus (API changée). Elles ont été adaptées et rendues **observationnelles** : elles affichent le comportement actuel au lieu de l'affirmer. Copie archivée : `docs/audit/2026-10-analyse-complete.session3.probes.rs`. Exécution temporaire dans `src-tauri/tests/`, fichier supprimé ensuite.
+- Requêtes en lecture seule sur la base copiée de la session 2 (`test/_session2/`, hors Git).
+- Lecture du code pour les retours UI.
+- Constats de la session 2 repris sans les refaire : S-X1, S-L2, S-U1, S-U2, S-U3, S-C4, P-5a.
+- Preuves : `docs/audit/2026-10-analyse-complete.session3.preuves.txt` (sorties `PROBE`, requêtes, `fichier:ligne`).
+
+### Audit du 2026-09-05, points A à F
+
+| Point | Verdict | Preuve |
+|---|---|---|
+| **A** — `%1`, `%2` non protégés | **Corrigé en partie** (commit `a5d40db`) | `PROBE A` ; base copiée ; `tokenizer.rs:117-131` |
+| **B** — panne du fournisseur absorbée | **Toujours présent**, aggravé en usage réel | `PROBE B` ; P-6 |
+| **C** — champs visibles non extraits | **Corrigé en partie** (catégories optionnelles, PR #5) | `PROBE C` ; `coverage/mod.rs:405-436`, `:506-530` |
+| **D** — QA bloque des traductions justes | **Toujours présent** | `PROBE D` ; `report.rs:234-240` |
+| **E** — anciens projets sans contexte | **Toujours présent** (synthétique), **non vérifiable** sur projet réel | `PROBE E` ; base copiée |
+| **F** — export sans comparer la source | **Toujours présent**, confirmé en jeu (= S-X1) | `PROBE F` ; P-2 |
+
+**A — corrigé en partie.**
+- Corrigé : `Engine::for_segment` protège `%n` pour `system_term` et pour les textes de plugin qui déclarent `placeholderSyntax: format` (`tokenizer.rs:126`). `PROBE A` : 2 jetons protégés.
+- **Toujours présent pour les messages de compétence et d'état.** `skill_message` et `state_message` passent par `MvMz`, sans protection :
+  - 194 segments distincts avec `%n` dans les 3 jeux (MV 3, StandGirl 10, 借金JK 181), par exemple `%1の攻撃！` ;
+  - le moteur les formate bien : `rmmz_windows.js:5697`, `:5847` ; `rpg_windows.js:5073` (MV).
+- Perte des deux `%n` sur un segment protégé : score 70, **non critique** (`MissingFormatSpecifier`, `qa.rs:657`, absent de `is_critical`, `qa.rs:697-713`). L'export n'est pas bloqué. Le pipeline, lui, relance quand un jeton manque.
+- Toujours présent aussi : `⟦ph_99⟧` inventé reste dans la cible, et `\C[2]`/`\C[0]` inversés obtiennent 100 (`PROBE A2`, = S-L1).
+
+**B — toujours présent.** `PROBE B` : `run_inner` renvoie `Ok`, cible = source, `needs_review`, 0 segment repris par « Tout traduire ». En usage réel (P-6), la panne a fait tomber la webview. Lot R1.
+
+**C — corrigé en partie.**
+- `displayName` des cartes : catégorie optionnelle, activée par défaut (`coverage/mod.rs:522-530`).
+- `skillTypes`, `equipTypes`, `weaponTypes`, `armorTypes` : catégories optionnelles. Activées par défaut seulement si aucun usage comme identifiant n'est trouvé (`coverage/mod.rs:305-313`).
+- **Toujours absents** : commandes `320`, `324`, `325` (nom, surnom, profil d'acteur en cours de jeu). Aucune occurrence dans `engines/mv_mz/`.
+- Les fonctions `extract_map` / `extract_system` seules ne voient pas ces catégories (`PROBE C`) : la couverture passe par le module `coverage`.
+
+**D — toujours présent.**
+- `Potion → Potion` (fr→en) : critique, score 40. `魔法 → 魔法` (ja→zh) : critique, score 0 (`PROBE D`).
+- Aucune dérogation durable : l'audit repasse en `needs_review` un segment `reviewed` dès qu'une erreur critique existe (`report.rs:234-240`).
+
+**E — toujours présent, non vérifiable sur jeu réel.**
+- `PROBE E` : à la réouverture, aucun segment ne retrouve son type ; la langue du projet est conservée.
+- Aucun code de réindexation (`reindex`, `backfill` : 0 résultat).
+- Aucun projet de la base réelle n'est concerné : le plus ancien (StandGirl, 2026-08-29) est postérieur à la migration 0007 (2026-08-26). Impact réel limité aux projets créés avant fin août.
+
+**F — toujours présent.** `PROBE F` : l'injecteur écrit sans comparer. En export réel, P-2 : traduction écrite dans le nom de visage d'une commande 101, partie MV bloquée en jeu. Lot R2.
+
+**Autre point de l'audit du 05/09 :** `too many SQL variables` sur 33 000 segments est **corrigé** (`PROBE SQL33000` : `Ok`).
+
+### Retours de sportsfan30 (lots A à D de `tasks/todo.md`)
+
+Son jeu et sa base ne sont pas disponibles : les verdicts portent sur le code de `main` et sur les jeux de la session 2.
+
+| Lot | Verdict | Preuve |
+|---|---|---|
+| **A** — export partiel bloqué | **Confirmé** (blocage dans l'UI seulement) | `useAppHandlers.ts:65-67` ; `PROBE LotA` ; P-9 |
+| **B** — QA illisible | **Confirmé en partie**, une prémisse **réfutée** | `pipeline.rs:153-163` ; `project.rs:405-412` ; `SegmentGrid.tsx:179-189` |
+| **C** — recherche sans défilement | **Confirmé** | `GlobalSearchResults.tsx:160-162`, `:417` ; `columns.tsx:214` |
+| **D** — text fitting MZ seulement | **Confirmé** | `text_fit.rs:129-132` |
+
+**Lot A — confirmé.**
+- L'interface refuse l'export dès qu'un segment n'est pas traduit (`useAppHandlers.ts:65-67`, message `exportAllBlockedDesc`).
+- Le backend accepte l'export partiel : `PROBE LotA` (1 segment traduit sur 3, zip écrit) ; P-9 en réel.
+- Export d'un seul fichier : `debug_inject_file` refuse un fichier incomplet (`export.rs:1076-1087`) et **écrit dans le jeu, en place** (`export.rs:1172`, `:1209`, `:1232` ; S-X5). L'ouvrir tel quel aux utilisateurs reviendrait à exposer S-X5.
+- Aucun statut « fichier ignoré » pour les fichiers source.
+
+**Lot B — confirmé en partie.**
+- **Réfuté** : « le score n'est calculé qu'à l'audit ». Le pipeline (`pipeline.rs:153-163`) et l'édition manuelle (`project.rs:405-412`) l'enregistrent. « — » correspond à un score NULL : segment jamais traduit, l'extraction n'écrit pas de score (`project.rs:992-994`).
+- **Confirmé** : filtres trompeurs.
+  - « QA : Erreurs uniquement » = score < 100, avertissements compris (`SegmentGrid.tsx:179-183`).
+  - « QA : Score < 70 » ne correspond pas aux erreurs critiques (`qa.rs:697`) : une perte de deux `%n` donne 70 et sort du filtre.
+  - Aucun filtre par type d'erreur (`SegmentSearchBar.tsx:76-86`).
+- **Probable** : écart entre le compteur de projet et le panneau du segment. L'audit applique des règles de voisinage absentes de l'édition manuelle (audit du 05/09, D). Non reproduit.
+
+**Lot C — confirmé.**
+- Clic sur un résultat global : fichier et segment sélectionnés, sans défilement (`GlobalSearchResults.tsx:160-162`). La grille ne défile que pour Tab (`SegmentGrid.tsx:346`).
+- Emplacement affiché : pointeur JSON brut (`GlobalSearchResults.tsx:417`).
+- Numéro de ligne = rang dans la liste filtrée (`columns.tsx:214`, données = `filteredSegments`, `SegmentGrid.tsx:376`).
+
+**Lot D — confirmé.** Sans `js/rmmz_core.js`, le text fitting répond « available for RPG Maker MZ games » (`text_fit.rs:129-132`). Le QA `line_too_long` ne compte pas les retours à la ligne des 401 (P-9).
+
+### Seconde relecture indépendante des constats bloquants
+
+Sous-agent indépendant, en lecture seule, chargé de **réfuter** S-X1, S-L2 et P-5a à partir du code. Les deux verdicts sont conservés quand ils diffèrent.
+
+| Constat | Verdict de la session | Verdict du relecteur | Retenu |
+|---|---|---|---|
+| S-X1 / F | bloquant, confirmé en jeu | **confirmé, aggravé** | bloquant |
+| S-L2 / B | bloquant (P-6) | confirmé ; mécanisme à corriger ; **majeur** | **majeur ; bloquant en retraduction par sélection** (déduit), priorité 1 |
+| P-5a | majeur, cibles fuitées enregistrées `translated` | **réfuté tel que formulé**, lacune de détection réelle | majeur, mécanisme corrigé |
+
+**S-X1 — aggravé par le snapshot.**
+- `source_text` est lu puis jeté avant l'injection (`export.rs:369-372`, `:396-398`). `inject` ne vérifie que l'existence du pointeur et le type chaîne (`injector.rs:30-40`). `verify_json_edit` compare au snapshot, jamais à `source_text` (`integrity.rs:80-118`, `:182-189`). Le contrôle `OriginalChanged` n'existe que pour `plugins.js` (`integrity.rs:287-293`).
+- **Nouveau, vérifié à la main** (`engines/mv_mz/originals.rs:320-345`) : après une mise à jour, la reconstruction du snapshot remet la **source japonaise** dans toute valeur sans japonais qui se trouve sous un ancien pointeur (règle `stale_export`), **sans la compter en dérive**. Un nom de visage `Actor1` qui glisse sous un ancien pointeur de dialogue devient donc une réplique japonaise dans le snapshot, puis dans le zip, même si ce pointeur n'est pas traduit.
+- Cohérent avec la session 2 : en P-2, `drift` ne notait que 2 pointeurs sur 14 décalés. Les autres ont été remis à la source sans être comptés.
+- Variante « pointeur jamais traduit qui reçoit du japonais dans le zip » : **déduite**, non observée.
+- Conséquence : `drift` ne peut pas signaler le cas dangereux. Le correctif (R2) doit couvrir la reconstruction du snapshot, pas seulement l'injection.
+- La dérive n'est montrée que dans la boîte de couverture, sans blocage (`coverage.rs:383-398`).
+
+**S-L2 — confirmé, mécanisme corrigé, gravité ramenée à majeur.**
+- L'erreur n'est pas absorbée par le découpage récursif (réservé à `ResponseFormat`, `split.rs:114-153`), mais par la branche générale `split.rs:155-161`, qui rend une cible vide pour tout le lot. Le pipeline y met la source (`pipeline.rs:577-593`).
+- `LlmError::Unavailable` n'est jamais produit par `translate` (`provider.rs:136`, `:447-459`). Seul `health_check` arrête une exécution, et seulement au démarrage (`translate.rs:213-220`).
+- Le toast est trompeur : la QA tourne sur la copie de la source et affiche `unchanged_source` au lieu de la panne (`pipeline.rs:621-627`).
+- Argument du relecteur pour « majeur » : la cible = source ne change rien au jeu à l'export, et « Tout traduire » n'envoie que des segments non traduits (`translate.rs:241`).
+- **Contre-vérification de la session** : la retraduction par sélection (grille, résultats de recherche, « Retraduire les à réviser ») envoie des identifiants **sans filtre de statut** (`translate.rs:34-41`), et l'enregistrement du lot n'a pas de garde de statut (`pipeline.rs:153-163`, S-L3). Une panne pendant une retraduction sélectionnée remplacerait donc des traductions existantes, y compris `reviewed`, par la source japonaise : perte de traduction. Statut : déduit du code, non reproduit.
+- Verdict retenu : **majeur ; bloquant en retraduction par sélection**. Priorité 1 dans tous les cas : en usage réel la webview est tuée (P-6), et c'est la demande explicite de l'utilisateur.
+
+**P-5a — réfuté tel que formulé, lacune réelle.**
+- Le pipeline évalue bien `context_leak` avant l'enregistrement (`pipeline.rs:612-661`, critique `qa.rs:704`) : une fuite **détectée** donne `needs_review`.
+- Mais la détection d'une fuite déjà traduite exige des cibles voisines en base, lues **avant** l'appel (`pipeline.rs:413` contre `:563`). Au premier passage, les voisins du même lot n'ont pas encore de cible ; la règle exige aussi une cible plus de 4 fois plus longue que la source (`qa.rs:483-498`).
+- Cela explique la session 2 (`sl2-00`) : 1 191 segments `translated` en fin d'exécution, puis 46 `context_leak` critiques dans le rapport QA calculé ensuite, quand les voisins avaient leur cible.
+- R6 doit donc réévaluer après coup les segments d'un lot dont les voisins viennent d'être traduits.
+
+### Wolf : non vérifié sur jeu réel
+
+Tous les points Wolf restent **non vérifiés sur jeu réel** : S-X2, S-X3, S-X4 (volet Wolf), S-X9, S-E1, S-E2, S-E5 à S-E8, S-E11. Session 2 bis, après la session REA. Leur gravité reste celle de la session 1 (vérifié-code ou déduit) et aucun lot ne les corrige avant cette vérification.
+
+---
+
+## Liste priorisée
+
+Effort estimé (déduit, pas mesuré) : **S** ≤ une demi-journée, **M** 1 à 2 jours, **L** plus de 2 jours. Tests et gate compris.
+
+| # | Constat | Gravité | Effort | Preuve | Lot |
+|---|---|---|---|---|---|
+| 1 | S-X1 / F : traductions écrites ailleurs après une mise à jour du jeu ; partie MV bloquée ; snapshot qui remet du japonais | **bloquant** | M–L | P-2 (en jeu), `PROBE F`, relecture | R2 |
+| 2 | S-L2 / B : panne du fournisseur = `needs_review` massif, un toast par segment, webview tuée ; écrase les traductions en retraduction par sélection | **majeur ; bloquant en retraduction** (déduit), priorité 1 | M | P-6, `PROBE B`, `translate.rs:34-41`, relecture | R1 |
+| 3 | P-5a : répliques voisines recopiées dans la cible, détection incomplète pendant l'exécution | majeur | M | P-5, `sl2-00` (46 critiques trouvés après coup), relecture | R6 |
+| 4 | Export partiel refusé par l'UI (sportsfan30 A) | majeur (bloque son flux) | S | `useAppHandlers.ts:65-67`, `PROBE LotA` | R4 |
+| 5 | S-U1, S-U2, S-U3 : app bloquée, mauvais projet traduit, saisie perdue | majeur | S chacun | P-3, P-4 | R5 |
+| 6 | S-C4 : un jeu copié rouvre et exporte vers l'original | majeur | S | P-8 | R7 |
+| 7 | S-D2 : rustls / webpki, 7 avis | majeur | S | `cargo audit` (session 1) | R3 |
+| 8 | A (reste) : `%n` des messages de compétence/état non protégés ; perte de `%n` non critique ; S-L1 jeton inventé accepté | majeur | S–M | `PROBE A`, `PROBE A2`, base copiée (194 segments) | R6 |
+| 9 | S-L3, S-L4 : retraduction qui écrase l'humain ; pas d'annulation | majeur | M | session 1 (vérifié-code) | R1, R6 |
+| 10 | D + sportsfan30 B : QA qui bloque des traductions justes, filtres trompeurs, audit qui modifie la base (S-X7, S-C6) | majeur (qualité) | M | `PROBE D`, `report.rs:234-240`, `SegmentGrid.tsx:179-189` | R8 |
+| 11 | S-X5 : export d'un fichier écrit dans le jeu en place | majeur (exposition réduite) | S | `export.rs:1172`, `:1209`, `:1232` | R4 |
+| 12 | Recherche sans défilement ni emplacement lisible (sportsfan30 C) | mineur | S | `GlobalSearchResults.tsx:160-162`, `:417` | R9 |
+| 13 | E : anciens projets sans contexte ; langue `fr` par défaut (S-C7, P-9) | mineur en réel | M | `PROBE E` | R7 |
+| 14 | C (reste) : commandes 320/324/325 ; text fitting MV (sportsfan30 D) | mineur / à évaluer | M–L | `PROBE C`, `text_fit.rs:129-132` | R10 |
+| 15 | S-L5 (réponse tronquée acceptée, protocole par lignes) ; S-U4 (course sur la liste des modèles) | majeur | S chacun | session 1 (vérifié-code) | R6, R5 |
+| 16 | S-D4, S-D5 (`cargo deny` : licences, sources) | mineur | S | session 1 (vérifié-exéc.) | R3 |
+| 17 | S-C1, S-C2 (performance), S-C3 (CSP), S-E3, S-E4 (police forgée) | majeur à l'échelle / défense | S–M | session 1 | plus tard |
+| 18 | S-L6, S-L7, S-L8, S-U5, S-U6, S-E10, S-E12 | mineur | S chacun | session 1 | plus tard |
+| 19 | Wolf : S-X2, S-X3, S-X4, S-X9, S-E1, S-E2, S-E5 à S-E8, S-E11 | non vérifié sur jeu réel | — | session 1 | RW |
+
+---
+
+## Ce qu'on ne fait pas, et pourquoi
+
+- **Corriger Wolf maintenant.** Aucun jeu Wolf testé. Les constats sont vérifiés dans le code ou déduits, sans effet observé. On les traite après la session 2 bis (lot RW), pour ne pas corriger à l'aveugle un format binaire.
+- **Refondre l'architecture ou ajouter un framework d'agents.** Les défauts trouvés sont localisés : pointeur sans contrôle de source, erreur absorbée dans `split.rs`, état d'UI non remis à zéro. L'avis de l'audit du 05/09 reste valable.
+- **Nettoyer les 759 lints clippy pedantic.** Gros diff, peu de risque utilisateur. On corrige seulement les lints des fichiers touchés par chaque lot.
+- **Durcir maintenant contre les fichiers forgés (S-E\*).** La menace principale est un utilisateur qui ouvre ses propres jeux. La plupart des cas sont Wolf (non vérifiés). S-E3/S-E4 (police) iront dans un lot de durcissement après R1–R8.
+- **Comparer des modèles ou construire le Scene Graph** (lot 3 du 2026-07-14). Tant que R1 et R6 ne séparent pas les pannes et les fuites de contexte des vraies traductions, les mesures seraient faussées.
+- **Étendre l'édition de `plugins.js`.** Aucune catégorie de plugin n'a été vérifiée sur les jeux de test : pas de preuve sur laquelle bâtir.
+- **Text fitting MV dans un lot de correction.** La géométrie des fenêtres MV diffère de MZ. Le lot R10 commence par une étude, pas par du code.
+- **Corriger S-E9 (VX Ace)** : le moteur est désactivé dans le détecteur. À traiter le jour où VX Ace est réactivé.
+- **S-D3** : avis hors du chemin d'exécution, sans action.
+- **Mettre à jour l'outillage npm (S-D6)** et **la mise en forme JSON (S-X10)** : sans effet sur l'utilisateur.
+- **Exiger un essai sous NW.js réel** avant R2 : le navigateur intégré suffit à prouver le blocage. L'essai NW.js reste optionnel.
+
+---
+
+## Lots proposés pour `tasks/todo.md`
+
+Préfixe **R** (fiabilisation, session 3) pour ne pas confondre avec les lots A–D de sportsfan30, A–F de l'audit du 05/09 et 1–5 du 2026-07-14. Un plan détaillé par lot sera écrit avant tout code. Ordre conseillé : R1, R2, R3, R4, R5, puis R6 à R10.
+
+**R1 — Panne du fournisseur : arrêt propre et une seule notification** (majeur, priorité 1, M).
+Couvre S-L2 / B, P-6, S-L4 et la **demande de l'utilisateur du 2026-10-25 : une seule notification en cas de panne du fournisseur**.
+- Classer les erreurs : connexion refusée, 401/403, 5xx et 429 ≠ réponse invalide. Ne plus relancer trois fois un 401 (`provider.rs:447-460`).
+- Sur panne globale : arrêter l'exécution, émettre une seule fois `h2s://llm/error`, ne pas écrire la source comme cible, laisser les segments `untranslated` (`split.rs:155-161`, `pipeline.rs:577-593`). Produire `LlmError::Unavailable` dans `translate` (`provider.rs:136`).
+- Ne jamais remplacer une cible non vide sur un échec technique (retraduction par sélection, `translate.rs:34-41`).
+- Ne pas lancer la QA sur une cible de repli : le toast affiche aujourd'hui `unchanged_source` au lieu de la panne (`pipeline.rs:621-627`).
+- Regrouper les avertissements QA d'une exécution en un seul toast récapitulatif (`pipeline.rs:315`, `stores/llm.ts:224-230`).
+- Reprise : « Tout traduire » doit retrouver les segments en échec technique (`translate.rs:241`).
+- Annulation d'une exécution en cours (S-L4).
+- Critère : Ollama arrêté pendant « Tout traduire » ⇒ un message, segments restants `untranslated`, webview stable, reprise complète.
+- Lien : le lot 2 du 2026-07-14 (retry intelligent) porte sur la qualité des relances, pas sur les pannes ; il reste séparé.
+
+**R2 — Export sûr après une mise à jour du jeu** (bloquant, M–L). Couvre S-X1 / F, P-2.
+- À l'export, comparer la valeur actuelle sous chaque pointeur au `source_text` enregistré ; en cas d'écart, ne pas écrire et lister les segments (`injector.rs:30`, `integrity.rs:80-190`, `export.rs`).
+- Corriger la reconstruction du snapshot : la règle `stale_export` remet la source japonaise sous un ancien pointeur sans le compter en dérive (`engines/mv_mz/originals.rs:320-345`). Tout écart doit devenir une dérive, et la dérive doit bloquer ou être réconciliée avant l'export (`core/originals.rs:277-310`).
+- Message actionnable au lieu de `key not found in JSON` (MZ).
+- Critère : le scénario P-2 (401 inséré) produit un refus clair, ou une réconciliation, sans aucune écriture décalée.
+
+**R3 — Dépendances** (majeur, S). `cargo update` ciblé pour rustls / rustls-webpki / webpki-roots (S-D2), et zip (S-D1, info) ; `deny.toml` versionné pour les licences et sources (S-D4, S-D5). Modifie `Cargo.lock` : gate complet.
+
+**R4 — Export partiel et par fichier** (majeur pour sportsfan30, S–M). Reprend le lot A de sportsfan30 (cases ci-dessous) et S-X5.
+- Export partiel autorisé depuis l'UI, avec avertissement et nombre de segments non traduits.
+- Export d'un ou plusieurs fichiers choisis **dans le zip**, jamais en place dans le jeu (S-X5).
+- Statut « fichier ignoré ».
+
+**R5 — Éditeur fiable** (majeur, S chacun). S-U1 (`isTranslating` bloqué), S-U2 (remise à zéro de l'éditeur au changement de projet), S-U3 (saisie enregistrée avant `llm/completed`, défilement, fermeture), S-U4 (course sur la liste des modèles).
+
+**R6 — Qualité des cibles LLM** (majeur, M). P-5a, S-L1 / A2, reste de A, S-L3, S-L5 (troncature acceptée en protocole par lignes).
+- Compléter la détection de `context_leak` : réévaluer les segments d'un lot une fois que leurs voisins ont une cible (`pipeline.rs:413` contre `:563`, `qa.rs:483-498`) ; relancer ou marquer `needs_review`.
+- Rejeter les jetons `⟦ph_N⟧` inconnus ; contrôler l'ordre des codes de style.
+- Protéger `%n` pour `skill_message` et `state_message` ; rendre la perte de `%n` critique.
+- Ne pas écraser une traduction humaine par une retraduction (S-L3).
+- Absorbe le point 2c du 2026-07-14 (« box shifting »), même symptôme que P-5a.
+
+**R7 — Projets copiés et anciens** (majeur / mineur, M). S-C4 (comparer le chemin du manifeste), S-C5, E (réindexation non destructive), langue cible par défaut incohérente (S-C7, P-9).
+
+**R8 — QA lisible et révisable** (majeur qualité, M). Reprend le lot B de sportsfan30 et le point D.
+- Filtres nommés selon la règle réelle (avertissements, critiques), filtre par type d'erreur.
+- Alertes linguistiques (`UnchangedSource`, `SourceScriptRemaining`) révisables, avec dérogation durable ; l'audit ne repasse plus un segment `reviewed` en `needs_review`.
+- Audit sans écriture en base pendant un export (S-X7) ; `update_segment` sans TM globale si erreur critique (S-C6).
+
+**R9 — Navigation recherche** (mineur, S). Lot C de sportsfan30 : défilement au segment, emplacement lisible (événement, ligne), numéro de ligne stable.
+
+**R10 — Couverture MV/MZ** (à évaluer, M–L). Commandes 320/324/325 ; étude du text fitting MV (lot D de sportsfan30) ; vérification d'une catégorie `plugins.js` sur un jeu réel.
+
+**RW — Wolf** (après la session 2 bis). S-X2, S-X3, S-X4, S-X9, S-E1, S-E2, S-E5 à S-E8, S-E11, à confirmer d'abord sur jeux réels.
+
+**Plus tard — durcissement, performance et mineurs.** S-C1, S-C2, S-C3, S-E3, S-E4, S-X6, S-X8 ; S-L6, S-L7, S-L8, S-U5, S-U6, S-E10, S-E12.

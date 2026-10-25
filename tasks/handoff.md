@@ -1,13 +1,26 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-25 — Claude.
+**Mis à jour :** 2026-10-25 — Claude (session 3).
 **Objectif utilisateur :** lancer une analyse complète de l'app dans une session dédiée, puis
 traiter les retours de sportsfan30 (F95zone) et étudier RuneTranslate avec REA.
 **Statut :** analyse complète :
-- session 1 faite ;
-- session 2 faite pour MV/MZ, Wolf reporté (S-L2 confirmé le 2026-10-25 à 15:24 UTC) ;
-- session 3 à faire. Aucun code applicatif modifié
-depuis la PR #9. Rien n'est commité pour les sessions 1 et 2.
+- sessions 1, 2 (MV/MZ) et 3 faites le 2026-10-25 ; Wolf reporté (session 2 bis, après REA) ;
+- aucun code applicatif modifié depuis la PR #9 ;
+- sessions 1 et 2 commitées (`6edd29b`, `0b2fa4e`, `7bb7aaa`) ; session 3 non commitée.
+
+## Session 3 (2026-10-25, Claude) — reprise
+
+Rapport : `docs/audit/2026-10-analyse-complete.md` (Synthèse en tête ; en fin : Vérifications ciblées, Liste priorisée, Ce qu'on ne fait pas, Lots proposés).
+Preuves : `docs/audit/2026-10-analyse-complete.session3.preuves.txt` ; probes : `…session3.probes.rs`.
+Journal : `docs/journal/2026-10-25-analyse-session-3.md`.
+
+- Audit du 05/09 : A et C corrigés en partie ; B, D, E, F toujours présents (E non vérifiable sur projet réel) ; limite SQL 33 000 corrigée.
+- sportsfan30 : lots A, C, D confirmés ; B confirmé en partie (score QA calculé en continu ; filtres trompeurs).
+- Relecture indépendante : S-X1 confirmé et aggravé (snapshot qui remet du japonais, `engines/mv_mz/originals.rs:320-345`) ; S-L2 « majeur ; bloquant en retraduction par sélection » (déduit, `translate.rs:34-41`), priorité 1 ; P-5a reformulé (détection incomplète).
+- Lots R1–R10 et RW ajoutés à `tasks/todo.md`. Correctif « une seule notification » dans R1.
+- **Prochaine action exacte :**
+  1. Commit des docs sur accord de l'utilisateur, chemins explicites : rapport, preuves et probes session 3, journal session 3, plan, `tasks/todo.md`, `tasks/handoff.md`, `tasks/lessons.md`. Ne pas stager `BACKLOG.md`, `test/`, `.claude/launch.json`, ni la suppression `docs/plans/2026-10-25-sessions-suivantes.md`.
+  2. Puis plan détaillé du lot R1 (recommandé), ou du lot choisi par l'utilisateur. Aucun code avant ce plan.
 
 ## Session 2 (2026-10-25, Claude) — reprise
 
@@ -66,7 +79,7 @@ Journal : `docs/journal/2026-10-25-analyse-session-2.md`.
   2. Commit possible des docs, si l'utilisateur le demande, en stageant les chemins explicites.
      Les extraits ont été réduits le 2026-10-25 à sa demande : comptes, pointeurs, courts extraits ; détail dans `test/_session2/`.
      Règle : `test/` jamais dans Git.
-  3. Puis session 3.
+  3. Session 3 : faite (voir plus haut).
 
 ## Dernier point atteint
 
@@ -132,7 +145,7 @@ Journal : `docs/journal/2026-10-25-analyse-session-2.md`.
      (S-X2, S-X3, S-E1, S-E2, S-E5 à S-E8, S-E11, S-X9) restent ouverts.
 1. Session 2 MV/MZ faite le 2026-10-25. Restent les essais en jeu : voir « Session 2 » plus haut.
    Wolf (S-X2, S-X3…) : session 2 bis, après la session REA.
-2. Session 3, puis découpage en lots dans `tasks/todo.md`. Les correctifs (par exemple
+2. Session 3 faite ; lots R dans `tasks/todo.md`. Les correctifs (par exemple
    `cargo update -p rustls …`) ne sont **pas** autorisés avant ces lots : ils modifient `Cargo.lock`.
 3. `/code-review:code-review` publie un commentaire sur la PR : pour un essai sans effet, PR #9 (fermée).
 3. Ensuite : lots A–C de sportsfan30 (`tasks/todo.md`), puis session REA (`RAE-PLAN/runetranslate/PLAN.md`).
