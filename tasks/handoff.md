@@ -22,7 +22,8 @@ retours de sportsfan30 (F95zone).
 
 ## Prochaine action exacte
 
-1. Outillage corrigé le 2026-10-25 (voir le plan). Vérifier le plugin `code-review`.
+1. Outillage corrigé ; MCP Tauri réparé (PR #9 fusionnée, bridge 0.13.2, Tauri 2.12). Vérifier le plugin `code-review`.
 2. Ouvrir une nouvelle session et coller le « Prompt réécrit » du plan.
-3. Ajouter ArcoFrio au CHANGELOG (promis) ; réponses attendues de sportsfan30 (modèle, Ollama)
+3. Session dédiée REA (RuneTranslate, multi-moteurs) : coller le prompt de `RAE-PLAN/PLAN.md`.
+4. Ajouter ArcoFrio au CHANGELOG (promis) ; réponses attendues de sportsfan30 (modèle, Ollama)
    et d'ArcoFrio (modèles 8/12/16 Go).

@@ -16,7 +16,7 @@ Objectif : comprendre une fonctionnalité de RuneTranslate 1.3.1 qui intéresse 
 (laquelle : à préciser), avec REA (github.com/morluto/rea, MCP `rea` déjà installé).
 Matière : `RAE-PLAN/RuneTranslate-Setup-1.3.1.exe` (local, ignoré par Git).
 
-- [ ] Préciser la fonctionnalité visée et la question exacte à résoudre.
+- [x] Fonctionnalité visée : prise en charge multi-moteurs (17 moteurs). Plan et prompt : `RAE-PLAN/PLAN.md` (local).
 - [ ] Vérifier la licence (EULA) de RuneTranslate avant analyse.
 - [ ] Analyse statique d'abord ; ne jamais exécuter l'installeur hors environnement isolé.
 - [ ] Livrable : description du mécanisme dans `RAE-PLAN/` ou `docs/research/` (sans code ni
