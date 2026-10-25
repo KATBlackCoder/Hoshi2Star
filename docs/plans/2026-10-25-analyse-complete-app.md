@@ -1,6 +1,6 @@
 # Analyse complète de Hoshi2Star — préparation de session
 
-**Date :** 2026-10-25 — Claude. **Statut :** prêt, non lancé.
+**Date :** 2026-10-25 — Claude. **Statut :** prêt, non lancé. Outillage à jour au 2026-10-25.
 **Méthode :** prompt « deeper, not bigger » de Felix Rieseberg (ingénieur Claude, *How to be more
 ambitious: a tutorial for humans with models*, 13/10/2026). Avant d'écrire la demande, on répond à
 4 questions, puis on réécrit la demande pour exiger exactement ça :
@@ -45,11 +45,11 @@ Demande initiale : « analyse de façon complète mon app ».
 | Qualité Rust | `cargo clippy -- -W clippy::pedantic` (lecture seule), `cargo audit`, `cargo deny`, `cargo llvm-cov` |
 | Qualité TS | `pnpm audit`, couverture Vitest, recherche de code mort |
 | Sécurité | skills `security-review`, `cso` ; plugin `finecomb` (à installer, optionnel) |
-| Revue de code | skill `code-review`, `bmad-code-review` ; plugin officiel `code-review` (à installer, optionnel) |
+| Revue de code | skill `code-review`, `bmad-code-review` ; plugin officiel `/code-review:code-review` (installé ; publie un commentaire sur la PR) |
 | Santé globale | skill `health` |
 | Exactitude des formats | tests aller-retour : `inject(extract(jeu))` identique octet par octet sans traduction |
-| App réelle | MCP `@hypothesi/tauri-mcp-server` (piloter l'app, captures, IPC) |
-| Docs à jour (Tauri v2, sqlx, React 19) | MCP Context7 (à connecter, optionnel) |
+| App réelle | MCP `tauri` (`@hypothesi/tauri-mcp-server@0.13.2`) : piloter l'app lancée par `pnpm tauri:linux`, captures, IPC |
+| Docs à jour (Tauri v2, sqlx, React 19) | MCP `context7` (connecté) |
 | Coût LLM pour les essais | modèle cloud peu cher via OpenRouter (voir `docs/research/rapports/`) |
 
 ## 4. Ce qui prouvera que c'est juste
@@ -66,11 +66,11 @@ Demande initiale : « analyse de façon complète mon app ».
 
 - **Déjà disponibles** : skills `code-review`, `security-review`, `cso`, `health`, `investigate`,
   `diagram`, `bmad-code-review`, `bmad-review`, `bmad-deep-recon`, `make-interfaces-feel-better`,
-  `accessibility` ; MCP `@hypothesi/tauri-mcp-server`.
+  `accessibility`, `ambition` ; MCP `tauri`, `context7`, `filesystem`, `rea`.
 - **Corrigé le 2026-10-25** :
   - `.mcp.json` : `filesystem` pointe vers `/home/blackat/Bureau/Hoshi2Star` ;
-  - entrée MCP utilisateur `tauri` (commande cassée, doublon) supprimée ; reste
-    `@hypothesi/tauri-mcp-server` (connecté) ;
+  - MCP `tauri` réparé : version fixée `@hypothesi/tauri-mcp-server@0.13.2`, plugin de l'app
+    passé en 0.13.2 avec Tauri 2.12 (PR #9) ; connexion vérifiée ;
   - **Context7** ajouté en MCP utilisateur (HTTP, connecté) : docs à jour de Tauri v2, sqlx, React 19 ;
   - les ~35 skills Tauri déjà installés pour Codex (`.agents/skills/*tauri*`, `rust-skills`,
     `zustand-state-management`, `tanstack-table`, `shadcn`) sont rendus disponibles à Claude par
@@ -78,8 +78,8 @@ Demande initiale : « analyse de façon complète mon app ».
     Utiles pour l'analyse : `understanding-tauri-ipc`, `understanding-tauri-runtime-authority`,
     `configuring-tauri-capabilities`, `configuring-tauri-csp`, `understanding-tauri-ecosystem-security`,
     `testing-tauri-apps`, `rust-skills`.
-- **Plugin officiel `code-review`** : carte d'installation proposée à l'utilisateur ; à vérifier
-  dans la nouvelle session (`ListPlugins`). Aucun plugin Tauri dédié dans l'annuaire.
+- **Plugin officiel `code-review`** : installé et activé (`/code-review:code-review`). Aucun plugin
+  Tauri dédié dans l'annuaire.
 - **Optionnels, non installés** : `Rust CLI Skills`, `finecomb`.
 - Mode auto : le classifieur a bloqué Bash à plusieurs reprises le 2026-10-25 (incident
   transitoire côté service).
