@@ -1,13 +1,13 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-25 — Claude (RW0 fusionné, R1 à jour avec `main`).
+**Mis à jour :** 2026-10-25 — Claude (R1 et RW0 fusionnés, plan R2 validé, R2a à démarrer).
 **Objectif utilisateur :** lancer une analyse complète de l'app dans une session dédiée, puis
 traiter les retours de sportsfan30 (F95zone) et étudier RuneTranslate avec REA.
 **Statut :** analyse complète :
 - sessions 1, 2 (MV/MZ) et 3 faites le 2026-10-25 ; Wolf reporté (session 2 bis, après REA) ;
 - code applicatif modifié depuis : RW0 (PR #11, fusionnée) ; R1 (PR #10, ouverte) ;
 - sessions 1 à 3 commitées et poussées (`6edd29b` … `54c22e3`, `fb6be51`) ;
-- lot R1 : implémenté, essai réel fait, commité (`7be55e4`) et poussé sur `fix/r1-provider-outage` ; PR #10 ouverte vers `main` (non fusionnée) ; `main` (avec RW0) fusionné dans la branche le 2026-10-25.
+- lot R1 : implémenté, essai réel fait, commité (`7be55e4`) et poussé sur `fix/r1-provider-outage`  ; PR #10 fusionnée le 2026-10-25 (`af0c08e`).
 
 ## En cours (2026-10-25, Claude) — RW0 puis R1
 
@@ -16,7 +16,10 @@ traiter les retours de sportsfan30 (F95zone) et étudier RuneTranslate avec REA.
 - **R1** (panne du fournisseur) : branche `fix/r1-provider-outage`, PR #10 ouverte (commits `7be55e4`, `53d6217`), essai réel fait ; son gate cloud a échoué faute de pouvoir récupérer le fork. Son suivi détaillé (plan R1, journal R1) est sur sa branche.
 - **RW0 fusionné** le 2026-10-25 (PR #11, `252bcff`). `main` a été fusionné dans `fix/r1-provider-outage` (fusion plutôt que rebase : le hook du projet interdit le push forcé) ; conflits résolus en gardant les deux côtés (CHANGELOG : Fixed + Removed ; `tasks/todo.md` : plans R1 et RW0).
 - **R1 vérifié** : gate cloud du 2026-10-25 sur `98236f1` (R1 + `main` avec RW0) : fmt OK, typecheck OK, Vitest 133 OK (35 fichiers), clippy `--locked -D warnings` OK, `cargo test --locked` 695 OK / 0 échec / 12 ignorés, lint 0 erreur (10 avertissements, les mêmes que sur `main`) ; tests R1 ciblés et tests RW0 tous verts.
-- **Prochaine action exacte** : fusion de la PR #10 par l'utilisateur ; ensuite plan détaillé du lot R2 (export sûr après mise à jour du jeu), sans code avant validation.
+- **R1 fusionné** le 2026-10-25 (PR #10, `af0c08e`) ; `main` local à jour. Branche locale `fix/r1-provider-outage` supprimable.
+- **R2** (export sûr après mise à jour du jeu) : plan détaillé dans `tasks/todo.md` (« Plan détaillé — R2 »), **validé le 2026-10-25** : E1 = (a) refus total de l'export en cas d'écart ; E2 oui (reconstruction sans changement de rôle) ; E3 = (a) réalignement R2b dans R2 ; E4 oui (appariement exact par page) ; E5 oui (gate cloud + tests P-2 synthétiques ; essai en jeu seulement avec accord).
+- **R2a non commencé** : branche `fix/r2a-export-source-guard` créée depuis `main` @ `af0c08e` ; seuls `tasks/todo.md` et `tasks/handoff.md` y sont modifiés. Arrêt demandé par l'utilisateur pendant la lecture de `ExportIntegrityDialog.tsx` (textes `exportIntegrity.*`). Reprise prévue le 2026-10-26 dans une nouvelle session.
+- **Prochaine action exacte** : sur `fix/r2a-export-source-guard`, étape 1 du plan R2 (`IntegrityIssue::SourceChanged` dans `engines/mv_mz/integrity.rs`, `:21-77`), puis étapes 2 à 5 (contrôle avant `inject_to_bytes` dans `export.rs:369-460` et `debug_inject_file`, affichage dans `ExportIntegrityDialog.tsx`, tests P-2). Pas de build ni de tests en local : gate en cloud. Le hook PreToolUse bloque toute commande contenant la chaîne de l'installation npm (y compris sous pnpm) : passer par des scripts en fichier pour les textes qui la citent.
 - À corriger à part : le hook PreToolUse qui interdit les installations npm/yarn bloque aussi l'installation pnpm (sous-chaîne) ; contourné par `pnpm i`.
 
 ## Session 3 (2026-10-25, Claude) — reprise
