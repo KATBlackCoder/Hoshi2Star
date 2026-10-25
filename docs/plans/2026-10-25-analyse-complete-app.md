@@ -84,6 +84,35 @@ Demande initiale : « analyse de façon complète mon app ».
 - Mode auto : le classifieur a bloqué Bash à plusieurs reprises le 2026-10-25 (incident
   transitoire côté service).
 
+## Découpage en 3 sessions
+
+Le travail est trop gros pour une seule session (contexte saturé avant le rapport). Une session
+par phase ; chacune s'arrête à son livrable, met à jour `tasks/handoff.md` et la case ci-dessous.
+Livrable unique enrichi au fil des sessions : `docs/audit/2026-10-analyse-complete.md`.
+
+- [ ] **Session 1 — Carte et contrôles automatiques** (aucun jeu réel nécessaire)
+  - Cartographie par couche (sous-agents en parallèle : engines, llm, core, export, UI) et modèle de
+    menaces des entrées non fiables.
+  - Contrôles : clippy pedantic, `cargo audit`, `cargo deny`, couverture Rust/TS, `pnpm audit`,
+    `security-review`. Installation d'outils manquants : accord utilisateur.
+  - Livrable : sections « Architecture », « Menaces », « Constats statiques » du rapport + liste
+    des points à confirmer sur jeux réels.
+  - Arrêt : quand ces sections sont écrites. Ne pas commencer les jeux réels.
+- [ ] **Session 2 — Parcours réels sur jeux** (demande à l'utilisateur les chemins des jeux et le
+      modèle de traduction des essais)
+  - Ordre : MV (cas de sportsfan30), MZ, Wolf v2, Wolf v3 ; pour chacun un projet neuf et un ancien.
+  - Aller-retour octet pour octet sans traduction ; traduction d'un petit échantillon ; QA ; export.
+  - Point d'arrêt possible après chaque moteur (consigner l'avancement dans `tasks/handoff.md`).
+  - Livrable : section « Parcours réels » avec preuves ; exports prêts à tester en jeu par l'utilisateur.
+- [ ] **Session 3 — Vérifications ciblées et rapport final**
+  - Reproduire ou réfuter les 4 retours de sportsfan30 et les points A–F de l'audit du 2026-09-05.
+  - Seconde relecture indépendante des constats bloquants.
+  - Livrable : synthèse d'une page, liste priorisée (gravité, effort, preuve), ce qu'on ne fait
+    pas et pourquoi, proposition de lots pour `tasks/todo.md`.
+
+Pour lancer une session : joindre ce plan et écrire
+« Exécute la session N du plan, avec le prompt réécrit ci-dessous. »
+
 ## Prompt réécrit pour la nouvelle session
 
 > Lis `AGENTS.md`, `tasks/handoff.md`, `tasks/lessons.md`, puis ce plan

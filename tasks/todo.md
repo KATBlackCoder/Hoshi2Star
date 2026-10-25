@@ -8,7 +8,7 @@ Session dédiée, à lancer à part. Prompt prêt : `docs/plans/2026-10-25-analy
 - [x] Outillage : `.mcp.json` corrigé, MCP `tauri` cassé supprimé, Context7 ajouté,
       skills Tauri de Codex liés pour Claude (vérifié : `claude mcp list` connecté, 2026-10-25).
 - [ ] Plugin officiel `code-review` : installé par l'utilisateur ? À vérifier en début de session.
-- [ ] Lancer la session d'analyse avec le prompt du plan ; livrable dans `docs/audit/`.
+- [ ] Lancer l'analyse en 3 sessions (découpage dans le plan) ; livrable `docs/audit/2026-10-analyse-complete.md`.
 
 ## Études REA d'applications tierces (2026-10-25)
 

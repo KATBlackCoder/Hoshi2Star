@@ -39,8 +39,8 @@ depuis la PR #9 (mise à jour de dépendances).
 1. Nouvelle session dans ce dossier. Vérifier que `/code-review:code-review` apparaît. Attention :
    cette commande publie un commentaire sur la PR. Pour un essai sans effet, la lancer sur la PR #9
    (fusionnée), qu'elle doit refuser à l'étape 1 (PR fermée).
-2. Dans cette session, coller le « Prompt réécrit » de `docs/plans/2026-10-25-analyse-complete-app.md`.
-3. Ensuite : sessions préparées dans `docs/plans/2026-10-25-sessions-suivantes.md`
-   (lots A–C sportsfan30, release) et session REA (`RAE-PLAN/runetranslate/PLAN.md`).
+2. Analyse complète en 3 sessions (découpage dans `docs/plans/2026-10-25-analyse-complete-app.md`) :
+   joindre le plan et écrire « Exécute la session N du plan ». Commencer par la session 1.
+3. Ensuite : lots A–C de sportsfan30 (`tasks/todo.md`), puis session REA (`RAE-PLAN/runetranslate/PLAN.md`).
 4. Avant la prochaine release : ArcoFrio au CHANGELOG (promis), export testé sur 2–3 jeux MV/MZ ;
    réponses attendues de sportsfan30 (modèle, Ollama) et d'ArcoFrio (modèles 8/12/16 Go).
