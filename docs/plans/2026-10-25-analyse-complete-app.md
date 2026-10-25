@@ -67,16 +67,22 @@ Demande initiale : « analyse de façon complète mon app ».
 - **Déjà disponibles** : skills `code-review`, `security-review`, `cso`, `health`, `investigate`,
   `diagram`, `bmad-code-review`, `bmad-review`, `bmad-deep-recon`, `make-interfaces-feel-better`,
   `accessibility` ; MCP `@hypothesi/tauri-mcp-server`.
-- **À corriger avant la session** :
-  - `.mcp.json` : le serveur `filesystem` pointe vers `/home/blackat/project/Hoshi2Star` (ancien
-    chemin) au lieu de `/home/blackat/Bureau/Hoshi2Star` ;
-  - l'entrée MCP `tauri` échoue (`npx` introuvable : ENOENT) alors que l'entrée
-    `@hypothesi/tauri-mcp-server` fonctionne : supprimer le doublon ou corriger son chemin ;
-  - mode auto : le classifieur a bloqué Bash à plusieurs reprises le 2026-10-25 (problème
-    transitoire côté service, pas une règle du projet).
-- **À ajouter (accord utilisateur requis)** : MCP Context7 ; plugin officiel `code-review` ;
-  plugin `Rust CLI Skills` (erreurs, tests, concurrence, système de fichiers) ; optionnellement
-  `finecomb` (audit de sécurité).
+- **Corrigé le 2026-10-25** :
+  - `.mcp.json` : `filesystem` pointe vers `/home/blackat/Bureau/Hoshi2Star` ;
+  - entrée MCP utilisateur `tauri` (commande cassée, doublon) supprimée ; reste
+    `@hypothesi/tauri-mcp-server` (connecté) ;
+  - **Context7** ajouté en MCP utilisateur (HTTP, connecté) : docs à jour de Tauri v2, sqlx, React 19 ;
+  - les ~35 skills Tauri déjà installés pour Codex (`.agents/skills/*tauri*`, `rust-skills`,
+    `zustand-state-management`, `tanstack-table`, `shadcn`) sont rendus disponibles à Claude par
+    liens symboliques locaux dans `.claude/skills/` (ignorés par Git, cf. `.gitignore`).
+    Utiles pour l'analyse : `understanding-tauri-ipc`, `understanding-tauri-runtime-authority`,
+    `configuring-tauri-capabilities`, `configuring-tauri-csp`, `understanding-tauri-ecosystem-security`,
+    `testing-tauri-apps`, `rust-skills`.
+- **Plugin officiel `code-review`** : carte d'installation proposée à l'utilisateur ; à vérifier
+  dans la nouvelle session (`ListPlugins`). Aucun plugin Tauri dédié dans l'annuaire.
+- **Optionnels, non installés** : `Rust CLI Skills`, `finecomb`.
+- Mode auto : le classifieur a bloqué Bash à plusieurs reprises le 2026-10-25 (incident
+  transitoire côté service).
 
 ## Prompt réécrit pour la nouvelle session
 

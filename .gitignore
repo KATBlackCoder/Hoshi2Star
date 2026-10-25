@@ -18,6 +18,10 @@ ROADMAP.md
 !.agents/skills/
 .agents/skills/*
 !.agents/skills/bmad-*/
+# Même règle côté Claude : liens locaux vers .agents/skills (Tauri, Rust…) hors Git.
+.claude/skills/*
+!.claude/skills/bmad-*/
+!.claude/skills/update-changelog/
 
 # Réponses personnelles de l'installateur BMAD (configuration commune séparée).
 _bmad/config.user.toml

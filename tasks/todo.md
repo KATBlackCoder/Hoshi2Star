@@ -5,11 +5,9 @@
 Session dédiée, à lancer à part. Prompt prêt : `docs/plans/2026-10-25-analyse-complete-app.md`
 (méthode « deeper, not bigger » de Felix Rieseberg). Aucun code avant la fin de l'analyse.
 
-- [ ] Outillage : corriger `.mcp.json` (le serveur `filesystem` pointe vers l'ancien chemin
-      `/home/blackat/project/Hoshi2Star`) et l'entrée MCP `tauri` en échec (`npx` ENOENT ;
-      l'entrée `@hypothesi/tauri-mcp-server` fonctionne).
-- [ ] Outillage : décider des ajouts proposés dans le plan (Context7, plugin officiel
-      `code-review`, Rust CLI Skills) — accord utilisateur requis.
+- [x] Outillage : `.mcp.json` corrigé, MCP `tauri` cassé supprimé, Context7 ajouté,
+      skills Tauri de Codex liés pour Claude (vérifié : `claude mcp list` connecté, 2026-10-25).
+- [ ] Plugin officiel `code-review` : installé par l'utilisateur ? À vérifier en début de session.
 - [ ] Lancer la session d'analyse avec le prompt du plan ; livrable dans `docs/audit/`.
 
 ## Retours utilisateur sportsfan30 (F95zone, 2026-10-25) — NON DÉMARRÉ

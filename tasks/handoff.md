@@ -22,8 +22,7 @@ retours de sportsfan30 (F95zone).
 
 ## Prochaine action exacte
 
-1. Corriger l'outillage (`.mcp.json` filesystem pointe vers l'ancien chemin ; entrée MCP `tauri`
-   en échec) et décider des ajouts (Context7, plugins) : voir le plan.
+1. Outillage corrigé le 2026-10-25 (voir le plan). Vérifier le plugin `code-review`.
 2. Ouvrir une nouvelle session et coller le « Prompt réécrit » du plan.
 3. Ajouter ArcoFrio au CHANGELOG (promis) ; réponses attendues de sportsfan30 (modèle, Ollama)
    et d'ArcoFrio (modèles 8/12/16 Go).
