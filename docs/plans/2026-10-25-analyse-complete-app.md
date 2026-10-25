@@ -1,6 +1,6 @@
 # Analyse complète de Hoshi2Star — préparation de session
 
-**Date :** 2026-10-25 — Claude. **Statut :** prêt, non lancé. Outillage à jour au 2026-10-25.
+**Date :** 2026-10-25 — Claude. **Statut :** session 1 faite le 2026-10-25 (rapport `docs/audit/2026-10-analyse-complete.md`) ; sessions 2 et 3 à faire.
 **Méthode :** prompt « deeper, not bigger » de Felix Rieseberg (ingénieur Claude, *How to be more
 ambitious: a tutorial for humans with models*, 13/10/2026). Avant d'écrire la demande, on répond à
 4 questions, puis on réécrit la demande pour exiger exactement ça :
@@ -90,7 +90,7 @@ Le travail est trop gros pour une seule session (contexte saturé avant le rappo
 par phase ; chacune s'arrête à son livrable, met à jour `tasks/handoff.md` et la case ci-dessous.
 Livrable unique enrichi au fil des sessions : `docs/audit/2026-10-analyse-complete.md`.
 
-- [ ] **Session 1 — Carte et contrôles automatiques** (aucun jeu réel nécessaire)
+- [x] **Session 1 — Carte et contrôles automatiques** (aucun jeu réel nécessaire) — faite le 2026-10-25
   - Cartographie par couche (sous-agents en parallèle : engines, llm, core, export, UI) et modèle de
     menaces des entrées non fiables.
   - Contrôles : clippy pedantic, `cargo audit`, `cargo deny`, couverture Rust/TS, `pnpm audit`,
@@ -101,6 +101,9 @@ Livrable unique enrichi au fil des sessions : `docs/audit/2026-10-analyse-comple
 - [ ] **Session 2 — Parcours réels sur jeux** (demande à l'utilisateur les chemins des jeux et le
       modèle de traduction des essais)
   - Ordre : MV (cas de sportsfan30), MZ, Wolf v2, Wolf v3 ; pour chacun un projet neuf et un ancien.
+  - **2026-10-25 : Wolf reporté après la session REA** (décision utilisateur). Session 2 = MV et MZ
+    seulement, avec les jeux de `test/` (inventaire dans `tasks/handoff.md`). Wolf fera l'objet
+    d'une session 2 bis.
   - Aller-retour octet pour octet sans traduction ; traduction d'un petit échantillon ; QA ; export.
   - Point d'arrêt possible après chaque moteur (consigner l'avancement dans `tasks/handoff.md`).
   - Livrable : section « Parcours réels » avec preuves ; exports prêts à tester en jeu par l'utilisateur.
