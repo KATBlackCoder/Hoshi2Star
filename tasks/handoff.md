@@ -58,6 +58,10 @@ Journal : `docs/journal/2026-10-25-analyse-session-2.md`.
      - les 3 zips d'échantillon fonctionnent.
      Optionnel : confirmation sous NW.js (`wine Game.exe` dans `test/_ingame/…`) ; Ollama relancé.
      Méthode : `.claude/launch.json` (non suivi, serveurs `ingame-*`) + `mcp__Claude_Browser__*`.
+     Piste ouverte, non bloquante :
+     - confirmation sous vrai NW.js : sous Proton (umu-run), le NW.js « normal » des jeux ignore `--remote-debugging-port` ;
+     - pistes : NW.js SDK Linux sur une copie, piloté par CDP (téléchargement à faire valider), ou sonde `test/_session2/tools/H2sProbe.js` (déjà installée dans `test/_ingame/MV_SX1`) ;
+     - grim est inutilisable sous KWin : utiliser spectacle (`-a`, fenêtre active).
      Liste détaillée : `test/_session2/A-VERIFIER-EN-JEU.md` (hors Git) ; résumé dans le rapport.
   2. Commit possible des docs, si l'utilisateur le demande, en stageant les chemins explicites.
      Les extraits ont été réduits le 2026-10-25 à sa demande : comptes, pointeurs, courts extraits ; détail dans `test/_session2/`.
