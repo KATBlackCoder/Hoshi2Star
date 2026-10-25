@@ -113,6 +113,51 @@ Livrable unique enrichi au fil des sessions : `docs/audit/2026-10-analyse-comple
 Pour lancer une session : joindre ce plan et écrire
 « Exécute la session N du plan, avec le prompt réécrit ci-dessous. »
 
+## Prompts prêts à coller, un par session
+
+**Session 1**
+
+> @docs/plans/2026-10-25-analyse-complete-app.md
+> Exécute la **session 1** de ce plan. Lis d'abord `AGENTS.md`, `tasks/handoff.md` et
+> `tasks/lessons.md`. Ne modifie aucun code applicatif.
+> Fais la carte du code par couche avec des sous-agents en parallèle (engines, llm, core, export, UI),
+> le modèle de menaces des entrées non fiables, puis les contrôles automatiques : clippy pedantic,
+> `cargo audit`, `cargo deny`, couverture Rust et TS, `pnpm audit`, `security-review`.
+> Demande-moi avant d'installer un outil. Chaque constat : `fichier:ligne`, gravité, reproduction,
+> classé vérifié / déduit / inconnu.
+> Crée `docs/audit/2026-10-analyse-complete.md` avec les sections « Architecture », « Menaces »,
+> « Constats statiques » et « À confirmer sur jeux réels ». Arrête-toi là, sans toucher aux jeux réels.
+> Coche la session 1 dans le plan, mets à jour `tasks/handoff.md` et crée l'entrée de journal.
+
+**Session 2**
+
+> @docs/plans/2026-10-25-analyse-complete-app.md
+> Exécute la **session 2** de ce plan. Lis d'abord `AGENTS.md`, `tasks/handoff.md`, `tasks/lessons.md`
+> et `docs/audit/2026-10-analyse-complete.md`. Ne modifie aucun code applicatif.
+> Avant de commencer, demande-moi les chemins de mes jeux de test (MV, MZ, Wolf v2, Wolf v3) et le
+> modèle à utiliser pour les traductions d'essai. Travaille sur une copie de ma base, jamais l'originale.
+> Ordre : MV, MZ, Wolf v2, Wolf v3. Pour chaque moteur, avec un projet neuf et un ancien : ouvrir,
+> extraire, réinjecter sans traduction (fichiers identiques octet pour octet), traduire un petit
+> échantillon, QA, exporter. Utilise le MCP `tauri` sur l'app lancée par `pnpm tauri:linux`.
+> Vérifie les points « À confirmer sur jeux réels » de la session 1.
+> Ajoute la section « Parcours réels » au rapport, avec preuves. Prépare les exports que je testerai
+> moi-même dans le jeu. Après chaque moteur, consigne l'avancement dans `tasks/handoff.md` ;
+> si la session doit s'arrêter, la suivante reprendra au moteur suivant. Coche la session 2 à la fin.
+
+**Session 3**
+
+> @docs/plans/2026-10-25-analyse-complete-app.md
+> Exécute la **session 3** de ce plan. Lis d'abord `AGENTS.md`, `tasks/handoff.md`, `tasks/lessons.md`
+> et `docs/audit/2026-10-analyse-complete.md`. Ne modifie aucun code applicatif.
+> Reproduis ou réfute, avec preuve, les 4 retours de sportsfan30 (`tasks/todo.md`) et les points A–F
+> de `docs/audit-mv-mz-ia-2026-09-05.md`. Fais relire les constats bloquants par une seconde passe
+> indépendante (sous-agent, ou skill `code-review` en local sur les fichiers concernés ; pas le plugin
+> `/code-review:code-review`, qui publie sur GitHub).
+> Termine le rapport : synthèse d'une page, liste priorisée (gravité, effort, preuve), ce qu'on ne fait
+> pas et pourquoi, proposition de lots pour `tasks/todo.md` (un plan détaillé par lot sera écrit plus tard).
+> Tiens compte des résultats de mes tests en jeu s'ils sont consignés dans `tasks/handoff.md`.
+> Coche la session 3, mets à jour `tasks/handoff.md` et le journal.
+
 ## Prompt réécrit pour la nouvelle session
 
 > Lis `AGENTS.md`, `tasks/handoff.md`, `tasks/lessons.md`, puis ce plan
