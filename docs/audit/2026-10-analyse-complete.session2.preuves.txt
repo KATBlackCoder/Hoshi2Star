@@ -40,6 +40,16 @@ snapshot.json : provenance "reconstructed", drift = 2 pointeurs seulement (list/
 Zip de reproduction pour l'essai en jeu [mv-17] : Map051 /events/1/pages/0/list/4 inséré ;
   list/5 (code 101) parameters[0] = "\n<Haruka>Let's go to school."
 
+======== S-X1 MV en jeu [ingame-01-MV_SX1.txt]
+Navigateur intégré, MV 1.6.1 ; mapId 51 ; faceName = "\n<Haruka>Let's go to school." ;
+GET img/faces/…school..rpgmvp -> 404 ; ImageManager.isReady()=false > 25 s ; message vide, OK sans effet,
+aucun écran d'erreur => partie bloquée au premier événement.
+
+======== Autres essais en jeu (navigateur) [ingame-02-others.txt]
+MV_sample : Map051 choix en anglais, Yes -> map 5, aucune erreur.
+StandGirl (MZ 1.8.1) : choix de départ et Map006 traduits, aucune erreur.
+借金JK (MZ 1.8.1) : \N[012] remplacé par le nom saisi, Oui/Non OK, P-5a visible (répétitions), aucune erreur.
+
 ======== S-X1 MZ [mz1-07, mz3-01]
 StandGirl Map001 /events/2/pages/0/list/5 inséré :
   {"success":false,"error":"inject Map001.json: key not found in JSON: /events/2/pages/0/list/6/parameters/0/0"}

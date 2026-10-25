@@ -645,7 +645,11 @@ Preuves :
   - 12 commandes **101** reçoivent une traduction dans `parameters[0]`, c'est-à-dire le **nom de fichier du visage** (exemple : `['H14c9eaL0\\n<Nce4f>', 0, 0, 2]`) ;
   - 13 lignes 401 restent en japonais ;
   - la ligne ajoutée reçoit la traduction de la ligne suivante.
-- En jeu, MV chercherait `img/faces/<traduction>.png`, absent : écran d'erreur de chargement. Ce dernier point est déduit, non lancé.
+- **En jeu, vérifié le 2026-10-25** dans le navigateur intégré (MV 1.6.1 servi en HTTP), avec le zip de reproduction ci-dessous :
+  - nouvelle partie, carte de départ ; le jeu demande `img/faces/\n<Haruka>Let's go to school..rpgmvp` (404) ;
+  - la fenêtre de message reste ouverte et **vide**, `ImageManager.isReady()` reste `false` ;
+  - l'entrée OK est sans effet et aucun écran d'erreur n'apparaît : **la partie est bloquée dès le premier événement** ;
+  - sous NW.js (Game.exe), le comportement exact reste à confirmer par l'utilisateur.
 - Zip de reproduction pour l'essai en jeu : `zips/MV_SX1_repro_after_update.zip`. Map051, événement d'ouverture de la carte de départ : 401 ajouté avant le 101 ; la traduction se retrouve en `101.parameters[0]` = `"\\n<Haruka>Let's go to school."` (`mv-17`).
 - Le snapshot note la dérive de 2 pointeurs seulement sur 14 (`snapshot.json`, `drift`). L'export ne la lit pas.
 - MZ (StandGirl), deux essais : l'issue dépend de la **structure de la page**, pas du moteur. L'export échoue dès qu'un pointeur décalé devient invalide, et réussit en silence sinon (comme en MV).
@@ -744,7 +748,26 @@ Preuves :
 - **S-L5** : hors préréglage ollama.
 - **`plugins.js`** : aucune catégorie de plugin.
 - **S-U3** : défilement et fermeture de fenêtre non testés.
-- **Tests en jeu** : aucun zip n'a été lancé dans un jeu. C'est à faire par l'utilisateur, liste ci-dessous.
+- **Tests en jeu sous NW.js (Game.exe)** : non faits ; les 4 zips ont été joués dans le navigateur intégré (voir ci-dessous).
+
+### Essais en jeu (navigateur intégré, 2026-10-25)
+
+- **Méthode** : les copies de `test/_ingame/` (hors Git) sont servies en HTTP, puis jouées dans le navigateur intégré. On y lit l'état du moteur (`$gameMessage`, `ImageManager`, console, réseau). Certains événements sont déclenchés directement, sans marcher jusqu'à eux. Le navigateur n'est pas NW.js : les plugins `nw.gui`/`fs` ne sont pas exercés.
+- **MV_SX1** : blocage dur au premier événement (voir P-2).
+- **MV_sample** :
+  - choix et textes de Map051 en anglais ;
+  - « Yes » mène bien à la carte 5 ;
+  - aucune erreur.
+- **MZ StandGirl** :
+  - choix de départ et répliques de Map006 traduits, nom de locuteur traduit ;
+  - aucune erreur ;
+  - l'écran de démarrage attend un clic.
+- **MZ 借金JK** :
+  - `\N[012]` remplacé par le nom saisi, choix Oui/Non fonctionnel ;
+  - P-5a visible : la même information répétée sur trois répliques ;
+  - aucune erreur ;
+  - rendu des accents non capturé.
+- Preuves : `ingame-01-MV_SX1.txt`, `ingame-02-others.txt`.
 
 ### À vérifier en jeu par l'utilisateur
 

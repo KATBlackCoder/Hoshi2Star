@@ -53,7 +53,11 @@ Journal : `docs/journal/2026-10-25-analyse-session-2.md`.
   - « Tout traduire » ne reprendrait aucun segment.
   - Correctif demandé par l'utilisateur, une seule notification : noté dans `tasks/todo.md`.
 - **Prochaine action exacte :**
-  1. l'utilisateur relance Ollama (`sudo systemctl start ollama`), teste les 4 zips en jeu et consigne les résultats ici.
+  1. Essais en jeu faits le 2026-10-25 dans le navigateur intégré (rapport, « Essais en jeu ») :
+     - S-X1 confirmé en jeu : partie MV bloquée au premier événement ;
+     - les 3 zips d'échantillon fonctionnent.
+     Optionnel : confirmation sous NW.js (`wine Game.exe` dans `test/_ingame/…`) ; Ollama relancé.
+     Méthode : `.claude/launch.json` (non suivi, serveurs `ingame-*`) + `mcp__Claude_Browser__*`.
      Liste détaillée : `test/_session2/A-VERIFIER-EN-JEU.md` (hors Git) ; résumé dans le rapport.
   2. Commit possible des docs, si l'utilisateur le demande, en stageant les chemins explicites.
      Les extraits ont été réduits le 2026-10-25 à sa demande : comptes, pointeurs, courts extraits ; détail dans `test/_session2/`.
