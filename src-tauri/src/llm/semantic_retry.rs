@@ -57,7 +57,8 @@ pub(crate) async fn retry<P: LlmProvider>(
         let mut translation_context = request.translation_context.clone();
         translation_context.segment_contexts = vec![prompt_context];
         let segment_ids = vec![request.segment_id.to_string()];
-        let outcome = llm_translate_with_split(
+        // A provider outage ends the retries; the next batch stops the run.
+        let Ok(outcome) = llm_translate_with_split(
             vec![0],
             std::slice::from_ref(request.tokenized),
             provider,
@@ -65,9 +66,12 @@ pub(crate) async fn retry<P: LlmProvider>(
             db,
             &segment_ids,
         )
-        .await;
+        .await
+        else {
+            break;
+        };
         metrics.merge(outcome.metrics);
-        let Some((_, candidate, false)) = outcome.results.into_iter().next() else {
+        let Some((_, Some(candidate))) = outcome.results.into_iter().next() else {
             continue;
         };
         let qa_result = qa::check_with_context(

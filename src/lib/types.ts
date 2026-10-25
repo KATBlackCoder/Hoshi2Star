@@ -72,6 +72,8 @@ export interface ProjectStats {
   needsReviewCount: number;
   /** With the other three counters, the four statuses sum to totalSegments. */
   reviewedCount: number;
+  /** Segments "Translate all" will pick up, legacy source fallbacks included. */
+  resumableCount: number;
 }
 
 export interface Segment {

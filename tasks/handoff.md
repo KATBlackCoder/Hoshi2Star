@@ -1,19 +1,22 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-25 — Claude (RW0).
+**Mis à jour :** 2026-10-25 — Claude (RW0 fusionné, R1 à jour avec `main`).
 **Objectif utilisateur :** lancer une analyse complète de l'app dans une session dédiée, puis
 traiter les retours de sportsfan30 (F95zone) et étudier RuneTranslate avec REA.
 **Statut :** analyse complète :
 - sessions 1, 2 (MV/MZ) et 3 faites le 2026-10-25 ; Wolf reporté (session 2 bis, après REA) ;
-- aucun code applicatif modifié depuis la PR #9 ;
-- sessions 1 et 2 commitées (`6edd29b`, `0b2fa4e`, `7bb7aaa`) ; session 3 non commitée.
+- code applicatif modifié depuis : RW0 (PR #11, fusionnée) ; R1 (PR #10, ouverte) ;
+- sessions 1 à 3 commitées et poussées (`6edd29b` … `54c22e3`, `fb6be51`) ;
+- lot R1 : implémenté, essai réel fait, commité (`7be55e4`) et poussé sur `fix/r1-provider-outage` ; PR #10 ouverte vers `main` (non fusionnée) ; `main` (avec RW0) fusionné dans la branche le 2026-10-25.
 
 ## En cours (2026-10-25, Claude) — RW0 puis R1
 
 - **Règle** : ne plus lancer de build, clippy ni de suite de tests sur le poste de l'utilisateur (il gèle) ; gate en session cloud sur la branche poussée (`tasks/lessons.md`).
 - **RW0** (retrait de `wolfrpg-map-parser`, fork supprimé de GitHub, plus aucun clone neuf ne compilait) : branche `chore/remove-wolfrpg-map-parser` ; code et tests faits, **gate cloud vert** sur `32d36ad` (681 tests Rust, 124 Vitest, clippy, lint) ; plan et détail : `tasks/todo.md` (« Plan — RW0 »), `docs/journal/2026-10-25-rw0-retrait-wolfrpg-map-parser.md`. Wolf v2 est refusé à l'ouverture et à l'export avec un message dédié.
 - **R1** (panne du fournisseur) : branche `fix/r1-provider-outage`, PR #10 ouverte (commits `7be55e4`, `53d6217`), essai réel fait ; son gate cloud a échoué faute de pouvoir récupérer le fork. Son suivi détaillé (plan R1, journal R1) est sur sa branche.
-- **Prochaine action exacte** : fusion de la PR RW0 par l'utilisateur ; puis rebase de `fix/r1-provider-outage` sur `main` (conflits attendus : CHANGELOG, handoff, todo) et gate cloud de R1 ; fusion de la PR #10.
+- **RW0 fusionné** le 2026-10-25 (PR #11, `252bcff`). `main` a été fusionné dans `fix/r1-provider-outage` (fusion plutôt que rebase : le hook du projet interdit le push forcé) ; conflits résolus en gardant les deux côtés (CHANGELOG : Fixed + Removed ; `tasks/todo.md` : plans R1 et RW0).
+- **R1 vérifié** : gate cloud du 2026-10-25 sur `98236f1` (R1 + `main` avec RW0) : fmt OK, typecheck OK, Vitest 133 OK (35 fichiers), clippy `--locked -D warnings` OK, `cargo test --locked` 695 OK / 0 échec / 12 ignorés, lint 0 erreur (10 avertissements, les mêmes que sur `main`) ; tests R1 ciblés et tests RW0 tous verts.
+- **Prochaine action exacte** : fusion de la PR #10 par l'utilisateur ; ensuite plan détaillé du lot R2 (export sûr après mise à jour du jeu), sans code avant validation.
 - À corriger à part : le hook PreToolUse qui interdit les installations npm/yarn bloque aussi l'installation pnpm (sous-chaîne) ; contourné par `pnpm i`.
 
 ## Session 3 (2026-10-25, Claude) — reprise
@@ -27,8 +30,9 @@ Journal : `docs/journal/2026-10-25-analyse-session-3.md`.
 - Relecture indépendante : S-X1 confirmé et aggravé (snapshot qui remet du japonais, `engines/mv_mz/originals.rs:320-345`) ; S-L2 « majeur ; bloquant en retraduction par sélection » (déduit, `translate.rs:34-41`), priorité 1 ; P-5a reformulé (détection incomplète).
 - Lots R1–R10 et RW ajoutés à `tasks/todo.md`. Correctif « une seule notification » dans R1.
 - **Prochaine action exacte :**
-  1. Commit des docs sur accord de l'utilisateur, chemins explicites : rapport, preuves et probes session 3, journal session 3, plan, `tasks/todo.md`, `tasks/handoff.md`, `tasks/lessons.md`. Ne pas stager `BACKLOG.md`, `test/`, `.claude/launch.json`, ni la suppression `docs/plans/2026-10-25-sessions-suivantes.md`.
-  2. Puis plan détaillé du lot R1 (recommandé), ou du lot choisi par l'utilisateur. Aucun code avant ce plan.
+  1. **R1 implémenté le 2026-10-25** sur `fix/r1-provider-outage` : commit `7be55e4`, PR https://github.com/KATBlackCoder/Hoshi2Star/pull/10 (ouverte, non fusionnée). Puis compte des noms réparés (`RunSummary.repaired`) ajouté sur la même branche. Détail : `docs/journal/2026-10-25-r1-panne-fournisseur.md`.
+  2. Étape 9 (essai réel) faite le 2026-10-25 sur la copie de la session 2 : Arrêter, panne, sélection en panne, reprise ⇒ un seul toast à chaque fois, aucune cible = source nouvelle, WebKit ≤ 289 Mo. Écart corrigé ensuite : les réparations de noms canoniques sont maintenant comptées (`repaired`, ligne dans le toast). Détail : journal R1, « Essai réel ».
+  3. Prochaine action : relecture et fusion de la PR #10 par l'utilisateur ; puis plan détaillé du lot R2 (export sûr après mise à jour du jeu).
 
 ## Session 2 (2026-10-25, Claude) — reprise
 

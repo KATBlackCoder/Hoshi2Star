@@ -64,6 +64,11 @@
 - Vérifié à la main : règle `stale_export` (`engines/mv_mz/originals.rs:320-345`) ; `sl2-00` (46 `context_leak` après une exécution toute `translated`).
 - Non exécutés : gate complet (aucun code modifié), tests NW.js, Wolf, base et jeu de sportsfan30.
 
+## Suite de session : commit, push, plan R1
+
+- Commits `54c22e3` (session 3) et `fb6be51` (`BACKLOG.md` : rappel `num_ctx` Ollama ; suppression de `docs/plans/2026-10-25-sessions-suivantes.md`), poussés sur `origin/main` à la demande de l'utilisateur.
+- Plan détaillé du lot R1 écrit dans `tasks/todo.md` (« Plan détaillé — R1 ») après relecture de `provider.rs`, `split.rs`, `pipeline.rs`, `translate.rs`, `stores/llm.ts`. Aucun code. Décisions D1 à D7 à valider, D6 ouverte.
+
 ## Tâches ROADMAP cochées
 
 - Aucune.

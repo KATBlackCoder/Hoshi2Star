@@ -464,7 +464,8 @@ async fn fetch_project_stats(
         translated_count,
         needs_review_count,
         reviewed_count,
-    ) = sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64)>(
+        resumable_count,
+    ) = sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64, i64)>(&format!(
         "SELECT \
                 (SELECT COUNT(*) FROM source_files WHERE project_id = ?1), \
                 (SELECT COUNT(*) FROM segments s \
@@ -481,8 +482,13 @@ async fn fetch_project_stats(
                    WHERE sf.project_id = ?1 AND s.status = 'needs_review'), \
                 (SELECT COUNT(*) FROM segments s \
                    JOIN source_files sf ON s.source_file_id = sf.id \
-                   WHERE sf.project_id = ?1 AND s.status = 'reviewed')",
-    )
+                   WHERE sf.project_id = ?1 AND s.status = 'reviewed'), \
+                (SELECT COUNT(*) FROM segments \
+                   WHERE source_file_id IN \
+                     (SELECT id FROM source_files WHERE project_id = ?1) \
+                   AND {})",
+        crate::commands::translate::RESUMABLE_SEGMENT
+    ))
     .bind(project_id)
     .fetch_one(pool)
     .await?;
@@ -494,6 +500,7 @@ async fn fetch_project_stats(
         translated_count,
         needs_review_count,
         reviewed_count,
+        resumable_count,
     })
 }
 
@@ -1109,6 +1116,17 @@ mod tests {
             stats.total_segments,
             "the four statuses must sum to the total"
         );
+
+        // "Translate all" count follows the run's own resume rule: a real
+        // needs_review target is not resumed, a legacy source fallback is.
+        assert_eq!(stats.resumable_count, 1);
+        sqlx::query("UPDATE segments SET target_text = source_text WHERE id = 's3'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let stats = fetch_project_stats(&pool, "p1").await.unwrap();
+        assert_eq!(stats.resumable_count, 2);
+        assert_eq!(stats.untranslated_count, 1, "export gate counter unchanged");
     }
 
     #[test]

@@ -21,7 +21,7 @@ Détail, preuves et critères : `docs/audit/2026-10-analyse-complete.md`, « Lot
 Un plan détaillé par lot avant tout code. Ordre conseillé : R1, R2, R3, R4, R5, puis R6 à R10.
 Les cases sportsfan30 (A–D) ci-dessous restent la liste détaillée de R4, R8, R9, R10.
 
-- [ ] **R1 — Panne du fournisseur : arrêt propre et une seule notification** (majeur, priorité 1, M) :
+- [ ] **R1 — Panne du fournisseur : arrêt propre et une seule notification** (majeur, priorité 1, M) — **plan détaillé ci-dessous** :
       S-L2 / audit B, P-6, S-L4, demande utilisateur (une seule notification) ; ne jamais écraser
       une cible non vide sur échec technique (retraduction par sélection, `translate.rs:34-41`). `split.rs:155-161`,
       `pipeline.rs:315`, `:577-593`, `stores/llm.ts:224-230`, `translate.rs:241`.
@@ -36,11 +36,146 @@ Les cases sportsfan30 (A–D) ci-dessous restent la liste détaillée de R4, R8,
 - [ ] **R8 — QA lisible et révisable** (M) : lot B sportsfan30, audit D, S-X7, S-C6.
 - [ ] **R9 — Navigation recherche** (S) : lot C sportsfan30.
 - [ ] **R10 — Couverture MV/MZ** (à évaluer) : commandes 320/324/325, text fitting MV (lot D sportsfan30), `plugins.js` sur jeu réel.
-- [ ] **RW0 — Retirer `wolfrpg-map-parser`** (bloquant pour toute compilation en cloud) — plan ci-dessous, validé, en cours sur `chore/remove-wolfrpg-map-parser`.
+- [x] **RW0 — Retirer `wolfrpg-map-parser`** — fait, gate cloud vert, fusionné le 2026-10-25 (PR #11, `252bcff`).
 - [ ] **RW — Wolf** : après la session 2 bis et l'étude REA ; nouvelle lecture des cartes et événements communs v2 ; points non vérifiés sur jeu réel.
 - [ ] Plus tard : S-C1, S-C2, S-C3, S-E3, S-E4, S-X6, S-X8 ; mineurs S-L6–L8, S-U5, S-U6, S-E10, S-E12. Non fait : S-E9 (VX Ace désactivé), S-D3.
 
-### Plan — RW0 : retirer `wolfrpg-map-parser` (2026-10-25, Claude) — PLAN VALIDÉ le 2026-10-25 (W1 = a, W2–W4 oui) ; étapes 1–7 faites, gate cloud vert ; PR à fusionner
+### Plan détaillé — R1 : panne du fournisseur, arrêt propre et une seule notification (2026-10-25, Claude) — IMPLÉMENTÉ sur `fix/r1-provider-outage` (étapes 1–10, essai réel compris) ; PR #10 ouverte ; gate cloud du 2026-10-25 sur `98236f1` (R1 + `main` avec RW0) : fmt OK, typecheck OK, Vitest 133 OK (35 fichiers), clippy `--locked -D warnings` OK, `cargo test --locked` 695 OK / 0 échec / 12 ignorés, lint 0 erreur (10 avertissements, les mêmes que sur `main`) ; tests R1 ciblés et tests RW0 tous verts
+
+**Constats couverts.** S-L2 / audit B (P-6, `PROBE B`), demande utilisateur du 2026-10-25 (une seule
+notification), écrasement en retraduction par sélection (`translate.rs:34-41`, relecture session 3).
+S-L4 (annulation) : étape 7, **incluse dans R1** (décision utilisateur du 2026-10-25).
+Preuves et lignes : `docs/audit/2026-10-analyse-complete.md` (P-6, « Seconde relecture », R1).
+
+**Comportement actuel (vérifié dans le code de `main` @ `fb6be51`).**
+- `provider.rs:447-459` : 3 essais sans délai sur toute erreur, y compris 401 ; puis `LlmError::Http`
+  ou `TranslationFailed`. `LlmError::Unavailable` (`:136`) n'est jamais produit par `translate`.
+- `split.rs:155-161` : toute erreur autre que `ResponseFormat` rend `(i, "", true)` pour tout le lot.
+- `pipeline.rs:577-593`, `:661-666` : cible vide ⇒ source copiée en cible, `needs_review` ; la QA tourne
+  sur cette copie (`unchanged_source`). Le lot est enregistré sans garde de statut (`pipeline.rs:153-163`).
+- `pipeline.rs:313-326` : un événement `h2s://llm/placeholder-warning` par segment `needs_review`.
+- `stores/llm.ts:224-230` et `:294-300` : un `toast.warning` par événement, sans `id` ni regroupement.
+- `translate.rs:313-316` (et `:141`) : `h2s://llm/completed` même si tout a échoué ; seul
+  `health_check` (`:76-83`, `:213-220`, au démarrage) émet `h2s://llm/error`.
+- `translate.rs:241-245` : « Tout traduire » ne reprend que `untranslated` ou cible vide.
+
+**Comportement visé.**
+1. Panne globale du fournisseur (connexion refusée, délai dépassé, 401/403, 404 modèle, 5xx ou 429
+   persistants) ⇒ l'exécution s'arrête, **un seul** message d'erreur, avec le nombre de segments déjà
+   traduits et restants.
+2. Échec technique, global ou limité à un lot ⇒ **aucune écriture** pour les segments concernés : cible
+   et statut restent ceux d'avant. Un segment non traduit reste `untranslated` ; une traduction existante,
+   même `reviewed`, n'est jamais remplacée par la source.
+3. Fin d'exécution ⇒ **un seul** toast récapitulatif : traduits, à réviser (par type d'erreur QA),
+   échecs techniques. Plus aucun toast par segment.
+4. « Tout traduire » relancé après la panne reprend exactement les segments non traités.
+
+**Décisions de conception — validées par l'utilisateur le 2026-10-25 (D1 à D7, D6 = oui).**
+- D1. Classement des erreurs dans `provider.rs` (`translate`) :
+  - global, sans relance : 401, 403, 404 ⇒ `LlmError::Unavailable` ;
+  - global, après relances avec attente croissante (1 s, 2 s, 4 s ; `Retry-After` respecté, plafonné à 30 s) :
+    connexion refusée, délai dépassé, 429, 5xx ⇒ `LlmError::Unavailable` ;
+  - limité au lot : 400, 413, 422 (prompt trop long, requête refusée) ⇒ `TranslationFailed` ;
+  - réponse illisible ⇒ `ResponseFormat` (inchangé : relances puis découpage).
+  `chat()` (`:548-581`) suit déjà en partie ce modèle : aligner les deux sur une même fonction de classement.
+- D2. `split.rs` : `Unavailable` remonte (le `SplitOutcome` porte une erreur d'arrêt) au lieu d'être
+  absorbé ; `TranslationFailed` et l'échec final de `ResponseFormat` sur un segment deviennent des
+  résultats « échec technique » distincts de `needs_review`.
+- D3. `pipeline.rs` : un résultat « échec technique » n'est ni passé à la QA, ni enregistré, ni compté
+  comme traduit. Sur `Unavailable`, le pipeline renvoie `Err(PipelineError::Provider…)` après avoir
+  enregistré les lots déjà terminés (comportement actuel de `persist_batch_results`, conservé).
+  Nouvelle variante `PipelineError::ProviderUnavailable` pour que la commande distingue panne et erreur de base.
+- D4. Événements : supprimer l'émission par segment de `h2s://llm/placeholder-warning` ; le récapitulatif
+  part dans la charge de `h2s://llm/completed` (`{ count, translated, needsReview, failed, qaErrorsByType }`)
+  ou de `h2s://llm/error` (`{ message, translated, remaining }`). Évite aussi ~1 000 événements IPC.
+  Les autres écouteurs de `llm/completed` (`SegmentGrid.tsx:277`, `GlobalSearchResults.tsx:91`)
+  n'utilisent pas la charge : compatibles.
+- D5. Frontend `stores/llm.ts` : retirer `onWarning` et ses toasts ; un `toast` récapitulatif à
+  `completed` (succès simple si 0 à réviser et 0 échec, avertissement sinon) ; un `toast.error` unique
+  à `error`, avec un `id` fixe pour qu'une erreur répétée remplace la précédente. Textes dans
+  `src/locales/fr.json` et `en.json`.
+- D6. **Décidé : oui.** « Tout traduire » reprend aussi les anciennes lignes `needs_review` avec cible = source
+  (`status = 'needs_review' AND target_text = source_text`), laissées par les versions actuelles.
+  Le comptage initial (`translate.rs:181`) et la requête par fichier (`translate.rs:241-245`) doivent
+  utiliser la même condition. Test : une ligne `needs_review` cible = source est reprise ; une ligne
+  `needs_review` avec une vraie cible ne l'est pas.
+- D7. `health_check` : vérifier aussi que le modèle choisi figure dans `/models` quand la liste n'est pas
+  vide (`provider.rs:518-519`), pour échouer au démarrage plutôt qu'au premier lot.
+
+**Étapes (chacune testée avant la suivante).**
+- [x] 1. Classement des erreurs HTTP dans `provider.rs` (D1). Tests httpmock (`provider.rs:812+`) :
+      401 ⇒ 1 seul appel puis `Unavailable` ; 503 ×3 ⇒ `Unavailable` après attentes ; 503 puis 200 ⇒ succès ;
+      429 avec `Retry-After: 1` respecté ; 400 ⇒ `TranslationFailed` ; port fermé ⇒ `Unavailable`.
+      Les attentes doivent être injectables (durées nulles en test) pour ne pas ralentir la suite.
+- [x] 2. `split.rs` : propagation de `Unavailable`, résultat « échec technique » (D2). Tests unitaires avec
+      un fournisseur simulé : `Unavailable` ⇒ arrêt sans découpage ; `TranslationFailed` ⇒ échec des seuls
+      indices du lot ; `ResponseFormat` inchangé (relances, découpage, échec isolé).
+- [x] 3. `pipeline.rs` : pas de repli sur la source, pas de QA ni d'écriture pour un échec technique,
+      `ProviderUnavailable` (D3), récapitulatif compté. Tests d'intégration (base temporaire, comme
+      `PROBE B`) :
+      - fournisseur toujours en panne ⇒ `Err`, 0 ligne modifiée, segments `untranslated` ;
+      - panne après le 1er lot ⇒ 1er lot enregistré, le reste `untranslated` ;
+      - retraduction d'un segment `reviewed` avec panne ⇒ cible et statut inchangés ;
+      - `TranslationFailed` sur un lot ⇒ exécution `Ok`, `failed = taille du lot`, segments inchangés ;
+      - vraie erreur QA critique ⇒ toujours `needs_review` avec la cible du modèle (non-régression).
+      Inverser l'attente de la probe `b_provider_failure` (`docs/audit/…session3.probes.rs`) dans un vrai test.
+- [x] 4. Commandes `translate.rs` : sur `ProviderUnavailable`, arrêt de toute la boucle de fichiers, une seule
+      émission de `h2s://llm/error` avec le récapitulatif ; `refresh_stats` du manifeste appelé aussi en cas
+      d'arrêt ; `completed` porte le récapitulatif (D4). Reprise D6 selon la décision. D7.
+      Vérifier `pilot.rs:379`, `:401` (même pipeline) : une panne doit y donner une erreur claire.
+- [x] 5. Frontend `stores/llm.ts` (D5) : tests Vitest (`src/stores/llm.test.ts`) :
+      1 000 avertissements simulés ⇒ 0 toast ; `completed` avec récapitulatif ⇒ 1 toast ;
+      `error` ⇒ 1 `toast.error`, `isTranslating = false` ; textes fr/en présents.
+- [x] 6. Nettoyage : retirer `PlaceholderWarningPayload` (`progress.rs:15`) et les commentaires
+      `pipeline.rs:13`, `:212`, `:367` s'ils ne servent plus ; mettre à jour `CONTEXT.md` (liste des
+      événements `h2s://llm/*`) si elle les cite.
+- [x] 7. Annulation (S-L4, incluse dans R1) : bouton « Arrêter » sans toucher à Ollama ; arrêt vérifié entre deux lots, le lot en cours se termine d'abord ; commande `cancel_translation` + jeton d'annulation vérifié
+      entre deux lots ; bouton « Arrêter » ; même récapitulatif unique. Tests : annulation après le 1er lot
+      ⇒ 1er lot enregistré, reste `untranslated`, `completed` ou `cancelled` émis une fois.
+- [x] 8. Gate complet : `pnpm typecheck && pnpm test && cargo clippy --manifest-path src-tauri/Cargo.toml
+      -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml` ; `cargo fmt`.
+- [x] 9. Vérification réelle (reprise de P-6) — faite le 2026-10-25, résultats dans `docs/journal/2026-10-25-r1-panne-fournisseur.md` (« Essai réel ») ; écart corrigé ensuite : le récapitulatif compte les réparations de noms canoniques (`repaired`), sur la copie de la session 2 (`XDG_DATA_HOME=…/test/_session2/xdg-data
+      pnpm tauri:linux`, jamais la base originale) : « Tout traduire » sur un projet jetable, arrêt d'Ollama
+      en cours (`sudo systemctl stop ollama`, par l'utilisateur). Attendu :
+      - un seul toast d'erreur, aucun toast par segment ;
+      - segments restants `untranslated`, aucune cible = source nouvelle (requête SQL avant/après) ;
+      - mémoire du processus WebKit stable (relevé `ps` comme `sl2-03`) ;
+      - Ollama relancé, « Tout traduire » reprend exactement les segments restants et termine.
+      Même essai en retraduction par sélection de segments déjà traduits : cibles inchangées.
+- [x] 10. Suivi : journal, `tasks/handoff.md`, CHANGELOG (skill `update-changelog`), leçon si correction.
+
+**Écarts et précisions de l'implémentation (2026-10-25).**
+- D2 étendu : l'échec final de validation des placeholders est aussi un « échec » (rien d'écrit), pas un
+  `needs_review` avec la source. Même raison : ne jamais remplacer une cible par la source.
+- D6 appliqué aussi à « Traduire » sur un fichier (même condition `RESUMABLE_SEGMENT`, `translate.rs`).
+  La boîte « Tout traduire » affiche le nouveau compteur `resumableCount` (`get_project_stats`, même règle) ;
+  `untranslatedCount`, qui bloque l'export, est inchangé (R4).
+- D7 limité au préréglage Ollama (`require_listed_model`) : le routeur Hugging Face accepte des ids
+  (`model:provider`, `:fastest`) absents de sa liste `/models`, la vérification bloquerait une configuration valide.
+- « Arrêter » interrompt aussi une pause de refroidissement (`CooldownState::maybe_rest`), sans test automatique
+  (dépend d'un `AppHandle`).
+- Délai dépassé ⇒ panne globale (D1) : un lot trop long pour le délai de 180 s arrêterait l'exécution à
+  chaque relance. Visible et reprenable ; à surveiller à l'étape 9.
+- Gate du 2026-10-25 : typecheck, 129 tests Vitest, clippy `-D warnings`, 705 tests Rust (12 ignorés),
+  lint 0 erreur (10 avertissements déjà présents). Relancé à l'identique après la correction de la pause, `resumableCount` et D7 limité à Ollama : tout vert.
+
+**Critère de sortie.** Les 4 points du « comportement visé » vérifiés par tests automatiques (étapes 1 à 5)
+et par l'essai réel (étape 9), gate vert.
+
+**Hors périmètre.** Qualité des relances (lot 2 du 2026-07-14), fuites de contexte (R6), filtres QA (R8),
+Pas de nouveau statut de segment en base (pas de migration) : un échec
+technique laisse simplement la ligne telle qu'elle était.
+
+**Risques.**
+- Les tests existants qui attendent le repli sur la source (`needs_review`, cible = source) vont échouer :
+  les relire un à un, n'inverser que ceux qui décrivent le défaut.
+- Un 400 dû à un prompt trop long pourrait se répéter sur tout le projet : il reste limité au lot, mais le
+  récapitulatif doit le rendre visible (`failed` élevé).
+- Attente croissante : ne pas bloquer l'interface ; les durées restent côté backend, la progression continue.
+
+**Effort estimé.** M, 1,5 à 2 jours (annulation comprise).
+
+### Plan — RW0 : retirer `wolfrpg-map-parser` (2026-10-25, Claude) — PLAN VALIDÉ le 2026-10-25 (W1 = a, W2–W4 oui) ; étapes 1–7 faites, gate cloud vert ; fusionné (PR #11, `252bcff`)
 
 **Pourquoi.** Décision utilisateur du 2026-10-25 : la méthode (fork d'un crate tiers, branche Git
 `fix/wolf-v3-format`) est incorrecte ; une meilleure solution sera cherchée avec REA (lot RW). Le fork

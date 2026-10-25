@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { toast } from "sonner";
+import { t } from "i18next";
 import type {
   PipelineBatchMetrics,
   ProviderCallMetrics,
@@ -26,6 +27,27 @@ interface CoolingPayload {
   remainingSecs: number;
 }
 
+/** `h2s://llm/completed` — one summary per run (Rust `RunSummary`). */
+export interface RunSummary {
+  count: number;
+  translated: number;
+  needsReview: number;
+  /** No usable output: the segment was left unchanged. */
+  failed: number;
+  qaErrorsByType: Record<string, number>;
+  cancelled: boolean;
+  /** Other rows of the same name (earlier fallbacks) given this run's translation. */
+  repaired: number;
+}
+
+/** `h2s://llm/error` — one notice per run (Rust `LlmErrorPayload`). */
+export interface LlmErrorPayload {
+  message: string;
+  providerUnavailable: boolean;
+  processed: number;
+  total: number;
+}
+
 interface LlmState {
   isTranslating: boolean;
   /** 0–100, -1 when idle */
@@ -38,6 +60,8 @@ interface LlmState {
   cooldownRemaining: number;
   requestMetrics: ProviderCallMetrics[];
   pipelineMetrics: PipelineBatchMetrics[];
+  /** "Stop" was pressed; the run ends after its current batch. */
+  isCancelling: boolean;
 
   // Actions
   setProviderConfig: (cfg: Partial<ProviderConfig>) => void;
@@ -47,6 +71,7 @@ interface LlmState {
     thresholdMins: number,
     cooldownMins: number,
   ) => Promise<void>;
+  cancelTranslation: () => Promise<void>;
   reset: () => void;
   startTimer: () => void;
   stopTimer: () => void;
@@ -75,9 +100,8 @@ let activeTeardown: (() => void) | null = null;
 
 interface TranslationListenerOpts {
   onProgress: (done: number, total: number) => void;
-  onCompleted: () => void;
-  onError: (msg: string) => void;
-  onWarning: (segmentId: string, errorTypes: string[]) => void;
+  onCompleted: (summary: RunSummary) => void;
+  onError: (payload: LlmErrorPayload) => void;
   onCooling?: (remainingSecs: number) => void;
   onMetrics: (metrics: ProviderCallMetrics[]) => void;
   onPipelineMetrics: (metrics: PipelineBatchMetrics) => void;
@@ -112,26 +136,17 @@ async function setupTranslationListeners(
   );
 
   fns.push(
-    await listen("h2s://llm/completed", () => {
-      opts.onCompleted();
+    await listen<RunSummary>("h2s://llm/completed", (event) => {
+      opts.onCompleted(event.payload);
       teardown();
     }),
   );
 
   fns.push(
-    await listen<{ message: string }>("h2s://llm/error", (event) => {
-      opts.onError(event.payload.message);
+    await listen<LlmErrorPayload>("h2s://llm/error", (event) => {
+      opts.onError(event.payload);
       teardown();
     }),
-  );
-
-  fns.push(
-    await listen<{ segmentId: string; errorTypes: string[] }>(
-      "h2s://llm/placeholder-warning",
-      (event) => {
-        opts.onWarning(event.payload.segmentId, event.payload.errorTypes);
-      },
-    ),
   );
 
   fns.push(
@@ -153,6 +168,71 @@ async function setupTranslationListeners(
 }
 
 // ---------------------------------------------------------------------------
+// Run notices — exactly one toast per run, never one per segment
+// ---------------------------------------------------------------------------
+
+/** Same id for every run notice: a new one replaces the previous one. */
+export const RUN_TOAST_ID = "llm-run";
+
+function qaTypesLine(byType: Record<string, number>): string {
+  return Object.entries(byType)
+    .map(
+      ([type, count]) =>
+        `${t(`llmRun.qaTypes.${type}`, { defaultValue: type })} ×${count}`,
+    )
+    .join(", ");
+}
+
+export function notifyRunCompleted(summary: RunSummary): void {
+  const counts = {
+    translated: summary.translated,
+    needsReview: summary.needsReview,
+    failed: summary.failed,
+  };
+  const types = qaTypesLine(summary.qaErrorsByType);
+  const lines = [
+    types ? t("llmRun.reviewTypes", { types }) : "",
+    summary.repaired > 0
+      ? t("llmRun.repaired", { count: summary.repaired })
+      : "",
+  ].filter(Boolean);
+  const description = lines.length > 0 ? lines.join("\n") : undefined;
+  if (summary.cancelled) {
+    toast.info(t("llmRun.cancelled", counts), {
+      id: RUN_TOAST_ID,
+      description,
+      duration: 8000,
+    });
+  } else if (summary.needsReview === 0 && summary.failed === 0) {
+    toast.success(t("llmRun.completedOk", counts), {
+      id: RUN_TOAST_ID,
+      description,
+      duration: 5000,
+    });
+  } else {
+    toast.warning(t("llmRun.completedIssues", counts), {
+      id: RUN_TOAST_ID,
+      description,
+      duration: 8000,
+    });
+  }
+}
+
+export function notifyRunError(payload: LlmErrorPayload): void {
+  const title = payload.providerUnavailable
+    ? t("llmRun.providerDown", {
+        processed: payload.processed,
+        total: payload.total,
+      })
+    : t("llmRun.error");
+  toast.error(title, {
+    id: RUN_TOAST_ID,
+    description: payload.message,
+    duration: 10000,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
 
@@ -166,6 +246,7 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
   cooldownRemaining: 0,
   requestMetrics: [],
   pipelineMetrics: [],
+  isCancelling: false,
 
   setProviderConfig: (cfg) =>
     set((s) => ({ providerConfig: { ...s.providerConfig, ...cfg } })),
@@ -186,6 +267,7 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
 
     set({
       isTranslating: true,
+      isCancelling: false,
       translationProgress: 0,
       error: null,
       requestMetrics: [],
@@ -200,33 +282,30 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
         const pct = total > 0 ? Math.round((done / total) * 100) : 0;
         set({ translationProgress: pct });
       },
-      onCompleted: () => {
+      onCompleted: (summary) => {
         get().stopTimer();
         set({
           isTranslating: false,
+          isCancelling: false,
           translationProgress: 100,
           isCooling: false,
           cooldownRemaining: 0,
         });
+        notifyRunCompleted(summary);
         activeTeardown = null;
       },
-      onError: (msg) => {
+      onError: (payload) => {
+        get().stopTimer();
         set({
           isTranslating: false,
+          isCancelling: false,
           translationProgress: -1,
           isCooling: false,
           cooldownRemaining: 0,
-          error: msg,
+          error: payload.message,
         });
-        toast.error(`Erreur de traduction : ${msg}`, { duration: 6000 });
+        notifyRunError(payload);
         activeTeardown = null;
-      },
-      onWarning: (segmentId, errorTypes) => {
-        const shortId = segmentId.slice(0, 8);
-        toast.warning(
-          `⚠️ Segment ${shortId}… : contrôle qualité (${errorTypes.join(", ") || "provider"}) — marqué comme 'À réviser'`,
-          { duration: 5000 },
-        );
       },
       onMetrics: (metrics) => get().appendMetrics(metrics),
       onPipelineMetrics: (metrics) => get().appendPipelineMetrics(metrics),
@@ -254,6 +333,7 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
 
     set({
       isTranslating: true,
+      isCancelling: false,
       translationProgress: 0,
       error: null,
       isCooling: false,
@@ -270,33 +350,30 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
         const pct = total > 0 ? Math.round((done / total) * 100) : 0;
         set({ translationProgress: pct });
       },
-      onCompleted: () => {
+      onCompleted: (summary) => {
         get().stopTimer();
         set({
           isTranslating: false,
+          isCancelling: false,
           translationProgress: 100,
           isCooling: false,
           cooldownRemaining: 0,
         });
+        notifyRunCompleted(summary);
         activeTeardown = null;
       },
-      onError: (msg) => {
+      onError: (payload) => {
+        get().stopTimer();
         set({
           isTranslating: false,
+          isCancelling: false,
           translationProgress: -1,
           isCooling: false,
           cooldownRemaining: 0,
-          error: msg,
+          error: payload.message,
         });
-        toast.error(`Erreur de traduction : ${msg}`, { duration: 6000 });
+        notifyRunError(payload);
         activeTeardown = null;
-      },
-      onWarning: (segmentId, errorTypes) => {
-        const shortId = segmentId.slice(0, 8);
-        toast.warning(
-          `⚠️ Segment ${shortId}… : contrôle qualité (${errorTypes.join(", ") || "provider"}) — marqué comme 'À réviser'`,
-          { duration: 5000 },
-        );
       },
       onMetrics: (metrics) => get().appendMetrics(metrics),
       onPipelineMetrics: (metrics) => get().appendPipelineMetrics(metrics),
@@ -325,9 +402,23 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
     }
   },
 
+  cancelTranslation: async () => {
+    if (!get().isTranslating || get().isCancelling) return;
+    set({ isCancelling: true });
+    try {
+      await invoke("cancel_translation");
+    } catch (err) {
+      set({ isCancelling: false });
+      toast.error(err instanceof Error ? err.message : String(err), {
+        id: RUN_TOAST_ID,
+      });
+    }
+  },
+
   reset: () =>
     set({
       isTranslating: false,
+      isCancelling: false,
       translationProgress: -1,
       error: null,
       translationStartTime: null,
@@ -346,6 +437,7 @@ export const useProviderConfig = () => useLlmStore((s) => s.providerConfig);
 export const useTranslationStartTime = () =>
   useLlmStore((s) => s.translationStartTime);
 export const useIsCooling = () => useLlmStore((s) => s.isCooling);
+export const useIsCancelling = () => useLlmStore((s) => s.isCancelling);
 export const useCooldownRemaining = () =>
   useLlmStore((s) => s.cooldownRemaining);
 export const useRequestMetrics = () => useLlmStore((s) => s.requestMetrics);

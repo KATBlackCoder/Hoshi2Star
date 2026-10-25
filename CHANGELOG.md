@@ -35,11 +35,18 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
   - Fitting can only be enabled for games where export can fit (MZ).
 
   A new "Preview" tab draws the selected message or description as the game will show it, using the game's font, with per-text choices. The settings dialog shows the detected box and font, plugin warnings, characters missing from the font, live counts for the settings being edited, and the texts to review. The export confirmation summarises what fitting will do. Widths match Chromium's measurement exactly; replaying the results through the game's own engine code gave zero differences over 2,480 messages. The export font size becomes the dialogue size and is emitted once per page.
+- Add a "Stop" button while translating: the run stops after the current batch (or during a cooldown pause), keeps what was already translated, and leaves the rest for "Translate all". The provider itself keeps running.
+- Add a start-up check that the configured model is listed by the provider, so a typo fails before the first batch.
 
 ### Changed
 - Change MV/MZ placeholder protection to work per segment: `system_term` segments and plugin `%n` templates now protect `%1`/`%2` in the pipeline, QA, the report and batch dedup. A translation that lost a `%n` gets a new QA warning (`missing_format_specifier`). It does not block export, because the game then only shows the message without that value.
 - Change the MV/MZ export font-size prefix (`\FS[n]`) to apply only to core map segments. Optional categories such as map display names are drawn without escape codes, so a prefix would show up literally.
 - Change the "line too long" QA warning so it is no longer reported for dialogue and descriptions that text fitting lays out at export (when fitting is enabled).
+
+### Fixed
+- Fix a provider outage during translation being recorded as hundreds of "needs review" segments with the Japanese source as target. Connection errors, timeouts, 401/403/404, 429 and 5xx now stop the run with a single error notice that says how many segments were handled; the remaining segments are left untranslated and "Translate all" resumes them. Authentication and unknown-model errors are no longer retried; 429/5xx are retried with a growing pause that honours `Retry-After`.
+- Fix failed segments overwriting existing translations: when no usable output is obtained (refused request, unparseable response, broken placeholders after every retry), nothing is written, so a selected retranslation can no longer replace a reviewed translation with the source text. "Translate all" also resumes rows left by earlier versions as `needs_review` with the source copied as target.
+- Fix the per-segment toast flood that could exhaust WebKitGTK memory on large runs: each run now ends with one summary notice (translated, to review by QA error type, failed, and other rows of the same name that received the translation).
 
 ### Removed
 - Remove the `wolfrpg-map-parser` dependency (and its git fork, no longer on GitHub, which prevented any fresh clone from building). Wolf RPG v2 maps and common events are no longer read: a v2 game is refused at open with a clear message instead of opening without its dialogue, and exporting an existing v2 project stops with the same message without writing anything. Wolf RPG v3 (LZ4) maps, common events and `.dat` databases are unchanged. A new reader is planned.

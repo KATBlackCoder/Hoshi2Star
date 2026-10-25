@@ -26,6 +26,7 @@ function statsWith(untranslated: number): ProjectStats {
     translatedCount: 10 - untranslated,
     needsReviewCount: 0,
     reviewedCount: 0,
+    resumableCount: 0,
   };
 }
 

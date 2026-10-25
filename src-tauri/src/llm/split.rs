@@ -8,8 +8,12 @@
 //! On `ResponseFormat` failure or placeholder-restore failure after `MAX_RETRIES`:
 //! - If the batch contains more than one segment, split it in half and recurse
 //!   on each half independently.
-//! - If the batch is already a single segment (cannot split further), mark it
-//!   `needs_review` and keep the source text as the provisional translation.
+//! - If the batch is already a single segment (cannot split further), report it
+//!   as failed (`None`): the caller writes nothing for it.
+//!
+//! A request refused by the provider (`TranslationFailed`) fails the whole
+//! batch the same way. `Unavailable` means the provider is down: it is
+//! returned as an error so the run stops instead of failing every batch.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -44,13 +48,15 @@ impl PipelineBatchMetrics {
 }
 
 pub struct SplitOutcome {
-    pub results: Vec<(usize, String, bool)>,
+    /// `(local_idx, Some(translation))`, or `None` when no usable output was
+    /// obtained for that segment.
+    pub results: Vec<(usize, Option<String>)>,
     pub metrics: PipelineBatchMetrics,
 }
 
 /// Translate segments at LOCAL positions `indices` within `tokenized`.
 ///
-/// Returns `Vec<(local_idx, translated_text, needs_review)>`.
+/// Returns `Err` only when the provider is unavailable (the run must stop).
 ///
 /// `indices` are LOCAL into `tokenized[]` — NOT into `unique_segs[]`.
 /// The caller is responsible for mapping local indices back to global ones.
@@ -62,7 +68,7 @@ pub(crate) fn llm_translate_with_split<'a, P>(
     context: &'a TranslationContext,
     db: &'a SqlitePool,
     segment_ids: &'a [String],
-) -> Pin<Box<dyn Future<Output = SplitOutcome> + Send + 'a>>
+) -> Pin<Box<dyn Future<Output = Result<SplitOutcome, LlmError>> + Send + 'a>>
 where
     P: LlmProvider,
 {
@@ -125,7 +131,7 @@ where
                             db,
                             segment_ids,
                         )
-                        .await;
+                        .await?;
                         let right_outcome = llm_translate_with_split(
                             right,
                             tokenized,
@@ -134,31 +140,35 @@ where
                             db,
                             segment_ids,
                         )
-                        .await;
+                        .await?;
                         metrics.merge(left_outcome.metrics);
                         metrics.merge(right_outcome.metrics);
                         let mut results = left_outcome.results;
                         results.extend(right_outcome.results);
-                        return SplitOutcome { results, metrics };
+                        return Ok(SplitOutcome { results, metrics });
                     } else {
                         log::warn!(
                             "[h2s] single-segment ResponseFormat after {} attempts — \
-                             needs_review (local pos {})",
+                             failed (local pos {})",
                             MAX_RETRIES,
                             indices[0]
                         );
-                        return SplitOutcome {
-                            results: vec![(indices[0], String::new(), true)],
+                        return Ok(SplitOutcome {
+                            results: vec![(indices[0], None)],
                             metrics,
-                        };
+                        });
                     }
                 }
-                Err(e) => {
-                    log::warn!("[h2s] non-recoverable LLM error in split batch: {e}");
-                    return SplitOutcome {
-                        results: indices.iter().map(|&i| (i, String::new(), true)).collect(),
+                Err(error @ (LlmError::Unavailable { .. } | LlmError::Http(_))) => {
+                    log::warn!("[h2s] provider unavailable, stopping the run: {error}");
+                    return Err(error);
+                }
+                Err(error) => {
+                    log::warn!("[h2s] provider refused the batch: {error}");
+                    return Ok(SplitOutcome {
+                        results: indices.iter().map(|&i| (i, None)).collect(),
                         metrics,
-                    };
+                    });
                 }
             };
 
@@ -194,7 +204,7 @@ where
                         db,
                         segment_ids,
                     )
-                    .await;
+                    .await?;
                     let right_outcome = llm_translate_with_split(
                         right,
                         tokenized,
@@ -203,34 +213,34 @@ where
                         db,
                         segment_ids,
                     )
-                    .await;
+                    .await?;
                     metrics.merge(left_outcome.metrics);
                     metrics.merge(right_outcome.metrics);
                     let mut results = left_outcome.results;
                     results.extend(right_outcome.results);
-                    return SplitOutcome { results, metrics };
+                    return Ok(SplitOutcome { results, metrics });
                 } else {
                     log::warn!(
                         "[h2s] single-segment placeholder failure after {} attempts — \
-                         needs_review (local pos {})",
+                         failed (local pos {})",
                         MAX_RETRIES,
                         indices[0]
                     );
-                    return SplitOutcome {
-                        results: vec![(indices[0], String::new(), true)],
+                    return Ok(SplitOutcome {
+                        results: vec![(indices[0], None)],
                         metrics,
-                    };
+                    });
                 }
             }
         };
 
-        SplitOutcome {
+        Ok(SplitOutcome {
             results: indices
                 .into_iter()
                 .zip(restored_texts)
-                .map(|(i, text)| (i, text, false))
+                .map(|(i, text)| (i, Some(text)))
                 .collect(),
             metrics,
-        }
+        })
     })
 }
