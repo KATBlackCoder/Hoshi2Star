@@ -12,6 +12,7 @@ import type {
   ProjectStats,
   TextFitView,
 } from "@/lib/types";
+import { isWolfV2Unsupported } from "@/lib/projectError";
 
 const INTEGRITY_ERROR_PREFIX = "Export blocked: the integrity check found";
 
@@ -136,6 +137,8 @@ export function useAppHandlers() {
       const issues = integrityIssuesOf(String(err));
       if (issues) {
         setIntegrityIssues(issues);
+      } else if (isWolfV2Unsupported(err)) {
+        toast.error(t("toasts.wolfV2Unsupported"));
       } else {
         toast.error(t("toasts.exportError", { error: String(err) }));
       }

@@ -41,7 +41,6 @@ tauri-plugin-mcp-bridge = "0.13"
 marshal-rs = "2.0.1"
 log = "0.4"
 encoding_rs = "0.8"
-wolfrpg-map-parser = "0.6"
 lz4_flex = "0.11"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 toml = { version = "0.8", features = ["parse"] }
@@ -57,9 +56,6 @@ unicode-linebreak = "0.1"
 [[bench]]
 name = "terminology_analyzer"
 harness = false
-
-[patch.crates-io]
-wolfrpg-map-parser = { git = "https://github.com/KATBlackCoder/wolfrpg-map-parser", branch = "fix/wolf-v3-format" }
 
 [dev-dependencies]
 httpmock = "0.7"

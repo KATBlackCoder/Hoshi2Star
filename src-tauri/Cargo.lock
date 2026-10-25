@@ -1975,7 +1975,6 @@ dependencies = [
  "unicode-linebreak",
  "unicode-normalization",
  "uuid",
- "wolfrpg-map-parser",
  "zip 2.4.2",
 ]
 
@@ -7395,15 +7394,6 @@ dependencies = [
  "serde_json",
  "unicode-xid",
  "wasmparser",
-]
-
-[[package]]
-name = "wolfrpg-map-parser"
-version = "0.6.0"
-source = "git+https://github.com/KATBlackCoder/wolfrpg-map-parser?branch=fix%2Fwolf-v3-format#21f4f76eb4efcac881584f0c30239a6ecd1a1d55"
-dependencies = [
- "encoding_rs",
- "lz4_flex",
 ]
 
 [[package]]
