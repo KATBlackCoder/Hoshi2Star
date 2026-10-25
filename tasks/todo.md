@@ -40,7 +40,7 @@ Les cases sportsfan30 (A–D) ci-dessous restent la liste détaillée de R4, R8,
 - [ ] **RW — Wolf** : après la session 2 bis et l'étude REA ; nouvelle lecture des cartes et événements communs v2 ; points non vérifiés sur jeu réel.
 - [ ] Plus tard : S-C1, S-C2, S-C3, S-E3, S-E4, S-X6, S-X8 ; mineurs S-L6–L8, S-U5, S-U6, S-E10, S-E12. Non fait : S-E9 (VX Ace désactivé), S-D3.
 
-### Plan — RW0 : retirer `wolfrpg-map-parser` (2026-10-25, Claude) — PLAN VALIDÉ le 2026-10-25 (W1 = a, W2–W4 oui) ; étapes 1–6 codées sans compilation locale, gate en cloud à faire
+### Plan — RW0 : retirer `wolfrpg-map-parser` (2026-10-25, Claude) — PLAN VALIDÉ le 2026-10-25 (W1 = a, W2–W4 oui) ; étapes 1–7 faites, gate cloud vert ; PR à fusionner
 
 **Pourquoi.** Décision utilisateur du 2026-10-25 : la méthode (fork d'un crate tiers, branche Git
 `fix/wolf-v3-format`) est incorrecte ; une meilleure solution sera cherchée avec REA (lot RW). Le fork
@@ -87,7 +87,7 @@ le projet s'ouvrirait avec les seules bases `.dat`, sans prévenir. À éviter.
 - [x] 6. Docs : CHANGELOG (« Removed »), `docs/references/wolfrpg-format-compatibility.md`,
       `v3_format/mod.rs` (commentaire l.7-11), règle de `tasks/lessons.md` du 2026-06-11 (v2 n'utilise plus
       le crate), rapport d'audit (S-D5 résolu par le retrait), lots R3/RW ci-dessus.
-- [ ] 7. Gate complet **en session cloud** sur la branche, puis PR ; fusion par l'utilisateur.
+- [x] 7. Gate complet **en session cloud** sur la branche — gate cloud du 2026-10-25 sur `32d36ad` : fmt OK, typecheck OK, Vitest 124 OK (35 fichiers), clippy `--locked -D warnings` OK, `cargo test --locked` 681 OK / 0 échec / 12 ignorés, lint 0 erreur (10 avertissements préexistants), `Cargo.lock` cohérent ; il ne reste que des commentaires mentionnant `wolfrpg`. Puis PR ; fusion par l'utilisateur.
 
 **Fait le 2026-10-25 (non compilé localement, règle « gate en cloud »).**
 - `ExtractorError::UnsupportedWolfFormat` / `InjectorError::UnsupportedWolfFormat`, marqueur `WOLF_V2_UNSUPPORTED`

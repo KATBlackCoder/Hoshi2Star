@@ -2,7 +2,7 @@
 
 **Phase** : F4/F5 (fiabilisation, lot RW0)
 **Durée estimée** : 2h
-**Statut** : 🔄 En cours — code et tests écrits, non compilés localement ; gate à faire en cloud
+**Statut** : ✅ Code, tests et gate cloud verts — PR à fusionner
 **Outil** : Claude (Opus 5.5)
 **Branche et commit de départ** : `chore/remove-wolfrpg-map-parser`, créée depuis `main` @ `fb6be51`
 **Objectif / plan / story** : `tasks/todo.md`, « Plan — RW0 » (W1 = a : refus à l'ouverture ; W2–W4 validés)
@@ -56,7 +56,8 @@
 
 ## Vérifications et limites
 
-- Non exécuté localement : typecheck, Vitest, clippy, tests Rust (règle « gate en cloud »). À faire dans une session cloud sur la branche poussée.
+- Non exécuté localement (règle « gate en cloud »). Gate cloud du 2026-10-25 sur `32d36ad` : fmt OK, typecheck OK, Vitest 124 OK (35 fichiers), clippy `--locked -D warnings` OK, `cargo test --locked` 681 OK / 0 échec / 12 ignorés, lint 0 erreur (10 avertissements préexistants), `Cargo.lock` cohérent ; il ne reste que des commentaires mentionnant `wolfrpg`. Nouveaux tests tous trouvés et verts (7 Rust, 1 e2e, 3 Vitest).
+- Signalé par la session cloud : le hook PreToolUse qui interdit les installations npm/yarn bloque aussi l'installation pnpm (sous-chaîne) ; contourné par `pnpm i`. Hors périmètre, à corriger à part.
 - Inconnu : des jeux Wolf v3.0–3.3 non compressés LZ4 existent-ils ? Ils seraient aussi refusés.
 
 ## Tâches ROADMAP cochées
@@ -65,7 +66,7 @@
 
 ## Prochaine session
 
-- Gate complet en cloud sur `chore/remove-wolfrpg-map-parser` ; corriger ce qu'il signale ; PR, fusion par l'utilisateur ; puis rebase de `fix/r1-provider-outage` et gate en cloud de R1.
+- Fusion de la PR RW0 par l'utilisateur ; puis rebase de `fix/r1-provider-outage` sur `main` (conflits attendus : CHANGELOG, handoff, todo) et gate en cloud de R1.
 
 ---
 *Journal partagé Codex / Claude — Hoshi2Star*
