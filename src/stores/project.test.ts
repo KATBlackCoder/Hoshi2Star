@@ -42,6 +42,7 @@ const STATS: ProjectStats = {
   translatedCount: 2,
   needsReviewCount: 0,
   reviewedCount: 0,
+  resumableCount: 0,
 };
 
 /** Nothing optional to offer: the post-open coverage step is a no-op. */

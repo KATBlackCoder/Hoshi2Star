@@ -71,7 +71,7 @@ export function AppDialogs({ handlers }: AppDialogsProps) {
 
       <TranslateAllDialog
         open={showTranslateAll}
-        segmentCount={translateAllStats?.untranslatedCount ?? 0}
+        segmentCount={translateAllStats?.resumableCount ?? 0}
         fileCount={translateAllStats?.fileCount ?? 0}
         onStart={handleTranslateAllStart}
         onCancel={() => setShowTranslateAll(false)}

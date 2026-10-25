@@ -212,6 +212,9 @@ pub struct ProjectStats {
     /// Segments with `status = 'reviewed'` — with the other three counters,
     /// the four statuses sum to `total_segments`.
     pub reviewed_count: i64,
+    /// Segments "Translate all" will pick up (same rule as the run itself,
+    /// `commands::translate::RESUMABLE_SEGMENT`). Not an export gate.
+    pub resumable_count: i64,
 }
 
 /// Summary of QA errors for a whole project.

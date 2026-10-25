@@ -10,10 +10,15 @@
 //! 7. Persist the batch's `target_text`/`status` to the DB immediately
 //!    (incremental persistence — a crash mid-run only loses the in-flight batch)
 //! 8. Emit `h2s://llm/segments-updated` (the batch's persisted `target_text`/
-//!    `status`), `h2s://llm/progress`, and `h2s://llm/placeholder-warning`
-//!    (if an `AppHandle` was provided), and call `on_progress(done, total)`
-//! 8. If a `CooldownState` was provided, possibly `.await` a rest period
+//!    `status`) and `h2s://llm/progress` (if an `AppHandle` was provided), and
+//!    call `on_progress(done, total)`. Per-segment outcomes are summarised once
+//!    by the caller (`RunSummary`), never one event per segment.
+//! 9. If a `CooldownState` was provided, possibly `.await` a rest period
 //!    before starting the next batch (fine-grained automatic cooldown)
+//!
+//! A provider outage stops the run with `PipelineError::ProviderUnavailable`;
+//! a cancellation flag stops it cleanly before the next batch. Failed segments
+//! are never written (no source-as-target fallback).
 //!
 //! The pipeline is generic over `P: LlmProvider` so it can be tested with a
 //! mock provider without needing dynamic dispatch.
@@ -24,15 +29,14 @@
 use crate::core::{qa, terminology::resolver, tm};
 use crate::llm::batch;
 use crate::llm::context::{self, PromptContextClass};
-use crate::llm::progress::{
-    CoolingPayload, PlaceholderWarningPayload, ProgressPayload, SegmentUpdatePayload,
-};
+use crate::llm::progress::{CoolingPayload, ProgressPayload, SegmentUpdatePayload};
 use crate::llm::provider::{LlmError, LlmProvider, PromptContextPolicy, TranslationContext};
 use crate::llm::semantic_retry::{self, SemanticRetryRequest};
 use crate::llm::split::{llm_translate_with_split, PipelineBatchMetrics};
 use crate::llm::tokenizer::Tokenizer;
 use serde::Serialize;
 use sqlx::SqlitePool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tauri::Emitter;
 use thiserror::Error;
@@ -50,9 +54,12 @@ pub struct TranslationResult {
     pub translated_text: String,
     /// `true` when the translation came from the TM (no LLM call was made).
     pub from_tm: bool,
-    /// `true` when placeholder validation failed after all retries — source text
-    /// was kept as a temporary translation with status `needs_review`.
+    /// `true` when the translation has a critical QA error (status `needs_review`).
     pub needs_review: bool,
+    /// `true` when no usable output was obtained (provider refused the request,
+    /// unparseable response or broken placeholders after every retry). Nothing
+    /// is written for a failed segment: it keeps its previous target and status.
+    pub failed: bool,
     pub qa_score: u8,
     pub qa_errors: Vec<qa::QaError>,
 }
@@ -61,12 +68,18 @@ pub struct TranslationResult {
 pub struct PipelineRunOutcome {
     pub results: Vec<TranslationResult>,
     pub metrics: PipelineBatchMetrics,
+    /// The cancellation flag stopped the run before every segment was handled.
+    pub cancelled: bool,
 }
 
 #[derive(Debug, Error)]
 pub enum PipelineError {
     #[error("LLM provider error: {0}")]
     Provider(String),
+    /// The provider stopped answering; `processed` segments were already
+    /// handled (and persisted) before the run stopped.
+    #[error("LLM provider unavailable: {message}")]
+    ProviderUnavailable { message: String, processed: usize },
     #[error("Database error: {0}")]
     Database(String),
 }
@@ -101,14 +114,14 @@ impl CooldownState {
     /// If enough time has elapsed since the last rest, sleep for `duration`,
     /// emitting `h2s://llm/cooling { remainingSecs }` once per second so the
     /// frontend can display a countdown. No-op if `duration` is zero or the
-    /// threshold hasn't elapsed yet.
-    async fn maybe_rest(&mut self, handle: &tauri::AppHandle) {
+    /// threshold hasn't elapsed yet. A set `cancel` flag ends the rest early.
+    async fn maybe_rest(&mut self, handle: &tauri::AppHandle, cancel: Option<&AtomicBool>) {
         if self.duration.is_zero() || self.last_rest.elapsed() < self.threshold {
             return;
         }
 
         let mut remaining = self.duration.as_secs();
-        while remaining > 0 {
+        while remaining > 0 && !cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
             let _ = handle.emit(
                 "h2s://llm/cooling",
                 CoolingPayload {
@@ -148,7 +161,7 @@ async fn persist_batch_results(
         .begin()
         .await
         .map_err(|error| PipelineError::Database(error.to_string()))?;
-    for r in results {
+    for r in results.iter().filter(|result| !result.failed) {
         let status = result_status(r);
         sqlx::query(
             "UPDATE segments \
@@ -168,7 +181,10 @@ async fn persist_batch_results(
     // Japanese source after a provider-format failure, a later validated
     // translation repairs that fallback. Reviewed/manual text and genuine
     // translated variants are never overwritten.
-    for r in results.iter().filter(|result| !result.needs_review) {
+    for r in results
+        .iter()
+        .filter(|result| !result.needs_review && !result.failed)
+    {
         sqlx::query(
             "UPDATE segments SET target_text = ?, status = 'translated', qa_score = ?, \
                     updated_at = datetime('now') \
@@ -208,8 +224,8 @@ async fn persist_batch_results(
 ///
 /// `segments` is a list of `(id, source_text)` pairs. After each inner batch:
 /// - `target_text`/`status` are persisted to the DB immediately
-/// - if `app_handle` is `Some`, `h2s://llm/progress` and
-///   `h2s://llm/placeholder-warning` are emitted
+/// - if `app_handle` is `Some`, `h2s://llm/segments-updated` and
+///   `h2s://llm/progress` are emitted
 /// - `on_progress(done, total)` is called (used by tests)
 /// - if `cooldown` is `Some` (and `app_handle` is `Some`), the automatic
 ///   cooldown may `.await` a rest period before the next batch
@@ -260,8 +276,40 @@ pub async fn run_inner_with_metrics<P, F>(
     context: TranslationContext,
     db: &SqlitePool,
     app_handle: Option<&tauri::AppHandle>,
+    cooldown: Option<&mut CooldownState>,
+    global_progress: Option<(usize, usize)>,
+    on_progress: F,
+) -> Result<PipelineRunOutcome, PipelineError>
+where
+    P: LlmProvider,
+    F: FnMut(usize, usize),
+{
+    run_controlled(
+        segments,
+        provider,
+        context,
+        db,
+        app_handle,
+        cooldown,
+        global_progress,
+        None,
+        on_progress,
+    )
+    .await
+}
+
+/// Core loop. `cancel`, when set, stops the run before the next batch; the
+/// batches already handled stay persisted and `cancelled` is reported.
+#[allow(clippy::too_many_arguments)]
+async fn run_controlled<P, F>(
+    segments: Vec<(String, String)>,
+    provider: &P,
+    context: TranslationContext,
+    db: &SqlitePool,
+    app_handle: Option<&tauri::AppHandle>,
     mut cooldown: Option<&mut CooldownState>,
     global_progress: Option<(usize, usize)>,
+    cancel: Option<&AtomicBool>,
     mut on_progress: F,
 ) -> Result<PipelineRunOutcome, PipelineError>
 where
@@ -269,6 +317,7 @@ where
     F: FnMut(usize, usize),
 {
     let total = segments.len();
+    let mut cancelled = false;
     let lang_pair = format!("{}-{}", context.source_lang, context.target_lang);
 
     let batch_size = context.batch_size.clamp(1, 100);
@@ -277,6 +326,10 @@ where
     let mut done = 0usize;
 
     for batch_segments in segments.chunks(batch_size) {
+        if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
+            cancelled = true;
+            break;
+        }
         let batch_outcome =
             translate_batch(batch_segments, provider, &context, &lang_pair, db).await;
 
@@ -290,7 +343,15 @@ where
             }
         }
 
-        let (batch_results, pipeline_metrics) = batch_outcome?;
+        let (batch_results, pipeline_metrics) = batch_outcome.map_err(|error| match error {
+            PipelineError::ProviderUnavailable { message, .. } => {
+                PipelineError::ProviderUnavailable {
+                    message,
+                    processed: global_progress.map_or(0, |(offset, _)| offset) + done,
+                }
+            }
+            other => other,
+        })?;
         run_metrics.merge(pipeline_metrics.clone());
 
         if let Some(handle) = app_handle {
@@ -302,6 +363,7 @@ where
         if let Some(handle) = app_handle {
             let updates: Vec<SegmentUpdatePayload> = batch_results
                 .iter()
+                .filter(|r| !r.failed)
                 .map(|r| SegmentUpdatePayload {
                     id: r.id.clone(),
                     target_text: r.translated_text.clone(),
@@ -309,20 +371,6 @@ where
                 })
                 .collect();
             let _ = handle.emit("h2s://llm/segments-updated", updates);
-
-            for r in batch_results.iter().filter(|r| r.needs_review) {
-                let _ = handle.emit(
-                    "h2s://llm/placeholder-warning",
-                    PlaceholderWarningPayload {
-                        segment_id: r.id.clone(),
-                        error_types: r
-                            .qa_errors
-                            .iter()
-                            .map(|error| error.type_key().to_string())
-                            .collect(),
-                    },
-                );
-            }
         }
 
         done += batch_segments.len();
@@ -343,7 +391,7 @@ where
         }
 
         if let (Some(cd), Some(handle)) = (cooldown.as_deref_mut(), app_handle) {
-            cd.maybe_rest(handle).await;
+            cd.maybe_rest(handle, cancel).await;
         }
 
         results.extend(batch_results);
@@ -356,6 +404,7 @@ where
     Ok(PipelineRunOutcome {
         results,
         metrics: run_metrics,
+        cancelled,
     })
 }
 
@@ -364,8 +413,10 @@ where
 // ---------------------------------------------------------------------------
 
 /// Tauri-aware wrapper around `run_inner`. Persists each batch to the DB,
-/// emits `h2s://llm/progress` and `h2s://llm/placeholder-warning`, and — if
-/// `cooldown` is provided — applies the automatic cooldown between batches.
+/// emits `h2s://llm/segments-updated` and `h2s://llm/progress`, stops before
+/// the next batch once `cancel` is set, and — if `cooldown` is provided —
+/// applies the automatic cooldown between batches.
+#[allow(clippy::too_many_arguments)]
 pub async fn run<P>(
     segments: Vec<(String, String)>,
     provider: &P,
@@ -374,11 +425,12 @@ pub async fn run<P>(
     app_handle: &tauri::AppHandle,
     cooldown: Option<&mut CooldownState>,
     global_progress: Option<(usize, usize)>,
-) -> Result<Vec<TranslationResult>, PipelineError>
+    cancel: &AtomicBool,
+) -> Result<PipelineRunOutcome, PipelineError>
 where
     P: LlmProvider,
 {
-    run_inner(
+    run_controlled(
         segments,
         provider,
         context,
@@ -386,6 +438,7 @@ where
         Some(app_handle),
         cooldown,
         global_progress,
+        Some(cancel),
         |_, _| {},
     )
     .await
@@ -429,8 +482,8 @@ where
     let (unique_segs, idx_map) =
         batch::dedup_with_context(segments, &prompt_contexts, &placeholder_syntaxes);
 
-    // Translation table: (translated_text, from_tm, needs_review)
-    let mut translations: Vec<Option<(String, bool, bool)>> = vec![None; batch_len];
+    // Translation table: (translated_text, from_tm); `None` text = failed.
+    let mut translations: Vec<Option<(Option<String>, bool)>> = vec![None; batch_len];
     let mut pipeline_metrics = PipelineBatchMetrics::default();
 
     // Track which unique segments still need LLM
@@ -475,7 +528,7 @@ where
             .map_err(|error| PipelineError::Database(error.to_string()))?;
             if let Some(target) = reused {
                 for &orig_idx in idx_map.get(&seg.dedup_key).into_iter().flatten() {
-                    translations[orig_idx] = Some((target.clone(), true, false));
+                    translations[orig_idx] = Some((Some(target.clone()), true));
                 }
                 continue;
             }
@@ -495,7 +548,7 @@ where
         if allows_unscoped_tm {
             if let Some(entry) = tm_hits.get(&seg.hash) {
                 for &orig_idx in idx_map.get(&seg.dedup_key).into_iter().flatten() {
-                    translations[orig_idx] = Some((entry.target_text.clone(), true, false));
+                    translations[orig_idx] = Some((Some(entry.target_text.clone()), true));
                 }
                 continue;
             }
@@ -568,29 +621,30 @@ where
                     db,
                     &request_segment_ids,
                 )
-                .await;
+                .await
+                .map_err(|error| PipelineError::ProviderUnavailable {
+                    message: error.to_string(),
+                    processed: 0,
+                })?;
                 pipeline_metrics.merge(outcome.metrics);
                 llm_results.extend(outcome.results);
             }
         }
 
-        for (local_idx, text, needs_review) in llm_results {
+        for (local_idx, text) in llm_results {
             let global_unique_idx = to_translate[local_idx]; // LOCAL → GLOBAL
-            let final_text = if needs_review {
+            if text.is_none() {
                 log::warn!(
-                    "[h2s] segment '{}' marked needs_review after adaptive split",
+                    "[h2s] segment '{}' failed after adaptive split — left unchanged",
                     unique_segs[global_unique_idx].id
                 );
-                unique_segs[global_unique_idx].text.clone()
-            } else {
-                text
-            };
+            }
             for &orig_idx in idx_map
                 .get(&unique_segs[global_unique_idx].dedup_key)
                 .into_iter()
                 .flatten()
             {
-                translations[orig_idx] = Some((final_text.clone(), false, needs_review));
+                translations[orig_idx] = Some((text.clone(), false));
             }
         }
     }
@@ -598,8 +652,19 @@ where
     // Build final Vec<TranslationResult> (same order as input `segments`)
     let mut results = Vec::with_capacity(segments.len());
     for (index, (id, source_text)) in segments.iter().enumerate() {
-        let (mut raw_target, from_tm, provider_needs_review) =
-            translations[index].take().unwrap_or_default();
+        let (translated, from_tm) = translations[index].take().unwrap_or((None, false));
+        let Some(mut raw_target) = translated.filter(|text| !text.trim().is_empty()) else {
+            results.push(TranslationResult {
+                id: id.clone(),
+                translated_text: String::new(),
+                from_tm,
+                needs_review: false,
+                failed: true,
+                qa_score: 0,
+                qa_errors: Vec::new(),
+            });
+            continue;
+        };
         let prompt_context = prompt_contexts.get(index).and_then(Option::as_ref);
         let bundle = &context_bundles[index];
         let qa_neighbors = &bundle.qa_neighbors;
@@ -625,7 +690,7 @@ where
             &context.engine,
             &qa_context,
         );
-        if !provider_needs_review && qa_result.has_critical_errors() {
+        if qa_result.has_critical_errors() {
             pipeline_metrics.semantic_rejections += 1;
             if !from_tm {
                 let tokenized = Tokenizer::tokenize(source_text, placeholder_syntaxes[index]);
@@ -658,17 +723,13 @@ where
                 }
             }
         }
-        let needs_review = provider_needs_review || qa_result.has_critical_errors();
-        let translated_text = if raw_target.trim().is_empty() {
-            source_text.clone()
-        } else {
-            raw_target
-        };
+        let needs_review = qa_result.has_critical_errors();
         results.push(TranslationResult {
             id: id.clone(),
-            translated_text,
+            translated_text: raw_target,
             from_tm,
             needs_review,
+            failed: false,
             qa_score: qa_result.score,
             qa_errors: qa_result.errors,
         });
@@ -1094,21 +1155,14 @@ mod tests {
             .unwrap();
         }
 
-        let failed_provider = MockProvider::new(vec![
-            Err(LlmError::ResponseFormat("bad".into())),
-            Err(LlmError::ResponseFormat("bad".into())),
-            Err(LlmError::ResponseFormat("bad".into())),
-        ]);
-        run_inner(
-            vec![("speaker-failed".into(), "見知らぬ男性".into())],
-            &failed_provider,
-            ctx(),
-            &db,
-            None,
-            None,
-            None,
-            |_, _| {},
+        // State left by versions before R1, which copied the source into the
+        // target on failure. The pipeline no longer writes it, but old
+        // projects still contain such rows.
+        sqlx::query(
+            "UPDATE segments SET target_text = source_text, status = 'needs_review', \
+                    qa_score = 0 WHERE id = 'speaker-failed'",
         )
+        .execute(&db)
         .await
         .unwrap();
 
@@ -1468,11 +1522,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_placeholder_failure_falls_back_to_needs_review() {
+    async fn test_placeholder_failure_leaves_segment_unchanged() {
         let (db, _f) = test_db().await;
 
         // MockProvider always returns a response without ⟦ph_0⟧ — fails restore every time.
-        // After MAX_RETRIES (3) the segment must have needs_review=true and keep source_text.
+        // After MAX_RETRIES (3) the segment is reported failed and nothing is written.
         let provider = MockProvider::new(vec![
             Ok(vec!["lost token".to_string()]),
             Ok(vec!["lost token".to_string()]),
@@ -1493,19 +1547,20 @@ mod tests {
         .unwrap();
 
         assert_eq!(provider.calls(), 3, "should exhaust all retries");
-        assert!(results[0].needs_review, "segment must be needs_review");
+        assert!(results[0].failed, "segment must be reported failed");
+        assert!(!results[0].needs_review);
         assert_eq!(
-            results[0].translated_text, r"\V[12] pièces",
-            "source_text kept as fallback"
+            results[0].translated_text, "",
+            "source is never used as target"
         );
     }
 
     #[tokio::test]
-    async fn test_response_format_exhausted_falls_back_to_needs_review() {
+    async fn test_response_format_exhausted_leaves_segment_unchanged() {
         let (db, _f) = test_db().await;
 
         // Provider always returns ResponseFormat — should exhaust MAX_RETRIES (3)
-        // and fall back to needs_review instead of crashing the whole batch.
+        // and report the segment failed instead of crashing the whole batch.
         let provider = MockProvider::new(vec![
             Err(LlmError::ResponseFormat(
                 "missing translation for line 2".to_string(),
@@ -1532,10 +1587,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(provider.calls(), 3, "should exhaust all retries");
-        assert!(results[0].needs_review, "segment must be needs_review");
+        assert!(results[0].failed, "segment must be reported failed");
+        assert!(!results[0].needs_review);
         assert_eq!(
-            results[0].translated_text, "ポーション",
-            "source_text kept as fallback"
+            results[0].translated_text, "",
+            "source is never used as target"
         );
     }
 
@@ -1641,7 +1697,7 @@ mod tests {
             Ok(vec!["C".to_string()]), // [s3] → ok
             rf(),
             rf(),
-            rf(), // [s4] → needs_review (len==1)
+            rf(), // [s4] → failed (len==1)
         ]);
 
         let results = run_inner(
@@ -1669,8 +1725,9 @@ mod tests {
         assert!(!results[1].needs_review);
         assert_eq!(results[2].translated_text, "C");
         assert!(!results[2].needs_review);
-        assert_eq!(results[3].translated_text, "四"); // source_text kept as fallback
-        assert!(results[3].needs_review);
+        assert!(results[3].failed, "s4 failed, nothing written");
+        assert_eq!(results[3].translated_text, "");
+        assert!(!results[2].failed);
     }
 
     #[tokio::test]
@@ -1770,5 +1827,258 @@ mod tests {
         .unwrap();
 
         assert_eq!(progress2.last().unwrap(), &(10, global_total));
+    }
+
+    // ── R1: provider outage and technical failures write nothing ────────────
+
+    async fn insert_plain_segments(db: &SqlitePool, rows: &[(&str, &str, &str, &str)]) {
+        sqlx::query(
+            "INSERT INTO projects (id, name, engine, game_path) \
+             VALUES ('r1-p', 'R1', 'mv_mz', '/tmp')",
+        )
+        .execute(db)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO source_files (id, project_id, file_name, file_path, file_type) \
+             VALUES ('r1-f', 'r1-p', 'Items.json', '/tmp/Items.json', 'database')",
+        )
+        .execute(db)
+        .await
+        .unwrap();
+        for (id, source, target, status) in rows {
+            sqlx::query(
+                "INSERT INTO segments (id, source_file_id, json_key, source_text, target_text, status) \
+                 VALUES (?, 'r1-f', ?, ?, ?, ?)",
+            )
+            .bind(id)
+            .bind(format!("/{id}"))
+            .bind(source)
+            .bind(target)
+            .bind(status)
+            .execute(db)
+            .await
+            .unwrap();
+        }
+    }
+
+    async fn segment_state(db: &SqlitePool, id: &str) -> (String, String) {
+        sqlx::query_as("SELECT target_text, status FROM segments WHERE id = ?")
+            .bind(id)
+            .fetch_one(db)
+            .await
+            .unwrap()
+    }
+
+    fn unavailable() -> Result<Vec<String>, LlmError> {
+        Err(LlmError::Unavailable {
+            message: "connection refused".to_string(),
+        })
+    }
+
+    #[tokio::test]
+    async fn provider_outage_stops_the_run_and_writes_nothing() {
+        let (db, _f) = test_db().await;
+        insert_plain_segments(&db, &[("a", "剣", "", "untranslated")]).await;
+        let provider = MockProvider::new(vec![unavailable()]);
+
+        let result = run_inner(
+            vec![("a".to_string(), "剣".to_string())],
+            &provider,
+            ctx(),
+            &db,
+            None,
+            None,
+            None,
+            |_, _| {},
+        )
+        .await;
+
+        assert!(
+            matches!(
+                result,
+                Err(PipelineError::ProviderUnavailable { processed: 0, .. })
+            ),
+            "{result:?}"
+        );
+        assert_eq!(provider.calls(), 1, "no split or retry on an outage");
+        assert_eq!(
+            segment_state(&db, "a").await,
+            (String::new(), "untranslated".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn outage_after_first_batch_keeps_it_and_leaves_the_rest_untranslated() {
+        let (db, _f) = test_db().await;
+        insert_plain_segments(
+            &db,
+            &[
+                ("a", "剣", "", "untranslated"),
+                ("b", "盾", "", "untranslated"),
+            ],
+        )
+        .await;
+        let provider = MockProvider::new(vec![Ok(vec!["Sword".to_string()]), unavailable()]);
+        let mut context = ctx();
+        context.batch_size = 1;
+
+        let result = run_inner(
+            vec![
+                ("a".to_string(), "剣".to_string()),
+                ("b".to_string(), "盾".to_string()),
+            ],
+            &provider,
+            context,
+            &db,
+            None,
+            None,
+            None,
+            |_, _| {},
+        )
+        .await;
+
+        assert!(
+            matches!(
+                result,
+                Err(PipelineError::ProviderUnavailable { processed: 1, .. })
+            ),
+            "{result:?}"
+        );
+        assert_eq!(
+            segment_state(&db, "a").await,
+            ("Sword".to_string(), "translated".to_string())
+        );
+        assert_eq!(
+            segment_state(&db, "b").await,
+            (String::new(), "untranslated".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_retranslation_never_overwrites_a_reviewed_target() {
+        let (db, _f) = test_db().await;
+        insert_plain_segments(&db, &[("a", "剣", "Blade", "reviewed")]).await;
+
+        for response in [
+            Err(LlmError::TranslationFailed {
+                attempts: 1,
+                reason: "HTTP 400".to_string(),
+            }),
+            unavailable(),
+        ] {
+            let provider = MockProvider::new(vec![response]);
+            let _ = run_inner(
+                vec![("a".to_string(), "剣".to_string())],
+                &provider,
+                ctx(),
+                &db,
+                None,
+                None,
+                None,
+                |_, _| {},
+            )
+            .await;
+            assert_eq!(
+                segment_state(&db, "a").await,
+                ("Blade".to_string(), "reviewed".to_string())
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn refused_batch_is_reported_failed_and_the_run_continues() {
+        let (db, _f) = test_db().await;
+        insert_plain_segments(
+            &db,
+            &[
+                ("a", "剣", "", "untranslated"),
+                ("b", "盾", "", "untranslated"),
+            ],
+        )
+        .await;
+        let provider = MockProvider::new(vec![
+            Err(LlmError::TranslationFailed {
+                attempts: 1,
+                reason: "HTTP 413".to_string(),
+            }),
+            Ok(vec!["Shield".to_string()]),
+        ]);
+        let mut context = ctx();
+        context.batch_size = 1;
+
+        let results = run_inner(
+            vec![
+                ("a".to_string(), "剣".to_string()),
+                ("b".to_string(), "盾".to_string()),
+            ],
+            &provider,
+            context,
+            &db,
+            None,
+            None,
+            None,
+            |_, _| {},
+        )
+        .await
+        .unwrap();
+
+        assert!(results[0].failed);
+        assert!(!results[1].failed);
+        assert_eq!(
+            segment_state(&db, "a").await,
+            (String::new(), "untranslated".to_string())
+        );
+        assert_eq!(
+            segment_state(&db, "b").await,
+            ("Shield".to_string(), "translated".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn cancellation_stops_before_the_next_batch() {
+        let (db, _f) = test_db().await;
+        insert_plain_segments(
+            &db,
+            &[
+                ("a", "剣", "", "untranslated"),
+                ("b", "盾", "", "untranslated"),
+            ],
+        )
+        .await;
+        let provider = MockProvider::new(vec![Ok(vec!["Sword".to_string()])]);
+        let mut context = ctx();
+        context.batch_size = 1;
+        let cancel = AtomicBool::new(false);
+
+        let outcome = run_controlled(
+            vec![
+                ("a".to_string(), "剣".to_string()),
+                ("b".to_string(), "盾".to_string()),
+            ],
+            &provider,
+            context,
+            &db,
+            None,
+            None,
+            None,
+            Some(&cancel),
+            // The user presses "Stop" while the first batch is running.
+            |_, _| cancel.store(true, Ordering::SeqCst),
+        )
+        .await
+        .unwrap();
+
+        assert!(outcome.cancelled);
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(provider.calls(), 1);
+        assert_eq!(
+            segment_state(&db, "a").await,
+            ("Sword".to_string(), "translated".to_string())
+        );
+        assert_eq!(
+            segment_state(&db, "b").await,
+            (String::new(), "untranslated".to_string())
+        );
     }
 }

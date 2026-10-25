@@ -35,7 +35,9 @@ use commands::text_fit::{
     get_game_font, get_text_fit, preview_text_fit, scan_text_fit, set_text_fit,
     set_text_fit_override,
 };
-use commands::translate::{get_provider_models, translate_all_segments, translate_segments};
+use commands::translate::{
+    cancel_translation, get_provider_models, translate_all_segments, translate_segments,
+};
 use state::AppState;
 use tauri::Manager;
 
@@ -91,6 +93,7 @@ pub fn run() {
             delete_project,
             get_project_stats,
             translate_all_segments,
+            cancel_translation,
             debug_dump_segments,
             debug_inject_file,
             scan_font_status,

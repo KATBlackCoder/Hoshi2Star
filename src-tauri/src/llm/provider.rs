@@ -8,7 +8,10 @@
 //! ## OpenAiCompatibleProvider
 //! Wraps the common OpenAI-compatible API exposed by Ollama, LM Studio,
 //! Hugging Face Inference Providers and many cloud services.
-//! Automatically retries on network errors or timeouts up to `MAX_RETRIES` times.
+//! Transient failures (network, timeout, 429, 5xx) are retried up to
+//! `MAX_RETRIES` times with a growing pause, then reported as
+//! [`LlmError::Unavailable`] so the pipeline can stop the whole run.
+//! Authentication and missing-model errors are never retried.
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -190,6 +193,51 @@ pub const DEFAULT_TIMEOUT_SECS: u64 = 120;
 pub const DEFAULT_BATCH_SIZE: usize = 20;
 
 const MAX_RETRIES: u32 = 3;
+/// First pause between two attempts after a transient failure; doubled each time.
+const RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
+/// Upper bound for any pause, including a provider's `Retry-After`.
+const MAX_RETRY_DELAY: Duration = Duration::from_secs(30);
+
+/// How a failed HTTP exchange affects the rest of the run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FailureClass {
+    /// The provider cannot serve any request (bad key, unknown model):
+    /// retrying is pointless, the run must stop.
+    Fatal,
+    /// The provider may recover (network, overload): retry, then stop the run.
+    Transient,
+    /// Only this request was refused (e.g. prompt too long): other batches
+    /// may still succeed.
+    RequestLocal,
+}
+
+fn classify_status(status: reqwest::StatusCode) -> FailureClass {
+    match status.as_u16() {
+        401 | 403 | 404 => FailureClass::Fatal,
+        408 | 429 | 500..=599 => FailureClass::Transient,
+        _ => FailureClass::RequestLocal,
+    }
+}
+
+/// `Retry-After` in seconds (the HTTP-date form is ignored).
+fn retry_after(response: &reqwest::Response) -> Option<Duration> {
+    response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .map(Duration::from_secs)
+}
+
+/// Pause before attempt `attempt + 1` (0-based `attempt` just failed).
+fn retry_delay(attempt: u32, base: Duration, provider_hint: Option<Duration>) -> Duration {
+    provider_hint
+        .unwrap_or_else(|| base.saturating_mul(2_u32.saturating_pow(attempt)))
+        .min(MAX_RETRY_DELAY)
+}
 
 pub struct OpenAiCompatibleProvider {
     base_url: String,
@@ -199,6 +247,11 @@ pub struct OpenAiCompatibleProvider {
     structured_translation_output: bool,
     metrics: Mutex<Vec<ProviderCallMetrics>>,
     client: Client,
+    retry_base_delay: Duration,
+    /// Refuse a model missing from `/models` at start-up. Only for Ollama,
+    /// whose listing is exhaustive; routers such as Hugging Face accept ids
+    /// (`model:provider`, `:fastest`) that their listing does not contain.
+    require_listed_model: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -224,7 +277,15 @@ impl OpenAiCompatibleProvider {
             structured_translation_output: false,
             metrics: Mutex::new(Vec::new()),
             client,
+            retry_base_delay: RETRY_BASE_DELAY,
+            require_listed_model: false,
         }
+    }
+
+    /// Shorten the pause between retries (tests use `Duration::ZERO`).
+    pub fn with_retry_base_delay(mut self, delay: Duration) -> Self {
+        self.retry_base_delay = delay;
+        self
     }
 
     /// Build a provider from a stable UI preset. Ollama's OpenAI-compatible
@@ -241,6 +302,7 @@ impl OpenAiCompatibleProvider {
         if provider_id == "ollama" {
             provider.reasoning_effort = Some(ReasoningEffort::Disabled);
             provider.structured_translation_output = true;
+            provider.require_listed_model = true;
         }
         provider
     }
@@ -444,18 +506,25 @@ impl LlmProvider for OpenAiCompatibleProvider {
                     .send()
                     .await;
 
+                let mut provider_hint = None;
                 match response {
-                    Err(error) if attempts < MAX_RETRIES => {
+                    Err(error) => {
                         last_err = error.to_string();
                     }
-                    Err(error) => return Err(LlmError::Http(error)),
                     Ok(response) if !response.status().is_success() => {
-                        last_err = format!("HTTP {}", response.status());
-                        if attempts >= MAX_RETRIES {
-                            return Err(LlmError::TranslationFailed {
-                                attempts,
-                                reason: last_err.clone(),
-                            });
+                        let status = response.status();
+                        last_err = format!("HTTP {status}");
+                        match classify_status(status) {
+                            FailureClass::Fatal => {
+                                return Err(LlmError::Unavailable { message: last_err });
+                            }
+                            FailureClass::RequestLocal => {
+                                return Err(LlmError::TranslationFailed {
+                                    attempts,
+                                    reason: last_err,
+                                });
+                            }
+                            FailureClass::Transient => provider_hint = retry_after(&response),
                         }
                     }
                     Ok(response) => {
@@ -483,11 +552,14 @@ impl LlmProvider for OpenAiCompatibleProvider {
                         return Ok((translations, parsed.usage));
                     }
                 }
+                if attempt + 1 < MAX_RETRIES {
+                    tokio::time::sleep(retry_delay(attempt, self.retry_base_delay, provider_hint))
+                        .await;
+                }
             }
 
-            Err(LlmError::TranslationFailed {
-                attempts,
-                reason: last_err,
+            Err(LlmError::Unavailable {
+                message: format!("{last_err} (after {attempts} attempts)"),
             })
         }
         .await;
@@ -515,8 +587,20 @@ impl LlmProvider for OpenAiCompatibleProvider {
         outcome.map(|(translations, _)| translations)
     }
 
+    /// Reachable provider, and — for Ollama, when it lists models — the
+    /// configured model is among them, so a typo fails before the first batch.
     async fn health_check(&self) -> Result<(), LlmError> {
-        self.list_models().await.map(|_| ())
+        let models = self.list_models().await?;
+        if !self.require_listed_model
+            || models.is_empty()
+            || models.iter().any(|id| model_matches(id, &self.model))
+        {
+            Ok(())
+        } else {
+            Err(LlmError::Unavailable {
+                message: format!("model '{}' not found on this provider", self.model),
+            })
+        }
     }
 
     async fn chat(&self, system: &str, user: &str) -> Result<String, LlmError> {
@@ -545,7 +629,7 @@ impl LlmProvider for OpenAiCompatibleProvider {
             for attempt in 0..2 {
                 attempts = attempt + 1;
                 if attempt > 0 {
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    tokio::time::sleep(retry_delay(1, self.retry_base_delay, None)).await;
                 }
                 match self
                     .request(reqwest::Method::POST, "chat/completions")
@@ -554,12 +638,25 @@ impl LlmProvider for OpenAiCompatibleProvider {
                     .await
                 {
                     Err(error) => {
-                        last_err = Some(LlmError::Http(error));
+                        last_err = Some(LlmError::Unavailable {
+                            message: error.to_string(),
+                        });
                     }
                     Ok(response) if !response.status().is_success() => {
-                        last_err = Some(LlmError::Unavailable {
-                            message: format!("HTTP {}", response.status()),
-                        });
+                        let status = response.status();
+                        let message = format!("HTTP {status}");
+                        match classify_status(status) {
+                            FailureClass::Fatal => return Err(LlmError::Unavailable { message }),
+                            FailureClass::RequestLocal => {
+                                return Err(LlmError::TranslationFailed {
+                                    attempts,
+                                    reason: message,
+                                });
+                            }
+                            FailureClass::Transient => {
+                                last_err = Some(LlmError::Unavailable { message });
+                            }
+                        }
                     }
                     Ok(response) => {
                         let parsed = response
@@ -660,6 +757,12 @@ fn render_translation_units(
 /// Ollama supports OpenAI-compatible JSON-schema response formatting. Using it
 /// for translations prevents small local models from surrounding the answer
 /// with prose or silently changing the requested line protocol.
+/// Ollama lists `name:latest` for a model pulled or configured as `name`.
+fn model_matches(listed: &str, configured: &str) -> bool {
+    let configured = configured.trim();
+    listed == configured || listed.strip_suffix(":latest") == Some(configured)
+}
+
 fn json_translation_response_format() -> serde_json::Value {
     serde_json::json!({
         "type": "json_schema",
@@ -825,6 +928,172 @@ mod tests {
             None,
             Duration::from_secs(5),
         )
+        .with_retry_base_delay(Duration::ZERO)
+    }
+
+    #[tokio::test]
+    async fn auth_failure_is_unavailable_without_retry() {
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(POST).path("/v1/chat/completions");
+            then.status(401);
+        });
+        let provider = make_provider(&server);
+
+        let result = provider.translate(vec!["勇者".to_string()], ctx()).await;
+
+        assert!(
+            matches!(result, Err(LlmError::Unavailable { .. })),
+            "{result:?}"
+        );
+        mock.assert_hits(1);
+    }
+
+    #[tokio::test]
+    async fn persistent_server_error_is_unavailable_after_all_attempts() {
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(POST).path("/v1/chat/completions");
+            then.status(503);
+        });
+        let provider = make_provider(&server);
+
+        let result = provider.translate(vec!["勇者".to_string()], ctx()).await;
+
+        assert!(
+            matches!(result, Err(LlmError::Unavailable { .. })),
+            "{result:?}"
+        );
+        mock.assert_hits(MAX_RETRIES as usize);
+    }
+
+    #[tokio::test]
+    async fn rejected_request_is_local_to_the_batch() {
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(POST).path("/v1/chat/completions");
+            then.status(400);
+        });
+        let provider = make_provider(&server);
+
+        let result = provider.translate(vec!["勇者".to_string()], ctx()).await;
+
+        assert!(
+            matches!(result, Err(LlmError::TranslationFailed { .. })),
+            "{result:?}"
+        );
+        mock.assert_hits(1);
+    }
+
+    #[tokio::test]
+    async fn unreachable_provider_is_unavailable() {
+        // Bind then drop a listener: the port is closed for the request.
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let provider = OpenAiCompatibleProvider::new(
+            &format!("http://127.0.0.1:{port}"),
+            "test-model",
+            None,
+            Duration::from_secs(5),
+        )
+        .with_retry_base_delay(Duration::ZERO);
+
+        let result = provider.translate(vec!["勇者".to_string()], ctx()).await;
+
+        assert!(
+            matches!(result, Err(LlmError::Unavailable { .. })),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn status_classes_follow_the_outage_policy() {
+        use reqwest::StatusCode;
+        for (code, class) in [
+            (401, FailureClass::Fatal),
+            (403, FailureClass::Fatal),
+            (404, FailureClass::Fatal),
+            (408, FailureClass::Transient),
+            (429, FailureClass::Transient),
+            (500, FailureClass::Transient),
+            (503, FailureClass::Transient),
+            (400, FailureClass::RequestLocal),
+            (413, FailureClass::RequestLocal),
+            (422, FailureClass::RequestLocal),
+        ] {
+            assert_eq!(
+                classify_status(StatusCode::from_u16(code).unwrap()),
+                class,
+                "{code}"
+            );
+        }
+    }
+
+    #[test]
+    fn retry_delay_grows_and_honours_retry_after_within_cap() {
+        let base = Duration::from_secs(1);
+        assert_eq!(retry_delay(0, base, None), Duration::from_secs(1));
+        assert_eq!(retry_delay(1, base, None), Duration::from_secs(2));
+        assert_eq!(retry_delay(2, base, None), Duration::from_secs(4));
+        assert_eq!(
+            retry_delay(0, base, Some(Duration::from_secs(7))),
+            Duration::from_secs(7)
+        );
+        assert_eq!(
+            retry_delay(0, base, Some(Duration::from_secs(600))),
+            MAX_RETRY_DELAY
+        );
+        assert_eq!(retry_delay(5, Duration::ZERO, None), Duration::ZERO);
+    }
+
+    #[tokio::test]
+    async fn retry_after_header_is_read_in_seconds() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/v1/models");
+            then.status(429).header("Retry-After", "12");
+        });
+        let response = reqwest::get(format!("{}/v1/models", server.base_url()))
+            .await
+            .unwrap();
+        assert_eq!(retry_after(&response), Some(Duration::from_secs(12)));
+    }
+
+    #[tokio::test]
+    async fn health_check_rejects_a_model_missing_from_the_list() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/v1/models");
+            then.status(200)
+                .json_body(json!({"data":[{"id":"other:latest"},{"id":"test-model:latest"}]}));
+        });
+        let ollama = |model: &str| {
+            OpenAiCompatibleProvider::new_for_preset(
+                "ollama",
+                &server.base_url(),
+                model,
+                None,
+                Duration::from_secs(5),
+            )
+        };
+        assert!(ollama("test-model").health_check().await.is_ok());
+        assert!(matches!(
+            ollama("typo-model").health_check().await,
+            Err(LlmError::Unavailable { .. })
+        ));
+
+        // Routers accept ids their listing omits (e.g. Hugging Face `:fastest`).
+        let router = OpenAiCompatibleProvider::new_for_preset(
+            "huggingface",
+            &server.base_url(),
+            "meta-llama/Llama-3.1-8B-Instruct:fastest",
+            None,
+            Duration::from_secs(5),
+        );
+        assert!(router.health_check().await.is_ok());
     }
 
     fn ctx() -> TranslationContext {

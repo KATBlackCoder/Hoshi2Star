@@ -716,5 +716,28 @@
       "default": "Réglage du projet",
       "asTranslated": "Exporter ce texte exactement tel que traduit"
     }
+  },
+  "llmRun": {
+    "completedOk": "Traduction terminée : {{translated}} segment(s) traduit(s).",
+    "completedIssues": "Traduction terminée : {{translated}} traduit(s), {{needsReview}} à réviser, {{failed}} en échec (laissés inchangés).",
+    "cancelled": "Traduction arrêtée : {{translated}} traduit(s), {{needsReview}} à réviser, {{failed}} en échec. Le reste n'a pas été modifié ; « Tout traduire » le reprendra.",
+    "reviewTypes": "À réviser : {{types}}",
+    "providerDown": "Fournisseur IA injoignable : traduction arrêtée après {{processed}} segment(s) sur {{total}}. Les segments restants n'ont pas été modifiés ; relancez la traduction quand le fournisseur répond.",
+    "error": "Erreur de traduction",
+    "stop": "Arrêter",
+    "stopping": "Arrêt après le lot en cours…",
+    "stopHint": "Arrête la traduction après le lot en cours. Ollama continue de tourner ; « Tout traduire » reprendra le reste.",
+    "qaTypes": {
+      "context_leak": "contexte recopié",
+      "unchanged_source": "identique à la source",
+      "source_script_remaining": "langue source restante",
+      "missing_placeholder": "placeholder manquant",
+      "suspicious_expansion": "expansion suspecte",
+      "inconsistent_repeated_source": "traductions incohérentes",
+      "terminology_mismatch": "terminologie",
+      "empty_translation": "traduction vide",
+      "bom_detected": "BOM",
+      "constraint_violation": "règle d'affichage"
+    }
   }
 }

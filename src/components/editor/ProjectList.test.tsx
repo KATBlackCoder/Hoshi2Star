@@ -30,6 +30,7 @@ const STATS_P2: ProjectStats = {
   translatedCount: 15,
   needsReviewCount: 1,
   reviewedCount: 1,
+  resumableCount: 0,
 };
 
 beforeEach(() => {

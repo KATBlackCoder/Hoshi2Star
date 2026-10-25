@@ -19,6 +19,7 @@ import {
   Play,
   Share2,
   Snowflake,
+  Square,
   WrapText,
 } from "lucide-react";
 import { openProject, useProjectStore } from "@/stores/project";
@@ -30,6 +31,8 @@ import {
   useTranslationStartTime,
   useIsCooling,
   useCooldownRemaining,
+  useIsCancelling,
+  useLlmStore,
 } from "@/stores/llm";
 import { UpdateBadge } from "@/components/UpdateBadge";
 import { PackExportDialog } from "@/components/PackExportDialog";
@@ -167,6 +170,8 @@ export function AppToolbar({
     s.projects.find((p) => p.id === s.activeProjectId),
   );
   const isTranslating = useIsTranslating();
+  const isCancelling = useIsCancelling();
+  const cancelTranslation = useLlmStore((s) => s.cancelTranslation);
   const progress = useTranslationProgress();
   const isPilotOpen = usePilotStore((state) => state.isOpen);
   const isPilotRunning = usePilotStore((state) => state.isRunning);
@@ -368,6 +373,22 @@ export function AppToolbar({
       {/* Progress bar + timer + cooldown */}
       {isTranslating && progress >= 0 && (
         <div className="ml-auto flex items-center gap-2 mr-2">
+          <Button
+            id="toolbar-stop-translation"
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1.5 text-xs"
+            onClick={() => void cancelTranslation()}
+            disabled={isCancelling}
+            title={t("llmRun.stopHint")}
+          >
+            {isCancelling ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Square className="h-3.5 w-3.5" />
+            )}
+            {isCancelling ? t("llmRun.stopping") : t("llmRun.stop")}
+          </Button>
           <TranslationTimer />
           <CooldownBadge />
           <ConstellationProgress progress={progress} />
