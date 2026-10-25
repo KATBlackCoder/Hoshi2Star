@@ -426,7 +426,8 @@
   },
   "toasts": {
     "exportSuccess": "ZIP exporté — hoshi2star.zip prêt",
-    "exportError": "Erreur export : {{error}}"
+    "exportError": "Erreur export : {{error}}",
+    "wolfV2Unsupported": "Export impossible : ce projet Wolf RPG v2 contient des cartes ou des événements communs qui ne sont plus pris en charge pour l'instant. Rien n'a été écrit."
   },
   "lang": {
     "toggle": "FR"
@@ -466,12 +467,13 @@
     "delete": "Supprimer le projet",
     "deleted": "Projet « {{name}} » supprimé",
     "openError": "Impossible d'ouvrir le projet",
-    "engineNotFound": "Moteur de jeu non détecté. Supportés : RPG Maker MV/MZ, Wolf RPG v1/v2/v3.",
+    "engineNotFound": "Moteur de jeu non détecté. Supportés : RPG Maker MV/MZ, Wolf RPG v3.",
     "deleteError": "Impossible de supprimer le projet",
     "confirmDeleteTitle": "Supprimer « {{name}} » ?",
     "confirmDeleteDesc": "Tous les segments, traductions, occurrences terminologiques et termes propres à ce projet seront définitivement supprimés de la base de données. Les fichiers du jeu sur le disque ne sont pas touchés.",
     "confirmDeleteCancel": "Annuler",
-    "confirmDeleteConfirm": "Supprimer"
+    "confirmDeleteConfirm": "Supprimer",
+    "wolfV2Unsupported": "Jeu Wolf RPG v2 pas encore pris en charge : ses cartes et événements communs ne peuvent pas être lus pour l'instant. Une nouvelle lecture est prévue."
   },
   "updater": {
     "title": "Mise à jour disponible",

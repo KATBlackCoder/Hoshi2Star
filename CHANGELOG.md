@@ -48,6 +48,9 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - Fix failed segments overwriting existing translations: when no usable output is obtained (refused request, unparseable response, broken placeholders after every retry), nothing is written, so a selected retranslation can no longer replace a reviewed translation with the source text. "Translate all" also resumes rows left by earlier versions as `needs_review` with the source copied as target.
 - Fix the per-segment toast flood that could exhaust WebKitGTK memory on large runs: each run now ends with one summary notice (translated, to review by QA error type, failed, and other rows of the same name that received the translation).
 
+### Removed
+- Remove the `wolfrpg-map-parser` dependency (and its git fork, no longer on GitHub, which prevented any fresh clone from building). Wolf RPG v2 maps and common events are no longer read: a v2 game is refused at open with a clear message instead of opening without its dialogue, and exporting an existing v2 project stops with the same message without writing anything. Wolf RPG v3 (LZ4) maps, common events and `.dat` databases are unchanged. A new reader is planned.
+
 ## [0.4.10] — 2026-07-07
 
 ### Added
