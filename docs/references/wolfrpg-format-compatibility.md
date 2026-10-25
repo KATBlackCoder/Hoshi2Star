@@ -1,16 +1,16 @@
 # Wolf RPG — Compatibilité des formats binaires
 
 **Jeux testés :**
-- `test/月咲流ホノカver1.03/` — Wolf RPG Editor v2.225 (Honoka) → **extraction/injection fonctionnelles** via `wolfrpg_map_parser` (fork)
+- `test/月咲流ホノカver1.03/` — Wolf RPG Editor v2.225 (Honoka) → **non pris en charge depuis le 2026-10-25** : `wolfrpg-map-parser` (fork) retiré, le projet est refusé à l'ouverture (`UnsupportedWolfFormat`). Une nouvelle lecture est prévue (lot RW, étude REA).
 - `test/Densyanai Inko ver2.0/` — Wolf RPG Editor v3.x (Inko) → **extraction/injection fonctionnelles** via le parser maison `v3_format/`
 
 ---
 
-## État actuel (post F5-01)
+## État actuel (2026-10-25, après retrait de `wolfrpg-map-parser`)
 
 ```
-Honoka maps (.mps, v2.225)        437 segments, 0 erreur     ✅ wolfrpg_map_parser
-Honoka CommonEvent.dat (v2.225)   2195 segments, 0 erreur    ✅ wolfrpg_map_parser (fork)
+Honoka maps (.mps, v2.225)        refusé (UnsupportedWolfFormat) — avant : 437 segments via wolfrpg_map_parser
+Honoka CommonEvent.dat (v2.225)   refusé (UnsupportedWolfFormat) — avant : 2195 segments via le fork
 Inko maps (.mps, v3.x)            8 segments (TitleMap), 0 erreur ✅ v3_format (maison)
 Inko CommonEvent.dat (v3.x)       1585 segments, 0 erreur    ✅ v3_format (maison)
 ```

@@ -1,12 +1,19 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-25 — Claude (session 3).
+**Mis à jour :** 2026-10-25 — Claude (RW0).
 **Objectif utilisateur :** lancer une analyse complète de l'app dans une session dédiée, puis
 traiter les retours de sportsfan30 (F95zone) et étudier RuneTranslate avec REA.
 **Statut :** analyse complète :
 - sessions 1, 2 (MV/MZ) et 3 faites le 2026-10-25 ; Wolf reporté (session 2 bis, après REA) ;
 - aucun code applicatif modifié depuis la PR #9 ;
 - sessions 1 et 2 commitées (`6edd29b`, `0b2fa4e`, `7bb7aaa`) ; session 3 non commitée.
+
+## En cours (2026-10-25, Claude) — RW0 puis R1
+
+- **Règle** : ne plus lancer de build, clippy ni de suite de tests sur le poste de l'utilisateur (il gèle) ; gate en session cloud sur la branche poussée (`tasks/lessons.md`).
+- **RW0** (retrait de `wolfrpg-map-parser`, fork supprimé de GitHub, plus aucun clone neuf ne compilait) : branche `chore/remove-wolfrpg-map-parser` ; code et tests écrits, **non compilés** ; plan et détail : `tasks/todo.md` (« Plan — RW0 »), `docs/journal/2026-10-25-rw0-retrait-wolfrpg-map-parser.md`. Wolf v2 est refusé à l'ouverture et à l'export avec un message dédié.
+- **R1** (panne du fournisseur) : branche `fix/r1-provider-outage`, PR #10 ouverte (commits `7be55e4`, `53d6217`), essai réel fait ; son gate cloud a échoué faute de pouvoir récupérer le fork. Son suivi détaillé (plan R1, journal R1) est sur sa branche.
+- **Prochaine action exacte** : gate complet en cloud sur `chore/remove-wolfrpg-map-parser` ; corriger ce qu'il signale ; PR et fusion par l'utilisateur ; puis rebase de `fix/r1-provider-outage` sur `main` et gate cloud de R1 ; fusion de la PR #10.
 
 ## Session 3 (2026-10-25, Claude) — reprise
 

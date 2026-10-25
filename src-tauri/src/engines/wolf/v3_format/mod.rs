@@ -8,7 +8,9 @@
 //! recursive container model, which does not compose with the v3.5+
 //! `v35Unknown` trailer (see `docs/plans/f5-01-wolf-v3-mps-parser.md`).
 //!
-//! Scope: v3.x (Inko) only. v2.x (Honoka) continues to use `wolfrpg_map_parser`.
+//! Scope: v3.x (Inko) only. v2.x (Honoka) maps and common events are not read
+//! since `wolfrpg-map-parser` was removed (2026-10-25); the extractor and
+//! injector refuse them with `UnsupportedWolfFormat`.
 
 pub(crate) mod coder;
 pub(crate) mod command;

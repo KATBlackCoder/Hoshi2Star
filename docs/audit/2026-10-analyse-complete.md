@@ -264,6 +264,7 @@ Mesure vérifiée par exécution le 2026-10-25 avec `cargo llvm-cov --summary-on
 **S-D5 — Sources.**
 - `wolfrpg-map-parser` vient d'une branche git du fork (`Cargo.toml:62`, `branch = "fix/wolf-v3-format"`), pas d'un commit fixé dans le manifeste. Seul `Cargo.lock` le fixe.
 - Gravité : mineur. Statut : vérifié-exéc.
+- **Mise à jour 2026-10-25 :** le fork a été supprimé de GitHub ; un clone neuf ne compilait plus (session cloud). La dépendance est retirée (plan RW0, `tasks/todo.md`) et Wolf v2 est refusé explicitement en attendant une nouvelle lecture.
 
 **S-D6 — npm.**
 - Les 77 avis `--prod` passent tous par `shadcn` (la CLI, placée en `dependencies` alors qu'on n'importe que `shadcn/tailwind.css` dans `src/index.css:3`) ou par `@tailwindcss/vite` (outil de build).
@@ -1005,7 +1006,7 @@ Couvre S-L2 / B, P-6, S-L4 et la **demande de l'utilisateur du 2026-10-25 : une 
 - Message actionnable au lieu de `key not found in JSON` (MZ).
 - Critère : le scénario P-2 (401 inséré) produit un refus clair, ou une réconciliation, sans aucune écriture décalée.
 
-**R3 — Dépendances** (majeur, S). `cargo update` ciblé pour rustls / rustls-webpki / webpki-roots (S-D2), et zip (S-D1, info) ; `deny.toml` versionné pour les licences et sources (S-D4, S-D5). Modifie `Cargo.lock` : gate complet.
+**R3 — Dépendances** (majeur, S). `cargo update` ciblé pour rustls / rustls-webpki / webpki-roots (S-D2), et zip (S-D1, info) ; `deny.toml` versionné pour les licences (S-D4) ; S-D5 réglé par le retrait du crate (RW0). Modifie `Cargo.lock` : gate complet.
 
 **R4 — Export partiel et par fichier** (majeur pour sportsfan30, S–M). Reprend le lot A de sportsfan30 (cases ci-dessous) et S-X5.
 - Export partiel autorisé depuis l'UI, avec avertissement et nombre de segments non traduits.

@@ -861,116 +861,55 @@ async fn mv_mz_pilot_preparation_is_deterministic_and_non_destructive() {
     }
 }
 
-/// Wolf CommonEvent round-trip — locks the Phase 1 regression at the command
-/// level: open → translate one `wolf_common_events` segment → export → the
-/// marker is present in the archive's `Data/BasicData/CommonEvent.dat`.
+/// Wolf RPG v2 games are refused at open since `wolfrpg-map-parser` was
+/// removed (2026-10-25): the error carries the `wolf_v2_unsupported` marker
+/// the frontend maps to a dedicated message, and no partial project is left.
 #[tokio::test]
-async fn wolf_common_events_open_translate_export_round_trip() {
-    let fixture = test_dir().join("月咲流ホノカver1.03");
-    if !fixture.exists() {
-        return;
-    }
-
-    // BasicData holds CommonEvent.dat + databases; MapData is optional but cheap.
+async fn wolf_v2_game_is_refused_at_open() {
     let tmp = tempfile::tempdir().unwrap();
     let game_root = tmp.path().join("game");
-    let data_src = fixture.join("Data");
-    let data_dst = game_root.join("Data");
-    copy_tree(&data_src.join("BasicData"), &data_dst.join("BasicData"));
-    if data_src.join("MapData").exists() {
-        copy_tree(&data_src.join("MapData"), &data_dst.join("MapData"));
-    }
-    // The detector requires a launcher marker at the game root.
+    let map_dir = game_root.join("Data").join("MapData");
+    std::fs::create_dir_all(&map_dir).unwrap();
+    // v2.x map header (WOLFM signature, no LZ4 wrapper).
+    let mut mps =
+        b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x57\x4F\x4C\x46\x4D\x00\x00\x00\x00\x00"
+            .to_vec();
+    mps.extend_from_slice(&[0x00; 25]);
+    mps.push(0x66);
+    std::fs::write(map_dir.join("Map001.mps"), &mps).unwrap();
     std::fs::write(game_root.join("Game.ini"), b"").unwrap();
 
     let db_file = tmp.path().join("h2s.db");
     let app = mock_app(db_file.to_str().unwrap()).await;
+    let state = app.state::<AppState>();
 
-    let project = open_project(
+    let error = open_project(
         game_root.to_str().unwrap().to_string(),
         None,
         None,
         app.state(),
     )
     .await
-    .expect("open_project")
-    .project;
-    assert_eq!(project.engine, "wolf");
+    .expect_err("a Wolf RPG v2 game must be refused");
+    assert!(error.contains("wolf_v2_unsupported"), "{error}");
 
-    let files = get_source_files(project.id.clone(), app.state())
+    let projects: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects")
+        .fetch_one(&state.db)
         .await
-        .expect("get_source_files");
-    let ce_file = files
-        .iter()
-        .find(|f| f.file_type == "wolf_common_events")
-        .expect("a wolf_common_events source file");
+        .unwrap();
+    assert_eq!(projects, 0, "no partial project may be created");
 
-    let page = get_segments(
-        project.id.clone(),
-        ce_file.id.clone(),
-        0,
-        100_000,
-        app.state(),
-    )
-    .await
-    .expect("get_segments");
-
-    assert!(page.items.iter().all(|segment| {
-        segment.segment_kind == "unknown"
-            && segment.scene_id.is_none()
-            && segment.sequence_index.is_none()
-            && segment.speaker.is_none()
-            && segment.branch_path.is_none()
-            && segment.context_json.is_none()
-    }));
-
-    // Translate two segments in TWO DISTINCT common events, each with its own
-    // marker, and require BOTH to survive the export. This is what locks Phase 1:
-    // the pre-fix bucketing keyed on `CommonEvents/{event_name}` (one bucket per
-    // event), and every bucket wrote to the same `CommonEvent.dat` zip path — so
-    // the last-written event won and every other event's translations were
-    // dropped. A single-event translation would not reproduce that overwrite;
-    // two events in distinct buckets does, regardless of iteration order.
-    //
-    // `event_group` mirrors the pre-fix bucket granularity: the first two
-    // '/'-separated components of the key (`CommonEvents/{event_name}`).
-    fn event_group(json_key: &str) -> String {
-        json_key
-            .splitn(3, '/')
-            .take(2)
-            .collect::<Vec<_>>()
-            .join("/")
+    // Same rule on the real Honoka (v2.225) game when the fixture is present.
+    let fixture = test_dir().join("月咲流ホノカver1.03");
+    if fixture.exists() {
+        let error = open_project(
+            fixture.to_str().unwrap().to_string(),
+            None,
+            None,
+            app.state(),
+        )
+        .await
+        .expect_err("Honoka (Wolf v2) must be refused");
+        assert!(error.contains("wolf_v2_unsupported"), "{error}");
     }
-    let seg_a = page.items.first().expect("at least one CE segment");
-    let group_a = event_group(&seg_a.json_key);
-    let seg_b = page
-        .items
-        .iter()
-        .find(|s| event_group(&s.json_key) != group_a)
-        .expect("Honoka CommonEvent.dat must contain at least two distinct common events");
-
-    const MARKER_A: &str = "H2S_E2E_MARKER_A";
-    const MARKER_B: &str = "H2S_E2E_MARKER_B";
-    update_segment(seg_a.id.clone(), MARKER_A.to_string(), app.state())
-        .await
-        .expect("update_segment A");
-    update_segment(seg_b.id.clone(), MARKER_B.to_string(), app.state())
-        .await
-        .expect("update_segment B");
-
-    let zip_path = export_project(project.id.clone(), None, true, None, app.state())
-        .await
-        .expect("export_project");
-
-    let ce = "Data/BasicData/CommonEvent.dat";
-    let zip = Path::new(&zip_path);
-    // BOTH markers must be present — the pre-fix overwrite would keep only one.
-    assert!(
-        zip_entry_contains(zip, ce, MARKER_A.as_bytes()),
-        "exported CommonEvent.dat must contain event A's translation (Phase 1 lock)"
-    );
-    assert!(
-        zip_entry_contains(zip, ce, MARKER_B.as_bytes()),
-        "exported CommonEvent.dat must contain event B's translation (Phase 1 lock)"
-    );
 }

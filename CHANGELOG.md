@@ -41,6 +41,9 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - Change the MV/MZ export font-size prefix (`\FS[n]`) to apply only to core map segments. Optional categories such as map display names are drawn without escape codes, so a prefix would show up literally.
 - Change the "line too long" QA warning so it is no longer reported for dialogue and descriptions that text fitting lays out at export (when fitting is enabled).
 
+### Removed
+- Remove the `wolfrpg-map-parser` dependency (and its git fork, no longer on GitHub, which prevented any fresh clone from building). Wolf RPG v2 maps and common events are no longer read: a v2 game is refused at open with a clear message instead of opening without its dialogue, and exporting an existing v2 project stops with the same message without writing anything. Wolf RPG v3 (LZ4) maps, common events and `.dat` databases are unchanged. A new reader is planned.
+
 ## [0.4.10] — 2026-07-07
 
 ### Added

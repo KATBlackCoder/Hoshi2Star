@@ -8,45 +8,6 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::LazyLock;
-use wolfrpg_map_parser::{command::Command, common_events_parser, Map};
-
-// ---------------------------------------------------------------------------
-// Command signature normalization
-// ---------------------------------------------------------------------------
-
-/// Replace unknown D2/D3 `CallCommonEvent` variant bytes before parsing.
-///
-/// `wolfrpg-map-parser` 0.6.x panics on `0x04D20000` / `0x09D20000`.
-/// All D2 variants share the same binary layout — `argument_count` is read
-/// from the data stream, not the signature nibble — so remapping the first
-/// byte to a known variant is safe and produces identical parse output.
-///
-/// Signatures are stored big-endian: `[XX D2 00 00]` for CallCommonEvent,
-/// `[XX D3 00 00]` for ReserveCommonEvent.
-fn normalize_wolf_command_signatures(bytes: &mut [u8]) {
-    // Known D2 variants: 0x03, 0x05, 0x06, 0x07, 0x0B
-    // Known D3 variants: 0x03
-    let len = bytes.len();
-    if len < 4 {
-        return;
-    }
-    let mut i = 0;
-    while i + 3 < len {
-        if bytes[i + 1] == 0xD2 && bytes[i + 2] == 0x00 && bytes[i + 3] == 0x00 {
-            let v = bytes[i];
-            if !matches!(v, 0x03 | 0x05 | 0x06 | 0x07 | 0x0B) {
-                bytes[i] = 0x06; // remap to CallEvent1 (0x06D20000)
-            }
-        } else if bytes[i + 1] == 0xD3
-            && bytes[i + 2] == 0x00
-            && bytes[i + 3] == 0x00
-            && bytes[i] != 0x03
-        {
-            bytes[i] = 0x03; // remap to ReserveEvent (0x03D30000)
-        }
-        i += 1;
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -66,7 +27,20 @@ pub enum ExtractorError {
     Io(#[from] std::io::Error),
     #[error("unsupported Wolf RPG version: {0}.{1}")]
     UnsupportedVersion(u8, u8),
+    /// Maps or common events in the Wolf RPG v2 layout (not LZ4-compressed
+    /// v3.x). Reading them is not supported until a new parser replaces the
+    /// removed `wolfrpg-map-parser` crate. Starts with [`WOLF_V2_UNSUPPORTED`]
+    /// so the frontend can show a dedicated message.
+    #[error(
+        "{marker}: Wolf RPG v2 maps and common events are not supported yet ({0})",
+        marker = WOLF_V2_UNSUPPORTED
+    )]
+    UnsupportedWolfFormat(String),
 }
+
+/// Stable marker at the start of [`ExtractorError::UnsupportedWolfFormat`]
+/// (and of the injector's equivalent), matched by the frontend.
+pub const WOLF_V2_UNSUPPORTED: &str = "wolf_v2_unsupported";
 
 // ---------------------------------------------------------------------------
 // Public output types
@@ -446,6 +420,9 @@ pub fn extract_all_wolf(
     version: &crate::engines::detector::WolfVersion,
 ) -> Result<Vec<(String, String, Vec<WolfSegment>)>, ExtractorError> {
     let mut entries: Vec<(String, String, Vec<WolfSegment>)> = Vec::new();
+    // Files whose format can no longer be read: refusing the whole project is
+    // safer than opening it without its dialogue.
+    let mut unsupported: Vec<String> = Vec::new();
 
     // Maps
     if let Ok(mps_files) = load_mps_files(game_dir, version) {
@@ -455,6 +432,7 @@ pub fn extract_all_wolf(
                     entries.push((format!("{name}.mps"), "wolf_map".to_string(), segs));
                 }
                 Ok(_) => {}
+                Err(ExtractorError::UnsupportedWolfFormat(file)) => unsupported.push(file),
                 Err(e) => eprintln!("warn: skipping {name}.mps — {e}"),
             }
         }
@@ -487,11 +465,29 @@ pub fn extract_all_wolf(
                 ));
             }
             Ok(_) => {}
+            Err(ExtractorError::UnsupportedWolfFormat(file)) => unsupported.push(file),
             Err(e) => log::warn!("[h2s] CommonEvent extraction failed: {e}"),
         }
     }
 
+    reject_unsupported(unsupported)?;
     Ok(entries)
+}
+
+/// Fail with one [`ExtractorError::UnsupportedWolfFormat`] naming the first
+/// unreadable files, so the project is never opened without its dialogue.
+fn reject_unsupported(unsupported: Vec<String>) -> Result<(), ExtractorError> {
+    const SHOWN: usize = 3;
+    match unsupported.len() {
+        0 => Ok(()),
+        count => {
+            let mut files = unsupported[..count.min(SHOWN)].join(", ");
+            if count > SHOWN {
+                files.push_str(&format!(" and {} more", count - SHOWN));
+            }
+            Err(ExtractorError::UnsupportedWolfFormat(files))
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -500,12 +496,10 @@ pub fn extract_all_wolf(
 
 /// Extract translatable segments from a `.mps` map file.
 ///
-/// `map_name` is the file stem (e.g. `"Map001"`). `bytes` is the raw file
-/// content — the crate handles Shift-JIS decoding internally.
+/// `map_name` is the file stem (e.g. `"Map001"`). Only the v3.x layout
+/// (LZ4-compressed, in-house [`v3_format`] parser) is supported; a v2.x map
+/// returns [`ExtractorError::UnsupportedWolfFormat`].
 /// `_version` is reserved for future per-version branching.
-///
-/// `Map::parse` panics on invalid bytes; we capture that with `catch_unwind`
-/// and convert it to `ExtractorError::MapParser`.
 pub fn extract_map_segments(
     map_name: &str,
     bytes: &[u8],
@@ -514,67 +508,9 @@ pub fn extract_map_segments(
     if v3_format::compression::is_lz4_v3(bytes) {
         return extract_map_segments_v3(map_name, bytes);
     }
-
-    // Wrap the panicking parser in catch_unwind.
-    let mut bytes_owned = bytes.to_vec();
-    normalize_wolf_command_signatures(&mut bytes_owned);
-    let map = std::panic::catch_unwind(move || Map::parse(&bytes_owned)).map_err(|e| {
-        let msg = e
-            .downcast_ref::<&str>()
-            .copied()
-            .or_else(|| e.downcast_ref::<String>().map(|s| s.as_str()))
-            .unwrap_or("unknown panic");
-        ExtractorError::MapParser(format!("{map_name}: {msg}"))
-    })?;
-
-    let mut segments = Vec::new();
-
-    for (event_idx, event) in map.events().iter().enumerate() {
-        for (page_idx, page) in event.pages().iter().enumerate() {
-            for (cmd_idx, command) in page.commands().iter().enumerate() {
-                match command {
-                    Command::ShowMessage(cmd) => {
-                        let text = cmd.text();
-                        if is_translatable(text) {
-                            segments.push(WolfSegment {
-                                key: format!(
-                                    "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}"
-                                ),
-                                source_text: text.to_owned(),
-                                kind: WolfSegmentKind::MapMessage {
-                                    map_name: map_name.to_owned(),
-                                    event_idx,
-                                    page_idx,
-                                    cmd_idx,
-                                },
-                            });
-                        }
-                    }
-                    Command::ShowChoice(cmd) => {
-                        for (choice_idx, choice) in cmd.choices().iter().enumerate() {
-                            if is_translatable(choice) {
-                                segments.push(WolfSegment {
-                                    key: format!(
-                                        "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}/choices/{choice_idx}"
-                                    ),
-                                    source_text: choice.clone(),
-                                    kind: WolfSegmentKind::MapMessage {
-                                        map_name: map_name.to_owned(),
-                                        event_idx,
-                                        page_idx,
-                                        cmd_idx,
-                                    },
-                                });
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    Ok(segments)
+    Err(ExtractorError::UnsupportedWolfFormat(format!(
+        "{map_name}.mps"
+    )))
 }
 
 /// Extract translatable segments from a v3.x (LZ4-compressed) `.mps` map,
@@ -827,8 +763,8 @@ pub(crate) fn load_common_event_bytes(game_dir: &Path) -> Option<Vec<u8>> {
 
 /// Extract translatable segments from `CommonEvent.dat` bytes.
 ///
-/// Uses `wolfrpg_map_parser::common_events_parser::parse_bytes` wrapped in
-/// `catch_unwind` — the parser panics on malformed files, same as `Map::parse`.
+/// Only the v3.5 layout (LZ4-compressed, [`v3_format::common_events`]) is
+/// supported; a v2.x file returns [`ExtractorError::UnsupportedWolfFormat`].
 pub fn extract_common_events(
     bytes: &[u8],
     _version: &crate::engines::detector::WolfVersion,
@@ -836,64 +772,9 @@ pub fn extract_common_events(
     if v3_format::common_events::is_lz4_v3(bytes) {
         return extract_common_events_v3(bytes);
     }
-
-    let bytes_owned = bytes.to_vec();
-    let events = std::panic::catch_unwind(move || common_events_parser::parse_bytes(&bytes_owned))
-        .map_err(|e| {
-            let msg = e
-                .downcast_ref::<&str>()
-                .copied()
-                .or_else(|| e.downcast_ref::<String>().map(|s| s.as_str()))
-                .unwrap_or("unknown panic");
-            ExtractorError::MapParser(format!("CommonEvent.dat: {msg}"))
-        })?;
-
-    let mut segments = Vec::new();
-
-    for (event_idx, event) in events.iter().enumerate() {
-        let event_name = event.event_name();
-        if event_name.starts_with("X[") || event_name.starts_with("zz") {
-            continue;
-        }
-        for (cmd_idx, command) in event.commands().iter().enumerate() {
-            match command {
-                Command::ShowMessage(cmd) => {
-                    let text = cmd.text();
-                    if is_translatable(text) {
-                        segments.push(WolfSegment {
-                            key: format!("CommonEvents/{event_name}/{event_idx}/{cmd_idx}"),
-                            source_text: text.to_owned(),
-                            kind: WolfSegmentKind::CommonEventMessage {
-                                event_name: event_name.to_owned(),
-                                event_idx,
-                                cmd_idx,
-                            },
-                        });
-                    }
-                }
-                Command::ShowChoice(cmd) => {
-                    for (choice_idx, choice) in cmd.choices().iter().enumerate() {
-                        if is_translatable(choice) {
-                            segments.push(WolfSegment {
-                                key: format!(
-                                    "CommonEvents/{event_name}/{event_idx}/{cmd_idx}/choices/{choice_idx}"
-                                ),
-                                source_text: choice.clone(),
-                                kind: WolfSegmentKind::CommonEventMessage {
-                                    event_name: event_name.to_owned(),
-                                    event_idx,
-                                    cmd_idx,
-                                },
-                            });
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    Ok(segments)
+    Err(ExtractorError::UnsupportedWolfFormat(
+        "CommonEvent.dat".to_string(),
+    ))
 }
 
 /// Extracts translatable segments from a v3.5 (Inko) `CommonEvent.dat`, via
@@ -972,6 +853,7 @@ pub fn extract_wolf_project(
     version: &crate::engines::detector::WolfVersion,
 ) -> Result<Vec<WolfSegment>, ExtractorError> {
     let mut segments = Vec::new();
+    let mut unsupported: Vec<String> = Vec::new();
 
     // --- Maps ---
     // Err = no .mps files found (encrypted layout deferred to F4-05).
@@ -979,6 +861,7 @@ pub fn extract_wolf_project(
         for (name, bytes) in mps_files {
             match extract_map_segments(&name, &bytes, version) {
                 Ok(segs) => segments.extend(segs),
+                Err(ExtractorError::UnsupportedWolfFormat(file)) => unsupported.push(file),
                 Err(e) => eprintln!("warn: skipping {name}.mps — {e}"),
             }
         }
@@ -1001,10 +884,12 @@ pub fn extract_wolf_project(
     if let Some(bytes) = load_common_event_bytes(game_dir) {
         match extract_common_events(&bytes, version) {
             Ok(segs) => segments.extend(segs),
+            Err(ExtractorError::UnsupportedWolfFormat(file)) => unsupported.push(file),
             Err(e) => log::warn!("[h2s] CommonEvent extraction failed: {e}"),
         }
     }
 
+    reject_unsupported(unsupported)?;
     Ok(segments)
 }
 
@@ -1037,93 +922,6 @@ mod tests {
         b
     }
 
-    /// Encode a string as the length-prefixed SJIS format used by wolfrpg-map-parser.
-    /// Format: u32_le(len) + sjis_bytes + 0x00 null, where len = sjis_bytes.len() + 1.
-    fn encode_mps_string(text: &str) -> Vec<u8> {
-        use encoding_rs::SHIFT_JIS;
-        let (encoded, _, _) = SHIFT_JIS.encode(text);
-        let sjis: &[u8] = &encoded;
-        let len = sjis.len() + 1; // +1 for null terminator
-        let mut out = Vec::new();
-        out.extend_from_slice(&(len as u32).to_le_bytes());
-        out.extend_from_slice(sjis);
-        out.push(0x00); // null terminator
-        out
-    }
-
-    /// Build ShowMessage command bytes (the full Command wrapper).
-    fn make_show_message_cmd(text: &str) -> Vec<u8> {
-        let mut b = Vec::new();
-        // Command header: signature BE + 1 padding byte
-        b.extend_from_slice(&0x01650000u32.to_be_bytes()); // ShowMessage
-        b.push(0x00); // padding
-                      // ShowTextCommand body: 2 unknown bytes + string + 1 end byte
-        b.push(0x00);
-        b.push(0x00);
-        b.extend(encode_mps_string(text));
-        b.push(0x00); // command end byte
-        b
-    }
-
-    /// Build a page with a given set of pre-encoded command bytes.
-    fn make_page(commands_bytes: &[u8], command_count: u32) -> Vec<u8> {
-        let mut b = Vec::new();
-        b.extend_from_slice(b"\x79\xff\xff\xff\xff"); // PAGE_SIGNATURE
-        b.extend(encode_mps_string("")); // icon = ""
-        b.push(0x02); // icon_row raw (→ 0 after (>>1)-1)
-        b.push(0x00); // icon_column
-        b.push(0x00); // icon_opacity
-        b.push(0x00); // icon_blend
-        b.push(0x00); // event_trigger
-        b.extend_from_slice(&[0x00; 36]); // conditions
-        b.extend_from_slice(&[0x00; 6]); // animation+move fields
-        b.extend_from_slice(&0u32.to_le_bytes()); // move_count = 0
-        b.extend_from_slice(&command_count.to_le_bytes()); // command_count
-        b.extend_from_slice(commands_bytes);
-        b.extend_from_slice(&0u32.to_le_bytes()); // unknown2
-        b.push(0x00); // shadow_graphic
-        b.push(0x00); // range_extension_x
-        b.push(0x00); // range_extension_y
-        b.push(0x7a); // page end
-        b
-    }
-
-    /// Build an event with a single page.
-    fn make_event(page_bytes: &[u8]) -> Vec<u8> {
-        let mut b = Vec::new();
-        b.extend_from_slice(&0x6f393000u32.to_be_bytes()); // EVENT_SIGNATURE
-        b.push(0x00); // padding
-        b.extend_from_slice(&1u32.to_le_bytes()); // id
-        b.extend(encode_mps_string("E")); // name
-        b.extend_from_slice(&0u32.to_le_bytes()); // position_x
-        b.extend_from_slice(&0u32.to_le_bytes()); // position_y
-        b.extend_from_slice(&1u32.to_le_bytes()); // page_count = 1
-        b.extend_from_slice(&0u32.to_le_bytes()); // unknown1
-        b.extend_from_slice(page_bytes);
-        b.push(0x70); // event end
-        b
-    }
-
-    /// Build a full .mps wrapping the given event bytes.
-    fn make_mps_with_event(event_bytes: &[u8]) -> Vec<u8> {
-        let mut b = Vec::new();
-        b.extend_from_slice(
-            b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x57\x4F\x4C\x46\x4D\x00\x00\x00\x00\x00",
-        );
-        b.extend_from_slice(&[0x00; 5]); // unknown
-        b.extend_from_slice(&0u32.to_le_bytes()); // skippable = 0
-        b.extend_from_slice(&1u32.to_le_bytes()); // tileset
-        b.extend_from_slice(&1u32.to_le_bytes()); // width = 1
-        b.extend_from_slice(&1u32.to_le_bytes()); // height = 1
-        b.extend_from_slice(&1u32.to_le_bytes()); // event_count = 1
-        b.extend_from_slice(&[0x00; 4]); // layer1
-        b.extend_from_slice(&[0x00; 4]); // layer2
-        b.extend_from_slice(&[0x00; 4]); // layer3
-        b.extend_from_slice(event_bytes);
-        b.push(0x66); // map end
-        b
-    }
-
     fn v2() -> WolfVersion {
         WolfVersion { major: 2, minor: 0 }
     }
@@ -1133,38 +931,47 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_map_empty() {
+    fn test_v2_map_is_rejected_explicitly() {
+        // Wolf v2 maps are no longer read (wolfrpg-map-parser removed): the
+        // error must say so, never yield an empty or partial map.
         let bytes = make_empty_mps();
-        let segments = extract_map_segments("TestMap", &bytes, &v2()).unwrap();
-        assert!(segments.is_empty());
+        match extract_map_segments("Map001", &bytes, &v2()) {
+            Err(ExtractorError::UnsupportedWolfFormat(file)) => assert_eq!(file, "Map001.mps"),
+            other => panic!("expected UnsupportedWolfFormat, got {other:?}"),
+        }
+        let message = ExtractorError::UnsupportedWolfFormat("Map001.mps".into()).to_string();
+        assert!(message.starts_with(WOLF_V2_UNSUPPORTED), "{message}");
     }
 
     #[test]
-    fn test_extract_map_single_message() {
-        let cmd = make_show_message_cmd("テスト");
-        let page = make_page(&cmd, 1);
-        let event = make_event(&page);
-        let mps = make_mps_with_event(&event);
+    fn test_extract_all_wolf_refuses_a_v2_game() {
+        let game = tempfile::tempdir().unwrap();
+        let map_dir = game.path().join("Data").join("MapData");
+        std::fs::create_dir_all(&map_dir).unwrap();
+        std::fs::write(map_dir.join("Map001.mps"), make_empty_mps()).unwrap();
+        std::fs::write(map_dir.join("Map002.mps"), make_empty_mps()).unwrap();
 
-        let segments = extract_map_segments("Map001", &mps, &v2()).unwrap();
-        assert_eq!(segments.len(), 1);
-        assert_eq!(segments[0].source_text, "テスト");
-        assert_eq!(segments[0].key, "MapData/Map001/events/0/pages/0/0");
+        match extract_all_wolf(game.path(), &v2()) {
+            Err(ExtractorError::UnsupportedWolfFormat(files)) => {
+                assert!(
+                    files.contains("Map001.mps") && files.contains("Map002.mps"),
+                    "{files}"
+                );
+            }
+            other => panic!("a v2 game must be refused, got {other:?}"),
+        }
     }
 
     #[test]
-    fn test_extract_map_placeholder_only() {
-        // \v[1] is a Wolf placeholder — should be filtered out
-        let cmd = make_show_message_cmd("\\v[1]");
-        let page = make_page(&cmd, 1);
-        let event = make_event(&page);
-        let mps = make_mps_with_event(&event);
-
-        let segments = extract_map_segments("Map001", &mps, &v2()).unwrap();
-        assert!(
-            segments.is_empty(),
-            "placeholder-only segment must be filtered"
-        );
+    fn test_reject_unsupported_lists_at_most_three_files() {
+        let files = (1..=5).map(|i| format!("Map00{i}.mps")).collect();
+        match reject_unsupported(files) {
+            Err(ExtractorError::UnsupportedWolfFormat(text)) => {
+                assert_eq!(text, "Map001.mps, Map002.mps, Map003.mps and 2 more");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        assert!(reject_unsupported(Vec::new()).is_ok());
     }
 
     // -----------------------------------------------------------------------
@@ -1300,38 +1107,6 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn test_key_uniqueness_single_mps() {
-        // Two distinct messages in the same map must produce distinct keys.
-        let cmd1 = make_show_message_cmd("こんにちは");
-        let cmd2 = make_show_message_cmd("さようなら");
-        let mut cmds = cmd1;
-        cmds.extend(cmd2);
-        let page = make_page(&cmds, 2);
-        let event = make_event(&page);
-        let mps = make_mps_with_event(&event);
-
-        let segs = extract_map_segments("Map001", &mps, &v2()).unwrap();
-        assert_eq!(segs.len(), 2);
-        let key0 = &segs[0].key;
-        let key1 = &segs[1].key;
-        assert_ne!(key0, key1, "two distinct commands must have distinct keys");
-    }
-
-    #[test]
-    fn test_key_format_mps() {
-        let cmd = make_show_message_cmd("テスト");
-        let page = make_page(&cmd, 1);
-        let event = make_event(&page);
-        let mps = make_mps_with_event(&event);
-        let segs = extract_map_segments("TitleMap", &mps, &v2()).unwrap();
-        assert_eq!(segs.len(), 1);
-        assert!(
-            segs[0].key.starts_with("MapData/TitleMap/events/"),
-            "key must follow MapData/{{map}}/events/... format"
-        );
-    }
-
-    #[test]
     fn test_key_format_dat() {
         let project = make_db_project("Chars", "名前");
         let dat = make_db_dat_string("テスト");
@@ -1365,10 +1140,14 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_common_events_empty() {
+    fn test_v2_common_events_are_rejected_explicitly() {
         let bytes = make_empty_common_event_dat();
-        let segs = extract_common_events(&bytes, &v2()).unwrap();
-        assert!(segs.is_empty(), "zero events must yield no segments");
+        match extract_common_events(&bytes, &v2()) {
+            Err(ExtractorError::UnsupportedWolfFormat(file)) => {
+                assert_eq!(file, "CommonEvent.dat");
+            }
+            other => panic!("expected UnsupportedWolfFormat, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1414,7 +1193,7 @@ mod tests {
 
     #[test]
     fn test_extract_common_events_invalid_magic_no_panic() {
-        // Invalid magic → parser panics → caught → ExtractorError, not a process panic.
+        // Not a v3.x file → explicit error, never a process panic.
         let bytes = b"garbage data that is definitely not a common event file".to_vec();
         let result = extract_common_events(&bytes, &v2());
         assert!(result.is_err(), "invalid magic must return Err, not panic");
@@ -1433,27 +1212,18 @@ mod tests {
             .join("test")
     }
 
-    // CommonEvent.dat:
-    //   Honoka v2.225: fixed via forked wolfrpg-map-parser (fix/wolf-v3-format), which
-    //                  adds the 0x04D20000/0x09D20000 CallCommonEvent signatures.
-    //   Inko v2.292:   header (byte6=0x55/0x93) and v3.x payload (LZ4-compressed,
-    //                  UTF-8 strings, same 0x8E per-event signature as v2.x) now
-    //                  decode correctly via the same fork — but command parsing still
-    //                  panics on v3.x-only opcodes. See test below.
+    /// Honoka (Wolf v2.225) must now be refused as a whole, with the dedicated
+    /// error, instead of opening without its maps and common events.
     #[test]
-    fn test_real_honoka_common_events() {
-        let path = test_dir().join("月咲流ホノカver1.03/Data/BasicData/CommonEvent.dat");
-        if !path.exists() {
+    fn test_real_honoka_is_refused() {
+        let game_dir = test_dir().join("月咲流ホノカver1.03");
+        if !game_dir.exists() {
             return;
         }
-        let bytes = std::fs::read(&path).unwrap();
-        let segs = extract_common_events(&bytes, &v2())
-            .unwrap_or_else(|e| panic!("Honoka CommonEvent.dat must parse: {e:?}"));
-        eprintln!("Honoka CommonEvent.dat → {} segments", segs.len());
-        assert!(
-            !segs.is_empty(),
-            "Honoka CommonEvent.dat must yield segments"
-        );
+        assert!(matches!(
+            extract_all_wolf(&game_dir, &v2()),
+            Err(ExtractorError::UnsupportedWolfFormat(_))
+        ));
     }
 
     #[test]
@@ -1483,34 +1253,6 @@ mod tests {
             }),
             "X[ and zz events must not appear in extracted segments"
         );
-    }
-
-    // Maps (.mps) — known crate limitations:
-    //   Honoka v2.225: parses successfully (signature normalisation fixes unknown D2 cmds).
-    //   Inko v2.292:   Different map signature at bytes 16-19 (0x55000000 vs 0x00000000).
-    //                  Crate hard-codes v2.225 map signature → incompatible.
-    #[test]
-    fn test_real_honoka_maps() {
-        let map_dir = test_dir().join("月咲流ホノカver1.03/Data/MapData");
-        if !map_dir.exists() {
-            return;
-        }
-        let mut total = 0usize;
-        let mut errors = 0usize;
-        for entry in std::fs::read_dir(&map_dir).unwrap().flatten() {
-            let p = entry.path();
-            if p.extension().is_some_and(|e| e == "mps") {
-                let bytes = std::fs::read(&p).unwrap();
-                let name = p.file_name().unwrap().to_string_lossy().into_owned();
-                match extract_map_segments(&name, &bytes, &v2()) {
-                    Ok(segs) => total += segs.len(),
-                    Err(_) => errors += 1,
-                }
-            }
-        }
-        eprintln!("Honoka maps → {total} segments, {errors} files errored");
-        assert_eq!(errors, 0, "all Honoka .mps files must parse");
-        assert!(total > 0, "Honoka maps must yield segments");
     }
 
     #[test]
@@ -1682,31 +1424,6 @@ mod tests {
         assert!(
             names.is_empty(),
             "\\E mid-text must not be treated as a speaker prefix"
-        );
-    }
-
-    #[test]
-    fn test_real_honoka_speaker_names() {
-        let path = test_dir().join("月咲流ホノカver1.03/Data/BasicData/CommonEvent.dat");
-        if !path.exists() {
-            return;
-        }
-        let bytes = std::fs::read(&path).unwrap();
-        let segs = extract_common_events(&bytes, &v2()).unwrap();
-        let source_texts: Vec<String> = segs.iter().map(|s| s.source_text.clone()).collect();
-        let names = extract_wolf_speaker_names(&source_texts);
-        eprintln!(
-            "Honoka speaker names ({} found): {:?}",
-            names.len(),
-            names.iter().map(|n| &n.canonical).collect::<Vec<_>>()
-        );
-        assert!(
-            names.len() >= 5,
-            "Honoka must have at least 5 speaker names"
-        );
-        assert!(
-            names.iter().any(|n| n.canonical == "ほのか"),
-            "ほのか must be among the extracted speakers"
         );
     }
 }

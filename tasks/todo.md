@@ -27,7 +27,7 @@ Les cases sportsfan30 (A–D) ci-dessous restent la liste détaillée de R4, R8,
       `pipeline.rs:315`, `:577-593`, `stores/llm.ts:224-230`, `translate.rs:241`.
 - [ ] **R2 — Export sûr après une mise à jour du jeu** (bloquant, M–L) : S-X1 / audit F, P-2 ; inclut
       la reconstruction du snapshot (`engines/mv_mz/originals.rs:320-345`).
-- [ ] **R3 — Dépendances** (majeur, S) : rustls / webpki (S-D2), zip (S-D1), `deny.toml` (S-D4, S-D5). Modifie `Cargo.lock`.
+- [ ] **R3 — Dépendances** (majeur, S) : rustls / webpki (S-D2), zip (S-D1), `deny.toml` (S-D4). S-D5 traité par le retrait du crate (plan RW0 ci-dessous). Modifie `Cargo.lock`.
 - [ ] **R4 — Export partiel et par fichier** (S–M) : lot A sportsfan30 + S-X5 (jamais d'écriture en place).
 - [ ] **R5 — Éditeur fiable** (majeur, S chacun) : S-U1, S-U2, S-U3, S-U4.
 - [ ] **R6 — Qualité des cibles LLM** (majeur, M) : P-5a (détection incomplète), S-L1, reste du point A
@@ -36,8 +36,74 @@ Les cases sportsfan30 (A–D) ci-dessous restent la liste détaillée de R4, R8,
 - [ ] **R8 — QA lisible et révisable** (M) : lot B sportsfan30, audit D, S-X7, S-C6.
 - [ ] **R9 — Navigation recherche** (S) : lot C sportsfan30.
 - [ ] **R10 — Couverture MV/MZ** (à évaluer) : commandes 320/324/325, text fitting MV (lot D sportsfan30), `plugins.js` sur jeu réel.
-- [ ] **RW — Wolf** : après la session 2 bis ; points non vérifiés sur jeu réel.
+- [ ] **RW0 — Retirer `wolfrpg-map-parser`** (bloquant pour toute compilation en cloud) — plan ci-dessous, validé, en cours sur `chore/remove-wolfrpg-map-parser`.
+- [ ] **RW — Wolf** : après la session 2 bis et l'étude REA ; nouvelle lecture des cartes et événements communs v2 ; points non vérifiés sur jeu réel.
 - [ ] Plus tard : S-C1, S-C2, S-C3, S-E3, S-E4, S-X6, S-X8 ; mineurs S-L6–L8, S-U5, S-U6, S-E10, S-E12. Non fait : S-E9 (VX Ace désactivé), S-D3.
+
+### Plan — RW0 : retirer `wolfrpg-map-parser` (2026-10-25, Claude) — PLAN VALIDÉ le 2026-10-25 (W1 = a, W2–W4 oui) ; étapes 1–6 codées sans compilation locale, gate en cloud à faire
+
+**Pourquoi.** Décision utilisateur du 2026-10-25 : la méthode (fork d'un crate tiers, branche Git
+`fix/wolf-v3-format`) est incorrecte ; une meilleure solution sera cherchée avec REA (lot RW). Le fork
+`KATBlackCoder/wolfrpg-map-parser` n'existe plus sur GitHub : un clone neuf (cloud, Codex, autre poste)
+ne compile plus Hoshi2Star ; seul le cache Cargo local (`21f4f76`) permet encore la compilation ici.
+Bloque aussi la vérification en cloud de R1 (PR #10).
+
+**Ce qui dépend du crate (lu dans le code, `main`).**
+- Extraction : `engines/wolf/extractor.rs` — `extract_map_segments` (branche non-LZ4, `Map::parse`, l.509-581),
+  `normalize_wolf_command_signatures` (l.26), `extract_common_events` (branche non-LZ4, l.832-899).
+- Injection : `engines/wolf/injector.rs` — `inject_map` (branche non-LZ4, `Map::parse` + `patch_mps_strings`,
+  l.122-176, l.178-243), `inject_common_events` (branche non-LZ4 + `patch_common_events_strings`, l.560-652).
+- Tests : ceux qui fabriquent ou relisent des `.mps`/`CommonEvent.dat` v2 (`make_v2_common_event*`,
+  `test_v2_common_event*`, `test_real_honoka_*`, relecture `Map::parse` l.992, l.1217).
+- `Cargo.toml:44` (`wolfrpg-map-parser = "0.6"`) et `:61-62` (`[patch.crates-io]` vers le fork).
+- **Non touché** : `v3_format/` (cartes et `CommonEvent.dat` v3.x compressés LZ4), `dat_parser.rs`
+  (bases `.dat`, maison), `decrypt/`, détection.
+
+**Conséquence pour l'utilisateur.** Toute carte `.mps` ou tout `CommonEvent.dat` **non compressé LZ4 v3**
+n'est plus lisible : Wolf v2 (Honoka) en entier, et peut-être des v3.x non compressés (non vérifié).
+Aujourd'hui, une carte illisible est **ignorée en silence** (`extract_all_wolf`, `eprintln!("warn: skipping")`) :
+le projet s'ouvrirait avec les seules bases `.dat`, sans prévenir. À éviter.
+
+**Décisions à valider.**
+- W1. Jeu Wolf dont des cartes ou `CommonEvent.dat` ne sont pas au format v3 LZ4 :
+  - (a) **recommandé** : refus d'ouvrir le projet, avec un message clair (« Wolf RPG v2 : cartes et
+    événements communs pas encore pris en charge ») ;
+  - (b) ouverture avec les bases `.dat` seulement, et un avertissement visible listant les fichiers ignorés.
+- W2. Projet Wolf v2 déjà en base : l'export refuse avec le même message clair (pas d'écriture partielle).
+- W3. Branche dédiée `chore/remove-wolfrpg-map-parser` depuis `main`, PR à part, fusionnée **avant** R1 :
+  aucune branche ne compile en cloud tant qu'elle n'est pas fusionnée. Puis R1 rebasé et vérifié en cloud.
+- W4. Vérification **en cloud uniquement** (règle du 2026-10-25 : le gate fait geler le poste).
+
+**Étapes.**
+- [x] 1. `extractor.rs` : erreur dédiée `ExtractorError::UnsupportedWolfFormat` pour les branches non-LZ4 ;
+      `extract_all_wolf` remonte ces erreurs au lieu de les ignorer (W1).
+- [x] 2. `injector.rs` : même erreur pour `inject_map` / `inject_common_events` non-LZ4 (W2) ; supprimer
+      `patch_mps_strings`, `patch_common_events_strings`, `normalize_wolf_command_signatures` et les helpers
+      devenus inutiles (garder `splice_wolf_strings`/`write_wolf_string` s'ils servent encore à `serialize_dat`).
+- [x] 3. Message dans l'interface : erreur d'ouverture (`openProjectErrorKey`) et d'export, textes fr/en.
+- [x] 4. Tests : retirer ceux qui reposent sur le crate ; ajouter « carte v2 ⇒ erreur explicite » (extraction,
+      injection) et « projet v2 ⇒ ouverture refusée » ; les tests v3 et `.dat` restent inchangés.
+- [x] 5. `Cargo.toml` : retirer la dépendance et le `[patch.crates-io]` ; `Cargo.lock` mis à jour (en cloud).
+- [x] 6. Docs : CHANGELOG (« Removed »), `docs/references/wolfrpg-format-compatibility.md`,
+      `v3_format/mod.rs` (commentaire l.7-11), règle de `tasks/lessons.md` du 2026-06-11 (v2 n'utilise plus
+      le crate), rapport d'audit (S-D5 résolu par le retrait), lots R3/RW ci-dessus.
+- [ ] 7. Gate complet **en session cloud** sur la branche, puis PR ; fusion par l'utilisateur.
+
+**Fait le 2026-10-25 (non compilé localement, règle « gate en cloud »).**
+- `ExtractorError::UnsupportedWolfFormat` / `InjectorError::UnsupportedWolfFormat`, marqueur `WOLF_V2_UNSUPPORTED`
+  (`wolf_v2_unsupported`) ; `extract_all_wolf` et `extract_wolf_project` refusent le projet entier (3 fichiers
+  cités au plus) au lieu d'ignorer les cartes en silence ; ouverture annulée par la transaction (aucun projet partiel).
+- Retirés : `normalize_wolf_command_signatures`, `patch_mps_strings`, `patch_common_events_strings`,
+  `splice_wolf_strings`, tests v2 du crate ; `Cargo.toml` et `Cargo.lock` édités à la main (dépendances
+  `encoding_rs`/`lz4_flex` déjà directes).
+- Interface : `openProjectErrorKey` ⇒ `projectList.wolfV2Unsupported` ; export ⇒ `toasts.wolfV2Unsupported` ;
+  « Supportés : … Wolf RPG v3 ». Nouveaux tests : extracteur (refus, liste), injecteur (carte, événements
+  communs, export), e2e `wolf_v2_game_is_refused_at_open`, Vitest `projectError.test.ts`.
+
+**Critère de sortie.** `rg wolfrpg` ne trouve plus que l'historique (CHANGELOG, journaux) ; un clone neuf
+compile en cloud ; un jeu Wolf v2 donne un message clair, jamais un projet partiel silencieux ; tests v3 verts.
+
+**Effort estimé.** S à M (environ une demi-journée), vérification en cloud comprise.
 
 ## Études REA d'applications tierces (2026-10-25)
 

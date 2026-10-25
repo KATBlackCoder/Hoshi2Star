@@ -5,11 +5,10 @@
 // .wolf archives, so no re-encryption is required.  Option B (DXA re-pack) is
 // deferred to F5.
 //
-// .mps injection: sequential scan + splice (Approach B).
-//   wolfrpg-map-parser does not expose byte offsets in public structs
-//   (confirmed Step 1 investigation).  We parse to get the ordered list of
-//   translatable strings, then walk the raw bytes replacing each ReadString
-//   payload in the same sequential order.
+// .mps / CommonEvent.dat injection: v3.x (LZ4) only, via the in-house
+//   `v3_format` AST. The v2.x layout is refused with
+//   `InjectorError::UnsupportedWolfFormat` since `wolfrpg-map-parser` was
+//   removed (2026-10-25); a replacement parser is planned (lot RW).
 //
 // .dat injection: parse_database() → modify string_values → serialize_dat().
 
@@ -20,7 +19,6 @@ use super::v3_format::{self, V3FormatError};
 use crate::engines::detector::WolfVersion;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use wolfrpg_map_parser::Map;
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -40,6 +38,13 @@ pub enum InjectorError {
     MissingProject(String),
     #[error("v3.x map format error: {0}")]
     V3Format(#[from] V3FormatError),
+    /// v2.x maps / common events can no longer be rewritten; same marker as
+    /// the extractor so the frontend shows one dedicated message.
+    #[error(
+        "{marker}: Wolf RPG v2 maps and common events are not supported yet ({0})",
+        marker = super::extractor::WOLF_V2_UNSUPPORTED
+    )]
+    UnsupportedWolfFormat(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -109,21 +114,20 @@ fn encode_for_wolf(text: &str, is_utf8: bool) -> Result<Vec<u8>, InjectorError> 
 }
 
 // ---------------------------------------------------------------------------
-// Step 2 — inject_map (.mps sequential scan + splice, Approach B)
+// Step 2 — inject_map (.mps, v3.x only)
 // ---------------------------------------------------------------------------
 
-/// Inject translations into a Wolf RPG `.mps` map file.
+/// Inject translations into a Wolf RPG `.mps` map file (v3.x LZ4 layout).
 ///
-/// Approach B: parse the file to extract the ordered list of translatable
-/// strings, then scan the raw bytes sequentially and splice each ReadString
-/// whose source matches an entry in `translations`.
+/// A v2.x map returns [`InjectorError::UnsupportedWolfFormat`]: nothing is
+/// written rather than a partially patched file.
 ///
 /// `map_name` must match the stem used in the segment keys (e.g. `"Map001"`).
 pub fn inject_map(
     map_name: &str,
     bytes: &[u8],
     translations: &[WolfTranslation],
-    version: &WolfVersion,
+    _version: &WolfVersion,
 ) -> Result<(Vec<u8>, InjectionResult), InjectorError> {
     let translation_map: HashMap<&str, &str> = translations
         .iter()
@@ -142,143 +146,9 @@ pub fn inject_map(
         ));
     }
 
-    let bytes_owned = bytes.to_vec();
-    let map = std::panic::catch_unwind(move || Map::parse(&bytes_owned)).map_err(|_| {
-        InjectorError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "wolfrpg-map-parser panicked on mps bytes",
-        ))
-    })?;
-
-    let mut updated = 0usize;
-    let patched = patch_mps_strings(
-        bytes,
-        &map,
-        &translation_map,
-        map_name,
-        version,
-        &mut updated,
-    )?;
-
-    Ok((
-        patched,
-        InjectionResult {
-            file_path: PathBuf::from(format!("{map_name}.mps")),
-            updated_count: updated,
-        },
-    ))
-}
-
-/// Build an ordered list of (source_encoded, target_encoded) pairs for every
-/// translatable command in the map, then walk the raw bytes and splice each
-/// ReadString matching the source bytes.
-///
-/// The replacements are consumed in sequential order — guaranteed to match the
-/// binary stream order because wolfrpg-map-parser preserves insertion order.
-fn patch_mps_strings(
-    original: &[u8],
-    map: &Map,
-    translations: &HashMap<&str, &str>,
-    map_name: &str,
-    version: &WolfVersion,
-    updated: &mut usize,
-) -> Result<Vec<u8>, InjectorError> {
-    use wolfrpg_map_parser::command::Command;
-
-    // Build ordered replacement list: (source_sjis, target_encoded).
-    let mut replacements: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
-
-    for (event_idx, event) in map.events().iter().enumerate() {
-        for (page_idx, page) in event.pages().iter().enumerate() {
-            for (cmd_idx, command) in page.commands().iter().enumerate() {
-                match command {
-                    Command::ShowMessage(cmd) => {
-                        let text = cmd.text();
-                        if text.trim().is_empty() {
-                            continue;
-                        }
-                        let key = format!(
-                            "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}"
-                        );
-                        let src = encode_for_wolf(text, version.is_utf8())?;
-                        let dst = match translations.get(key.as_str()) {
-                            Some(&t) => encode_for_wolf(t, version.is_utf8())?,
-                            None => src.clone(),
-                        };
-                        replacements.push((src, dst));
-                    }
-                    Command::ShowChoice(cmd) => {
-                        for (choice_idx, choice) in cmd.choices().iter().enumerate() {
-                            if choice.trim().is_empty() {
-                                continue;
-                            }
-                            let key = format!(
-                                "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}/choices/{choice_idx}"
-                            );
-                            let src = encode_for_wolf(choice, version.is_utf8())?;
-                            let dst = match translations.get(key.as_str()) {
-                                Some(&t) => encode_for_wolf(t, version.is_utf8())?,
-                                None => src.clone(),
-                            };
-                            replacements.push((src, dst));
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    Ok(splice_wolf_strings(original, &replacements, updated))
-}
-
-/// Sequential ReadString splice shared by the `.mps` and `CommonEvent.dat`
-/// injectors (both v2.x binary formats store text as `size: u32 + bytes + 0x00`
-/// frames in stream order).
-///
-/// Walks `original`, and for each `(src, dst)` replacement — consumed strictly
-/// in order — splices the next frame whose payload matches `src`. Non-matching
-/// bytes are copied through verbatim. Because `replacements` includes a no-op
-/// `dst == src` entry for every translatable command (translated or not), each
-/// frame is consumed in the exact order the parser emitted it, so duplicate
-/// source strings can't de-align.
-fn splice_wolf_strings(
-    original: &[u8],
-    replacements: &[(Vec<u8>, Vec<u8>)],
-    updated: &mut usize,
-) -> Vec<u8> {
-    let mut out: Vec<u8> = Vec::with_capacity(original.len());
-    let mut pos = 0usize;
-    let mut rep_idx = 0usize;
-
-    while pos < original.len() {
-        if rep_idx < replacements.len() {
-            let (ref src, ref dst) = replacements[rep_idx];
-            let frame_len = 4 + src.len() + 1;
-            let expected_size = (src.len() + 1) as u32;
-
-            if pos + frame_len <= original.len()
-                && original[pos..pos + 4] == expected_size.to_le_bytes()
-                && original[pos + 4..pos + 4 + src.len()] == src[..]
-                && original[pos + 4 + src.len()] == 0x00
-            {
-                let new_size = (dst.len() + 1) as u32;
-                out.extend_from_slice(&new_size.to_le_bytes());
-                out.extend_from_slice(dst);
-                out.push(0x00);
-                if src != dst {
-                    *updated += 1;
-                }
-                pos += frame_len;
-                rep_idx += 1;
-                continue;
-            }
-        }
-        out.push(original[pos]);
-        pos += 1;
-    }
-
-    out
+    Err(InjectorError::UnsupportedWolfFormat(format!(
+        "{map_name}.mps"
+    )))
 }
 
 /// Inject translations into a v3.x (LZ4-compressed) `.mps` map using the
@@ -549,10 +419,9 @@ pub fn inject_dat(
 
 /// Inject translations into a Wolf RPG `CommonEvent.dat` file.
 ///
-/// Symmetric to [`inject_map`]: v2.x uses the sequential ReadString splice
-/// (via [`splice_wolf_strings`]); v3.5 (Inko, LZ4-compressed) parses to the
+/// Symmetric to [`inject_map`]: v3.5 (Inko, LZ4-compressed) parses to the
 /// in-house [`v3_format`] AST, replaces `string_args` by key, then dumps and
-/// recompresses.
+/// recompresses. A v2.x file returns [`InjectorError::UnsupportedWolfFormat`].
 ///
 /// Keys match [`super::extractor::extract_common_events`]:
 /// `CommonEvents/{event_name}/{event_idx}/{cmd_idx}[/choices/{choice_idx}]`
@@ -560,29 +429,20 @@ pub fn inject_dat(
 pub fn inject_common_events(
     bytes: &[u8],
     translations: &[WolfTranslation],
-    version: &WolfVersion,
+    _version: &WolfVersion,
 ) -> Result<(Vec<u8>, InjectionResult), InjectorError> {
+    if !v3_format::common_events::is_lz4_v3(bytes) {
+        return Err(InjectorError::UnsupportedWolfFormat(
+            "CommonEvent.dat".to_string(),
+        ));
+    }
     let translation_map: HashMap<&str, &str> = translations
         .iter()
         .map(|t| (t.key.as_str(), t.text.as_str()))
         .collect();
 
     let mut updated = 0usize;
-    let patched = if v3_format::common_events::is_lz4_v3(bytes) {
-        inject_common_events_v3(bytes, &translation_map, &mut updated)?
-    } else {
-        let bytes_owned = bytes.to_vec();
-        let events = std::panic::catch_unwind(move || {
-            wolfrpg_map_parser::common_events_parser::parse_bytes(&bytes_owned)
-        })
-        .map_err(|_| {
-            InjectorError::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "wolfrpg-map-parser panicked on CommonEvent.dat bytes",
-            ))
-        })?;
-        patch_common_events_strings(bytes, &events, &translation_map, version, &mut updated)?
-    };
+    let patched = inject_common_events_v3(bytes, &translation_map, &mut updated)?;
 
     Ok((
         patched,
@@ -591,61 +451,6 @@ pub fn inject_common_events(
             updated_count: updated,
         },
     ))
-}
-
-/// Build the ordered replacement list for every translatable command in a v2.x
-/// `CommonEvent.dat` and splice it into the raw bytes — mirrors
-/// [`patch_mps_strings`], but with the flat common-event command list.
-fn patch_common_events_strings(
-    original: &[u8],
-    events: &[wolfrpg_map_parser::db_parser::common_event::CommonEvent],
-    translations: &HashMap<&str, &str>,
-    version: &WolfVersion,
-    updated: &mut usize,
-) -> Result<Vec<u8>, InjectorError> {
-    use wolfrpg_map_parser::command::Command;
-
-    let mut replacements: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
-
-    for (event_idx, event) in events.iter().enumerate() {
-        let event_name = event.event_name();
-        for (cmd_idx, command) in event.commands().iter().enumerate() {
-            match command {
-                Command::ShowMessage(cmd) => {
-                    let text = cmd.text();
-                    if text.trim().is_empty() {
-                        continue;
-                    }
-                    let key = format!("CommonEvents/{event_name}/{event_idx}/{cmd_idx}");
-                    let src = encode_for_wolf(text, version.is_utf8())?;
-                    let dst = match translations.get(key.as_str()) {
-                        Some(&t) => encode_for_wolf(t, version.is_utf8())?,
-                        None => src.clone(),
-                    };
-                    replacements.push((src, dst));
-                }
-                Command::ShowChoice(cmd) => {
-                    for (choice_idx, choice) in cmd.choices().iter().enumerate() {
-                        if choice.trim().is_empty() {
-                            continue;
-                        }
-                        let key = format!(
-                            "CommonEvents/{event_name}/{event_idx}/{cmd_idx}/choices/{choice_idx}"
-                        );
-                        let src = encode_for_wolf(choice, version.is_utf8())?;
-                        let dst = match translations.get(key.as_str()) {
-                            Some(&t) => encode_for_wolf(t, version.is_utf8())?,
-                            None => src.clone(),
-                        };
-                        replacements.push((src, dst));
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    Ok(splice_wolf_strings(original, &replacements, updated))
 }
 
 /// Inject translations into a v3.5 (LZ4-compressed) `CommonEvent.dat` using the
@@ -846,11 +651,6 @@ mod tests {
         WolfVersion { major: 3, minor: 0 }
     }
 
-    // -----------------------------------------------------------------------
-    // Helpers for .mps tests — duplicated from extractor tests (no shared
-    // test utils module yet; acceptable for F4-04 scope)
-    // -----------------------------------------------------------------------
-
     fn sjis_string(text: &str) -> Vec<u8> {
         use encoding_rs::SHIFT_JIS;
         let (enc, _, _) = SHIFT_JIS.encode(text);
@@ -861,70 +661,22 @@ mod tests {
         out
     }
 
-    fn make_show_message_cmd(text: &str) -> Vec<u8> {
-        let mut b = Vec::new();
-        b.extend_from_slice(&0x01650000u32.to_be_bytes()); // ShowMessage
-        b.push(0x00);
-        b.push(0x00);
-        b.push(0x00);
-        b.extend(sjis_string(text));
-        b.push(0x00);
-        b
-    }
-
-    fn make_page(commands_bytes: &[u8], command_count: u32) -> Vec<u8> {
-        let mut b = Vec::new();
-        b.extend_from_slice(b"\x79\xff\xff\xff\xff");
-        b.extend(sjis_string(""));
-        b.push(0x02);
-        b.push(0x00);
-        b.push(0x00);
-        b.push(0x00);
-        b.push(0x00);
-        b.extend_from_slice(&[0x00; 36]);
-        b.extend_from_slice(&[0x00; 6]);
-        b.extend_from_slice(&0u32.to_le_bytes());
-        b.extend_from_slice(&command_count.to_le_bytes());
-        b.extend_from_slice(commands_bytes);
-        b.extend_from_slice(&0u32.to_le_bytes());
-        b.push(0x00);
-        b.push(0x00);
-        b.push(0x00);
-        b.push(0x7a);
-        b
-    }
-
-    fn make_event(page_bytes: &[u8]) -> Vec<u8> {
-        let mut b = Vec::new();
-        b.extend_from_slice(&0x6f393000u32.to_be_bytes());
-        b.push(0x00);
-        b.extend_from_slice(&1u32.to_le_bytes());
-        b.extend(sjis_string("E"));
-        b.extend_from_slice(&0u32.to_le_bytes());
-        b.extend_from_slice(&0u32.to_le_bytes());
-        b.extend_from_slice(&1u32.to_le_bytes());
-        b.extend_from_slice(&0u32.to_le_bytes());
-        b.extend_from_slice(page_bytes);
-        b.push(0x70);
-        b
-    }
-
-    fn make_mps_with_event(event_bytes: &[u8]) -> Vec<u8> {
-        let mut b = Vec::new();
-        b.extend_from_slice(
-            b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x57\x4F\x4C\x46\x4D\x00\x00\x00\x00\x00",
-        );
-        b.extend_from_slice(&[0x00; 5]);
-        b.extend_from_slice(&0u32.to_le_bytes());
-        b.extend_from_slice(&1u32.to_le_bytes());
-        b.extend_from_slice(&1u32.to_le_bytes());
-        b.extend_from_slice(&1u32.to_le_bytes());
-        b.extend_from_slice(&1u32.to_le_bytes());
-        b.extend_from_slice(&[0x00; 4]);
-        b.extend_from_slice(&[0x00; 4]);
-        b.extend_from_slice(&[0x00; 4]);
-        b.extend_from_slice(event_bytes);
+    /// Header of a v2.x `.mps` (WOLFM signature, no LZ4 wrapper): enough for
+    /// the format check, which must refuse it.
+    fn v2_mps_stub() -> Vec<u8> {
+        let mut b =
+            b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x57\x4F\x4C\x46\x4D\x00\x00\x00\x00\x00"
+                .to_vec();
+        b.extend_from_slice(&[0x00; 25]);
         b.push(0x66);
+        b
+    }
+
+    /// Header of a v2.x `CommonEvent.dat` (version byte `0x8F`, no LZ4) with
+    /// zero events.
+    fn v2_common_events_stub() -> Vec<u8> {
+        let mut b = b"\x00\x57\x00\x00\x4F\x4C\x00\x46\x43\x00\x8F".to_vec();
+        b.extend_from_slice(&0u32.to_le_bytes());
         b
     }
 
@@ -955,73 +707,58 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Step 2 — inject_map
+    // Step 2 — inject_map: v2.x is refused, nothing is written
     // -----------------------------------------------------------------------
 
     #[test]
-    fn test_inject_map_identity() {
-        let cmd = make_show_message_cmd("テスト");
-        let page = make_page(&cmd, 1);
-        let event = make_event(&page);
-        let mps = make_mps_with_event(&event);
+    fn test_inject_v2_map_is_refused() {
+        let translations = vec![WolfTranslation {
+            key: "MapData/Map001/events/0/pages/0/0".to_string(),
+            text: "Hello".to_string(),
+        }];
+        match inject_map("Map001", &v2_mps_stub(), &translations, &v2()) {
+            Err(InjectorError::UnsupportedWolfFormat(file)) => assert_eq!(file, "Map001.mps"),
+            Err(other) => panic!("expected UnsupportedWolfFormat, got {other}"),
+            Ok(_) => panic!("a v2 map must not be rewritten"),
+        }
+    }
 
-        let (new_bytes, result) = inject_map("Map001", &mps, &[], &v2()).unwrap();
-        assert_eq!(result.updated_count, 0);
-        assert_eq!(
-            new_bytes, mps,
-            "identity injection must produce identical bytes"
+    #[test]
+    fn test_inject_v2_common_events_is_refused() {
+        match inject_common_events(&v2_common_events_stub(), &[], &v2()) {
+            Err(InjectorError::UnsupportedWolfFormat(file)) => {
+                assert_eq!(file, "CommonEvent.dat");
+            }
+            Err(other) => panic!("expected UnsupportedWolfFormat, got {other}"),
+            Ok(_) => panic!("a v2 CommonEvent.dat must not be rewritten"),
+        }
+        let message = InjectorError::UnsupportedWolfFormat("CommonEvent.dat".into()).to_string();
+        assert!(
+            message.starts_with(crate::engines::wolf::extractor::WOLF_V2_UNSUPPORTED),
+            "{message}"
         );
     }
 
-    #[test]
-    fn test_inject_map_translation() {
-        let cmd = make_show_message_cmd("テスト");
-        let page = make_page(&cmd, 1);
-        let event = make_event(&page);
-        let mps = make_mps_with_event(&event);
+    #[tokio::test]
+    async fn test_export_of_a_v2_map_fails_explicitly() {
+        let tmp = tempfile::tempdir().unwrap();
+        let map_dir = tmp.path().join("Data").join("MapData");
+        std::fs::create_dir_all(&map_dir).unwrap();
+        std::fs::write(map_dir.join("Map001.mps"), v2_mps_stub()).unwrap();
+        let mut by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
+        by_file.insert(
+            "MapData/Map001".to_string(),
+            vec![WolfTranslation {
+                key: "MapData/Map001/events/0/pages/0/0".to_string(),
+                text: "Hello".to_string(),
+            }],
+        );
 
-        // Use a same-byte-length replacement to keep the test simple.
-        let translations = vec![WolfTranslation {
-            key: "MapData/Map001/events/0/pages/0/0".to_string(),
-            text: "Hello!!".to_string(), // 7 bytes (same as テスト in SJIS = 6 bytes... actually different)
-        }];
-        let (new_bytes, result) = inject_map("Map001", &mps, &translations, &v2()).unwrap();
-        assert_eq!(result.updated_count, 1);
-
-        // Re-parse to verify text changed.
-        use wolfrpg_map_parser::{command::Command, Map};
-        let re_parsed = Map::parse(&new_bytes);
-        let text = re_parsed
-            .events()
-            .first()
-            .and_then(|e| e.pages().first())
-            .and_then(|p| p.commands().first())
-            .and_then(|c| {
-                if let Command::ShowMessage(m) = c {
-                    Some(m.text().to_owned())
-                } else {
-                    None
-                }
-            })
-            .unwrap();
-        assert_eq!(text, "Hello!!");
-    }
-
-    #[test]
-    fn test_inject_map_wrong_key() {
-        // A key that doesn't match any command is simply ignored (not an error).
-        let cmd = make_show_message_cmd("テスト");
-        let page = make_page(&cmd, 1);
-        let event = make_event(&page);
-        let mps = make_mps_with_event(&event);
-
-        let translations = vec![WolfTranslation {
-            key: "MapData/Map001/events/99/pages/0/0".to_string(),
-            text: "Nope".to_string(),
-        }];
-        let (new_bytes, result) = inject_map("Map001", &mps, &translations, &v2()).unwrap();
-        assert_eq!(result.updated_count, 0);
-        assert_eq!(new_bytes, mps, "unknown key must leave file unchanged");
+        let result = inject_all_to_memory(tmp.path(), &by_file, &v2()).await;
+        assert!(
+            matches!(result, Err(InjectorError::UnsupportedWolfFormat(_))),
+            "export must stop with the dedicated error"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1166,71 +903,6 @@ mod tests {
     // -----------------------------------------------------------------------
     // Step 6 — round-trip tests
     // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_round_trip_mps_identity() {
-        let cmd = make_show_message_cmd("こんにちは");
-        let page = make_page(&cmd, 1);
-        let event = make_event(&page);
-        let mps = make_mps_with_event(&event);
-
-        let segs =
-            crate::engines::wolf::extractor::extract_map_segments("RtMap", &mps, &v2()).unwrap();
-        assert_eq!(segs.len(), 1);
-
-        // Identity translations: inject source text as-is.
-        let translations: Vec<WolfTranslation> = segs
-            .iter()
-            .map(|s| WolfTranslation {
-                key: s.key.clone(),
-                text: s.source_text.clone(),
-            })
-            .collect();
-
-        let (new_bytes, result) = inject_map("RtMap", &mps, &translations, &v2()).unwrap();
-        // Identity replacement: updated_count == 0 because src == dst.
-        assert_eq!(result.updated_count, 0);
-        assert_eq!(
-            new_bytes, mps,
-            "round-trip identity must produce identical bytes"
-        );
-    }
-
-    #[test]
-    fn test_round_trip_mps_translation() {
-        let cmd = make_show_message_cmd("こんにちは");
-        let page = make_page(&cmd, 1);
-        let event = make_event(&page);
-        let mps = make_mps_with_event(&event);
-
-        let segs =
-            crate::engines::wolf::extractor::extract_map_segments("RtMap", &mps, &v2()).unwrap();
-        assert_eq!(segs.len(), 1);
-
-        let translations = vec![WolfTranslation {
-            key: segs[0].key.clone(),
-            text: "Hello".to_string(),
-        }];
-        let (new_bytes, result) = inject_map("RtMap", &mps, &translations, &v2()).unwrap();
-        assert_eq!(result.updated_count, 1);
-
-        use wolfrpg_map_parser::{command::Command, Map};
-        let re_parsed = Map::parse(&new_bytes);
-        let text = re_parsed
-            .events()
-            .first()
-            .and_then(|e| e.pages().first())
-            .and_then(|p| p.commands().first())
-            .and_then(|c| {
-                if let Command::ShowMessage(m) = c {
-                    Some(m.text().to_owned())
-                } else {
-                    None
-                }
-            })
-            .unwrap();
-        assert_eq!(text, "Hello");
-    }
 
     #[test]
     fn test_round_trip_dat_identity() {
@@ -1477,189 +1149,10 @@ mod tests {
         assert_eq!(injection_bucket("nope").as_deref(), None);
     }
 
-    // -- v2.x (Honoka) CommonEvent.dat synthetic fixture -------------------
-    //
-    // The real Honoka fixture isn't present in every checkout, so we build a
-    // minimal-but-valid v2 `CommonEvent.dat` by hand (Shift-JIS, one event with
-    // one ShowMessage + the Exit terminator). Layout mirrors the forked
-    // `wolfrpg_map_parser::db_parser::models::common_event::CommonEvent::parse`.
-
-    /// Exit command frame: signature `0x01000000` (BE) + 1 command padding +
-    /// 3 bytes consumed by `parse_empty`.
-    fn make_exit_cmd() -> Vec<u8> {
-        let mut b = 0x0100_0000u32.to_be_bytes().to_vec();
-        b.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
-        b
-    }
-
-    /// One v2 common event with a single ShowMessage command and the Exit
-    /// terminator. `command_count` is 2 (ShowMessage + Exit, each counting 1).
-    fn make_v2_common_event(id: u32, name: &str, message: &str) -> Vec<u8> {
-        let mut b = Vec::new();
-        b.push(0x8e); // EVENT_SIGNATURE
-        b.extend_from_slice(&id.to_le_bytes());
-        b.extend_from_slice(&0u32.to_le_bytes()); // event_type
-        b.extend_from_slice(&[0u8; 5]); // padding
-        b.push(0x00); // number_arguments_count
-        b.push(0x00); // string_arguments_count
-        b.extend(sjis_string(name)); // event_name
-        b.extend_from_slice(&2u32.to_le_bytes()); // command_count
-        b.extend(make_show_message_cmd(message));
-        b.extend(make_exit_cmd());
-        b.extend(sjis_string("")); // unknown string
-        b.extend(sjis_string("")); // note
-        b.push(0x00); // padding
-        b.extend_from_slice(&0u32.to_le_bytes()); // argument_names_count
-        b.extend_from_slice(&0u32.to_le_bytes()); // argument_types_count
-        b.extend_from_slice(&0u32.to_le_bytes()); // db_options count
-        b.extend_from_slice(&0u32.to_le_bytes()); // db_references count
-        b.extend_from_slice(&0u32.to_le_bytes()); // argument_values len
-        b.push(0x00); // padding
-        b.extend_from_slice(&0u32.to_le_bytes()); // color
-        for _ in 0..100 {
-            b.extend(sjis_string("")); // var_names (fixed 100)
-        }
-        b.push(0x00); // padding
-        b.extend_from_slice(&0u32.to_le_bytes()); // trailing "4 + len" block (len 0)
-        b.push(0x00); // padding
-        b.extend(sjis_string("")); // return_name
-        b.extend_from_slice(&0u32.to_le_bytes()); // return_variable
-        b.push(0x92); // END_SIGNATURE
-        b
-    }
-
-    /// A full v2 `CommonEvent.dat`: 11-byte magic (version `0x8F`, non-LZ4) +
-    /// event count + events.
-    fn make_v2_common_event_dat(events: &[(&str, &str)]) -> Vec<u8> {
-        let mut b = Vec::new();
-        b.extend_from_slice(b"\x00\x57\x00\x00\x4F\x4C\x00\x46\x43\x00\x8F");
-        b.extend_from_slice(&(events.len() as u32).to_le_bytes());
-        for (i, (name, msg)) in events.iter().enumerate() {
-            b.extend(make_v2_common_event(i as u32 + 1, name, msg));
-        }
-        b
-    }
-
-    fn write_ce_dat(bytes: &[u8]) -> (tempfile::TempDir, std::path::PathBuf) {
-        let tmp = tempfile::tempdir().unwrap();
-        let game_dir = tmp.path().to_path_buf();
-        let basic = game_dir.join("Data").join("BasicData");
-        std::fs::create_dir_all(&basic).unwrap();
-        std::fs::write(basic.join("CommonEvent.dat"), bytes).unwrap();
-        (tmp, game_dir)
-    }
-
-    /// The synthetic v2 fixture must parse and yield the message segment — this
-    /// guards the fixture itself before the round-trip tests rely on it.
-    #[test]
-    fn test_v2_common_event_fixture_extracts() {
-        use crate::engines::wolf::extractor::extract_common_events;
-        let bytes = make_v2_common_event_dat(&[("EvA", "Hello")]);
-        assert!(
-            !v3_format::common_events::is_lz4_v3(&bytes),
-            "must be v2 (non-LZ4)"
-        );
-        let segs = extract_common_events(&bytes, &v2()).unwrap();
-        assert_eq!(segs.len(), 1);
-        assert_eq!(segs[0].source_text, "Hello");
-        assert_eq!(segs[0].key, "CommonEvents/EvA/0/0");
-    }
-
-    /// v2 (Honoka) end-to-end: two events → bucket → inject → re-extract, both
-    /// translations survive into the single `CommonEvent.dat`.
-    #[tokio::test]
-    async fn test_v2_common_events_translations_survive_export() {
-        use crate::engines::wolf::extractor::extract_common_events;
-
-        let bytes = make_v2_common_event_dat(&[("EvA", "Hello"), ("EvB", "World")]);
-        let (_tmp, game_dir) = write_ce_dat(&bytes);
-
-        let segs = extract_common_events(&bytes, &v2()).unwrap();
-        assert_eq!(segs.len(), 2);
-
-        let mut by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
-        for seg in &segs {
-            let bucket = injection_bucket(&seg.key).unwrap();
-            by_file.entry(bucket).or_default().push(WolfTranslation {
-                key: seg.key.clone(),
-                text: format!("[T]{}", seg.source_text),
-            });
-        }
-
-        let entries = inject_all_to_memory(&game_dir, &by_file, &v2())
-            .await
-            .unwrap();
-        let ce: Vec<_> = entries
-            .iter()
-            .filter(|(p, _)| p.ends_with("CommonEvent.dat"))
-            .collect();
-        assert_eq!(ce.len(), 1);
-
-        let new_segs = extract_common_events(&ce[0].1, &v2()).unwrap();
-        let texts: Vec<&str> = new_segs.iter().map(|s| s.source_text.as_str()).collect();
-        assert!(texts.contains(&"[T]Hello"), "EvA missing: {texts:?}");
-        assert!(texts.contains(&"[T]World"), "EvB missing: {texts:?}");
-    }
-
-    /// v2 identity: empty translations must reproduce the input byte-for-byte
-    /// (no de-alignment on the sequential splice).
-    #[test]
-    fn test_v2_common_events_identity() {
-        let bytes = make_v2_common_event_dat(&[("EvA", "Hello"), ("EvA", "Hello")]);
-        let (out, result) = inject_common_events(&bytes, &[], &v2()).unwrap();
-        assert_eq!(out, bytes, "identity injection must be byte-exact");
-        assert_eq!(result.updated_count, 0);
-    }
-
     // -- Real-file CommonEvent.dat injection (UberWolf-decrypted fixtures) --
     //
-    // These read the real Honoka (v2) / Inko (v3.5) `CommonEvent.dat` and skip
-    // gracefully when the fixture isn't present (same convention as the other
-    // real-file tests). They are the definitive proof for Phase 1 on real data.
-
-    /// Honoka (v2): empty injection is byte-exact, and a real translation
-    /// survives re-extraction.
-    #[test]
-    fn test_real_honoka_common_events_inject() {
-        use crate::engines::wolf::extractor::extract_common_events;
-        let path = test_dir().join("月咲流ホノカver1.03/Data/BasicData/CommonEvent.dat");
-        if !path.exists() {
-            return;
-        }
-        let bytes = std::fs::read(&path).unwrap();
-        assert!(
-            !v3_format::common_events::is_lz4_v3(&bytes),
-            "Honoka must be v2"
-        );
-
-        // Identity: no translations → byte-exact.
-        let (identity, res) = inject_common_events(&bytes, &[], &v2()).unwrap();
-        assert_eq!(identity, bytes, "v2 identity injection must be byte-exact");
-        assert_eq!(res.updated_count, 0);
-
-        // Translate the first segment and confirm it round-trips.
-        let segs = extract_common_events(&bytes, &v2()).unwrap();
-        assert!(
-            !segs.is_empty(),
-            "Honoka CommonEvent.dat must yield segments"
-        );
-        let target = "★ホシ2スター★";
-        let translations = vec![WolfTranslation {
-            key: segs[0].key.clone(),
-            text: target.to_owned(),
-        }];
-        let (new_bytes, res) = inject_common_events(&bytes, &translations, &v2()).unwrap();
-        assert_eq!(res.updated_count, 1);
-
-        let new_segs = extract_common_events(&new_bytes, &v2()).unwrap();
-        let hit = new_segs.iter().find(|s| s.key == segs[0].key).unwrap();
-        assert_eq!(hit.source_text, target, "translation must round-trip");
-        assert_eq!(
-            new_segs.len(),
-            segs.len(),
-            "segment count must be preserved"
-        );
-    }
+    // Reads the real Inko (v3.5) `CommonEvent.dat` and skips gracefully when
+    // the fixture isn't present (same convention as the other real-file tests).
 
     /// Inko (v3.5, LZ4): the decompressed payload of an empty injection is
     /// byte-exact, and a real translation survives re-extraction.
