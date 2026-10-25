@@ -3,9 +3,62 @@
 **Mis à jour :** 2026-10-25 — Claude.
 **Objectif utilisateur :** lancer une analyse complète de l'app dans une session dédiée, puis
 traiter les retours de sportsfan30 (F95zone) et étudier RuneTranslate avec REA.
-**Statut :** analyse complète, session 1 sur 3 faite (carte, menaces, contrôles automatiques).
-Sessions 2 (jeux réels) et 3 (vérifications et rapport final) à faire. Aucun code applicatif modifié
-depuis la PR #9. Rien n'est commité pour la session 1.
+**Statut :** analyse complète :
+- session 1 faite ;
+- session 2 faite pour MV/MZ, Wolf reporté (S-L2 confirmé le 2026-10-25 à 15:24 UTC) ;
+- session 3 à faire. Aucun code applicatif modifié
+depuis la PR #9. Rien n'est commité pour les sessions 1 et 2.
+
+## Session 2 (2026-10-25, Claude) — reprise
+
+Rapport : `docs/audit/2026-10-analyse-complete.md`, section « Parcours réels » (P-1 à P-9, liste des vérifications en jeu).
+Preuves : `docs/audit/2026-10-analyse-complete.session2.preuves.txt`.
+Journal : `docs/journal/2026-10-25-analyse-session-2.md`.
+
+- Dossier de travail ignoré par Git : `test/_session2/`.
+  - `games/` : copies reflink des 3 jeux ;
+  - `xdg-data/com.blackat.hoshi2star/` : copie de la base et des réglages ;
+  - `evidence/` : preuves brutes et captures ;
+  - `zips/` ;
+  - `tools/` : scripts Python de comparaison.
+- Lancement de l'app sur la copie :
+  `env XDG_DATA_HOME=/home/blackat/Bureau/Hoshi2Star/test/_session2/xdg-data pnpm tauri:linux`.
+  Preuve dans `evidence/00-setup.txt` : `/proc/<pid>/fd` pointe vers la copie, sha256 de l'original inchangé.
+- StandGirl : `projects.game_path` et `source_files.file_path` pointaient vers le jeu original (S-C4 confirmé).
+  Ils ont été réécrits vers la copie, dans la base copiée seulement.
+- **MV fait** (性処理係のある学校, projet neuf) :
+  - extraction : 15 498 segments, 159 fichiers ;
+  - aller-retour par marqueurs : 15 498/15 498 pointeurs justes, 0 autre valeur changée. Seule la mise en forme des lignes est perdue (S-X10) ;
+  - S-X1 confirmé, plus grave que prévu : traductions écrites dans le nom de visage des commandes 101 ;
+  - S-U1 et S-U3 confirmés ;
+  - échantillon de 38 segments avec e4b : 38 en base = 38 dans le zip ;
+  - comparaison e4b/e2b : 0 token en clair, mais du texte d'autres segments se retrouve dans les cibles ;
+  - zip d'essai : `test/_session2/zips/MV_sample_e4b.zip`.
+  - zip de reproduction S-X1 pour l'essai en jeu : `zips/MV_SX1_repro_after_update.zip`, sur une autre copie (voir le rapport).
+- **MZ StandGirl fait** (projet ancien, extraction du 29/08 identique à une extraction neuve, 1 191 segments) :
+  - aller-retour par marqueurs : 1 191/1 191 pointeurs justes ;
+  - S-X1 sur MZ : l'export échoue (`key not found in JSON`) dès qu'un pointeur décalé devient invalide (choix, nom de locuteur `101[4]`) ; sinon, corruption silencieuse comme en MV ;
+  - S-U2 confirmé : « Traduire » dans MV a traduit Map001 de StandGirl ;
+  - échantillon e4b : 31 = 31 = 31, fuites de contexte fréquentes ;
+  - zip d'essai : `zips/MZ_standgirl_sample_e4b.zip`.
+- **MZ 借金JK fait** (projet neuf, 19 663 segments) :
+  - aller-retour par marqueurs : 19 663/19 663 pointeurs justes ;
+  - échantillon e4b de 34 segments, en **français** : 34 = 34 = 34. Projet créé en `fr` après un rechargement Vite, cause exacte non établie ;
+  - zip d'essai : `zips/MZ_shakkin_sample_e4b_fr.zip`.
+- Aucune catégorie `plugins.js` vérifiée dans les 3 jeux : l'édition de `plugins.js` n'est pas couverte.
+- **S-L2 confirmé (P-6)** :
+  - après l'arrêt d'Ollama, 1 119 segments sur 1 191 passent en `needs_review`, cible = source, en 10 s ;
+  - événement `llm/completed`, aucune erreur ;
+  - un toast par segment ; la webview finit tuée par manque de mémoire (8,7 Go) ;
+  - « Tout traduire » ne reprendrait aucun segment.
+  - Correctif demandé par l'utilisateur, une seule notification : noté dans `tasks/todo.md`.
+- **Prochaine action exacte :**
+  1. l'utilisateur relance Ollama (`sudo systemctl start ollama`), teste les 4 zips en jeu et consigne les résultats ici.
+     Liste détaillée : `test/_session2/A-VERIFIER-EN-JEU.md` (hors Git) ; résumé dans le rapport.
+  2. Commit possible des docs, si l'utilisateur le demande, en stageant les chemins explicites.
+     Les extraits ont été réduits le 2026-10-25 à sa demande : comptes, pointeurs, courts extraits ; détail dans `test/_session2/`.
+     Règle : `test/` jamais dans Git.
+  3. Puis session 3.
 
 ## Dernier point atteint
 
@@ -69,9 +122,8 @@ depuis la PR #9. Rien n'est commité pour la session 1.
    - Aucun jeu Wolf dans `test/`. **Décision utilisateur du 2026-10-25 : Wolf est reporté après la session REA**
      (`RAE-PLAN/runetranslate/PLAN.md`). La session 2 couvre MV et MZ seulement ; les points Wolf
      (S-X2, S-X3, S-E1, S-E2, S-E5 à S-E8, S-E11, S-X9) restent ouverts.
-1. Session 2 du plan, avec son prompt prêt à coller :
-   - demander d'abord les chemins des jeux MV, MZ, Wolf v2 et Wolf v3, le modèle d'essai, puis copier la base ;
-   - suivre la liste « À confirmer sur jeux réels » du rapport, en priorité S-X1, S-X2 et S-X3.
+1. Session 2 MV/MZ faite le 2026-10-25. Restent les essais en jeu : voir « Session 2 » plus haut.
+   Wolf (S-X2, S-X3…) : session 2 bis, après la session REA.
 2. Session 3, puis découpage en lots dans `tasks/todo.md`. Les correctifs (par exemple
    `cargo update -p rustls …`) ne sont **pas** autorisés avant ces lots : ils modifient `Cargo.lock`.
 3. `/code-review:code-review` publie un commentaire sur la PR : pour un essai sans effet, PR #9 (fermée).

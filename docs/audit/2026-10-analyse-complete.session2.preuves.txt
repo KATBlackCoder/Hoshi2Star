@@ -1,0 +1,99 @@
+# Preuves — session 2 (parcours réels MV/MZ), 2026-10-25, Claude
+# Version réduite pour le dépôt : comptes, pointeurs, codes d'erreur, métriques.
+# Aucun texte de jeu en masse. Le détail (échantillons source/cible, captures,
+# JSON attendus, scripts, zips) reste dans test/_session2/ (jamais dans Git).
+# Les noms des fichiers de détail sont donnés entre crochets.
+
+======== Mise en place [00-setup.txt, 00-originals-hash-*.txt]
+Base originale avant  : sha256 fc698f5feb377581492e2bd453503aa80e5e7485550a2c9b6d5c657ec8014170 (10 878 976 o)
+App lancée 13:28:01 UTC avec XDG_DATA_HOME=…/test/_session2/xdg-data
+/proc/<pid>/fd -> …/test/_session2/xdg-data/com.blackat.hoshi2star/hoshi2star.db (seule base ouverte)
+Base originale en fin de session : sha256 identique (fc698f5f…)
+Empreinte des data/*.json + plugins.js + manifeste des 3 jeux originaux : identique avant/après.
+S-C4 (copie de StandGirl) : projects.game_path et 32/32 source_files.file_path pointaient vers
+  test/StandGirl-…/ (l'original) ; manifeste de la copie : gamePath = original.
+  Réécrits vers test/_session2/games/MZ_standgirl dans la base copiée seulement.
+
+======== Export sans traduction [mv-03]
+MV : zip de 22 octets, 0 entrée.
+
+======== Aller-retour par marqueurs (tous les segments) [mv-04, mz1-06, mz2-01]
+Résultat de verify_markers.py (pointeurs justes / autres feuilles modifiées) :
+MV        {"entries":159,"ok_ptr":15498,"bad_ptr":0,"unexpected_changes":0,"missing_in_zip":0}
+StandGirl {"entries":26,"ok_ptr":1191,"bad_ptr":0,"unexpected_changes":0,"missing_in_zip":0}
+借金JK    {"entries":20,"ok_ptr":19663,"bad_ptr":0,"unexpected_changes":0,"missing_in_zip":0}
+Mise en forme [mv-05] : 158/159 originaux ont des retours à la ligne, 0 dans le zip ; valeurs égales.
+Ancien projet StandGirl contre extraction neuve [mz1-05] : 1191 = 1191, 0 clé en plus ou en moins, 0 source différente.
+
+======== Échantillons exportés (base = pointeurs = feuilles modifiées) [mv-13, mz1-09, mz2-03]
+MV        38 = 38 = 38 (5 fichiers : Map001 6, Map004 6, Map013 1, Map051 21, Map089 4)
+StandGirl 31 = 31 = 31 (6 fichiers : CommonEvents 8, Map001 3, Map006 16, Map014 1, Map064 2, System 1)
+借金JK    34 = 34 = 34 (2 fichiers : CommonEvents 10, Map004 24)
+Aucune valeur non textuelle modifiée (nonstring_changed=0 partout).
+
+======== S-X1 MV [mv-06, mv-09]
+Insertion d'un 401 dans la copie : Map001 /events/6/pages/0/list/2, puis export par l'UI : succès, aucun message.
+Map001 /events/6/pages/0 : 14 pointeurs écrits à l'ancien index ;
+  12 commandes 101 avec une cible-marqueur en parameters[0] (faceName), par ex. list/5 = ['H14c9eaL0\n<Nce4f>', 0, 0, 2] ;
+  13 lignes 401 restées en japonais.
+snapshot.json : provenance "reconstructed", drift = 2 pointeurs seulement (list/2, list/8).
+Zip de reproduction pour l'essai en jeu [mv-17] : Map051 /events/1/pages/0/list/4 inséré ;
+  list/5 (code 101) parameters[0] = "\n<Haruka>Let's go to school."
+
+======== S-X1 MZ [mz1-07, mz3-01]
+StandGirl Map001 /events/2/pages/0/list/5 inséré :
+  {"success":false,"error":"inject Map001.json: key not found in JSON: /events/2/pages/0/list/6/parameters/0/0"}
+StandGirl Map004 /events/2/pages/0/list/19 inséré (page sans 102/402/103/104 en aval) :
+  {"success":false,"error":"inject Map004.json: key not found in JSON: /events/2/pages/0/list/30/parameters/4"}
+
+======== S-U1 [mv-02 capture]
+Clic « Traduire » sans fichier : isTranslating=true, toujours vrai après plus de 60 s ;
+  boutons « Traduction... » et « Tout traduire » désactivés ; déblocage par rechargement de la webview seulement.
+
+======== S-U2 [mz1-01, mz1-03]
+Projet actif MV (9807b575…), editorStore.activeFileId = Map001 de StandGirl (bd8f9c48…).
+Après « Traduire » : 3/3 segments de StandGirl Map001 passent de untranslated à translated (14:04:59).
+
+======== S-U3 [mv-12]
+Saisie dans #target-input-0 (segment 70ebaa39) sans blur, puis traduction d'un autre segment du même fichier.
+Après llm/completed : activeElement=BODY, la cellule réaffiche l'ancien texte, segments.updated_at inchangé (13:57:46).
+
+======== Métriques LLM [mv-11, mv-16, et relevés du store]
+MV e4b : 22 requêtes, toutes réussies ; responseFormatRetries 0 ; placeholderRetries 12 ; recursiveSplits 3
+MV e2b : 103 requêtes, 89 réussies ; responseFormatRetries 14 ; placeholderRetries 76 ; recursiveSplits 11
+StandGirl e4b : 24/24 ; responseFormatRetries 0 ; placeholderRetries 12 ; recursiveSplits 3
+借金JK e4b : 7/8 ; responseFormatRetries 1 ; placeholderRetries 1
+Analyse des échantillons [mv-10, mv-15, mz1-08, mz2-02] :
+  ⟦ph_N⟧ en clair : 0 dans les 4 échantillons
+  cible = source (needs_review) : MV e4b 1, MV e2b 11, StandGirl 1, 借金JK 0
+  texte d'un autre segment dans une cible « translated » : MV e4b 3, MV e2b 2, StandGirl 7, 借金JK 3
+QA des échantillons : MV 3 critiques (2 context_leak, 1 unchanged_source) ; StandGirl 4 (3 context_leak, 1 unchanged) ;
+  借金JK 1 (context_leak). Corrigés à la main avant l'export.
+
+======== « Tout traduire » complet, Ollama actif [sl2-00]
+StandGirl_fresh, 1 191 segments, 14:14:14 -> 14:34:02 UTC.
+get_qa_report : {"totalSegments":1191,"okCount":1010,"errorCount":181,"criticalCount":46,
+  "errorsByType":{"context_leak":46,"line_too_long":176}}
+
+======== S-L2, Ollama arrêté par l'utilisateur [sl2-05, sl2-run2-timeline, sl2-03]
+15:23:14 untranslated=1191 ; 15:24:09 translated=52 ; arrêt d'Ollama vers 15:24:20
+15:24:24 needs_review=372 (372 cible=source)  translated=72  untranslated=747
+15:24:29 needs_review=1100 (1100)             translated=72  untranslated=19
+15:24:34 needs_review=1119 (1119)             translated=72  untranslated=0   (stable 2 min)
+Événements : h2s://llm/completed {"count":1191} à 15:24:30.434Z ; aucun h2s://llm/error ; llmStore.error=null.
+Toasts : un par segment, « contrôle qualité (unchanged_source, source_script_remaining) — marqué comme 'À réviser' » ;
+  278 captés à 15:25:30, la rafale continuait.
+WebKitWebProcess : 100 % CPU ; RSS 3,7 Go (15:26:31) -> 7,5 Go (15:29:02), puis app.log :
+  « Unable to shrink memory footprint of process (8757 MB) below the kill thresold (8192 MB). Killed »
+Reprise : requête de « Tout traduire » (translate.rs:241) -> 0 segment sélectionné.
+
+======== Formats réels [relevé de mise en place]
+BOM : 0 fichier sur les 3 jeux ; plugins.js : LF, sans BOM, sans \u ni \/.
+mainFontFilename : absent (MV), mgenplus-1c-regular.ttf (StandGirl), mplus-1m-regular.woff (借金JK).
+Codes dans les segments : MV \n<…> 3646, \c/\C 103, \v 1 ; StandGirl \n[n] 26, \I 6, \v 2, \c/\C 3 ;
+  借金JK \N[n] 1195, \V[n] 61.
+Couverture : aucune catégorie de plugin vérifiée (3 jeux) ; StandGirl : 72 champs de plugins non couverts.
+PRAGMA journal_mode = delete ; tm_entries avant session = 1 (ja-en).
+
+======== Scripts (test/_session2/tools/, hors Git)
+marker_targets.py, verify_markers.py, cmpzip.py, expected_from_db.py, pick_sample.py, analyze_sample.py, codes_survey.py

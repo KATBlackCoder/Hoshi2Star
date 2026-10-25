@@ -1,6 +1,6 @@
 # Analyse complète de Hoshi2Star — préparation de session
 
-**Date :** 2026-10-25 — Claude. **Statut :** session 1 faite le 2026-10-25 (rapport `docs/audit/2026-10-analyse-complete.md`) ; sessions 2 et 3 à faire.
+**Date :** 2026-10-25 — Claude. **Statut :** sessions 1 et 2 (MV/MZ, Wolf reporté) faites le 2026-10-25 (rapport `docs/audit/2026-10-analyse-complete.md`) ; session 3 à faire.
 **Méthode :** prompt « deeper, not bigger » de Felix Rieseberg (ingénieur Claude, *How to be more
 ambitious: a tutorial for humans with models*, 13/10/2026). Avant d'écrire la demande, on répond à
 4 questions, puis on réécrit la demande pour exiger exactement ça :
@@ -98,8 +98,7 @@ Livrable unique enrichi au fil des sessions : `docs/audit/2026-10-analyse-comple
   - Livrable : sections « Architecture », « Menaces », « Constats statiques » du rapport + liste
     des points à confirmer sur jeux réels.
   - Arrêt : quand ces sections sont écrites. Ne pas commencer les jeux réels.
-- [ ] **Session 2 — Parcours réels sur jeux** (demande à l'utilisateur les chemins des jeux et le
-      modèle de traduction des essais)
+- [x] **Session 2 — Parcours réels sur jeux** — faite le 2026-10-25 : **MV/MZ, Wolf reporté** (session 2 bis après REA).
   - Ordre : MV (cas de sportsfan30), MZ, Wolf v2, Wolf v3 ; pour chacun un projet neuf et un ancien.
   - **2026-10-25 : Wolf reporté après la session REA** (décision utilisateur). Session 2 = MV et MZ
     seulement, avec les jeux de `test/` (inventaire dans `tasks/handoff.md`). Wolf fera l'objet

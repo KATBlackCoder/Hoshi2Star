@@ -6,7 +6,7 @@
 | Session | Date | Outil | Sections |
 |---|---|---|---|
 | 1 — carte et contrôles automatiques | 2026-10-25 | Claude | Architecture, Menaces, Constats statiques, À confirmer sur jeux réels |
-| 2 — parcours réels sur jeux | à faire | | Parcours réels |
+| 2 — parcours réels sur jeux (MV/MZ ; Wolf reporté) | 2026-10-25 | Claude | Parcours réels |
 | 3 — vérifications ciblées et rapport final | à faire | | Synthèse, liste priorisée, lots |
 
 ## Lecture du rapport
@@ -565,12 +565,12 @@ Skill `security-review` appliqué à tout `main` par un sous-agent. La revue n'a
 À traiter en session 2. Chaque point renvoie à un constat ci-dessus.
 
 **MV/MZ**
-- [ ] Aller-retour sans traduction : comparer le zip au jeu, en distinguant les octets des valeurs (S-X10). Comparer les comptes : segments extraits = en base = modifiés dans le zip.
-- [ ] Fausse mise à jour du jeu (événement inséré dans une carte traduite), puis export : où atterrissent les traductions (S-X1) ?
-- [ ] `plugins.js` réels : CRLF, BOM, `\u`, `\/`, doublons de clés. Vérifier l'identité octet pour octet après `apply_edits`.
-- [ ] Fréquence des `System.json` avec BOM (S-E10). Valeurs réelles de `mainFontFilename` (S-E3).
-- [ ] Saisie en cours pendant `llm/completed` et au défilement dans WebKitGTK (S-U3). Fermeture de la fenêtre avec une saisie non validée.
-- [ ] Bouton « Traduire » sans fichier sélectionné (S-U1) ; changement de projet puis « Traduire » (S-U2).
+- [x] (session 2, voir P-1) Aller-retour sans traduction : comparer le zip au jeu, en distinguant les octets des valeurs (S-X10). Comparer les comptes : segments extraits = en base = modifiés dans le zip.
+- [x] (session 2, P-2 : confirmé) Fausse mise à jour du jeu (événement inséré dans une carte traduite), puis export : où atterrissent les traductions (S-X1) ?
+- [ ] (session 2 : non couvert, P-7) `plugins.js` réels : CRLF, BOM, `\u`, `\/`, doublons de clés. Vérifier l'identité octet pour octet après `apply_edits`.
+- [x] (session 2, P-7) Fréquence des `System.json` avec BOM (S-E10). Valeurs réelles de `mainFontFilename` (S-E3).
+- [x] (session 2, P-4 : confirmé pour `llm/completed` ; défilement et fermeture non testés) Saisie en cours pendant `llm/completed` et au défilement dans WebKitGTK (S-U3). Fermeture de la fenêtre avec une saisie non validée.
+- [x] (session 2, P-3 : S-U1 et S-U2 confirmés) Bouton « Traduire » sans fichier sélectionné (S-U1) ; changement de projet puis « Traduire » (S-U2).
 
 **Wolf v2 (Honoka) et v3 (Inko)**
 - [ ] `inject_dat(&[])` octet pour octet sur des `.dat` réels ; présence de `unknown1 != 0` ou de `STRING_INDICATOR` (S-X3).
@@ -583,9 +583,9 @@ Skill `security-review` appliqué à tout `main` par un sous-agent. La revue n'a
 - [ ] Traduction vers le français : caractère non Shift-JIS (S-X9).
 
 **LLM (petit échantillon, modèle de test)**
-- [ ] Fréquence des tokens déplacés entre segments (S-L1) et des troncatures `finish_reason=length` (S-L5), avec un modèle local de 4 à 8B.
-- [ ] Coupure du fournisseur pendant « Tout traduire » : statut des segments et message affiché (S-L2).
-- [ ] Respect du schéma JSON strict par la version d'Ollama utilisée.
+- [x] (session 2, P-5 : S-L1 non observé ; S-L5 non couvert par le préréglage ollama) Fréquence des tokens déplacés entre segments (S-L1) et des troncatures `finish_reason=length` (S-L5), avec un modèle local de 4 à 8B.
+- [x] (session 2, P-6 : confirmé, aggravé) Coupure du fournisseur pendant « Tout traduire » : statut des segments et message affiché (S-L2).
+- [x] (session 2, P-5) Respect du schéma JSON strict par la version d'Ollama utilisée.
 
 **Base réelle (copie seulement)**
 - [ ] `PRAGMA journal_mode` ; volume de `tm_entries` par `lang_pair` (S-C2) ; nombre d'occurrences terminologiques et durée de `delete_project` (S-C1).
@@ -593,3 +593,179 @@ Skill `security-review` appliqué à tout `main` par un sous-agent. La revue n'a
 - [ ] Lancer les 12 tests `#[ignore]` sur données réelles :
   - 8 d'intégration : `real_game_coverage` ×4, `standgirl_full_pilot` ×2, `terminology_real_pilot` ×2 ;
   - 4 dans la lib (à lister avec `cargo test -- --ignored --list`).
+
+---
+
+## Parcours réels
+
+**Session 2 — 2026-10-25, Claude.** MV et MZ seulement. Wolf est reporté après la session REA (décision utilisateur). Aucun code applicatif n'a été modifié.
+
+Preuves :
+- Preuves brutes : `docs/audit/2026-10-analyse-complete.session2.preuves.txt`.
+- Captures, JSON attendus et scripts : `test/_session2/` (ignoré par Git), avec les sous-dossiers `evidence/`, `tools/` et `zips/`.
+
+### Mise en place
+
+- **Jeux** : copies reflink btrfs des dossiers de `test/` vers `test/_session2/games/`. Les originaux n'ont jamais été ouverts dans l'app. Empreinte sha256 des `data/*.json`, de `plugins.js` et du manifeste relevée avant et après la session : identique (`00-originals-hash-before.txt` / `-after.txt`). La base originale est aussi inchangée en fin de session.
+- **Base** : copie de tout `~/.local/share/com.blackat.hoshi2star/` (base, `settings.json`, stockage webview) vers `test/_session2/xdg-data/`.
+  - L'app ouvre `app_data_dir()/hoshi2star.db` (`lib.rs:51`), c'est-à-dire `$XDG_DATA_HOME/com.blackat.hoshi2star` sous Linux.
+  - Lancement : `env XDG_DATA_HOME=…/test/_session2/xdg-data pnpm tauri:linux`.
+  - Preuves (`00-setup.txt`) : `/proc/<pid>/fd` ne montre que la copie ; le sha256 de la base originale (`fc698f5f…`) est inchangé.
+- **Pilotage** :
+  - MCP `tauri` sur l'app de dev ;
+  - ouverture des jeux par le thunk réel `openProject()` de `stores/project.ts`, importé dans la webview, car le sélecteur de dossier natif n'est pas pilotable ;
+  - grille, boutons et dialogues pilotés par clics et frappes ;
+  - export par `export_project` quand l'interface refusait un export partiel.
+- **Modèle** : Ollama 0.40.10, préréglage `ollama`. `gemma4:e4b` pour tous les essais, `gemma4:e2b` en comparaison sur l'échantillon MV. GPU GTX 1660 SUPER, 6 Go.
+- **Correction de mise en place (StandGirl)** : la base copiée et le manifeste de la copie pointaient vers le dossier original. Ils ont été réécrits vers la copie, dans la base copiée seulement (voir P-8).
+- **Méthode des comptes** : un export « sans traduction » donne un zip vide. Un export cible = source est refusé par la QA (`UnchangedSource` critique, `qa.rs:701`). On remplit donc **tous** les segments avec un marqueur déterministe :
+  - `H<sha1 source>L<ligne>` suivi des codes de la source, avec les noms `\n<…>` neutralisés ;
+  - même nombre de lignes, aucun japonais ;
+  - script `tools/marker_targets.py`.
+  On exporte, puis on contrôle chaque pointeur JSON contre la valeur attendue, et toutes les autres feuilles contre le jeu original (`tools/verify_markers.py`).
+
+### Résultats par jeu
+
+| Jeu | Projet | Segments extraits | Aller-retour par marqueurs | Échantillon e4b | Zip d'essai |
+|---|---|---|---|---|---|
+| MV (RJ432000) | neuf | 15 498 (159 fichiers) | 15 498/15 498 pointeurs justes, 0 autre valeur modifiée | 38 en base = 38 pointeurs justes = 38 feuilles modifiées | `zips/MV_sample_e4b.zip` |
+| MZ StandGirl | ancien (29/08, v0.4.10) | 1 191 (26 fichiers), identique à une extraction neuve | 1 191/1 191, 0 autre | 31 = 31 = 31 | `zips/MZ_standgirl_sample_e4b.zip` |
+| MZ 借金JK | neuf | 19 663 (20 fichiers) | 19 663/19 663, 0 autre | 34 = 34 = 34, en **français** (voir P-9) | `zips/MZ_shakkin_sample_e4b_fr.zip` |
+
+### Constats
+
+**P-1 — Aller-retour MV/MZ fidèle en valeurs (S-X10 confirmé, info).** Statut : vérifié-exéc.
+- Sur les 3 jeux, aucune valeur JSON hors segments n'est modifiée.
+- Seule la mise en forme change : l'éditeur écrit un retour à la ligne par élément (158 fichiers sur 159 en MV), le zip est compact.
+- Aucun fichier sans segment n'est mis dans le zip.
+
+**P-2 — S-X1 confirmé, plus grave que prévu (bloquant).** Statut : vérifié-exéc.
+- MV, `Map001.json` de la copie : insertion d'un 401 en `/events/6/pages/0/list/2`, puis export par l'interface (« Tout exporter », police ignorée).
+- L'export **réussit sans message**. Les 14 pointeurs de la page reçoivent leur traduction à l'ancien index :
+  - 12 commandes **101** reçoivent une traduction dans `parameters[0]`, c'est-à-dire le **nom de fichier du visage** (exemple : `['H14c9eaL0\\n<Nce4f>', 0, 0, 2]`) ;
+  - 13 lignes 401 restent en japonais ;
+  - la ligne ajoutée reçoit la traduction de la ligne suivante.
+- En jeu, MV chercherait `img/faces/<traduction>.png`, absent : écran d'erreur de chargement. Ce dernier point est déduit, non lancé.
+- Zip de reproduction pour l'essai en jeu : `zips/MV_SX1_repro_after_update.zip`. Map051, événement d'ouverture de la carte de départ : 401 ajouté avant le 101 ; la traduction se retrouve en `101.parameters[0]` = `"\\n<Haruka>Let's go to school."` (`mv-17`).
+- Le snapshot note la dérive de 2 pointeurs seulement sur 14 (`snapshot.json`, `drift`). L'export ne la lit pas.
+- MZ (StandGirl), deux essais : l'issue dépend de la **structure de la page**, pas du moteur. L'export échoue dès qu'un pointeur décalé devient invalide, et réussit en silence sinon (comme en MV).
+  - `Map001.json` : le décalage tombe sur un choix 102. L'export **échoue en entier** avec `key not found in JSON: /events/2/pages/0/list/6/parameters/0/0`.
+  - `Map004.json`, page sans choix : le nom de locuteur MZ (`101.parameters[4]`) devient invalide quand un 401 glisse à sa place. L'export échoue avec `key not found in JSON: /events/2/pages/0/list/30/parameters/4`.
+  - L'échec est un échec sûr, mais le message n'aide pas à agir.
+  - En MZ, les noms de locuteur rendent l'échec bruyant probable. Une page sans nom ni choix se comporterait comme MV (déduit, non reproduit).
+- Preuves : `mv-06`, `mv-09`, `mz1-07`, `mz3-01`.
+
+**P-3 — S-U1 et S-U2 confirmés (majeur).** Statut : vérifié-exéc.
+- S-U1 : « Traduire » sans fichier sélectionné.
+  - `isTranslating` reste `true` plus de 60 s ; « Traduction... » et « Tout traduire » restent désactivés ;
+  - seul un rechargement de la webview débloque l'app ;
+  - capture `mv-02-SU1-stuck.jpg`.
+- S-U2 : sélection de `Map001.json` de StandGirl, puis bibliothèque, « Continuer » sur MV, puis « Traduire ».
+  - Les 3 segments de **StandGirl** sont traduits pendant que MV est ouvert : `editorStore.activeFileId` garde le fichier de l'autre projet ;
+  - premier essai non reproduit : la sélection n'avait pas été enregistrée avant le changement de projet ;
+  - preuves `mz1-01`, `mz1-03`.
+
+**P-4 — S-U3 confirmé (majeur).** Statut : vérifié-exéc.
+- Saisie dans une cellule de Map051, sans quitter le champ, puis traduction d'un autre segment du même fichier.
+- À `llm/completed`, le focus passe à `BODY`, la cellule réaffiche l'ancien texte, et la base n'est pas modifiée (`updated_at` inchangé).
+- La saisie est perdue sans avertissement (`mv-12-SU3.txt`).
+- Non testés : défilement, fermeture de la fenêtre.
+
+**P-5 — LLM : S-L1 non observé, mais du texte d'autres segments entre dans les cibles (majeur, nouveau).** Statut : vérifié-exéc. Échantillons de 31 à 38 segments, dont 10 à 18 avec codes.
+
+| Mesure | MV e4b | MV e2b | StandGirl e4b | 借金JK e4b |
+|---|---|---|---|---|
+| `⟦ph_N⟧` resté en clair (S-L1) | 0 | 0 | 0 | 0 |
+| Erreurs de format JSON (`responseFormatRetries`) | 0 / 22 requêtes | 14 / 103 requêtes | 0 / 24 | 1 / 8 |
+| Relances placeholders / découpages | 12 / 3 | 76 / 11 | 12 / 3 | 1 / 0 |
+| Cible = source (`needs_review`) | 1 | 11 (10 à codes) | 1 | 0 |
+| Texte d'un autre segment dans une cible `translated` | 3 | 2 | 7 | 3 |
+| Code déplacé dans la phrase | 1 (`\C[24]` en fin) | 0 | 1 (`\{`) | 1 (`\{`) |
+
+- **Schéma JSON d'Ollama** : respecté avec e4b, peu avec e2b. Les échecs sont rattrapés par relance ou par repli sur la source.
+- **S-L5 (troncature)** : non couvert. Le préréglage `ollama` utilise le JSON structuré, pas le protocole par lignes.
+- **Nouveau constat P-5a.** Le contexte voisin envoyé au modèle est recopié dans la cible, et la QA n'en voit qu'une partie :
+  - MV, Map001 `/events/6/pages/0/list/2` : la cible met dans la boîte de nom `\n<…>` la réplique d'un autre segment de l'échantillon (Map089). La réplique d'origine est perdue. Statut `translated`, aucune erreur QA ;
+  - MV e2b : une cible décalée d'un segment, et une autre avec 2 lignes de contexte ajoutées ;
+  - StandGirl : 7 cibles sur 31 absorbent les répliques suivantes. La QA en bloque 3 (`context_leak` critique) ;
+  - « Tout traduire » complet sur StandGirl (1 191 segments, environ 20 min) : 46 `context_leak` critiques (3,9 %), tous enregistrés `translated` (`sl2-00`).
+  - En jeu : répliques en double, et une boîte de nom remplie d'une autre phrase.
+- La QA bloque l'export tant qu'il reste une erreur critique. Il a fallu corriger à la main 3 segments (MV), 4 (StandGirl) et 1 (借金JK).
+
+**P-6 — S-L2 confirmé, plus grave que prévu : panne silencieuse, puis webview tuée (bloquant).** Statut : vérifié-exéc.
+- Essai du 2026-10-25, utilisateur présent :
+  - « Tout traduire » sur le projet jetable `MZ_standgirl_fresh` (1 191 segments, e4b), lancé à 15:23:14 UTC ;
+  - Ollama arrêté par l'utilisateur (`sudo systemctl stop ollama`) vers 15:24:20, avec 72 segments traduits.
+- **Base** : en **10 s**, 1 119 segments passent en `needs_review` avec **la source comme cible**. État final : `needs_review=1119` (cible = source), `translated=72`, `untranslated=0`.
+- **Fin d'exécution** : événement `h2s://llm/completed {"count":1191}` à 15:24:30. Aucun `h2s://llm/error`, `llmStore.error = null`. Aucun message ne dit que le fournisseur est injoignable.
+- **Interface** : un toast **par segment** : « ⚠️ Segment xxxx… : contrôle qualité (unchanged_source, source_script_remaining) — marqué comme 'À réviser' ». 278 toasts captés en une minute, la rafale continuait.
+- **Webview** :
+  - le processus WebKit monte à 100 % CPU et de 3,7 à 7,5 Go de RAM en 4 min ;
+  - puis il se tue lui-même : `Unable to shrink memory footprint of process (8757 MB) below the kill thresold (8192 MB). Killed` (`app.log`) ;
+  - la fenêtre est morte : capture et exécution JS échouent. Le backend reste vivant.
+- **Reprise** : la requête de « Tout traduire » (`translate.rs:241`, `status='untranslated' OR target_text=''`) trouve **0 segment**. Les 1 119 segments ne seraient pas repris. Il ne reste que le bouton « Réessayer N échoués », fichier par fichier dans la grille.
+- **Premier essai** (Ollama non arrêté, utilisateur absent) : run complet en environ 20 min, 46 `context_leak` critiques (`sl2-00`).
+- **Correctif demandé par l'utilisateur (2026-10-25)** : en cas d'arrêt d'Ollama ou d'autre panne du fournisseur, **une seule notification**, pas une par segment. Pistes pour la session 3 :
+  - regrouper les avertissements QA d'une exécution en un toast récapitulatif ;
+  - détecter l'échec du fournisseur (connexion refusée, 5xx, 401) pour arrêter l'exécution avec une erreur, au lieu de marquer les segments ;
+  - ne pas écrire la source comme cible.
+- Preuves : `sl2-05-summary.txt`, `sl2-run2-timeline.txt`, `sl2-03-webkit-cpu.txt`, capture `sl2-01-after-outage.jpg`.
+
+**P-7 — Formats réels (info).** Statut : vérifié-exéc.
+- Les 3 jeux n'ont aucun BOM (`System.json` et `data/*.json`).
+- `plugins.js` : LF, sans BOM, sans `\u` ni `\/`.
+- `mainFontFilename` : absent en MV, `mgenplus-1c-regular.ttf` (StandGirl), `mplus-1m-regular.woff` (借金JK). Les deux sont dans `fonts/`.
+- La police de 借金JK couvre U+00A0–U+0181 : les accents français s'affichent.
+- **Édition de `plugins.js` non couverte** : aucune catégorie de plugin vérifiée dans ces jeux, seulement des catégories `System.json`. StandGirl a 72 champs de plugins non couverts (Chronus, MPP_ChoiceEX, SceneCustomMenu…).
+- Base : `PRAGMA journal_mode` = `delete` ; `tm_entries` contient 1 entrée `ja-en` avant la session.
+
+**P-8 — S-C4 confirmé (majeur).** Statut : vérifié-exéc.
+- La copie de StandGirl porte le manifeste de l'original (`projectId 4d0748ca…`, `gamePath` = original). Le chemin de restauration (`project.rs:60-90`) rend donc le projet de l'original.
+- Sans correction, l'export aurait écrit `hoshi2star.zip` **dans le dossier original** (`export.rs:490`) et lu ses fichiers.
+- Pour un utilisateur, copier un dossier de jeu revient donc à travailler, sans le savoir, sur l'ancien dossier.
+
+**P-9 — Effets de bord observés.** Statut : vérifié-exéc / cause partiellement établie.
+- **Interface** :
+  - l'export depuis l'interface exige 100 % de segments traduits (« Traduction incomplète ») ;
+  - un export partiel n'est possible que par la commande.
+- **Export, QA et TM** :
+  - une tentative d'export bloquée par la QA passe en `needs_review` les segments en erreur (15 470 en MV lors de l'essai cible = source) : `audit_project` modifie la base (S-X7, dans l'autre sens) ;
+  - la QA ne compte pas les retours à la ligne du message 401 : 6 à 10 `line_too_long` par échantillon, en avertissement ;
+  - `update_segment` alimente la TM globale (3 entrées créées par les corrections manuelles MV, S-C6). Les traductions du LLM ne l'alimentent pas.
+- **Langue de 借金JK** :
+  - le projet a été créé avec `target_language = fr`, alors que les réglages indiquent `en`. Les autres projets de la session sont en `en` ;
+  - la copie d'un jeu dans le dépôt (`test/_session2/games/…/index.html`) a déclenché un `page reload` Vite de la webview à 14:05:18 ;
+  - le backend retombe sur `DEFAULT_TARGET_LANG = "fr"` (`project.rs:24`) quand la langue n'arrive pas (S-C7) ;
+  - le lien exact entre les deux n'est pas établi.
+
+### Non couvert en session 2
+
+- **Wolf** (tous les points Wolf, S-X2, S-X3, etc.) : reporté.
+- **S-L5** : hors préréglage ollama.
+- **`plugins.js`** : aucune catégorie de plugin.
+- **S-U3** : défilement et fermeture de fenêtre non testés.
+- **Tests en jeu** : aucun zip n'a été lancé dans un jeu. C'est à faire par l'utilisateur, liste ci-dessous.
+
+### À vérifier en jeu par l'utilisateur
+
+La liste détaillée, réplique par réplique, est hors Git : `test/_session2/A-VERIFIER-EN-JEU.md`. Pour chaque zip, le dézipper sur une **copie** du jeu, jamais sur l'original, puis lancer `Game.exe`.
+
+- **`zips/MV_sample_e4b.zip`** (Map001, 004, 013, 051, 089) :
+  - depuis la carte de départ (Map051) : choix traduits, boîte de nom, aucune erreur de chargement d'image ;
+  - Map004 : couleur `\C[24]` appliquée, jamais affichée en clair ;
+  - Map001 : boîte de nom contaminée (P-5a) visible ;
+  - texte qui déborde de la fenêtre ?
+- **`zips/MV_SX1_repro_after_update.zip`** (Map051), sur une **autre** copie :
+  - attendu : erreur de chargement `img/faces/…` dès la carte de départ (P-2) ;
+  - noter le message exact et si le jeu reste bloqué.
+- **`zips/MZ_standgirl_sample_e4b.zip`** (6 fichiers) :
+  - Map001 et Map006 : choix et répliques traduits ; répliques en double (P-5a) ;
+  - `\n[1]`, `\v[n]`, `\I[n]` et conditions `en(...)` toujours fonctionnels ;
+  - message de montée de niveau (System.json) ;
+  - aucun plantage.
+- **`zips/MZ_shakkin_sample_e4b_fr.zip`** (CommonEvents, Map004, en français) :
+  - accents lisibles avec la police du jeu ;
+  - `\N[012]` remplacé par le nom saisi ;
+  - choix Oui/Non fonctionnel ;
+  - une réplique décalée (P-5a) ;
+  - compteurs `\V[n]` et texte agrandi `\{`.

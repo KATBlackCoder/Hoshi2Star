@@ -9,6 +9,11 @@ Session dédiée, à lancer à part. Prompt prêt : `docs/plans/2026-10-25-analy
       skills Tauri de Codex liés pour Claude (vérifié : `claude mcp list` connecté, 2026-10-25).
 - [ ] Plugin officiel `code-review` : installé par l'utilisateur ? À vérifier en début de session.
 - [ ] Lancer l'analyse en 3 sessions (découpage dans le plan) ; livrable `docs/audit/2026-10-analyse-complete.md`.
+      Sessions 1 et 2 (MV/MZ) faites le 2026-10-25 ; session 3 à faire.
+- [ ] **À corriger, demande utilisateur du 2026-10-25 (constat P-6 / S-L2) :** quand Ollama ou un autre fournisseur tombe pendant
+      une traduction, afficher **une seule** notification, pas un toast par segment. La rafale a
+      saturé WebKitGTK (8,7 Go), qui s'est tué lui-même. À traiter avec S-L2 : arrêter l'exécution sur échec
+      du fournisseur, ne pas écrire la source comme cible. Rattacher à un lot en session 3. Aucun code avant ce lot.
 
 ## Études REA d'applications tierces (2026-10-25)
 
