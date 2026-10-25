@@ -1,5 +1,50 @@
 # Tasks — Hoshi2Star
 
+## Analyse complète de l'app — préparation (2026-10-25) — NON DÉMARRÉ
+
+Session dédiée, à lancer à part. Prompt prêt : `docs/plans/2026-10-25-analyse-complete-app.md`
+(méthode « deeper, not bigger » de Felix Rieseberg). Aucun code avant la fin de l'analyse.
+
+- [ ] Outillage : corriger `.mcp.json` (le serveur `filesystem` pointe vers l'ancien chemin
+      `/home/blackat/project/Hoshi2Star`) et l'entrée MCP `tauri` en échec (`npx` ENOENT ;
+      l'entrée `@hypothesi/tauri-mcp-server` fonctionne).
+- [ ] Outillage : décider des ajouts proposés dans le plan (Context7, plugin officiel
+      `code-review`, Rust CLI Skills) — accord utilisateur requis.
+- [ ] Lancer la session d'analyse avec le prompt du plan ; livrable dans `docs/audit/`.
+
+## Retours utilisateur sportsfan30 (F95zone, 2026-10-25) — NON DÉMARRÉ
+
+Contexte : jeu MV, Hoshi2Star v0.4.10, travail par petits lots testés en jeu.
+Constats vérifiés dans le code de `main` (`de76e64`) le 2026-10-25. Chaque lot aura son
+plan détaillé avant implémentation ; à confirmer après l'analyse complète.
+
+**Lot A — Export partiel (priorité 1, bloque son flux de travail)**
+- [ ] Autoriser l'export d'un projet partiellement traduit, avec avertissement : le backend
+      ignore déjà les segments vides (`commands/export.rs` filtres `target_text != ''`) ;
+      le blocage est dans l'UI (`exportAllBlockedDesc`).
+- [ ] Export d'un ou plusieurs fichiers choisis (aujourd'hui `debug_inject_file` exige un
+      fichier complet, `export.rs:1077`).
+- [ ] Statut « fichier ignoré » (ex. `MapInfos.json`) : exclu des stats, du QA et de l'export.
+
+**Lot B — QA lisible (priorité 2)**
+- [ ] Score QA calculé et enregistré en continu (aujourd'hui seulement à l'audit d'export,
+      `core/report.rs:285`) : la colonne QA de la grille affiche « — » sinon.
+- [ ] Filtres : « Score < 100 » clairement nommé, et par type d'erreur (dont `line_too_long`).
+- [ ] Cohérence compteur de projet (« X/Y ok ») / panneau du segment.
+
+**Lot C — Navigation recherche (priorité 3)**
+- [ ] Au clic sur un résultat global, faire défiler la grille jusqu'au segment
+      (`GlobalSearchResults.tsx:160` sélectionne sans défiler).
+- [ ] Emplacement lisible : nom/ID de l'événement + numéro de ligne au lieu du pointeur JSON brut.
+- [ ] Recherche dans le fichier : garder le vrai numéro de ligne quand on filtre.
+
+**Lot D — Text fitting pour MV (à évaluer)**
+- [ ] Étudier l'extension du text fitting (MZ seulement aujourd'hui) aux jeux MV.
+
+**Question ouverte à l'utilisateur** : modèle utilisé, Ollama ou autre fournisseur.
+
+---
+
 ## Installation BMAD pour Codex et Claude — 2026-09-21
 
 Périmètre : module principal BMM, intégrations locales Codex et Claude Code,
