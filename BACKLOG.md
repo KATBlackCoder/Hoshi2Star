@@ -48,6 +48,7 @@
 - [ ] `OpenAIProvider` (clé user fournie)
 - [ ] `DeepSeekProvider`
 - [ ] Passe 2 LLM : review (consistency sur fenêtre de 10 segments)
+- [ ] Rappel Ollama (2026-10-25) : le code n'envoie pas `num_ctx`, donc le serveur applique `OLLAMA_CONTEXT_LENGTH=4096` (`/etc/systemd/system/ollama.service.d/override.conf`, poste GTX 1660 SUPER 6 Go). Un lot long (glossaire + contexte) peut être tronqué silencieusement. Vérifier la taille réelle des prompts ; si traductions incomplètes, passer à 8192 (surveiller la VRAM) ou envoyer `num_ctx` par requête
 
 ---
 
