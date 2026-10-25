@@ -10,6 +10,18 @@ Session dédiée, à lancer à part. Prompt prêt : `docs/plans/2026-10-25-analy
 - [ ] Plugin officiel `code-review` : installé par l'utilisateur ? À vérifier en début de session.
 - [ ] Lancer la session d'analyse avec le prompt du plan ; livrable dans `docs/audit/`.
 
+## Analyse de RuneTranslate avec REA (2026-10-25) — NON DÉMARRÉ
+
+Objectif : comprendre une fonctionnalité de RuneTranslate 1.3.1 qui intéresse l'utilisateur
+(laquelle : à préciser), avec REA (github.com/morluto/rea, MCP `rea` déjà installé).
+Matière : `RAE-PLAN/RuneTranslate-Setup-1.3.1.exe` (local, ignoré par Git).
+
+- [ ] Préciser la fonctionnalité visée et la question exacte à résoudre.
+- [ ] Vérifier la licence (EULA) de RuneTranslate avant analyse.
+- [ ] Analyse statique d'abord ; ne jamais exécuter l'installeur hors environnement isolé.
+- [ ] Livrable : description du mécanisme dans `RAE-PLAN/` ou `docs/research/` (sans code ni
+      ressource copiés de RuneTranslate), puis plan de réimplémentation propre si retenu.
+
 ## Retours utilisateur sportsfan30 (F95zone, 2026-10-25) — NON DÉMARRÉ
 
 Contexte : jeu MV, Hoshi2Star v0.4.10, travail par petits lots testés en jeu.

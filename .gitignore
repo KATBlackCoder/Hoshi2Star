@@ -42,3 +42,6 @@ test/*
 *.njsproj
 *.sln
 *.sw?
+
+# Analyse locale de logiciels tiers avec REA (binaires et preuves, jamais publiés).
+RAE-PLAN/
