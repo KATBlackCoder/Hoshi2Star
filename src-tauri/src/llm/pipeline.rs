@@ -70,6 +70,8 @@ pub struct PipelineRunOutcome {
     pub metrics: PipelineBatchMetrics,
     /// The cancellation flag stopped the run before every segment was handled.
     pub cancelled: bool,
+    /// Rows outside `results` updated by the canonical-name repair.
+    pub repaired: usize,
 }
 
 #[derive(Debug, Error)]
@@ -153,10 +155,13 @@ fn result_status(r: &TranslationResult) -> &'static str {
 /// Persist a batch's `target_text`/`status` immediately so a crash mid-run
 /// only loses the in-flight batch. The complete batch is committed in one
 /// transaction, avoiding one SQLite autocommit per translated segment.
+///
+/// Returns how many other rows were repaired: earlier source fallbacks of
+/// the same canonical name that now receive this batch's translation.
 async fn persist_batch_results(
     db: &SqlitePool,
     results: &[TranslationResult],
-) -> Result<(), PipelineError> {
+) -> Result<usize, PipelineError> {
     let mut tx = db
         .begin()
         .await
@@ -181,11 +186,12 @@ async fn persist_batch_results(
     // Japanese source after a provider-format failure, a later validated
     // translation repairs that fallback. Reviewed/manual text and genuine
     // translated variants are never overwritten.
+    let mut repaired = 0_u64;
     for r in results
         .iter()
         .filter(|result| !result.needs_review && !result.failed)
     {
-        sqlx::query(
+        repaired += sqlx::query(
             "UPDATE segments SET target_text = ?, status = 'translated', qa_score = ?, \
                     updated_at = datetime('now') \
              WHERE status = 'needs_review' AND target_text = source_text \
@@ -213,11 +219,13 @@ async fn persist_batch_results(
         .bind(&r.id)
         .execute(&mut *tx)
         .await
-        .map_err(|error| PipelineError::Database(error.to_string()))?;
+        .map_err(|error| PipelineError::Database(error.to_string()))?
+        .rows_affected();
     }
     tx.commit()
         .await
-        .map_err(|error| PipelineError::Database(error.to_string()))
+        .map_err(|error| PipelineError::Database(error.to_string()))?;
+    Ok(usize::try_from(repaired).unwrap_or(usize::MAX))
 }
 
 /// Run the translation pipeline on a batch of segments.
@@ -318,6 +326,7 @@ where
 {
     let total = segments.len();
     let mut cancelled = false;
+    let mut repaired = 0_usize;
     let lang_pair = format!("{}-{}", context.source_lang, context.target_lang);
 
     let batch_size = context.batch_size.clamp(1, 100);
@@ -358,7 +367,7 @@ where
             let _ = handle.emit("h2s://llm/pipeline-metrics", pipeline_metrics);
         }
 
-        persist_batch_results(db, &batch_results).await?;
+        repaired += persist_batch_results(db, &batch_results).await?;
 
         if let Some(handle) = app_handle {
             let updates: Vec<SegmentUpdatePayload> = batch_results
@@ -405,6 +414,7 @@ where
         results,
         metrics: run_metrics,
         cancelled,
+        repaired,
     })
 }
 
@@ -1167,7 +1177,7 @@ mod tests {
         .unwrap();
 
         let success_provider = MockProvider::new(vec![Ok(vec!["Homme inconnu".into()])]);
-        run_inner(
+        let outcome = run_inner_with_metrics(
             vec![("speaker-success".into(), "見知らぬ男性".into())],
             &success_provider,
             ctx(),
@@ -1179,6 +1189,8 @@ mod tests {
         )
         .await
         .unwrap();
+        assert_eq!(outcome.results.len(), 1);
+        assert_eq!(outcome.repaired, 1, "the repaired fallback is reported");
 
         let repaired: (String, String, i64) = sqlx::query_as(
             "SELECT target_text, status, qa_score FROM segments WHERE id = 'speaker-failed'",

@@ -193,6 +193,7 @@ pub async fn translate_segments(
                 }
                 let mut summary = RunSummary::default();
                 summary.add(&outcome.results);
+                summary.repaired = outcome.repaired;
                 summary.cancelled = outcome.cancelled;
                 let _ = handle.emit("h2s://llm/completed", summary);
             }
@@ -346,6 +347,7 @@ pub async fn translate_all_segments(
             {
                 Ok(outcome) => {
                     summary.add(&outcome.results);
+                    summary.repaired += outcome.repaired;
                     if outcome.cancelled {
                         summary.cancelled = true;
                         break;

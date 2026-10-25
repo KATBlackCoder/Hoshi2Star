@@ -722,6 +722,7 @@
     "completedIssues": "Traduction terminée : {{translated}} traduit(s), {{needsReview}} à réviser, {{failed}} en échec (laissés inchangés).",
     "cancelled": "Traduction arrêtée : {{translated}} traduit(s), {{needsReview}} à réviser, {{failed}} en échec. Le reste n'a pas été modifié ; « Tout traduire » le reprendra.",
     "reviewTypes": "À réviser : {{types}}",
+    "repaired": "{{count}} autre(s) ligne(s) du même nom, en échec auparavant, ont reçu cette traduction.",
     "providerDown": "Fournisseur IA injoignable : traduction arrêtée après {{processed}} segment(s) sur {{total}}. Les segments restants n'ont pas été modifiés ; relancez la traduction quand le fournisseur répond.",
     "error": "Erreur de traduction",
     "stop": "Arrêter",

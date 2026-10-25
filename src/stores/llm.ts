@@ -36,6 +36,8 @@ export interface RunSummary {
   failed: number;
   qaErrorsByType: Record<string, number>;
   cancelled: boolean;
+  /** Other rows of the same name (earlier fallbacks) given this run's translation. */
+  repaired: number;
 }
 
 /** `h2s://llm/error` — one notice per run (Rust `LlmErrorPayload`). */
@@ -188,9 +190,13 @@ export function notifyRunCompleted(summary: RunSummary): void {
     failed: summary.failed,
   };
   const types = qaTypesLine(summary.qaErrorsByType);
-  const description = types
-    ? t("llmRun.reviewTypes", { types })
-    : undefined;
+  const lines = [
+    types ? t("llmRun.reviewTypes", { types }) : "",
+    summary.repaired > 0
+      ? t("llmRun.repaired", { count: summary.repaired })
+      : "",
+  ].filter(Boolean);
+  const description = lines.length > 0 ? lines.join("\n") : undefined;
   if (summary.cancelled) {
     toast.info(t("llmRun.cancelled", counts), {
       id: RUN_TOAST_ID,
@@ -200,6 +206,7 @@ export function notifyRunCompleted(summary: RunSummary): void {
   } else if (summary.needsReview === 0 && summary.failed === 0) {
     toast.success(t("llmRun.completedOk", counts), {
       id: RUN_TOAST_ID,
+      description,
       duration: 5000,
     });
   } else {

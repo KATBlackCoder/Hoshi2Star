@@ -31,6 +31,9 @@ pub struct RunSummary {
     pub qa_errors_by_type: BTreeMap<String, usize>,
     /// The user stopped the run before every segment was handled.
     pub cancelled: bool,
+    /// Other rows of the same canonical name (earlier source fallbacks)
+    /// updated with this run's translation — not part of `count`.
+    pub repaired: usize,
 }
 
 impl RunSummary {

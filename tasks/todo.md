@@ -39,7 +39,7 @@ Les cases sportsfan30 (A–D) ci-dessous restent la liste détaillée de R4, R8,
 - [ ] **RW — Wolf** : après la session 2 bis ; points non vérifiés sur jeu réel.
 - [ ] Plus tard : S-C1, S-C2, S-C3, S-E3, S-E4, S-X6, S-X8 ; mineurs S-L6–L8, S-U5, S-U6, S-E10, S-E12. Non fait : S-E9 (VX Ace désactivé), S-D3.
 
-### Plan détaillé — R1 : panne du fournisseur, arrêt propre et une seule notification (2026-10-25, Claude) — IMPLÉMENTÉ sur `fix/r1-provider-outage` (étapes 1–10, essai réel compris) ; non commité
+### Plan détaillé — R1 : panne du fournisseur, arrêt propre et une seule notification (2026-10-25, Claude) — IMPLÉMENTÉ sur `fix/r1-provider-outage` (étapes 1–10, essai réel compris) ; commit `7be55e4`, PR #10 ouverte
 
 **Constats couverts.** S-L2 / audit B (P-6, `PROBE B`), demande utilisateur du 2026-10-25 (une seule
 notification), écrasement en retraduction par sélection (`translate.rs:34-41`, relecture session 3).
@@ -133,7 +133,7 @@ Preuves et lignes : `docs/audit/2026-10-analyse-complete.md` (P-6, « Seconde re
       ⇒ 1er lot enregistré, reste `untranslated`, `completed` ou `cancelled` émis une fois.
 - [x] 8. Gate complet : `pnpm typecheck && pnpm test && cargo clippy --manifest-path src-tauri/Cargo.toml
       -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml` ; `cargo fmt`.
-- [x] 9. Vérification réelle (reprise de P-6) — faite le 2026-10-25, résultats dans `docs/journal/2026-10-25-r1-panne-fournisseur.md` (« Essai réel ») ; écart : le récapitulatif ne compte pas les réparations de noms canoniques, sur la copie de la session 2 (`XDG_DATA_HOME=…/test/_session2/xdg-data
+- [x] 9. Vérification réelle (reprise de P-6) — faite le 2026-10-25, résultats dans `docs/journal/2026-10-25-r1-panne-fournisseur.md` (« Essai réel ») ; écart corrigé ensuite : le récapitulatif compte les réparations de noms canoniques (`repaired`), sur la copie de la session 2 (`XDG_DATA_HOME=…/test/_session2/xdg-data
       pnpm tauri:linux`, jamais la base originale) : « Tout traduire » sur un projet jetable, arrêt d'Ollama
       en cours (`sudo systemctl stop ollama`, par l'utilisateur). Attendu :
       - un seul toast d'erreur, aucun toast par segment ;

@@ -46,7 +46,7 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 ### Fixed
 - Fix a provider outage during translation being recorded as hundreds of "needs review" segments with the Japanese source as target. Connection errors, timeouts, 401/403/404, 429 and 5xx now stop the run with a single error notice that says how many segments were handled; the remaining segments are left untranslated and "Translate all" resumes them. Authentication and unknown-model errors are no longer retried; 429/5xx are retried with a growing pause that honours `Retry-After`.
 - Fix failed segments overwriting existing translations: when no usable output is obtained (refused request, unparseable response, broken placeholders after every retry), nothing is written, so a selected retranslation can no longer replace a reviewed translation with the source text. "Translate all" also resumes rows left by earlier versions as `needs_review` with the source copied as target.
-- Fix the per-segment toast flood that could exhaust WebKitGTK memory on large runs: each run now ends with one summary notice (translated, to review by QA error type, failed).
+- Fix the per-segment toast flood that could exhaust WebKitGTK memory on large runs: each run now ends with one summary notice (translated, to review by QA error type, failed, and other rows of the same name that received the translation).
 
 ## [0.4.10] — 2026-07-07
 

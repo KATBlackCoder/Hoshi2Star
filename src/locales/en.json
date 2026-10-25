@@ -722,6 +722,7 @@
     "completedIssues": "Translation finished: {{translated}} translated, {{needsReview}} to review, {{failed}} failed (left unchanged).",
     "cancelled": "Translation stopped: {{translated}} translated, {{needsReview}} to review, {{failed}} failed. The rest was not changed; “Translate all” will resume it.",
     "reviewTypes": "To review: {{types}}",
+    "repaired": "{{count}} other row(s) with the same name, previously failed, received this translation.",
     "providerDown": "AI provider unreachable: translation stopped after {{processed}} of {{total}} segment(s). Remaining segments were not changed; run the translation again once the provider responds.",
     "error": "Translation error",
     "stop": "Stop",

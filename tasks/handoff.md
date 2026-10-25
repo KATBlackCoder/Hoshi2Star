@@ -7,7 +7,7 @@ traiter les retours de sportsfan30 (F95zone) et étudier RuneTranslate avec REA.
 - sessions 1, 2 (MV/MZ) et 3 faites le 2026-10-25 ; Wolf reporté (session 2 bis, après REA) ;
 - aucun code applicatif modifié depuis la PR #9 ;
 - sessions 1 à 3 commitées et poussées (`6edd29b` … `54c22e3`, `fb6be51`) ;
-- lot R1 : plan validé et implémenté sur `fix/r1-provider-outage` (2026-10-25), non commité ; essai réel à faire.
+- lot R1 : implémenté, essai réel fait, commité (`7be55e4`) et poussé sur `fix/r1-provider-outage` ; PR #10 ouverte vers `main` (non fusionnée).
 
 ## Session 3 (2026-10-25, Claude) — reprise
 
@@ -20,9 +20,9 @@ Journal : `docs/journal/2026-10-25-analyse-session-3.md`.
 - Relecture indépendante : S-X1 confirmé et aggravé (snapshot qui remet du japonais, `engines/mv_mz/originals.rs:320-345`) ; S-L2 « majeur ; bloquant en retraduction par sélection » (déduit, `translate.rs:34-41`), priorité 1 ; P-5a reformulé (détection incomplète).
 - Lots R1–R10 et RW ajoutés à `tasks/todo.md`. Correctif « une seule notification » dans R1.
 - **Prochaine action exacte :**
-  1. **R1 implémenté le 2026-10-25** sur la branche `fix/r1-provider-outage` (non commité) : étapes 1–8 et 10 du plan, gate complet vert. Détail : `docs/journal/2026-10-25-r1-panne-fournisseur.md`.
-  2. Étape 9 (essai réel) faite le 2026-10-25 sur la copie de la session 2 : Arrêter, panne, sélection en panne, reprise ⇒ un seul toast à chaque fois, aucune cible = source nouvelle, WebKit ≤ 289 Mo. Écart : les réparations de noms canoniques ne sont pas comptées dans le récapitulatif (suite proposée). Détail : journal R1, « Essai réel ».
-  3. Puis commit sur la branche et PR, sur accord de l'utilisateur (chemins explicites, pas `.claude/launch.json`).
+  1. **R1 implémenté le 2026-10-25** sur `fix/r1-provider-outage` : commit `7be55e4`, PR https://github.com/KATBlackCoder/Hoshi2Star/pull/10 (ouverte, non fusionnée). Puis compte des noms réparés (`RunSummary.repaired`) ajouté sur la même branche. Détail : `docs/journal/2026-10-25-r1-panne-fournisseur.md`.
+  2. Étape 9 (essai réel) faite le 2026-10-25 sur la copie de la session 2 : Arrêter, panne, sélection en panne, reprise ⇒ un seul toast à chaque fois, aucune cible = source nouvelle, WebKit ≤ 289 Mo. Écart corrigé ensuite : les réparations de noms canoniques sont maintenant comptées (`repaired`, ligne dans le toast). Détail : journal R1, « Essai réel ».
+  3. Prochaine action : relecture et fusion de la PR #10 par l'utilisateur ; puis plan détaillé du lot R2 (export sûr après mise à jour du jeu).
 
 ## Session 2 (2026-10-25, Claude) — reprise
 

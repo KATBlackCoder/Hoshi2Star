@@ -53,6 +53,7 @@ const SUMMARY: RunSummary = {
   failed: 0,
   qaErrorsByType: {},
   cancelled: false,
+  repaired: 0,
 };
 
 function toastCalls() {
@@ -194,6 +195,18 @@ describe("llm store", () => {
       notifyRunCompleted({ ...SUMMARY, count: 3, translated: 3 });
       expect(mocks.toast.success).toHaveBeenCalledTimes(1);
       expect(toastCalls()).toBe(1);
+    });
+
+    it("repaired name rows are reported, not hidden", () => {
+      notifyRunCompleted({
+        ...SUMMARY,
+        count: 80,
+        translated: 80,
+        repaired: 82,
+        cancelled: true,
+      });
+      expect(toastCalls()).toBe(1);
+      expect(mocks.toast.info.mock.calls[0][1].description).toContain("82");
     });
 
     it("a cancelled run says the rest is untouched", () => {

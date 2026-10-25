@@ -73,6 +73,7 @@ Copie de la session 2 (`XDG_DATA_HOME=…/test/_session2/xdg-data`), projet jeta
 - **Retraduction par sélection** de 5 segments `translated`, Ollama arrêté : arrêt au contrôle de démarrage, un seul toast, 0 ligne changée. La panne au milieu d'une sélection n'est couverte que par le test `failed_retranslation_never_overwrites_a_reviewed_target`.
 - **Reprise** (Ollama relancé) : 1 039 annoncés ; arrêt volontaire après environ 1 min ; toast « 80 traduit(s) » ; 162 lignes changées, toutes d'anciennes lignes D6 ⇒ `translated`. Pic mémoire WebKit sur tout l'essai : 289 Mo. Aucun `panicked` dans `app.log`.
 - **Écart relevé** : le récapitulatif ne compte pas les lignes réparées par la réparation des noms canoniques (`pipeline.rs`, requête « later validated translation repairs that fallback ») : 82 des 162 lignes (93 `speaker` de même source, une seule traduction). Écritures correctes, mais le toast d'arrêt dit « Le reste n'a pas été modifié ». Suite proposée : compter ces réparations dans `RunSummary` (petit).
+- **Corrigé après l'essai** (demande utilisateur) : `persist_batch_results` renvoie le nombre de lignes réparées ; `PipelineRunOutcome.repaired` ⇒ `RunSummary.repaired` ⇒ ligne « N autre(s) ligne(s) du même nom… » dans le toast. Tests : `later_canonical_success_repairs_an_earlier_source_fallback` (repaired = 1), Vitest « repaired name rows are reported ».
 - **Corrigé pendant l'essai** : le message de panne conseillait « Tout traduire » même pour une sélection ⇒ « relancez la traduction » (fr/en). Vitest `llm.test.ts` : 13 OK.
 - Délai de 180 s : jamais atteint pendant l'essai.
 
@@ -82,7 +83,7 @@ Copie de la session 2 (`XDG_DATA_HOME=…/test/_session2/xdg-data`), projet jeta
 
 ## Prochaine session
 
-- Commit sur `fix/r1-provider-outage` et PR, sur accord de l'utilisateur. Suite proposée : compter les réparations de noms dans `RunSummary`.
+- Commit `7be55e4` et PR #10 faits ; compte des réparations ajouté ensuite. Reste : relecture et fusion de la PR par l'utilisateur, puis plan du lot R2.
 
 ---
 *Journal partagé Codex / Claude — Hoshi2Star*
