@@ -10,7 +10,8 @@ matière brute, outils précis, juge extérieur) et les règles d'`AGENTS.md`.
 3. Lot B — QA lisible.
 4. Lot C — navigation de recherche.
 5. Étude REA de RuneTranslate : `RAE-PLAN/runetranslate/PLAN.md` (local).
-6. Préparation de release.
+6. Modèles et fournisseurs IA (peut tourner en parallèle des lots, autre zone du code).
+7. Préparation de release.
 
 Lots A à C : relire d'abord les conclusions de l'analyse complète (`docs/audit/`), qui peuvent en
 changer l'ordre ou le contenu. Pour lancer une session :
@@ -88,6 +89,33 @@ globale affiche et sélectionne la bonne ligne à l'écran (capture via MCP `tau
 >    l'événement, numéro de ligne) pour MV/MZ et Wolf ; vrai numéro de ligne conservé quand on filtre.
 > 3. Preuve : tests frontend, essai réel avec captures via le MCP `tauri` sur un gros fichier.
 > 4. Gate complet, branche `feat/search-navigation`, PR avec résultats.
+
+## Modèles et fournisseurs IA
+
+**Juge extérieur :** un jeu de test fixe tiré de vrais jeux, traduit par chaque modèle candidat,
+noté par des contrôles automatiques (placeholders, QA, sortie structurée valide) et par une relecture
+humaine à l'aveugle de l'utilisateur ; coût réel mesuré par `ProviderCallMetrics`.
+
+> Lis `AGENTS.md`, `tasks/handoff.md`, `tasks/lessons.md`, puis
+> `docs/research/rapports/Alternatives Ollama et crates Rust.md` et les réponses reçues de
+> sportsfan30 et ArcoFrio sur leurs modèles (si l'utilisateur les a collées).
+>
+> Objectif : que Hoshi2Star traduise bien sans dépendre d'un seul fournisseur ni d'un PC puissant.
+> Contexte : PC de développement faible ; un seul adaptateur `OpenAiCompatibleProvider` ; JSON
+> structuré et `reasoning_effort` activés seulement pour Ollama ; un refus du modèle déclenche
+> probablement des retries puis un split sur le même fournisseur.
+>
+> 1. Vérifie ces constats dans le code actuel (`src-tauri/src/llm/`), puis écris un plan dans `tasks/todo.md`.
+> 2. Construis d'abord le banc d'essai : 50 à 100 segments réels (dialogues, choix, termes système avec
+>    `%1`, codes de contrôle), un script qui les traduit avec plusieurs modèles et sort un tableau
+>    (validité, QA, tokens, coût, temps). Commence par 3–4 modèles cloud peu chers via OpenRouter ;
+>    les clés API sont fournies par l'utilisateur et ne sont jamais écrites dans le dépôt.
+> 3. Ensuite seulement, propose les changements de code : erreur `Refused` distincte avec repli vers
+>    un autre fournisseur, JSON structuré pour les fournisseurs compatibles, préréglages de
+>    fournisseurs (Ollama, LM Studio, llama-server, OpenRouter, DeepSeek, Gemini), et Anthropic/Gemini
+>    natifs via `genai` si le banc d'essai le justifie.
+> 4. Preuve : le tableau du banc d'essai avant/après, tests Rust, gate complet, branche
+>    `feat/llm-providers`, PR avec résultats.
 
 ## Préparation de release
 
