@@ -1835,16 +1835,16 @@ Chaque étape : code, tests unitaires sur fichiers synthétiques, journal. Pas d
 - Reparser chaque `.mps`, `CommonEvent.dat` et `.dat` produit ; vérifier que seules les chaînes prévues ont changé ; relire l'archive reconstruite (liste des fichiers, contenu des fichiers non modifiés, fichiers traduits).
 - Écart ⇒ `IntegrityIssue` et export refusé (dialogue existant).
 - Corriger au passage `unknown1` des `.dat` (valeur d'origine conservée).
-- **Plan détaillé RW-6 (2026-10-26, Claude) — [~] en cours (révisé après revue) :**
-  - [ ] Type d'écart : réutiliser `engines::mv_mz::integrity::IntegrityIssue` (variantes génériques ; `pointer` = clé Wolf) et `summarize`, pour que l'export refuse avec le même message.
-  - [ ] Principe (indépendant de l'injecteur) : relire l'original O **réellement lu par l'injecteur** et la sortie N ; (1) structure : O et N avec tous les textes vidés doivent être égaux (`StructureChanged`) ; (2) textes, clé par clé : clé prévue ⇒ N = traduction (`PlannedValueMissing`) ; clé non prévue ⇒ N = O (`UnplannedChange`) ; clé prévue absente de O ⇒ `PlannedValueMissing` ; illisible ⇒ `Unparseable`.
+- **Plan détaillé RW-6 (2026-10-26, Claude) — [~] code et tests écrits (révisé après revue), non compilés ; gate cloud non exécuté :**
+  - [x] Type d'écart : réutiliser `engines::mv_mz::integrity::IntegrityIssue` (variantes génériques ; `pointer` = clé Wolf) et `summarize`, pour que l'export refuse avec le même message.
+  - [x] Principe (indépendant de l'injecteur) : relire l'original O **réellement lu par l'injecteur** et la sortie N ; (1) structure : O et N avec tous les textes vidés doivent être égaux (`StructureChanged`) ; (2) textes, clé par clé : clé prévue ⇒ N = traduction (`PlannedValueMissing`) ; clé non prévue ⇒ N = O (`UnplannedChange`) ; clé prévue absente de O ⇒ `PlannedValueMissing` ; illisible ⇒ `Unparseable`.
     - cartes (`MapV3`, 101/102, clés `MapData/{carte}/events/…`) et `CommonEvent.dat` (`CommonEventsV3`, clés `CommonEvents/{nom}/…`) ; le conteneur suit la version, comparée par la structure ;
     - `.dat` : `DatFile` (types, champs, entiers, `unknown1`), clés `Database/{base}/{type}/{entrée}/{champ}` (premier champ texte de ce nom, comme l'injecteur) ; en-tête (11 octets) identique.
   - **Pas de contrôle « source changée » pour Wolf** : il n'y a pas de copie d'origine des fichiers Wolf ; après un export décompressé sur le jeu, l'original lu contient déjà la traduction et ce contrôle refuserait tout ré-export. Garde « jeu mis à jour » Wolf = lot séparé (équivalent R2, copie d'origine).
-  - [ ] Vérification dans la boucle d'`inject_all_to_memory` (mêmes octets que l'injection, aucun rechargement d'archive) ; la fonction renvoie aussi les écarts ; `collect_wolf_zip_entries` les remonte, `export_project` les ajoute à `integrity_issues` ⇒ export refusé, rien n'est écrit.
-  - [ ] `.dat` : `DatType` garde `unknown1` et sa chaîne optionnelle (`STRING_INDICATOR`), réécrits tels quels (fin du `0` codé en dur) ; `PartialEq` dérivé sur les types de `dat_parser`.
-  - [ ] Vérification de l'archive reconstruite : déplacée en RW-5, là où elle est branchée.
-  - [ ] Tests : carte (v2 en clair et v3 LZ4) et `CommonEvent.dat` : sortie de l'injecteur acceptée, y compris sur un original déjà traduit ; texte non prévu modifié, structure modifiée, traduction manquante, sortie illisible refusés ; `.dat` idem + `unknown1` à `STRING_INDICATOR` conservé ; e2e : jeu v2, export, export décompressé sur le jeu, ré-export accepté ; texte non traduit altéré dans la carte exportée ⇒ export refusé (`UnplannedChange`).
+  - [x] Vérification dans la boucle d'`inject_all_to_memory` (mêmes octets que l'injection, aucun rechargement d'archive) ; la fonction renvoie aussi les écarts ; `collect_wolf_zip_entries` les remonte, `export_project` les ajoute à `integrity_issues` ⇒ export refusé, rien n'est écrit.
+  - [x] `.dat` : `DatType` garde `unknown1` et sa chaîne optionnelle (`STRING_INDICATOR`), réécrits tels quels (fin du `0` codé en dur) ; `PartialEq` dérivé sur les types de `dat_parser`.
+  - [ ] Vérification de l'archive reconstruite : **déplacée en RW-5**, là où elle est branchée.
+  - [x] Tests : carte (v2 en clair et v3 LZ4) et `CommonEvent.dat` : sortie de l'injecteur acceptée, y compris sur un original déjà traduit ; texte non prévu modifié, structure modifiée, traduction manquante, sortie illisible refusés ; `.dat` idem + `unknown1` à `STRING_INDICATOR` conservé ; e2e : jeu v2, export, export décompressé sur le jeu, ré-export accepté ; texte non traduit altéré dans la carte exportée ⇒ export refusé (`UnplannedChange`).
 
 **RW-7 — Encodage et chemins** (`engines/wolf/encoding.rs`), effort S.
 - D3 : repli des accents en v2, avec le compte des lignes touchées.
