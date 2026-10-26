@@ -283,6 +283,8 @@ pub struct CoreSegment {
     pub key: String,
     pub source: String,
     pub target: String,
+    /// `segments.segment_kind` (`"unknown"` for rows extracted before 0007).
+    pub kind: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -296,15 +298,53 @@ pub struct Reconstruction {
 static RE_EXPORT_FONT_PREFIX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\\FS\[\d+\]").expect("RE_EXPORT_FONT_PREFIX must compile"));
 
+/// `<list>/<n>/parameters/<rest>`: a value inside an event command.
+static RE_COMMAND_PARAMETER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(.*/list/\d+)/parameters/(.+)$").expect("RE_COMMAND_PARAMETER must compile")
+});
+
+/// Choice text: `parameters/0/<n>` of a Show Choices command.
+static RE_CHOICE_PARAMETER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^0/\d+$").expect("RE_CHOICE_PARAMETER must compile"));
+
+/// Whether `json` still holds, at `segment.key`, a value of the role the
+/// segment was extracted with. Inside an event command list, a game update
+/// that inserts or removes a command shifts every later pointer of the page,
+/// so the command found there must have the code the extraction read the
+/// text from (Show Text line 401, Scroll Text line 405, MZ speaker 101[4],
+/// Show Choices 102[0][n], plugin command 357[3]). Elsewhere the path itself
+/// fixes the role.
+fn same_role(json: &Value, segment: &CoreSegment) -> bool {
+    let Some(captures) = RE_COMMAND_PARAMETER.captures(&segment.key) else {
+        return true;
+    };
+    let parameter = &captures[2];
+    let codes: &[i64] = match (segment.kind.as_str(), parameter) {
+        ("dialogue", "0") => &[401],
+        ("scrolling_text", "0") => &[405],
+        (_, "0") => &[401, 405],
+        (_, "4") => &[101],
+        (_, choice) if RE_CHOICE_PARAMETER.is_match(choice) => &[102],
+        (_, plugin) if plugin.starts_with("3/") => &[357],
+        _ => &[],
+    };
+    json.pointer(&format!("{}/code", &captures[1]))
+        .and_then(Value::as_i64)
+        .is_some_and(|code| codes.contains(&code))
+}
+
 /// Rebuild the original of an MV/MZ JSON file from its on-disk bytes.
 ///
 /// Each core pointer is classified by its disk value:
 /// - equal to `source` → untouched;
-/// - equal to `target`, or `\FS[n]` + `target` → a previous export, reset;
-/// - otherwise, when `source` contains source-language script but the disk
-///   value does not → a stale export of an older target (a game update would
-///   replace Japanese with Japanese), reset;
-/// - otherwise → drift, left as found and reported.
+/// - when the value still has the role it was extracted with (see
+///   [`same_role`]):
+///   - equal to `target`, or `\FS[n]` + `target` → a previous export, reset;
+///   - when `source` contains source-language script but the disk value does
+///     not → a stale export of an older target (a game update would replace
+///     Japanese with Japanese), reset;
+/// - otherwise → drift, left as found and reported. A face name or any other
+///   value a shifted pointer now lands on is never overwritten.
 ///
 /// When nothing is reset the disk bytes are returned verbatim.
 pub fn reconstruct_json(
@@ -321,6 +361,7 @@ pub fn reconstruct_json(
     let mut reset = false;
     let mut drift = Vec::new();
     for segment in segments {
+        let role_kept = same_role(&json, segment);
         match json.pointer_mut(&segment.key) {
             Some(Value::String(current)) => {
                 if *current == segment.source {
@@ -332,7 +373,7 @@ pub fn reconstruct_json(
                 let stale_export =
                     crate::core::qa::contains_source_script(&segment.source, source_language)
                         && !crate::core::qa::contains_source_script(current, source_language);
-                if was_exported || stale_export {
+                if role_kept && (was_exported || stale_export) {
                     *current = segment.source.clone();
                     reset = true;
                 } else {
@@ -546,7 +587,112 @@ mod tests {
             key: key.into(),
             source: source.into(),
             target: target.into(),
+            kind: "unknown".into(),
         }
+    }
+
+    fn event_seg(key: &str, source: &str, target: &str, kind: &str) -> CoreSegment {
+        CoreSegment {
+            kind: kind.into(),
+            ..seg(&format!("/events/1/pages/0/list/{key}"), source, target)
+        }
+    }
+
+    fn event_map(list: Value) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "events": [null, { "id": 1, "pages": [{ "list": list }] }]
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn shifted_pointer_on_a_face_name_is_drift_not_reset() {
+        // A game update inserted a line: the old dialogue pointer `3/parameters/0`
+        // now lands on the face name of the next Show Text header.
+        let disk = event_map(serde_json::json!([
+            { "code": 101, "parameters": ["Actor1", 0, 0, 2] },
+            { "code": 401, "parameters": ["おはよう"] },
+            { "code": 401, "parameters": ["新しい台詞"] },
+            { "code": 101, "parameters": ["Actor2", 1, 0, 2] },
+            { "code": 401, "parameters": ["こんばんは"] }
+        ]));
+        let rec = reconstruct_json(
+            "Map001.json",
+            &disk,
+            &[
+                event_seg("1/parameters/0", "おはよう", "Morning", "dialogue"),
+                event_seg("3/parameters/0", "こんばんは", "Evening", "dialogue"),
+            ],
+            "ja",
+        )
+        .unwrap();
+        assert_eq!(rec.bytes, disk, "the face name must stay as found");
+        assert_eq!(rec.provenance, Provenance::Pristine);
+        assert_eq!(
+            rec.drift,
+            vec![DriftedPointer {
+                key: "/events/1/pages/0/list/3/parameters/0".into(),
+                expected: "こんばんは".into(),
+                found: Some("Actor2".into()),
+            }]
+        );
+    }
+
+    #[test]
+    fn exports_at_the_same_role_are_still_reset() {
+        let original = event_map(serde_json::json!([
+            { "code": 101, "parameters": ["", 0, 0, 2, "村人"] },
+            { "code": 401, "parameters": ["こんにちは"] },
+            { "code": 102, "parameters": [["はい", "いいえ"], 1] },
+            { "code": 405, "parameters": ["昔々"] },
+            { "code": 357, "parameters": ["P", "c", "", { "text": "看板" }] }
+        ]));
+        // An older target exported earlier (stale), plus the current targets.
+        let disk = event_map(serde_json::json!([
+            { "code": 101, "parameters": ["", 0, 0, 2, "Villager"] },
+            { "code": 401, "parameters": ["Old hello"] },
+            { "code": 102, "parameters": [["Yes", "No"], 1] },
+            { "code": 405, "parameters": ["Once upon a time"] },
+            { "code": 357, "parameters": ["P", "c", "", { "text": "Sign" }] }
+        ]));
+        let rec = reconstruct_json(
+            "Map001.json",
+            &disk,
+            &[
+                event_seg("0/parameters/4", "村人", "Villager", "speaker"),
+                event_seg("1/parameters/0", "こんにちは", "Hello", "dialogue"),
+                event_seg("2/parameters/0/0", "はい", "Yes", "choice"),
+                event_seg("2/parameters/0/1", "いいえ", "No", "unknown"),
+                event_seg("3/parameters/0", "昔々", "Long ago", "scrolling_text"),
+                event_seg("4/parameters/3/text", "看板", "Sign", "plugin_text"),
+            ],
+            "ja",
+        )
+        .unwrap();
+        assert!(rec.drift.is_empty(), "{:?}", rec.drift);
+        let rebuilt: Value = serde_json::from_slice(&rec.bytes).unwrap();
+        assert_eq!(rebuilt, serde_json::from_slice::<Value>(&original).unwrap());
+    }
+
+    #[test]
+    fn dialogue_pointer_on_a_scroll_line_is_drift() {
+        let disk = event_map(serde_json::json!([
+            { "code": 405, "parameters": ["Old hello"] }
+        ]));
+        let rec = reconstruct_json(
+            "Map001.json",
+            &disk,
+            &[event_seg(
+                "0/parameters/0",
+                "こんにちは",
+                "Hello",
+                "dialogue",
+            )],
+            "ja",
+        )
+        .unwrap();
+        assert_eq!(rec.bytes, disk);
+        assert_eq!(rec.drift.len(), 1);
     }
 
     #[test]

@@ -211,8 +211,8 @@ async fn recorded_segments(
     file_id: &str,
     plugins_js: bool,
 ) -> Result<Recorded, String> {
-    let rows: Vec<(String, String, String, Option<String>)> = sqlx::query_as(
-        "SELECT json_key, source_text, target_text, context_json FROM segments \
+    let rows: Vec<(String, String, String, Option<String>, String)> = sqlx::query_as(
+        "SELECT json_key, source_text, target_text, context_json, segment_kind FROM segments \
          WHERE source_file_id = ?",
     )
     .bind(file_id)
@@ -222,7 +222,7 @@ async fn recorded_segments(
     if plugins_js {
         return Ok(Recorded::PluginsJs(
             rows.into_iter()
-                .map(|(key, source, target, context)| PluginSegment {
+                .map(|(key, source, target, context, _)| PluginSegment {
                     fill_in: crate::engines::mv_mz::coverage::plugins::context_is_fill_in(
                         context.as_deref(),
                     ),
@@ -237,7 +237,7 @@ async fn recorded_segments(
     // segments are reverted inside their note afterwards.
     let mut labels: HashMap<String, Vec<(usize, String, String)>> = HashMap::new();
     let mut core = Vec::new();
-    for (key, source, target, _) in rows {
+    for (key, source, target, _, kind) in rows {
         if let Some((occurrence, _, pointer)) = keke::parse_label_key(&key) {
             labels
                 .entry(pointer)
@@ -248,6 +248,7 @@ async fn recorded_segments(
                 key,
                 source,
                 target,
+                kind,
             });
         }
     }
