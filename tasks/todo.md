@@ -1860,6 +1860,13 @@ Chaque étape : code, tests unitaires sur fichiers synthétiques, journal. Pas d
 **RW-7 — Encodage et chemins** (`engines/wolf/encoding.rs`), effort S.
 - D3 : repli des accents en v2, avec le compte des lignes touchées.
 - Avertissement si le chemin du jeu ou de l'export contient un caractère hors Shift-JIS : un jeu v2 n'y démarre pas, constaté en jeu.
+- **Plan détaillé RW-7 (2026-10-26, Claude) — [~] en cours :**
+  - [ ] `encoding::fold_for_shift_jis(texte) -> Cow<str>` : inchangé si tout s'encode ; sinon chaque caractère hors Shift-JIS devient sa lettre de base (décomposition canonique, marques combinantes retirées : é → e, Ç → C), `œ/Œ/æ/Æ/ß` → `oe/OE/ae/AE/ss`, `« » „` → `"`, `‚` → `'`, espaces insécables → espace, `– —` → `-` ; tout autre caractère reste et l'encodeur le refuse comme aujourd'hui (erreur explicite, pas de `?` silencieux).
+  - [ ] Injecteur : pour un fichier Shift-JIS (drapeau de la carte, de `CommonEvent.dat`, magic du `.dat`), chaque traduction est repliée avant d'être posée ; `InjectionResult::folded_count` compte les textes repliés ; UTF-8 inchangé (D3 : accents écrits tels quels en v3).
+  - [ ] Intégrité : la valeur attendue d'une clé prévue est la traduction repliée quand le fichier est Shift-JIS.
+  - [ ] Export : `inject_all_to_memory` renvoie une structure (entrées, écarts, textes repliés) ; le compte est journalisé, son affichage dans le rapport d'export relève de RW-8.
+  - [ ] Chemin : `encoding::is_shift_jis(texte)` ; `wolf_path_warning(game_dir, version)` renvoie un avertissement pour un jeu Shift-JIS (v2) dont le chemin contient un caractère hors Shift-JIS (le jeu n'y démarre pas, constaté en jeu) ; journalisé à l'ouverture et à l'export ; affichage en RW-8.
+  - [ ] Tests : repli (accents français, ligatures, guillemets, espaces insécables, japonais et `…` inchangés, emoji laissé) ; injection v2 d'une traduction accentuée ⇒ texte replié, compté, relu ; v3 UTF-8 ⇒ accents conservés ; intégrité acceptée pour un texte replié ; `.dat` Shift-JIS replié ; avertissement de chemin (v2 + « 〜 » ⇒ avertissement ; v3 ou chemin ASCII ⇒ aucun).
 
 **RW-8 — Interface**, effort S.
 - Messages fr/en pour les nouvelles erreurs.
