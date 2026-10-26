@@ -2,7 +2,7 @@
 
 **Mis à jour :** 2026-10-26 — Claude (lot RW démarré : worktree `../Hoshi2Star-rw`, branche `feat/rw-wolf` ; R2 fusionné, PR #12).
 **Objectif utilisateur :** lot RW, extraction et réinjection Wolf v2/v3 dans l'app (livraison par archive reconstruite).
-**Statut :** R2 fusionné (PR #12, `2331c75`). RW : plan validé le 2026-10-26 ; RW-1 vérifié (gate cloud vert sur `cc7efc7`), RW-2 en cours.
+**Statut :** R2 fusionné (PR #12, `2331c75`). RW : plan validé le 2026-10-26 ; RW-1 vérifié (gate cloud vert sur `cc7efc7`) ; RW-2 écrit, non compilé ; RW-4 suivant.
 
 ## En cours (2026-10-26, Claude) — RW (Wolf)
 
@@ -13,7 +13,8 @@
 - Attention pour RW-4 : RW0 refuse Wolf v2 à l'ouverture et à l'export avec un message dédié ; ce refus doit être levé quand les cartes v2 seront lues.
 - **Poussé** le 2026-10-26 (`origin/feat/rw-wolf` @ `cc7efc7`, accord de l'utilisateur) ; **gate cloud RW-1 vert** sur `cc7efc7` : fmt OK, typecheck OK, Vitest 142/142, clippy `--all-targets -D warnings` 0 avertissement, `cargo test --locked` 724 OK / 0 échec / 12 ignorés (717 sur `main`, +7 RW-1), lint 0 erreur (10 avertissements frontend connus). Lecture de vraies archives non couverte (tests `diag_*` ignorés).
 - Environnement cloud (hors périmètre, à traiter à part) : le hook `PreToolUse` bloque toute commande dont le texte contient la sous-chaîne interdite de npm, y compris la commande d'installation de pnpm et même une note qui la cite (motif trop large ; contourné par `pnpm i`) ; le conteneur cloud n'a pas les bibliothèques GTK/WebKit de Tauri (installées à la main via apt pour clippy) : à mettre dans le script de setup cloud.
-- **Prochaine action exacte** : RW-2 (détection de version, `engines/detector.rs`), puis RW-4, RW-3, RW-6, RW-5, RW-7, RW-8, RW-9. Pas de build local ; gate en cloud après push autorisé.
+- **RW-2 écrit** (`engines/detector.rs`, `legacy_xor.rs`) : version lue dans le magic de la base `BasicData` (dossier libre, puis archive qui la contient, seules les entrées base déchiffrées via `extract_matching`), puis version de chiffrement v8 ; la page de codes n'est plus utilisée. **Non compilé** : gate cloud à faire.
+- **Prochaine action exacte** : gate cloud RW-2 (push à demander), puis RW-4, RW-3, RW-6, RW-5, RW-7, RW-8, RW-9. Pas de build local ; gate en cloud après push autorisé.
 
 ## En cours (2026-10-26, Claude) — R2b
 

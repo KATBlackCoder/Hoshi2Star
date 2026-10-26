@@ -1796,7 +1796,7 @@ Chaque étape : code, tests unitaires sur fichiers synthétiques, journal. Pas d
 - Constantes de format (chaînes-clés) avec attribution (UberWolf, MIT).
 - Tests : archives synthétiques v6 (signature chiffrée, LZ) et v8 (« v3.14 ») fabriquées dans les tests à partir de l'écrivain RW-3 ou d'octets construits à la main.
 
-**RW-2 — Détection de version** (`engines/detector.rs`), effort S.
+**RW-2 — Détection de version** (`engines/detector.rs`), effort S. — **[~] écrit, non compilé ; gate cloud non exécuté.** Ordre retenu : magic de la base libre, magic de la base dans l'archive, version de chiffrement v8 (repli), défaut v2 : le contenu fait foi, la version de chiffrement ne dit que l'éditeur qui a empaqueté.
 - Ne plus déduire la version de la page de codes de l'archive.
 - Utiliser, dans l'ordre : la version de chiffrement v8, l'octet UTF-8 (`0x55`) des signatures de cartes et de `.dat`, l'en-tête de `SysDatabase.dat`.
 
