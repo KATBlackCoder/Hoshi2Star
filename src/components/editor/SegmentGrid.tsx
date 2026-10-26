@@ -264,8 +264,9 @@ export function SegmentGrid({
     };
   }, []);
 
-  // Re-fetch segments + source files when the LLM pipeline completes or a
-  // .h2s pack import rewrites segments across the whole project
+  // Re-fetch segments + source files when the LLM pipeline completes, a
+  // .h2s pack import rewrites segments across the whole project, or the
+  // project is realigned after a game update
   useEffect(() => {
     const refresh = () => {
       const pid = activeProjectIdRef.current;
@@ -276,9 +277,11 @@ export function SegmentGrid({
     };
     const unlistenLlm = listen("h2s://llm/completed", refresh);
     const unlistenImport = listen("h2s://project/import-done", refresh);
+    const unlistenResync = listen("h2s://project/resynced", refresh);
     return () => {
       void unlistenLlm.then((fn) => fn());
       void unlistenImport.then((fn) => fn());
+      void unlistenResync.then((fn) => fn());
     };
   }, [loadSegments, reloadSourceFiles, reloadProjectStats]);
 

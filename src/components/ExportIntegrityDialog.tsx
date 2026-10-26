@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import {
   AlertDialog,
   AlertDialogAction,
+  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -18,11 +19,14 @@ interface ExportIntegrityDialogProps {
   /** Problem lines reported by the check; `null` hides the dialog. */
   issues: string[] | null;
   onClose: () => void;
+  /** Offered when the game changed since extraction (MV/MZ realignment). */
+  onResync?: () => void;
 }
 
 export function ExportIntegrityDialog({
   issues,
   onClose,
+  onResync,
 }: ExportIntegrityDialogProps) {
   const { t } = useTranslation();
   const lines = (issues ?? []).map((issue) => ({
@@ -65,9 +69,25 @@ export function ExportIntegrityDialog({
           )}
         </ul>
         <AlertDialogFooter>
-          <AlertDialogAction onClick={onClose}>
-            {t("toolbar.exportAllClose")}
-          </AlertDialogAction>
+          {gameChanged && onResync ? (
+            <>
+              <AlertDialogCancel onClick={onClose}>
+                {t("toolbar.exportAllClose")}
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  onClose();
+                  onResync();
+                }}
+              >
+                {t("exportIntegrity.resync")}
+              </AlertDialogAction>
+            </>
+          ) : (
+            <AlertDialogAction onClick={onClose}>
+              {t("toolbar.exportAllClose")}
+            </AlertDialogAction>
+          )}
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

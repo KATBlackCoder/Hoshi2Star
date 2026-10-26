@@ -645,7 +645,8 @@
     "scanFailed": "Could not scan for additional text: {{error}}",
     "notCoveredTitle": "Plugin text not covered ({{count}})",
     "notCoveredHint": "These plugin settings contain text, but no verified profile proves they are display-only, so they stay untranslated. A hint is a guess from the plugin code, never a guarantee.",
-    "notCoveredHintLabel": "Hint:"
+    "notCoveredHintLabel": "Hint:",
+    "driftResync": "Realign the project…"
   },
   "exportLocale": {
     "label": "Also switch the game's language setting ({{current}} → {{target}})",
@@ -658,7 +659,8 @@
     "gameChanged": "No file was written. The game files changed since extraction (a game update, or files replaced, e.g. by an older export): at these locations the original text is no longer the one you translated. Exporting would put the translations in the wrong place. To export, restore the game files as they were at extraction.",
     "expected": "expected: {{text}}",
     "found": "found: {{text}}",
-    "foundNothing": "found: nothing (location gone)"
+    "foundNothing": "found: nothing (location gone)",
+    "resync": "Realign the project…"
   },
   "textFit": {
     "toolbar": "Text fitting",
@@ -746,5 +748,23 @@
       "bom_detected": "BOM",
       "constraint_violation": "display rule"
     }
+  },
+  "resync": {
+    "title": "Realign after a game update",
+    "description": "Preview: nothing has been changed yet. Each translation follows its line to its new place; new or rewritten lines arrive untranslated; translations of lines that are gone are kept aside and stay suggested by the translation memory.",
+    "appliedDescription": "Realignment applied. You can export again.",
+    "loading": "Comparing the project with the current version of the game…",
+    "nothingToDo": "The project already matches the current version of the game: nothing to realign.",
+    "totals": "{{moved}} moved, {{added}} new, {{gone}} gone, of which {{orphaned}} translated, kept aside.",
+    "changedSources": "Including {{count}} rewritten line(s): counted as gone then new, never paired approximately.",
+    "file": "File",
+    "moved": "Moved",
+    "added": "New",
+    "gone": "Gone",
+    "newFile": "new file",
+    "goneTranslations": "Translations without a line (kept, and in the translation memory):",
+    "cancel": "Cancel",
+    "close": "Close",
+    "apply": "Apply"
   }
 }

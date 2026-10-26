@@ -746,3 +746,36 @@ export interface TextFitPreview {
   limit: number;
   fontSize: number;
 }
+
+// ---------------------------------------------------------------------------
+// Realignment after a game update (commands/resync.rs)
+// ---------------------------------------------------------------------------
+
+export interface ResyncFile {
+  file: string;
+  moved: number;
+  added: number;
+  gone: number;
+  changedSources: number;
+  orphaned: number;
+  newFile: boolean;
+}
+
+export interface GoneTranslation {
+  file: string;
+  key: string;
+  source: string;
+  target: string;
+}
+
+export interface ResyncSummary {
+  /** `false` for a preview: nothing was written. */
+  applied: boolean;
+  files: ResyncFile[];
+  moved: number;
+  added: number;
+  gone: number;
+  changedSources: number;
+  orphaned: number;
+  goneTranslations: GoneTranslation[];
+}
