@@ -1,13 +1,27 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-25 — Claude (R1 et RW0 fusionnés, plan R2 validé, R2a à démarrer).
-**Objectif utilisateur :** lancer une analyse complète de l'app dans une session dédiée, puis
-traiter les retours de sportsfan30 (F95zone) et étudier RuneTranslate avec REA.
-**Statut :** analyse complète :
-- sessions 1, 2 (MV/MZ) et 3 faites le 2026-10-25 ; Wolf reporté (session 2 bis, après REA) ;
-- code applicatif modifié depuis : RW0 (PR #11, fusionnée) ; R1 (PR #10, ouverte) ;
-- sessions 1 à 3 commitées et poussées (`6edd29b` … `54c22e3`, `fb6be51`) ;
-- lot R1 : implémenté, essai réel fait, commité (`7be55e4`) et poussé sur `fix/r1-provider-outage`  ; PR #10 fusionnée le 2026-10-25 (`af0c08e`).
+**Mis à jour :** 2026-10-26 — Claude, session cloud (R2a implémentée, gate complet bloqué par le réseau).
+**Objectif utilisateur :** lot R2, export sûr après une mise à jour du jeu (S-X1 / audit F, P-2).
+**Statut :** R2a (étapes 1–6 du « Plan détaillé — R2 ») faite et poussée sur `fix/r2a-export-source-guard` ;
+pas de PR (non demandée). Arrêt demandé avant R2b, pour validation.
+
+## En cours (2026-10-26, Claude) — R2a
+
+- Journal : `docs/journal/2026-10-26-r2a-garde-source-export.md` (preuves rouge/vert, comptes du gate).
+- Fait : `IntegrityIssue::SourceChanged` + `verify_sources` ; contrôle dans `export_project` et
+  `debug_inject_file` ; règle E2 (`same_role` dans `reconstruct_json`) ; dialogue d'intégrité fr/en ;
+  tests `src-tauri/tests/export_game_update.rs` (P-2 MV, P-2 MZ locuteur + choix, jeu inchangé).
+- Prouvé : test rouge sur `e8a97a9` (MV : visage `Actor2` → `EN2` ; MZ : `key not found in JSON`), puis vert ;
+  la garde seule (sans E2) laissait passer P-2 en MV.
+- **Bloqué** : `lindera.dev` refusé (403) par le réseau de l'environnement cloud ⇒ `lindera-ipadic` ne
+  compile pas. Vérifs faites avec `DOCS_RS=1` (dictionnaire factice) : fmt, clippy `--all-targets -D warnings`,
+  701 tests Rust OK / 2 échecs lindera attendus (identiques sur `e8a97a9`) / 12 ignorés ; Vitest 137 ; lint 0 erreur.
+- Non vérifié : gate avec le vrai dictionnaire ; faux positifs sur les 3 jeux réels (session 2) ; essai en jeu.
+- **Prochaine action exacte** :
+  1. Autoriser `lindera.dev` (accès réseau de l'environnement cloud), relancer le gate complet sans `DOCS_RS`
+     sur la branche poussée.
+  2. Contrôle des faux positifs sur les jeux réels (0 `SourceChanged` attendu sur un jeu non modifié).
+  3. Validation de l'utilisateur, puis R2b (étapes 8–10 : `resync_project`, réalignement) ; l'étape 7 reste ouverte.
 
 ## En cours (2026-10-25, Claude) — RW0 puis R1
 

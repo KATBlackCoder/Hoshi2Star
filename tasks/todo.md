@@ -175,7 +175,7 @@ technique laisse simplement la ligne telle qu'elle était.
 
 **Effort estimé.** M, 1,5 à 2 jours (annulation comprise).
 
-### Plan détaillé — R2 : export sûr après une mise à jour du jeu (2026-10-25, Claude) — PLAN VALIDÉ le 2026-10-25 (E1 = a, E2 oui, E3 = a, E4 oui, E5 oui) ; R2a en cours sur `fix/r2a-export-source-guard`
+### Plan détaillé — R2 : export sûr après une mise à jour du jeu (2026-10-25, Claude) — PLAN VALIDÉ le 2026-10-25 (E1 = a, E2 oui, E3 = a, E4 oui, E5 oui) ; R2a (étapes 1–6) implémentée le 2026-10-26 sur `fix/r2a-export-source-guard`, gate complet en attente (réseau) ; R2b en attente de validation
 
 **Constats couverts.** S-X1 / audit F (P-2 : traduction écrite dans le nom de visage d'une commande 101,
 partie MV bloquée en jeu ; MZ : export qui échoue avec `key not found in JSON`), aggravé par la relecture
@@ -232,25 +232,33 @@ de la session 3 (copie de référence qui remet du japonais sans dérive). Preuv
   en local : il n'est fait que si tu l'acceptes.
 
 **Étapes — R2a : refuser l'écart (M).**
-- [ ] 1. `integrity.rs` : nouvelle variante `IntegrityIssue::SourceChanged { file, pointer, expected, found }`,
+- [x] 1. `integrity.rs` : nouvelle variante `IntegrityIssue::SourceChanged { file, pointer, expected, found }`,
       avec son libellé dans `summarize`. Tests unitaires.
-- [ ] 2. `export.rs` (`export_project`, branche JSON MV/MZ) : avant `inject_to_bytes`, comparer pour chaque
+- [x] 2. `export.rs` (`export_project`, branche JSON MV/MZ) : avant `inject_to_bytes`, comparer pour chaque
       ligne la valeur d'origine (copie de référence parsée une fois par fichier) à `source_text`. Tout écart
       donne `SourceChanged`. Les lignes de mise en page (`split_fitted`) gardent leur pointeur, donc le contrôle
       se fait avant. Les étiquettes Keke et `plugins.js` ont déjà leurs propres contrôles.
-- [ ] 3. Même contrôle dans `debug_inject_file` (export d'un seul fichier).
-- [ ] 4. Frontend : le dialogue d'intégrité (`integrityIssuesOf`, `useAppHandlers.ts`) affiche ces écarts
+- [x] 3. Même contrôle dans `debug_inject_file` (export d'un seul fichier).
+- [x] 4. Frontend : le dialogue d'intégrité (`integrityIssuesOf`, `useAppHandlers.ts`) affiche ces écarts
       lisiblement, avec fichier, emplacement, attendu et trouvé, plus une phrase « le jeu a changé depuis
       l'extraction » et le lien vers le réalignement (R2b). Textes fr/en.
-- [ ] 5. Tests d'intégration (`e2e_project_flow.rs`, jeu MV synthétique) reproduisant P-2 :
+- [x] 5. Tests d'intégration (fait dans `tests/export_game_update.rs`, jeu synthétique écrit par le test) reproduisant P-2 :
       - insertion d'un 401 avant une ligne traduite ⇒ export refusé, `SourceChanged` listé, aucune archive ;
       - même chose en MZ, avec un nom de locuteur et un choix (fin de `key not found in JSON`) ;
       - jeu inchangé ⇒ export identique à aujourd'hui (non-régression des allers-retours).
 
 **Étapes — R2a bis : reconstruction sans changement de rôle (S–M).**
-- [ ] 6. `reconstruct_json` : règle E2 (contrôle du `code` et de l'index de paramètre à partir de
+- [x] 6. `reconstruct_json` : règle E2 (contrôle du `code` et de l'index de paramètre à partir de
       `segment_kind`, déjà en base). Tests : nom de visage sous un ancien pointeur de dialogue ⇒ laissé tel
       quel et compté en dérive ; ancienne cible exportée au même rôle ⇒ toujours remise à la source.
+  **Fait le 2026-10-26 (Claude)** — étapes 1 à 6, détail et preuves : `docs/journal/2026-10-26-r2a-garde-source-export.md`.
+  - Test rouge puis vert (`tests/export_game_update.rs`) ; la garde seule (1–3) laissait passer P-2 en MV
+    (copie de référence reconstruite avec le japonais sous le pointeur décalé), d'où l'étape 6 dans R2a.
+  - Rôle (étape 6) déduit du pointeur et du `code` de la commande sur disque, affiné par `segment_kind` ;
+    appliqué aussi à `was_exported`. Le lien vers le réalignement (étape 4) viendra avec R2b (étape 9) :
+    le dialogue dit pour l'instant de remettre la version du jeu utilisée à l'extraction.
+  - Vérifié avec un dictionnaire lindera factice (`DOCS_RS=1`, `lindera.dev` refusé par le réseau cloud) :
+    gate complet **à refaire** avec le vrai dictionnaire. Faux positifs sur jeux réels : non vérifiés.
 - [ ] 7. `update_snapshot` : la dérive est rendue à l'appelant (pas seulement dans le journal), pour que
       l'export puisse dire « le jeu a changé » même avant le contrôle de l'étape 2.
 
