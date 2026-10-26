@@ -273,15 +273,13 @@ pub fn verify_archive_rebuild(
     if before.version == 8 {
         // Everything before the original TOC is copied; only the header's TOC
         // address (0x10) and flags (0x2C) may differ.
+        // Compared in place: the data area can weigh gigabytes.
         let toc = usize::try_from(before.toc_offset).unwrap_or(usize::MAX);
-        let copied = |bytes: &[u8]| {
-            (
-                bytes.get(..0x10).map(<[u8]>::to_vec),
-                bytes.get(0x18..0x2C).map(<[u8]>::to_vec),
-                bytes.get(0x30..toc).map(<[u8]>::to_vec),
-            )
-        };
-        if copied(original) != copied(rebuilt) {
+        let unchanged = original.get(..0x10) == rebuilt.get(..0x10)
+            && original.get(0x18..0x2C) == rebuilt.get(0x18..0x2C)
+            && original.get(0x30..toc).is_some()
+            && original.get(0x30..toc) == rebuilt.get(0x30..toc);
+        if !unchanged {
             return structure_changed(file, "data copied from the original archive changed");
         }
     }

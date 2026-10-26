@@ -607,7 +607,9 @@ pub async fn inject_all_to_memory(
 
     for (archive, replacements) in by_archive {
         let original = std::fs::read(game_dir.join(&archive))?;
-        let mut rebuilt = Vec::new();
+        // Sized once: the archive can weigh gigabytes.
+        let added: usize = replacements.values().map(Vec::len).sum();
+        let mut rebuilt = Vec::with_capacity(original.len() + added + 4096);
         rebuild_archive(&original, &replacements, &mut rebuilt)?;
         let name = display_path(&archive);
         issues.extend(integrity::verify_archive_rebuild(
