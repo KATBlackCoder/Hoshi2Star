@@ -1,9 +1,15 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-26 — Claude (R2 clos : étape 12 faite, faux positifs contrôlés, PR ouverte).
-**Objectif utilisateur :** lot R2, export sûr après une mise à jour du jeu (S-X1 / audit F, P-2).
-**Statut :** R2a (étapes 1–6) et R2b (étapes 8–10) faites et poussées sur `fix/r2a-export-source-guard` ;
-pas de PR (non demandée). Constat 2 de la relecture R2a : refus conservé (E1), décision utilisateur du 2026-10-26.
+**Mis à jour :** 2026-10-26 — Claude (lot RW démarré : worktree `../Hoshi2Star-rw`, branche `feat/rw-wolf` ; R2 fusionné, PR #12).
+**Objectif utilisateur :** lot RW, extraction et réinjection Wolf v2/v3 dans l'app (livraison par archive reconstruite).
+**Statut :** R2 fusionné (PR #12, `2331c75`). RW : plan validé le 2026-10-26, RW-1 en cours.
+
+## En cours (2026-10-26, Claude) — RW (Wolf)
+
+- Plan validé : `tasks/todo.md`, « Plan détaillé — RW ». Branche `feat/rw-wolf` dans le worktree `../Hoshi2Star-rw` (depuis `origin/main` @ `2331c75`). Commits locaux ; push seulement avec accord (gate cloud).
+- Base : étude REA RuneTranslate + prototypes Python validés **en jeu** sur Wolf 2.23 et 3.658 (preuves locales hors Git : `RAE-PLAN/wolf/`, `RAE-PLAN/essais/RESULTATS.md`). Constat clé : **l'archive `.wolf` passe avant les fichiers libres** (v2 et v3) ; l'archive reconstruite est acceptée par le jeu.
+- Journal : `docs/journal/2026-10-26-rw-wolf.md`.
+- **Prochaine action exacte** : RW-1 (lecture des archives dans `engines/wolf/decrypt/legacy_xor.rs`), puis RW-2, RW-4, RW-3, RW-6, RW-5, RW-7, RW-8, RW-9. Pas de build local ; gate en cloud après push autorisé.
 
 ## En cours (2026-10-26, Claude) — R2b
 
