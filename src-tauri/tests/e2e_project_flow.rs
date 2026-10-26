@@ -1011,3 +1011,65 @@ async fn wolf_v2_game_opens_with_its_dialogue() {
         .expect("Honoka (Wolf v2) opens");
     }
 }
+
+/// A Wolf export unpacked over the game becomes the original of the next export:
+/// re-exporting must pass the integrity gate (plan RW, RW-6 — no "source
+/// changed" check without a pristine copy of the Wolf files).
+#[tokio::test]
+async fn wolf_v2_export_can_be_repeated_over_its_own_output() {
+    const MESSAGE: &str = "こんにちは、旅の人";
+    const FIRST: &str = "Hello, traveller";
+    const SECOND: &str = "Welcome, traveller";
+
+    let tmp = tempfile::tempdir().unwrap();
+    let game_root = tmp.path().join("game");
+    let map_path = game_root.join("Data").join("MapData").join("Map001.mps");
+    std::fs::create_dir_all(map_path.parent().unwrap()).unwrap();
+    std::fs::write(&map_path, wolf_v2_map(MESSAGE)).unwrap();
+    std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+
+    let db_file = tmp.path().join("h2s.db");
+    let app = mock_app(db_file.to_str().unwrap()).await;
+    let project = open_project(
+        game_root.to_str().unwrap().to_string(),
+        None,
+        None,
+        app.state(),
+    )
+    .await
+    .expect("a Wolf 2.x game opens")
+    .project;
+
+    let files = get_source_files(project.id.clone(), app.state())
+        .await
+        .expect("get_source_files");
+    let file = files.first().expect("one source file");
+    let page = get_segments(project.id.clone(), file.id.clone(), 0, 100_000, app.state())
+        .await
+        .expect("get_segments");
+    let segment = page
+        .items
+        .iter()
+        .find(|segment| segment.source_text == MESSAGE)
+        .expect("the map message");
+
+    for translation in [FIRST, SECOND] {
+        update_segment(segment.id.clone(), translation.to_string(), app.state())
+            .await
+            .expect("update_segment");
+        let zip_path = export_project(project.id.clone(), None, false, None, app.state())
+            .await
+            .expect("Wolf export (first, then over its own output)");
+        let exported = zip_entries(Path::new(&zip_path))
+            .remove("Data/MapData/Map001.mps")
+            .expect("exported map");
+        assert!(
+            exported
+                .windows(translation.len())
+                .any(|window| window == translation.as_bytes()),
+            "the exported map carries {translation:?}"
+        );
+        // Unpack the export over the game, as the user does.
+        std::fs::write(&map_path, &exported).unwrap();
+    }
+}

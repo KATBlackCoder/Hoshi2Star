@@ -339,7 +339,7 @@ pub async fn export_project(
         .iter()
         .any(|f| matches!(classify_file_type(&f.file_type), FileClass::Wolf));
     if has_wolf {
-        let wolf_entries = collect_wolf_zip_entries(
+        let (wolf_entries, wolf_issues) = collect_wolf_zip_entries(
             &project_id,
             &files,
             game_dir,
@@ -350,6 +350,7 @@ pub async fn export_project(
         )
         .await?;
         entries.extend(wolf_entries);
+        integrity_issues.extend(wolf_issues);
     } else {
         // Skill types renamed inside battle-command note tags (linked category).
         let renames = if engine == "mv_mz" {
@@ -952,7 +953,7 @@ async fn collect_wolf_zip_entries(
     replace_existing: bool,
     engine: &str,
     db: &sqlx::SqlitePool,
-) -> Result<Vec<(String, Vec<u8>)>, String> {
+) -> Result<(Vec<(String, Vec<u8>)>, Vec<integrity::IntegrityIssue>), String> {
     let version = guess_wolf_version_from_structure(game_dir);
     let mut translations_by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
 
@@ -983,9 +984,11 @@ async fn collect_wolf_zip_entries(
     }
 
     if translations_by_file.is_empty() {
-        return Ok(vec![]);
+        return Ok((vec![], vec![]));
     }
 
+    // Each produced file is checked against the bytes it was derived from
+    // (plan RW, RW-6); the issues join the export's integrity gate.
     wolf_to_memory(game_dir, &translations_by_file, &version)
         .await
         .map_err(|e| e.to_string())

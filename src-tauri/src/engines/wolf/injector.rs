@@ -11,11 +11,13 @@
 //
 // .dat injection: parse_database() → modify string_values → serialize_dat().
 
-use super::dat_parser::{self, DatFile, DatType, STRING_INDICATOR_PUB};
+use super::dat_parser::{self, DatFile, DatType};
 use super::dat_parser::{DAT_TYPE_SEPARATOR, DB_MAGIC_SJIS, DB_MAGIC_UTF8};
 use super::encoding;
+use super::integrity;
 use super::v3_format::{self, V3FormatError};
 use crate::engines::detector::WolfVersion;
+use crate::engines::mv_mz::integrity::IntegrityIssue;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -268,16 +270,14 @@ fn serialize_dat_type(
 ) -> Result<(), InjectorError> {
     buf.extend_from_slice(&DAT_TYPE_SEPARATOR);
 
-    // unknown1: preserved as 0 for all synthetic and common real files.
-    // Files with STRING_INDICATOR (0x0001_D4C0) would need special handling
-    // but are not present in the test fixtures for F4-04.
-    let unknown1: u32 = 0;
-    buf.extend_from_slice(&unknown1.to_le_bytes());
+    // unknown1 and its optional string (STRING_INDICATOR) as read.
+    buf.extend_from_slice(&dat_type.unknown1.to_le_bytes());
 
     buf.extend_from_slice(&(dat_type.fields.len() as u32).to_le_bytes());
 
-    if unknown1 == STRING_INDICATOR_PUB {
-        write_wolf_string(buf, &[]);
+    if let Some(text) = &dat_type.unknown1_string {
+        let encoded = encode_for_wolf(text, is_utf8)?;
+        write_wolf_string(buf, &encoded);
     }
 
     for field in &dat_type.fields {
@@ -503,12 +503,17 @@ fn inject_common_events_v3(
 ///   `"Database/{stem}"`  → translations for that `.dat` pair
 /// Inject translations and return `(relative_zip_path, bytes)` pairs — no disk I/O.
 /// Used by the zip export path.
+///
+/// Every produced file is checked against the very bytes it was derived from
+/// ([`super::integrity`], plan RW, RW-6): the returned issues must be empty
+/// for the export to be written.
 pub async fn inject_all_to_memory(
     game_dir: &Path,
     translations_by_file: &HashMap<String, Vec<WolfTranslation>>,
     version: &WolfVersion,
-) -> Result<Vec<(String, Vec<u8>)>, InjectorError> {
+) -> Result<(Vec<(String, Vec<u8>)>, Vec<IntegrityIssue>), InjectorError> {
     let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut issues: Vec<IntegrityIssue> = Vec::new();
 
     for (file_key, translations) in translations_by_file {
         let parts: Vec<&str> = file_key.splitn(2, '/').collect();
@@ -516,6 +521,10 @@ pub async fn inject_all_to_memory(
             continue;
         }
         let stem = parts[1];
+        let planned: HashMap<String, String> = translations
+            .iter()
+            .map(|t| (t.key.clone(), t.text.clone()))
+            .collect();
 
         match parts[0] {
             "MapData" => {
@@ -523,7 +532,11 @@ pub async fn inject_all_to_memory(
                     continue;
                 };
                 let (new_bytes, _) = inject_map(stem, &bytes, translations, version)?;
-                entries.push((format!("Data/MapData/{stem}.mps"), new_bytes));
+                let path = format!("Data/MapData/{stem}.mps");
+                issues.extend(integrity::verify_map_edit(
+                    &path, stem, &bytes, &new_bytes, &planned,
+                ));
+                entries.push((path, new_bytes));
             }
             "Database" => {
                 let Some((project_bytes, dat_bytes)) =
@@ -532,7 +545,16 @@ pub async fn inject_all_to_memory(
                     return Err(InjectorError::MissingProject(stem.to_string()));
                 };
                 let (new_bytes, _) = inject_dat(&project_bytes, &dat_bytes, translations, version)?;
-                entries.push((format!("Data/BasicData/{stem}.dat"), new_bytes));
+                let path = format!("Data/BasicData/{stem}.dat");
+                issues.extend(integrity::verify_dat_edit(
+                    &path,
+                    stem,
+                    &project_bytes,
+                    &dat_bytes,
+                    &new_bytes,
+                    &planned,
+                ));
+                entries.push((path, new_bytes));
             }
             "CommonEvents" => {
                 // All CommonEvents/* keys share the single CommonEvent.dat.
@@ -540,13 +562,17 @@ pub async fn inject_all_to_memory(
                     continue;
                 };
                 let (new_bytes, _) = inject_common_events(&bytes, translations, version)?;
-                entries.push(("Data/BasicData/CommonEvent.dat".to_string(), new_bytes));
+                let path = "Data/BasicData/CommonEvent.dat".to_string();
+                issues.extend(integrity::verify_common_events_edit(
+                    &path, &bytes, &new_bytes, &planned,
+                ));
+                entries.push((path, new_bytes));
             }
             _ => {}
         }
     }
 
-    Ok(entries)
+    Ok((entries, issues))
 }
 
 pub async fn inject_all(
@@ -754,9 +780,10 @@ mod tests {
             }],
         );
 
-        let entries = inject_all_to_memory(tmp.path(), &by_file, &v2())
+        let (entries, issues) = inject_all_to_memory(tmp.path(), &by_file, &v2())
             .await
             .unwrap();
+        assert!(issues.is_empty(), "{issues:?}");
         let (path, bytes) = entries
             .iter()
             .find(|(path, _)| path == "Data/MapData/Map001.mps")
@@ -1103,9 +1130,10 @@ mod tests {
             });
         }
 
-        let entries = inject_all_to_memory(&game_dir, &by_file, &v3())
+        let (entries, issues) = inject_all_to_memory(&game_dir, &by_file, &v3())
             .await
             .unwrap();
+        assert!(issues.is_empty(), "{issues:?}");
 
         // Exactly one physical CommonEvent.dat entry, and BOTH translations
         // must survive into it.
