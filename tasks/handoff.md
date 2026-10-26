@@ -13,7 +13,7 @@ pas de PR (non demandée). Constat 2 de la relecture R2a : refus conservé (E1),
 - **Gate complet réel vert** (2026-10-26, `lindera.dev` autorisé, `608bdbe`) : 717 tests Rust OK / 0 échec / 12 ignorés ;
   Vitest 142 ; clippy `-D warnings` (aussi `--all-targets`), fmt, typecheck OK ; lint 0 erreur.
 - **Prochaine action exacte** :
-  1. Relecture indépendante R2b (lancée) : corriger ce qui est confirmé.
+  1. Relecture R2b faite, constats importants corrigés (gate réel : 719 Rust, 142 Vitest). Suivis : `tasks/todo.md`, « Suivis R2b ».
   2. Essai sur un jeu réel mis à jour (local) ; faux positifs de la garde R2a sur les 3 jeux de la session 2.
   3. Étape 12 : CHANGELOG, fermeture de S-X1 / F dans le rapport d'audit ; étape 7 toujours ouverte.
 

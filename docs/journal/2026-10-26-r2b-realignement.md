@@ -2,7 +2,7 @@
 
 **Phase** : F5 (lots R de l'analyse complète)
 **Durée estimée** : 3h
-**Statut** : 🔄 En cours — implémenté, gate complet réel vert ; relecture indépendante en cours
+**Statut** : ✅ Implémenté, relu (constats importants corrigés), gate complet réel vert — essai sur jeu réel et étape 12 restants
 **Outil** : Claude (session cloud)
 **Branche et commit de départ** : `fix/r2a-export-source-guard` @ `c9ff649` (R2a faite)
 **Objectif / plan / story** : `tasks/todo.md`, « Plan détaillé — R2 », étapes 8 à 10 et « Plan détaillé R2b ».
@@ -97,11 +97,37 @@ Toutes avec `CARGO_TARGET_DIR=/home/user/.cache/h2s-target DOCS_RS=1` (dictionna
   - une catégorie optionnelle n'est pas proposée dans un fichier ajouté par la mise à jour avant une nouvelle activation ;
   - réglages de mise en page par message (`text_fit_overrides`) et catégories désactivées (`parked_segments`) : caducs après un décalage, sans risque, car chacun n'est réutilisé que si la source est identique.
 
+## Relecture indépendante R2b (sous-agent : lecture complète + 2 sondes exécutées)
+
+Verdict : « à corriger avant fusion » (constat 1 avec test, constat 2 fortement recommandé).
+
+**1, important, confirmé et corrigé.** Une catégorie qui n'est plus proposée voyait ses lignes supprimées comme disparues, alors qu'elles sont toujours dans le jeu.
+- Cas : plugin passé à une version non vérifiée, désactivé ou illisible.
+- Test rouge : `resync_leaves_a_category_no_longer_offered_untouched`. Sans correctif : `gone: 1`, la ligne traduite est supprimée.
+- Correctif : une catégorie activée qui n'est plus proposée, ou qui est désormais bloquée, est laissée telle quelle. Elle est listée dans `untouched_categories` et affichée dans le dialogue.
+
+**2, important, confirmé et corrigé.** Les traductions disparues écrasaient les entrées de la mémoire de traduction (`ON CONFLICT DO UPDATE`).
+- Test rouge : `resync_never_overwrites_a_translation_memory_entry` (`EN1` au lieu de `Reviewed`).
+- Correctif : `tm::insert_if_absent` (`ON CONFLICT DO NOTHING`).
+
+**Mineurs corrigés :**
+- 4 : un candidat de catégorie dont la clé est déjà prise est ignoré, comme à l'activation ;
+- 5 : une catégorie bloquée ne reçoit plus de nouvelles lignes ;
+- 6 : après la validation de la transaction, un échec de la copie de référence n'est plus qu'un avertissement, donc l'événement de rechargement part ;
+- 9 : `orphaned_segments` est ajouté à `REQUIRED_COLUMNS`.
+
+**Mineurs laissés en suivi** (`tasks/todo.md`, « Suivis R2b ») : 3 (repli glouton), 7 (contexte d'un fichier sans déplacement), 8 (`text_fit_overrides` sur messages répétés), 9 (pas d'interface pour les orphelins), 10 (pas de garde serveur pendant une traduction), 11 (limites d'E4 à expliquer).
+
+**Gate réel après corrections :**
+- `cargo test --locked` : 719 réussis, 0 échec, 12 ignorés ;
+- Vitest : 142 réussis ;
+- clippy `-D warnings` (aussi avec `--all-targets`), fmt et typecheck OK ;
+- lint : 0 erreur.
+
 ## Tâches ROADMAP cochées
 
 - Aucune (lot R2 suivi dans `tasks/todo.md`).
 
 ## Prochaine session
 
-- Résultat de la relecture indépendante R2b : corriger ce qui est confirmé (entrée ajoutée ici).
 - Essai du réalignement sur un jeu réel mis à jour (local), puis étape 12 (CHANGELOG, fermeture de S-X1 / F dans le rapport d'audit) et PR si l'utilisateur la demande.

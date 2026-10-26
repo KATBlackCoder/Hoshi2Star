@@ -320,8 +320,21 @@ Lu dans le code : `open_project` / `visit_extracted_files` / `insert_segments` (
   suppression + réécriture, nouveau fichier, argument de commande de plugin) ; page réordonnée couverte en
   unitaire (`engines/mv_mz/resync.rs`).
 - Gate complet réel vert le 2026-10-26 sur `608bdbe` : 717 tests Rust, 142 Vitest, clippy, fmt, typecheck, lint.
+- Relecture indépendante : catégorie plus proposée laissée intacte, mémoire de traduction jamais écrasée, 4 mineurs
+  corrigés ; gate réel ensuite : 719 tests Rust, 142 Vitest. Suivis listés ci-dessous.
 - Limites : une catégorie optionnelle n'est pas proposée dans un fichier ajouté par la mise à jour avant une
   nouvelle activation ; `text_fit_overrides` et `parked_segments` deviennent caducs (sans risque).
+
+**Suivis R2b (relecture du 2026-10-26, mineurs non bloquants, à planifier) :**
+- [ ] Repli glouton de `pair_list` (au-delà de 16 M cases) : une source répétée lointaine peut rendre orphelines les
+      lignes intermédiaires (jamais mal placées). Piste : diff de Myers en O(ND).
+- [ ] Fichier sans ligne déplacée : contexte (`speaker`, `context_json`, `segment_kind` `unknown`) non rafraîchi.
+- [ ] `text_fit_overrides` : clé = pointeur du 101 ; avec des messages répétés identiques, un réglage peut passer au
+      mauvais message après un décalage. Piste : migrer les pointeurs avec les paires déplacées.
+- [ ] `orphaned_segments` : ni lecture ni restauration dans l'interface.
+- [ ] Pas de garde serveur contre un réalignement pendant une traduction (seul le bouton est désactivé).
+- [ ] Récapitulatif : expliquer les limites d'E4 (page insérée avant les autres, étiquette Keke insérée, ligne que
+      l'extracteur actuel ne produit plus).
 
 **Étapes communes.**
 - [x] 11. Gate complet **en session cloud** (règle du 2026-10-25) : vert le 2026-10-26 sur `608bdbe`. Essai en jeu selon E5 : **non fait** (accord de l'utilisateur requis).
