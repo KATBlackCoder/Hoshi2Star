@@ -1161,6 +1161,8 @@ mod tests {
         assert_eq!(project_on_disk, project, ".project must never be modified");
     }
 
+    /// An archive the game reads but Hoshi2Star cannot (RW-5) refuses the
+    /// injection, and the `.wolf` file is left untouched on disk.
     #[tokio::test]
     async fn test_inject_all_does_not_overwrite_wolf() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1172,7 +1174,18 @@ mod tests {
         std::fs::write(&wolf_path, b"fake wolf archive").unwrap();
 
         let by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
-        let _ = inject_all(game_dir, &by_file, &v2()).await.unwrap();
+        let err = match inject_all(game_dir, &by_file, &v2()).await {
+            Ok(_) => panic!("an unreadable archive must refuse the injection"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(
+                err,
+                InjectorError::Sources(SourcesError::UnreadableArchive { ref archive, .. })
+                    if archive == "Data/MapData.wolf"
+            ),
+            "expected UnreadableArchive, got {err:?}"
+        );
 
         let content = std::fs::read(&wolf_path).unwrap();
         assert_eq!(content, b"fake wolf archive", ".wolf must not be modified");
