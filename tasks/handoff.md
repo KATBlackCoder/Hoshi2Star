@@ -11,6 +11,7 @@
 - Journal : `docs/journal/2026-10-26-rw-wolf.md`.
 - **RW-1 écrit** (`5d90131`, `engines/wolf/decrypt/legacy_xor.rs`) : signature v6 chiffrée, LZ v6, noms et chemins v6 réels, version de chiffrement v8 (chaîne-clé « v3.14 », refus 3.31+ par `UnsupportedWolfCrypt`). Tests synthétiques au format DxLib réel. **Non compilé, non testé** : premier contrôle au gate cloud.
 - Attention pour RW-4 : RW0 refuse Wolf v2 à l'ouverture et à l'export avec un message dédié ; ce refus doit être levé quand les cartes v2 seront lues.
+- **Poussé** le 2026-10-26 (`origin/feat/rw-wolf` @ `cc7efc7`, accord de l'utilisateur) ; gate cloud RW-1 demandé (session cloud « Gate cloud RW-1 »), résultat à reporter ici.
 - **Prochaine action exacte** : RW-2 (détection de version, `engines/detector.rs`), puis RW-4, RW-3, RW-6, RW-5, RW-7, RW-8, RW-9. Pas de build local ; gate en cloud après push autorisé.
 
 ## En cours (2026-10-26, Claude) — R2b
