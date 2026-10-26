@@ -266,18 +266,62 @@ de la session 3 (copie de référence qui remet du japonais sans dérive). Preuv
       l'export puisse dire « le jeu a changé » même avant le contrôle de l'étape 2.
 
 **Étapes — R2b : réaligner après une mise à jour (L, si E3 = a).**
-- [ ] 8. Commande `resync_project` : ré-extraction des fichiers changés depuis la copie de référence, avec
+- [x] 8. Commande `resync_project` : ré-extraction des fichiers changés depuis la copie de référence, avec
       la même extraction qu'à l'ouverture. Appariement E4, puis, dans une transaction :
       - déplacement des traductions (cible, statut, score, contexte) vers les nouveaux pointeurs ;
       - insertion des nouvelles répliques en `untranslated` ;
       - segments disparus conservés à part, jamais supprimés en silence (statut ou table d'orphelins :
         à préciser au moment du code) ;
       - copie de référence remplacée par la nouvelle version.
-- [ ] 9. Interface : action « Réaligner après une mise à jour du jeu », proposée quand l'export signale un
+- [x] 9. Interface : action « Réaligner après une mise à jour du jeu », proposée quand l'export signale un
       écart ou que la couverture voit une dérive. Récapitulatif unique : déplacés, nouveaux, disparus,
       sources modifiées.
-- [ ] 10. Tests : insertion, suppression, modification d'une réplique, page réordonnée, plusieurs fichiers ;
+- [x] 10. Tests : insertion, suppression, modification d'une réplique, page réordonnée, plusieurs fichiers ;
       un export après réalignement passe et chaque traduction est à sa nouvelle place.
+
+**Plan détaillé R2b (2026-10-26, Claude) — constat 2 de la relecture R2a : refus conservé (E1), décision utilisateur du 2026-10-26.**
+Lu dans le code : `open_project` / `visit_extracted_files` / `insert_segments` (`commands/project.rs`), `scan_project` /
+`enable_category` (`commands/coverage.rs`), `SnapshotStore` (`engines/mv_mz/originals.rs`), `tm::insert`.
+- Source de vérité : la copie de référence **après** `ensure_fresh_mv_mz_snapshot` (elle suit déjà la nouvelle version
+  du jeu, exports défaits). Rien n'est relu ailleurs ; la copie n'est pas réécrite, seule sa dérive est effacée.
+- Nouvelles répliques attendues :
+  - segments de base : `dispatch_extract` sur la copie, exactement comme à l'ouverture ;
+  - catégories optionnelles qui ont des segments (dont Keke et `plugins.js`) : candidats du même `coverage::scan`
+    que l'activation.
+- Appariement (E4), fichier par fichier :
+  - pointeur dans une liste de commandes (`…/list/N/parameters/…`) : groupe = la liste. Plus longue sous-suite
+    commune sur `(source, type compatible)` ; `unknown` est compatible avec tout. Préfixe et suffixe communs
+    retirés d'abord ; au-delà de 16 M cases, repli glouton dans l'ordre (sous-suite valide, pas forcément maximale) ;
+  - autre pointeur (base de données, `displayName`, notes Keke, `plugins.js`) : même clé et même source.
+  - Une source modifiée devient nouvelle et non traduite ; l'ancienne ligne part aux orphelins.
+- Application, dans une transaction :
+  - lignes appariées mises à jour sur place : `json_key` et contexte d'extraction ; `id`, cible, statut, score et
+    catégorie conservés. L'`id` gardé préserve les occurrences terminologiques (FK en cascade) ;
+  - clés passées d'abord par une valeur temporaire unique (index unique partiel des catégories) ;
+  - `rowid` renuméroté dans le nouvel ordre du fichier, car `get_segments` trie par `rowid` ;
+  - nouvelles lignes `untranslated` ;
+  - fichier JSON nouveau dans le jeu : `source_files` + segments, puis capture de sa copie de référence ;
+  - lignes disparues traduites copiées dans une nouvelle table `orphaned_segments` (migration 0012), puis supprimées ;
+    les non traduites sont simplement supprimées ;
+  - traductions des lignes disparues ou à source modifiée ajoutées à la mémoire de traduction (`tm::insert`).
+- Après validation de la transaction : dérive effacée dans la copie de référence (`SnapshotStore::clear_drift`).
+- Commande : `resync_project(project_id, apply)`. `apply = false` donne l'aperçu, sans écriture. Sinon on recalcule
+  et on applique. Retour : `ResyncSummary`, avec par fichier les déplacés, nouveaux, disparus et sources modifiées,
+  plus des exemples bornés. MV/MZ seulement.
+- Interface : bouton « Réaligner le projet… » dans le dialogue d'intégrité quand le jeu a changé, et dans l'avis de
+  dérive de la couverture. `ResyncDialog` montre l'aperçu, puis « Appliquer », puis le récapitulatif. Textes fr/en.
+- Hors périmètre, à lister : réglages de mise en page par message (`text_fit_overrides`, clé = pointeur du 101) et
+  catégories désactivées (`parked_segments`). Ils deviennent caducs, sans risque : chacun n'est réutilisé que si la
+  source est identique. Les fichiers disparus du jeu restent exportés depuis la copie, comme aujourd'hui.
+
+**R2b fait le 2026-10-26 (Claude)**, détail : `docs/journal/2026-10-26-r2b-realignement.md`.
+- Commits : `d897f54` (appariement), `fe5f9df` (commande, migration 0012, tests), `e7cb87f` (interface).
+- Tests : 9 tests d'intégration dans `export_game_update.rs` (5 pour R2b : insertion MV, locuteurs et choix MZ,
+  suppression + réécriture, nouveau fichier, argument de commande de plugin) ; page réordonnée couverte en
+  unitaire (`engines/mv_mz/resync.rs`).
+- Vérifié avec `DOCS_RS=1` (lindera factice) ; gate complet avec le vrai dictionnaire **à refaire**.
+- Limites : une catégorie optionnelle n'est pas proposée dans un fichier ajouté par la mise à jour avant une
+  nouvelle activation ; `text_fit_overrides` et `parked_segments` deviennent caducs (sans risque).
 
 **Étapes communes.**
 - [ ] 11. Gate complet **en session cloud** (règle du 2026-10-25). Essai en jeu selon E5.

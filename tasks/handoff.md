@@ -1,9 +1,20 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-26 — Claude, session cloud (R2a implémentée, gate complet bloqué par le réseau).
+**Mis à jour :** 2026-10-26 — Claude, session cloud (R2a et R2b implémentées, gate complet bloqué par le réseau).
 **Objectif utilisateur :** lot R2, export sûr après une mise à jour du jeu (S-X1 / audit F, P-2).
-**Statut :** R2a (étapes 1–6 du « Plan détaillé — R2 ») faite et poussée sur `fix/r2a-export-source-guard` ;
-pas de PR (non demandée). Arrêt demandé avant R2b, pour validation.
+**Statut :** R2a (étapes 1–6) et R2b (étapes 8–10) faites et poussées sur `fix/r2a-export-source-guard` ;
+pas de PR (non demandée). Constat 2 de la relecture R2a : refus conservé (E1), décision utilisateur du 2026-10-26.
+
+## En cours (2026-10-26, Claude) — R2b
+
+- Journal : `docs/journal/2026-10-26-r2b-realignement.md`. Commits `d897f54`, `fe5f9df`, `e7cb87f`.
+- `resync_project(project_id, apply)` : aperçu puis application en une transaction ; orphelins dans
+  `orphaned_segments` (migration 0012) et mémoire de traduction ; `ResyncDialog` depuis le dialogue d'intégrité.
+- Vérifié (`DOCS_RS=1`) : 715 tests Rust OK / 2 échecs lindera attendus / 12 ignorés ; Vitest 142 ; clippy, fmt, lint OK.
+- **Prochaine action exacte** :
+  1. Relecture indépendante R2b (lancée) : corriger ce qui est confirmé.
+  2. Autoriser `lindera.dev`, puis gate complet sans `DOCS_RS` ; essai sur un jeu réel mis à jour (local).
+  3. Étape 12 : CHANGELOG, fermeture de S-X1 / F dans le rapport d'audit ; étape 7 toujours ouverte.
 
 ## En cours (2026-10-26, Claude) — R2a
 
@@ -24,7 +35,7 @@ pas de PR (non demandée). Arrêt demandé avant R2b, pour validation.
   1. Autoriser `lindera.dev` (accès réseau de l'environnement cloud), relancer le gate complet sans `DOCS_RS`
      sur la branche poussée.
   2. Contrôle des faux positifs sur les jeux réels (0 `SourceChanged` attendu sur un jeu non modifié).
-  3. Validation de l'utilisateur, puis R2b (étapes 8–10 : `resync_project`, réalignement) ; l'étape 7 reste ouverte.
+  3. R2b faite le 2026-10-26 (voir plus haut).
 
 ## En cours (2026-10-25, Claude) — RW0 puis R1
 
