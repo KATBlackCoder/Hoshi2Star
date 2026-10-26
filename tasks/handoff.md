@@ -2,7 +2,7 @@
 
 **Mis à jour :** 2026-10-26 — Claude (lot RW démarré : worktree `../Hoshi2Star-rw`, branche `feat/rw-wolf` ; R2 fusionné, PR #12).
 **Objectif utilisateur :** lot RW, extraction et réinjection Wolf v2/v3 dans l'app (livraison par archive reconstruite).
-**Statut :** R2 fusionné (PR #12, `2331c75`). RW : plan validé le 2026-10-26 ; RW-1 et RW-2 vérifiés (gate cloud vert sur `151e9f2`) ; RW-4 écrit (`74822db`), non compilé.
+**Statut :** R2 fusionné (PR #12, `2331c75`). RW : plan validé le 2026-10-26 ; RW-1, RW-2, RW-4 et RW-3 vérifiés (gate cloud vert sur `dc006ab`) ; RW-6 en cours.
 
 ## En cours (2026-10-26, Claude) — RW (Wolf)
 
@@ -19,8 +19,8 @@
 - RW-4 poussé (`a0a96b2`, accord de l'utilisateur) ; **gate cloud RW-4 rouge** : 732 OK / 1 échec / 13 ignorés ; seul échec `wolf_v2_game_is_refused_at_open` (test e2e de RW0 qui attendait `wolf_v2_unsupported`). Corrigé : test remplacé par `wolf_unreadable_map_is_refused_at_open` + nouveau `wolf_v2_game_opens_with_its_dialogue` ; non compilé.
 - Correctif poussé (`169a644`, accord de l'utilisateur) ; gate relancé : erreur de compilation du nouveau test e2e (`OpenProjectResult` lu comme `Project`), corrigée d'une ligne ; correctif vérifié par la session cloud sur une copie hors dépôt : **734 OK / 0 échec / 13 ignorés**, clippy `--all-targets` 0. Commit du correctif local, non poussé. Partie Honoka du test non exécutée (fixture absente en cloud).
 - **RW-3 écrit** (`engines/wolf/decrypt/writer.rs`, `read_layout` dans `legacy_xor.rs`) : `rebuild_archive` v6 (réécriture dans l'ordre physique, bourrage d'origine) et v8 (ajout en fin, table non compressée), selon `dxa6.py` / `dxa8.py` validés en jeu. Tests synthétiques (identité sans changement, relecture après remplacement, refus) ; test réel `#[ignore]` `wolf_real_archive_rebuild` (`H2S_WOLF_ARCHIVES`, fichiers `.wolf` séparés par `:`). **Non compilé.**
-- RW-3 + correctif e2e poussés (`dc006ab`, accord de l'utilisateur) ; gate cloud RW-3 demandé, résultat à reporter ici (attendu environ 741 Rust OK / 0 échec / 14 ignorés).
-- **Prochaine action exacte** : reporter le gate RW-3, puis RW-6 (contrôles après écriture), RW-3, RW-6, RW-5, RW-7, RW-8, RW-9. Pas de build local ; gate en cloud après push autorisé.
+- RW-3 + correctif e2e poussés (`dc006ab`, accord de l'utilisateur) ; **gate cloud RW-3 vert** sur `dc006ab` : fmt, typecheck, Vitest 142, clippy `--all-targets -D warnings` 0, `cargo test --locked --no-fail-fast` **741 OK / 0 échec / 14 ignorés**, les 7 tests de l'écrivain et `test_find_v8_key_rejects_an_implausible_toc` OK, les 2 tests e2e Wolf OK ; lint 0 erreur. RW-1 à RW-4 et RW-3 vérifiés en synthétique ; vrais fichiers non vérifiés en Rust (tests `--ignored`).
+- **Prochaine action exacte** : RW-6 (contrôles après écriture), RW-3, RW-6, RW-5, RW-7, RW-8, RW-9. Pas de build local ; gate en cloud après push autorisé.
 
 ## En cours (2026-10-26, Claude) — R2b
 
