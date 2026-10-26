@@ -20,6 +20,7 @@ use super::sources::{display_path, Origin, SourceFile, SourcesError, WolfSources
 use super::v3_format::{self, V3FormatError};
 use crate::engines::detector::WolfVersion;
 use crate::engines::mv_mz::integrity::IntegrityIssue;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
@@ -62,6 +63,21 @@ pub struct WolfTranslation {
 pub struct InjectionResult {
     pub file_path: PathBuf,
     pub updated_count: usize,
+    /// Translations folded to fit a Shift-JIS file (plan RW, decision D3).
+    pub folded_count: usize,
+}
+
+/// `text` as a file of this encoding can hold it: folded for Shift-JIS
+/// (plan RW, decision D3: é → e…), as is for UTF-8. Counts the texts folded.
+fn text_for_file<'a>(text: &'a str, is_utf8: bool, folded: &mut usize) -> Cow<'a, str> {
+    if is_utf8 {
+        return Cow::Borrowed(text);
+    }
+    let fitted = encoding::fold_for_shift_jis(text);
+    if fitted != text {
+        *folded += 1;
+    }
+    fitted
 }
 
 /// Bucket for all `CommonEvents/*` segment keys.
@@ -134,13 +150,14 @@ pub fn inject_map(
         .map(|t| (t.key.as_str(), t.text.as_str()))
         .collect();
 
-    let mut updated = 0usize;
-    let patched = inject_map_v3(map_name, bytes, &translation_map, &mut updated)?;
+    let (mut updated, mut folded) = (0usize, 0usize);
+    let patched = inject_map_v3(map_name, bytes, &translation_map, &mut updated, &mut folded)?;
     Ok((
         patched,
         InjectionResult {
             file_path: PathBuf::from(format!("{map_name}.mps")),
             updated_count: updated,
+            folded_count: folded,
         },
     ))
 }
@@ -157,9 +174,11 @@ fn inject_map_v3(
     bytes: &[u8],
     translations: &HashMap<&str, &str>,
     updated: &mut usize,
+    folded: &mut usize,
 ) -> Result<Vec<u8>, InjectorError> {
     let decompressed = v3_format::compression::unpack_map(bytes)?;
     let mut map = v3_format::map::MapV3::parse(&decompressed)?;
+    let is_utf8 = map.is_utf8();
 
     for (event_idx, event) in map.events.iter_mut().enumerate() {
         for (page_idx, page) in event.pages.iter_mut().enumerate() {
@@ -174,9 +193,10 @@ fn inject_map_v3(
                                 "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}"
                             );
                             if let Some(&t) = translations.get(key.as_str()) {
+                                let t = text_for_file(t, is_utf8, folded);
                                 if t != text.as_str() {
                                     *updated += 1;
-                                    *text = t.to_owned();
+                                    *text = t.into_owned();
                                 }
                             }
                         }
@@ -190,9 +210,10 @@ fn inject_map_v3(
                                 "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}/choices/{choice_idx}"
                             );
                             if let Some(&t) = translations.get(key.as_str()) {
+                                let t = text_for_file(t, is_utf8, folded);
                                 if t != choice.as_str() {
                                     *updated += 1;
-                                    *choice = t.to_owned();
+                                    *choice = t.into_owned();
                                 }
                             }
                         }
@@ -338,8 +359,9 @@ pub fn inject_dat(
 ) -> Result<(Vec<u8>, InjectionResult), InjectorError> {
     let mut db = dat_parser::parse_database(project_bytes, dat_bytes)
         .map_err(|e| InjectorError::DatParse(e.to_string()))?;
+    let is_utf8 = db.is_utf8;
 
-    let mut updated = 0usize;
+    let (mut updated, mut folded) = (0usize, 0usize);
 
     for t in translations {
         // Key: "Database/{db_name}/{type_idx}/{entry_idx}/{field_name}"
@@ -391,7 +413,7 @@ pub fn inject_dat(
             .get_mut(str_slot)
             .ok_or_else(|| InjectorError::KeyNotFound(t.key.clone()))?;
 
-        *slot = t.text.clone();
+        *slot = text_for_file(&t.text, is_utf8, &mut folded).into_owned();
         updated += 1;
     }
 
@@ -402,6 +424,7 @@ pub fn inject_dat(
         InjectionResult {
             file_path: PathBuf::new(),
             updated_count: updated,
+            folded_count: folded,
         },
     ))
 }
@@ -429,14 +452,15 @@ pub fn inject_common_events(
         .map(|t| (t.key.as_str(), t.text.as_str()))
         .collect();
 
-    let mut updated = 0usize;
-    let patched = inject_common_events_v3(bytes, &translation_map, &mut updated)?;
+    let (mut updated, mut folded) = (0usize, 0usize);
+    let patched = inject_common_events_v3(bytes, &translation_map, &mut updated, &mut folded)?;
 
     Ok((
         patched,
         InjectionResult {
             file_path: PathBuf::from("CommonEvent.dat"),
             updated_count: updated,
+            folded_count: folded,
         },
     ))
 }
@@ -448,9 +472,11 @@ fn inject_common_events_v3(
     bytes: &[u8],
     translations: &HashMap<&str, &str>,
     updated: &mut usize,
+    folded: &mut usize,
 ) -> Result<Vec<u8>, InjectorError> {
     let decompressed = v3_format::common_events::unpack(bytes)?;
     let mut common_events = v3_format::common_events::CommonEventsV3::parse(&decompressed)?;
+    let is_utf8 = common_events.is_utf8();
 
     for (event_idx, event) in common_events.events.iter_mut().enumerate() {
         let event_name = event.name.clone();
@@ -463,9 +489,10 @@ fn inject_common_events_v3(
                         }
                         let key = format!("CommonEvents/{event_name}/{event_idx}/{cmd_idx}");
                         if let Some(&t) = translations.get(key.as_str()) {
+                            let t = text_for_file(t, is_utf8, folded);
                             if t != text.as_str() {
                                 *updated += 1;
-                                *text = t.to_owned();
+                                *text = t.into_owned();
                             }
                         }
                     }
@@ -479,9 +506,10 @@ fn inject_common_events_v3(
                             "CommonEvents/{event_name}/{event_idx}/{cmd_idx}/choices/{choice_idx}"
                         );
                         if let Some(&t) = translations.get(key.as_str()) {
+                            let t = text_for_file(t, is_utf8, folded);
                             if t != choice.as_str() {
                                 *updated += 1;
-                                *choice = t.to_owned();
+                                *choice = t.into_owned();
                             }
                         }
                     }
@@ -498,6 +526,16 @@ fn inject_common_events_v3(
 // ---------------------------------------------------------------------------
 // Step 5 — inject_all (Option A export)
 // ---------------------------------------------------------------------------
+
+/// Output of [`inject_all_to_memory`].
+pub struct WolfExport {
+    /// `(relative zip path, bytes)` pairs.
+    pub entries: Vec<(String, Vec<u8>)>,
+    /// Integrity issues: the export must not be written unless this is empty.
+    pub issues: Vec<IntegrityIssue>,
+    /// Translations folded to fit Shift-JIS files (plan RW, decision D3).
+    pub folded_texts: usize,
+}
 
 /// Translated files of an archive, by path inside it.
 type ArchiveReplacements = BTreeMap<String, Vec<u8>>;
@@ -536,10 +574,11 @@ pub async fn inject_all_to_memory(
     game_dir: &Path,
     translations_by_file: &HashMap<String, Vec<WolfTranslation>>,
     version: &WolfVersion,
-) -> Result<(Vec<(String, Vec<u8>)>, Vec<IntegrityIssue>), InjectorError> {
+) -> Result<WolfExport, InjectorError> {
     let sources = WolfSources::load(game_dir)?;
     let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
     let mut issues: Vec<IntegrityIssue> = Vec::new();
+    let mut folded_texts = 0usize;
     let mut by_archive: BTreeMap<PathBuf, ArchiveReplacements> = BTreeMap::new();
 
     for (file_key, translations) in translations_by_file {
@@ -558,7 +597,8 @@ pub async fn inject_all_to_memory(
                 let Some(map) = sources.get(&format!("MapData/{stem}.mps")) else {
                     continue;
                 };
-                let (new_bytes, _) = inject_map(stem, &map.bytes, translations, version)?;
+                let (new_bytes, result) = inject_map(stem, &map.bytes, translations, version)?;
+                folded_texts += result.folded_count;
                 let label = format!("Data/{}", map.logical);
                 issues.extend(integrity::verify_map_edit(
                     &label, stem, &map.bytes, &new_bytes, &planned,
@@ -572,7 +612,9 @@ pub async fn inject_all_to_memory(
                 ) else {
                     return Err(InjectorError::MissingProject(stem.to_string()));
                 };
-                let (new_bytes, _) = inject_dat(&project.bytes, &dat.bytes, translations, version)?;
+                let (new_bytes, result) =
+                    inject_dat(&project.bytes, &dat.bytes, translations, version)?;
+                folded_texts += result.folded_count;
                 let label = format!("Data/{}", dat.logical);
                 issues.extend(integrity::verify_dat_edit(
                     &label,
@@ -589,8 +631,9 @@ pub async fn inject_all_to_memory(
                 let Some(common_events) = sources.common_events() else {
                     continue;
                 };
-                let (new_bytes, _) =
+                let (new_bytes, result) =
                     inject_common_events(&common_events.bytes, translations, version)?;
+                folded_texts += result.folded_count;
                 let label = format!("Data/{}", common_events.logical);
                 issues.extend(integrity::verify_common_events_edit(
                     &label,
@@ -622,7 +665,11 @@ pub async fn inject_all_to_memory(
         entries.push((name, rebuilt));
     }
 
-    Ok((entries, issues))
+    Ok(WolfExport {
+        entries,
+        issues,
+        folded_texts,
+    })
 }
 
 /// Inject all translations into a Wolf RPG game directory as loose files
@@ -754,6 +801,53 @@ mod tests {
         );
     }
 
+    /// Plan RW, decision D3: a Shift-JIS (v2) file gets its accents folded and
+    /// counted; a UTF-8 file keeps them.
+    #[test]
+    fn test_accents_are_folded_for_shift_jis_files_only() {
+        use crate::engines::wolf::extractor::extract_map_segments;
+
+        let accented = "Élève, déjà là « oui »";
+        let translations = vec![WolfTranslation {
+            key: "MapData/Map001/events/0/pages/0/0".to_string(),
+            text: accented.to_string(),
+        }];
+
+        let (sjis, result) = inject_map(
+            "Map001",
+            &synthetic_map_bytes(0x64, false),
+            &translations,
+            &v2(),
+        )
+        .unwrap();
+        assert_eq!(result.folded_count, 1);
+        let segs = extract_map_segments("Map001", &sjis, &v2()).unwrap();
+        assert_eq!(segs[0].source_text, "Eleve, deja la \" oui \"");
+
+        let (utf8, result) = inject_map(
+            "Map001",
+            &synthetic_map_bytes(0x67, true),
+            &translations,
+            &v3(),
+        )
+        .unwrap();
+        assert_eq!(result.folded_count, 0);
+        let segs = extract_map_segments("Map001", &utf8, &v3()).unwrap();
+        assert_eq!(segs[0].source_text, accented);
+
+        // Shift-JIS database: folded too.
+        let project = make_minimal_project_pub("Type", "name", "entry");
+        let dat = make_minimal_dat_pub("こんにちは");
+        let translations = vec![WolfTranslation {
+            key: "Database/DataBase/0/0/name".to_string(),
+            text: "Héros".to_string(),
+        }];
+        let (new_dat, result) = inject_dat(&project, &dat, &translations, &v2()).unwrap();
+        assert_eq!(result.folded_count, 1);
+        let parsed = dat_parser::parse_database(&project, &new_dat).unwrap();
+        assert_eq!(parsed.types[0].entries[0].string_values[0], "Heros");
+    }
+
     #[test]
     fn test_encode_french_accents_in_v3() {
         let result = encode_for_wolf("café", v3().is_utf8());
@@ -843,7 +937,9 @@ mod tests {
             }],
         );
 
-        let (entries, issues) = inject_all_to_memory(tmp.path(), &by_file, &v2())
+        let WolfExport {
+            entries, issues, ..
+        } = inject_all_to_memory(tmp.path(), &by_file, &v2())
             .await
             .unwrap();
         assert!(issues.is_empty(), "{issues:?}");
@@ -909,7 +1005,9 @@ mod tests {
                 }],
             );
 
-            let (entries, issues) = inject_all_to_memory(tmp.path(), &by_file, &v2())
+            let WolfExport {
+                entries, issues, ..
+            } = inject_all_to_memory(tmp.path(), &by_file, &v2())
                 .await
                 .unwrap();
             assert!(issues.is_empty(), "{issues:?}");
@@ -1286,7 +1384,9 @@ mod tests {
             });
         }
 
-        let (entries, issues) = inject_all_to_memory(&game_dir, &by_file, &v3())
+        let WolfExport {
+            entries, issues, ..
+        } = inject_all_to_memory(&game_dir, &by_file, &v3())
             .await
             .unwrap();
         assert!(issues.is_empty(), "{issues:?}");

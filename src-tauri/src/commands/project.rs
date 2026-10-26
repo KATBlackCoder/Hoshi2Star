@@ -922,6 +922,11 @@ where
         }
         Engine::Wolf => {
             let wolf_version = guess_wolf_version_from_structure(game_dir);
+            if let Some(warning) =
+                crate::engines::wolf::encoding::path_warning(game_dir, &wolf_version)
+            {
+                log::warn!("[h2s] {warning}");
+            }
             let entries = wolf_extractor::extract_all_wolf(game_dir, &wolf_version)
                 .map_err(|e| e.to_string())?;
             for (file_name, file_type, segs) in entries {

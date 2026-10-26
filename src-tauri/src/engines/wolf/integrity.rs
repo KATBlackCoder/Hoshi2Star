@@ -11,10 +11,12 @@
 //! once an export is unpacked over the game the original already holds the
 //! previous translation. A game-update guard needs that copy (separate lot).
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::dat_parser::{self, DatFile};
 use super::decrypt::legacy_xor::{extract_matching, read_layout, DxaEntry, DxaLayout};
+use super::encoding;
 use super::v3_format::command::{Command, CID_CHOICES, CID_MESSAGE};
 use super::v3_format::common_events::{self, CommonEventsV3};
 use super::v3_format::compression;
@@ -103,17 +105,26 @@ fn split_dat(mut dat: DatFile, db_name: &str) -> (DatFile, Texts) {
 }
 
 /// Compare the texts of two files with the same structure (hence the same keys
-/// in the same order) against the planned translations.
+/// in the same order) against the planned translations — folded for a
+/// Shift-JIS file, as the injector writes them (plan RW, decision D3).
 fn compare_texts(
     file: &str,
+    is_utf8: bool,
     original: &Texts,
     output: &Texts,
     planned: &HashMap<String, String>,
 ) -> Vec<IntegrityIssue> {
     let mut issues = Vec::new();
     for ((key, before), (_, after)) in original.iter().zip(output) {
-        let issue = match planned.get(key) {
-            Some(text) if after != text => IntegrityIssue::PlannedValueMissing {
+        let expected = planned.get(key).map(|text| {
+            if is_utf8 {
+                Cow::Borrowed(text.as_str())
+            } else {
+                encoding::fold_for_shift_jis(text)
+            }
+        });
+        let issue = match expected {
+            Some(text) if *after != text => IntegrityIssue::PlannedValueMissing {
                 file: file.to_string(),
                 pointer: key.clone(),
             },
@@ -172,12 +183,13 @@ pub fn verify_map_edit(
         (Ok(before), Ok(after)) => (before, after),
         (Err(e), _) | (_, Err(e)) => return unparseable(file, e),
     };
+    let is_utf8 = before.is_utf8();
     let (before, before_texts) = split_map(before, map_name);
     let (after, after_texts) = split_map(after, map_name);
     if before != after {
         return structure_changed(file, "map data outside the translated texts changed");
     }
-    compare_texts(file, &before_texts, &after_texts, planned)
+    compare_texts(file, is_utf8, &before_texts, &after_texts, planned)
 }
 
 /// Verify that the `CommonEvent.dat` `output` differs from `original` exactly by
@@ -194,6 +206,7 @@ pub fn verify_common_events_edit(
         (Ok(before), Ok(after)) => (before, after),
         (Err(e), _) | (_, Err(e)) => return unparseable(file, e),
     };
+    let is_utf8 = before.is_utf8();
     let (before, before_texts) = split_common_events(before);
     let (after, after_texts) = split_common_events(after);
     if before != after {
@@ -202,7 +215,7 @@ pub fn verify_common_events_edit(
             "common event data outside the translated texts changed",
         );
     }
-    compare_texts(file, &before_texts, &after_texts, planned)
+    compare_texts(file, is_utf8, &before_texts, &after_texts, planned)
 }
 
 /// Verify that the database `output` (read with its unchanged `.project`
@@ -223,12 +236,13 @@ pub fn verify_dat_edit(
         (Ok(before), Ok(after)) => (before, after),
         (Err(e), _) | (_, Err(e)) => return unparseable(file, e),
     };
+    let is_utf8 = before.is_utf8;
     let (before, before_texts) = split_dat(before, db_name);
     let (after, after_texts) = split_dat(after, db_name);
     if before != after {
         return structure_changed(file, "database data outside the translated texts changed");
     }
-    compare_texts(file, &before_texts, &after_texts, planned)
+    compare_texts(file, is_utf8, &before_texts, &after_texts, planned)
 }
 
 /// Stored (still encrypted) bytes of `entry` in a v6 archive.
@@ -396,6 +410,16 @@ mod tests {
         let same = plan(&[(MESSAGE_KEY, "Hello")]);
         let unchanged = inject(&first, &same);
         assert!(verify_map_edit("Map001.mps", "Map001", &first, &unchanged, &same).is_empty());
+    }
+
+    /// A Shift-JIS file holds the folded translation (plan RW, D3): it matches
+    /// the plan.
+    #[test]
+    fn test_folded_translation_matches_the_plan() {
+        let original = map_bytes(0x64, false);
+        let planned = plan(&[(MESSAGE_KEY, "Élève, déjà là")]);
+        let output = inject(&original, &planned);
+        assert!(verify_map_edit("Map001.mps", "Map001", &original, &output, &planned).is_empty());
     }
 
     #[test]

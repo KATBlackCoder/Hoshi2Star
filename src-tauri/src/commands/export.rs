@@ -955,6 +955,9 @@ async fn collect_wolf_zip_entries(
     db: &sqlx::SqlitePool,
 ) -> Result<(Vec<(String, Vec<u8>)>, Vec<integrity::IntegrityIssue>), String> {
     let version = guess_wolf_version_from_structure(game_dir);
+    if let Some(warning) = crate::engines::wolf::encoding::path_warning(game_dir, &version) {
+        log::warn!("[h2s] {warning}");
+    }
     let mut translations_by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
 
     for file in files {
@@ -989,9 +992,16 @@ async fn collect_wolf_zip_entries(
 
     // Each produced file is checked against the bytes it was derived from
     // (plan RW, RW-6); the issues join the export's integrity gate.
-    wolf_to_memory(game_dir, &translations_by_file, &version)
+    let export = wolf_to_memory(game_dir, &translations_by_file, &version)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    if export.folded_texts > 0 {
+        log::info!(
+            "[h2s] Wolf export: {} translation(s) folded to fit Shift-JIS (é → e…)",
+            export.folded_texts
+        );
+    }
+    Ok((export.entries, export.issues))
 }
 
 /// Write a zip archive at `path` containing the given `(relative_path, bytes)` entries.
