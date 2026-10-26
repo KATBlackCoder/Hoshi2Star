@@ -1835,6 +1835,15 @@ Chaque étape : code, tests unitaires sur fichiers synthétiques, journal. Pas d
 - Reparser chaque `.mps`, `CommonEvent.dat` et `.dat` produit ; vérifier que seules les chaînes prévues ont changé ; relire l'archive reconstruite (liste des fichiers, contenu des fichiers non modifiés, fichiers traduits).
 - Écart ⇒ `IntegrityIssue` et export refusé (dialogue existant).
 - Corriger au passage `unknown1` des `.dat` (valeur d'origine conservée).
+- **Plan détaillé RW-6 (2026-10-26, Claude) — [~] en cours :**
+  - [ ] Type d'écart : réutiliser `engines::mv_mz::integrity::IntegrityIssue` (variantes génériques ; `pointer` = clé Wolf ou chemin dans l'archive) et `summarize`, pour que l'export refuse avec le même message et le même dialogue.
+  - [ ] Principe (indépendant de l'injecteur) : relire l'original O et la sortie N ; (1) structure : O et N avec tous les textes vidés doivent être égaux (`StructureChanged` sinon) ; (2) textes, clé par clé : clé prévue ⇒ N = traduction (`PlannedValueMissing`) et O = source enregistrée à l'extraction (`SourceChanged`, jeu modifié depuis) ; clé non prévue ⇒ N = O (`UnplannedChange`) ; clé prévue absente de O ⇒ `PlannedValueMissing` ; illisible ⇒ `Unparseable`.
+    - cartes (`MapV3`, 101/102, clés `MapData/{carte}/events/…`) et `CommonEvent.dat` (`CommonEventsV3`, clés `CommonEvents/{nom}/…`) ; le conteneur suit la version, déjà comparée par la structure ;
+    - `.dat` : `DatFile` (types, champs, entiers, `unknown1`), clés `Database/{base}/{type}/{entrée}/{champ}` (premier champ texte de ce nom, comme l'injecteur) ; en-tête (11 octets) identique.
+  - [ ] Archive reconstruite (utilisée par RW-5) : `verify_archive_rebuild` sans tout décoder : mêmes chemins ; fichiers inchangés = mêmes octets stockés (v6 : tranche d'origine ; v8 : mêmes champs d'entrée et préfixe recopié identique hors en-tête) ; fichiers remplacés relus par `extract_matching` = octets prévus.
+  - [ ] `.dat` : `DatType` garde `unknown1` et sa chaîne optionnelle (`STRING_INDICATOR`), réécrits tels quels (fin du `0` codé en dur) ; `PartialEq` dérivé sur les types de `dat_parser`.
+  - [ ] Export : `collect_wolf_zip_entries` lit aussi `source_text`, appelle `integrity::verify_export` sur chaque fichier produit (originaux par les mêmes chargeurs que l'injecteur) et renvoie les écarts ; `export_project` les ajoute à `integrity_issues` ⇒ export refusé, rien n'est écrit.
+  - [ ] Tests : carte (v2 en clair et v3 LZ4) et `CommonEvent.dat` : sortie de l'injecteur acceptée ; texte non prévu modifié, structure modifiée, traduction manquante, source changée, sortie illisible refusés ; `.dat` idem + `unknown1` à `STRING_INDICATOR` conservé ; archive v6 et v8 : reconstruction acceptée, fichier inchangé altéré et fichier remplacé erroné refusés ; e2e : export Wolf refusé quand la source a changé sur disque.
 
 **RW-7 — Encodage et chemins** (`engines/wolf/encoding.rs`), effort S.
 - D3 : repli des accents en v2, avec le compte des lignes touchées.
