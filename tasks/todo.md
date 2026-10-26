@@ -1830,7 +1830,7 @@ Chaque étape : code, tests unitaires sur fichiers synthétiques, journal. Pas d
 - Lecture de la source : l'archive d'abord quand elle existe (comme le jeu), les fichiers libres ensuite.
 - Nouveau `WolfDeliveryPlan` : pour chaque archive qui contient au moins un fichier traduit ⇒ archive reconstruite (RW-3) dans le zip, au même chemin ; fichiers sans archive ⇒ fichiers libres.
 - Les échecs d'archive remontent en erreur visible, plus de `continue` silencieux.
-- **Plan détaillé RW-5 (2026-10-26, Claude) — [~] code et tests écrits (`e43ab1f`), non compilés ; gate cloud non exécuté :**
+- **Plan détaillé RW-5 (2026-10-26, Claude) — [x] gate cloud vert sur `610cd33` (755 Rust OK) :**
   - [x] `engines/wolf/sources.rs` : `WolfSources::load(game_dir)`, chargé une fois par opération, indexé par chemin logique relatif à `Data/` (`MapData/Map001.mps`, `BasicData/DataBase.dat|.project`, `BasicData/CommonEvent.dat`), avec l'origine de chaque fichier (`Loose` ou `Archive { archive, path }`).
     - Archives lues, comme le jeu, avant les fichiers libres : `Data.wolf` à la racine (préfixe vide), `Data/MapData.wolf` (préfixe `MapData/`), `Data/BasicData.wolf` (préfixe `BasicData/`) ; noms comparés sans tenir compte de la casse. Seuls les fichiers utiles sont déchiffrés (`extract_matching` : enfants directs de `MapData/` en `.mps`, de `BasicData/` en `.dat`/`.project`) ; les copies imbriquées (« données d'exemple ») sont ignorées, ce qui règle la note RW-1 sur `basic_data_entry_name`. Les autres archives (`Picture.wolf`…) ne sont pas lues.
     - Fichiers libres `Data/MapData/*.mps`, `Data/BasicData/*.dat|.project` : seulement pour ce qu'aucune archive ne fournit.
