@@ -2,14 +2,16 @@
 
 **Mis à jour :** 2026-10-26 — Claude (lot RW démarré : worktree `../Hoshi2Star-rw`, branche `feat/rw-wolf` ; R2 fusionné, PR #12).
 **Objectif utilisateur :** lot RW, extraction et réinjection Wolf v2/v3 dans l'app (livraison par archive reconstruite).
-**Statut :** R2 fusionné (PR #12, `2331c75`). RW : plan validé le 2026-10-26, RW-1 en cours.
+**Statut :** R2 fusionné (PR #12, `2331c75`). RW : plan validé le 2026-10-26 ; RW-1 écrit (`5d90131`, non compilé), RW-2 suivant.
 
 ## En cours (2026-10-26, Claude) — RW (Wolf)
 
 - Plan validé : `tasks/todo.md`, « Plan détaillé — RW ». Branche `feat/rw-wolf` dans le worktree `../Hoshi2Star-rw` (depuis `origin/main` @ `2331c75`). Commits locaux ; push seulement avec accord (gate cloud).
 - Base : étude REA RuneTranslate + prototypes Python validés **en jeu** sur Wolf 2.23 et 3.658 (preuves locales hors Git : `RAE-PLAN/wolf/`, `RAE-PLAN/essais/RESULTATS.md`). Constat clé : **l'archive `.wolf` passe avant les fichiers libres** (v2 et v3) ; l'archive reconstruite est acceptée par le jeu.
 - Journal : `docs/journal/2026-10-26-rw-wolf.md`.
-- **Prochaine action exacte** : RW-1 (lecture des archives dans `engines/wolf/decrypt/legacy_xor.rs`), puis RW-2, RW-4, RW-3, RW-6, RW-5, RW-7, RW-8, RW-9. Pas de build local ; gate en cloud après push autorisé.
+- **RW-1 écrit** (`5d90131`, `engines/wolf/decrypt/legacy_xor.rs`) : signature v6 chiffrée, LZ v6, noms et chemins v6 réels, version de chiffrement v8 (chaîne-clé « v3.14 », refus 3.31+ par `UnsupportedWolfCrypt`). Tests synthétiques au format DxLib réel. **Non compilé, non testé** : premier contrôle au gate cloud.
+- Attention pour RW-4 : RW0 refuse Wolf v2 à l'ouverture et à l'export avec un message dédié ; ce refus doit être levé quand les cartes v2 seront lues.
+- **Prochaine action exacte** : RW-2 (détection de version, `engines/detector.rs`), puis RW-4, RW-3, RW-6, RW-5, RW-7, RW-8, RW-9. Pas de build local ; gate en cloud après push autorisé.
 
 ## En cours (2026-10-26, Claude) — R2b
 
