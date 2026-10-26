@@ -11,12 +11,15 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use hoshi2star_lib::commands::coverage::{set_text_categories, CategoryChange};
 use hoshi2star_lib::commands::export::export_project;
 use hoshi2star_lib::commands::project::{
     get_segments, get_source_files, open_project, update_segment,
 };
+use hoshi2star_lib::commands::resync::resync_project;
 use hoshi2star_lib::db;
 use hoshi2star_lib::domain::types::Project;
+use hoshi2star_lib::engines::mv_mz::profiles::ProfileSet;
 use hoshi2star_lib::state::AppState;
 use serde_json::{json, Value};
 use tauri::test::{mock_builder, mock_context, noop_assets};
@@ -76,7 +79,7 @@ fn with_inserted_line(mut list: Vec<Value>, at: usize) -> Vec<Value> {
 }
 
 struct Game {
-    _temporary: tempfile::TempDir,
+    temporary: tempfile::TempDir,
     app: tauri::App<tauri::test::MockRuntime>,
     project: Project,
     map_path: PathBuf,
@@ -129,7 +132,7 @@ async fn opened_and_translated(data_dir: &str, page: Vec<Value>) -> Game {
 
     Game {
         zip_path: game_root.join("hoshi2star.zip"),
-        _temporary: temporary,
+        temporary,
         app,
         project,
         map_path,
@@ -292,4 +295,409 @@ async fn unchanged_game_exports_every_translation_in_place() {
         assert_eq!(exported_map(Path::new(&again), &entry), map);
         assert_ne!(bytes, unzipped, "the unzipped map carries the translations");
     }
+}
+
+// ---------------------------------------------------------------------------
+// Realignment (R2b)
+// ---------------------------------------------------------------------------
+
+/// `(key, source, target, status)` of every segment of `Map001.json`, in the
+/// order the editor lists them.
+async fn map_segments(game: &Game) -> Vec<(String, String, String, String)> {
+    let files = get_source_files(game.project.id.clone(), game.app.state())
+        .await
+        .unwrap();
+    let file = files
+        .iter()
+        .find(|file| file.file_name == "Map001.json")
+        .unwrap();
+    get_segments(
+        game.project.id.clone(),
+        file.id.clone(),
+        0,
+        10_000,
+        game.app.state(),
+    )
+    .await
+    .unwrap()
+    .items
+    .into_iter()
+    .map(|s| (s.json_key, s.source_text, s.target_text, s.status))
+    .collect()
+}
+
+async fn export(game: &Game) -> Result<String, String> {
+    export_project(game.project.id.clone(), None, true, None, game.app.state()).await
+}
+
+/// After an inserted line, realigning moves the translation with its line:
+/// the preview writes nothing, applying makes the export pass, the face name
+/// stays and the new line is untranslated.
+#[tokio::test]
+async fn mv_resync_moves_translations_after_an_inserted_line() {
+    let game = opened_and_translated("www/data", mv_page()).await;
+    std::fs::write(
+        &game.map_path,
+        map_with(with_inserted_line(mv_page(), 2)).to_string(),
+    )
+    .unwrap();
+    assert!(export(&game).await.is_err());
+
+    let preview = resync_project(
+        game.project.id.clone(),
+        false,
+        game.app.handle().clone(),
+        game.app.state(),
+    )
+    .await
+    .expect("preview");
+    assert!(!preview.applied);
+    assert_eq!((preview.moved, preview.added, preview.gone), (1, 1, 0));
+    assert_eq!(preview.files.len(), 1);
+    assert!(export(&game).await.is_err(), "a preview writes nothing");
+
+    let applied = resync_project(
+        game.project.id.clone(),
+        true,
+        game.app.handle().clone(),
+        game.app.state(),
+    )
+    .await
+    .expect("apply");
+    assert!(applied.applied);
+    assert_eq!((applied.moved, applied.added, applied.gone), (1, 1, 0));
+
+    let list = "/events/1/pages/0/list";
+    let segments = map_segments(&game).await;
+    let keys: Vec<&str> = segments.iter().map(|s| s.0.as_str()).collect();
+    assert_eq!(
+        keys,
+        vec![
+            format!("{list}/1/parameters/0"),
+            format!("{list}/2/parameters/0"),
+            format!("{list}/4/parameters/0"),
+        ],
+        "the editor lists the lines in the new order"
+    );
+    assert_eq!(segments[1].2, "", "the new line is untranslated");
+    assert_eq!(segments[1].3, "untranslated");
+    assert_eq!(segments[2].1, "こんばんは、旅の方。");
+    assert_eq!(segments[2].2, "EN2");
+
+    let path = export(&game).await.expect("export after realignment");
+    let map = exported_map(Path::new(&path), "www/data/Map001.json");
+    assert_eq!(
+        map.pointer(&format!("{list}/3/parameters/0")).unwrap(),
+        "Actor2"
+    );
+    assert_eq!(
+        map.pointer(&format!("{list}/4/parameters/0")).unwrap(),
+        "EN2"
+    );
+    assert_eq!(
+        map.pointer(&format!("{list}/2/parameters/0")).unwrap(),
+        "新しく追加された台詞です。"
+    );
+
+    let again = resync_project(
+        game.project.id.clone(),
+        false,
+        game.app.handle().clone(),
+        game.app.state(),
+    )
+    .await
+    .unwrap();
+    assert!(again.files.is_empty(), "nothing left to realign: {again:?}");
+}
+
+/// MZ: speaker names and choices follow their commands too.
+#[tokio::test]
+async fn mz_resync_moves_speakers_and_choices() {
+    let game = opened_and_translated("data", mz_page()).await;
+    std::fs::write(
+        &game.map_path,
+        map_with(with_inserted_line(mz_page(), 2)).to_string(),
+    )
+    .unwrap();
+    let before = map_segments(&game).await;
+    let target_of = |segments: &[(String, String, String, String)], source: &str| {
+        segments
+            .iter()
+            .find(|s| s.1 == source)
+            .map(|s| s.2.clone())
+            .unwrap()
+    };
+
+    let summary = resync_project(
+        game.project.id.clone(),
+        true,
+        game.app.handle().clone(),
+        game.app.state(),
+    )
+    .await
+    .unwrap();
+    assert_eq!((summary.moved, summary.added, summary.gone), (4, 1, 0));
+
+    let path = export(&game).await.expect("export after realignment");
+    let map = exported_map(Path::new(&path), "data/Map001.json");
+    let list = "/events/1/pages/0/list";
+    assert_eq!(
+        map.pointer(&format!("{list}/3/parameters/4")).unwrap(),
+        &json!(target_of(&before, "旅人"))
+    );
+    assert_eq!(
+        map.pointer(&format!("{list}/3/parameters/0")).unwrap(),
+        "Actor1",
+        "face name untouched"
+    );
+    assert_eq!(
+        map.pointer(&format!("{list}/5/parameters/0")).unwrap(),
+        &json!([
+            target_of(&before, "北の森へ"),
+            target_of(&before, "南の港へ")
+        ])
+    );
+}
+
+/// Removed and rewritten lines: their translations are kept aside and in the
+/// translation memory, never paired approximately, and the export passes.
+#[tokio::test]
+async fn resync_keeps_the_translations_of_removed_and_rewritten_lines() {
+    let game = opened_and_translated("www/data", mv_page()).await;
+    let mut updated = mv_page();
+    updated.remove(1); // おはようございます。
+    updated[2] = command(401, json!(["こんばんは、旅の皆さん。"]));
+    std::fs::write(&game.map_path, map_with(updated).to_string()).unwrap();
+
+    let summary = resync_project(
+        game.project.id.clone(),
+        true,
+        game.app.handle().clone(),
+        game.app.state(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        (summary.moved, summary.added, summary.gone, summary.orphaned),
+        (0, 1, 2, 2)
+    );
+    assert_eq!(summary.gone_translations.len(), 2);
+
+    let db = &game.app.state::<AppState>().db;
+    let orphans: Vec<(String, String)> = sqlx::query_as(
+        "SELECT source_text, target_text FROM orphaned_segments WHERE project_id = ? \
+         ORDER BY source_text",
+    )
+    .bind(&game.project.id)
+    .fetch_all(db)
+    .await
+    .unwrap();
+    assert_eq!(
+        orphans,
+        vec![
+            ("おはようございます。".to_string(), "EN1".to_string()),
+            ("こんばんは、旅の方。".to_string(), "EN2".to_string()),
+        ]
+    );
+    let in_memory: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM tm_entries WHERE source_text IN \
+         ('おはようございます。', 'こんばんは、旅の方。')",
+    )
+    .fetch_one(db)
+    .await
+    .unwrap();
+    assert_eq!(in_memory, 2);
+
+    let segments = map_segments(&game).await;
+    assert_eq!(segments.len(), 1);
+    assert_eq!(segments[0].1, "こんばんは、旅の皆さん。");
+    assert_eq!(
+        segments[0].2, "",
+        "a rewritten line is a new, untranslated line"
+    );
+    export(&game).await.expect("export after realignment");
+}
+
+/// A data file added by the update joins the project; other files are left
+/// as they are.
+#[tokio::test]
+async fn resync_adds_a_new_map_file() {
+    let game = opened_and_translated("www/data", mv_page()).await;
+    std::fs::write(
+        &game.map_path,
+        map_with(with_inserted_line(mv_page(), 2)).to_string(),
+    )
+    .unwrap();
+    let new_map = game.temporary.path().join("game/www/data/Map002.json");
+    std::fs::write(
+        &new_map,
+        map_with(vec![
+            command(101, json!(["", 0, 0, 2])),
+            command(401, json!(["二つ目の村です。"])),
+            command(0, json!([])),
+        ])
+        .to_string(),
+    )
+    .unwrap();
+
+    let summary = resync_project(
+        game.project.id.clone(),
+        true,
+        game.app.handle().clone(),
+        game.app.state(),
+    )
+    .await
+    .unwrap();
+    let new_file = summary
+        .files
+        .iter()
+        .find(|file| file.file == "Map002.json")
+        .expect("the new map is listed");
+    assert!(new_file.new_file);
+    assert_eq!(new_file.added, 1);
+
+    let files = get_source_files(game.project.id.clone(), game.app.state())
+        .await
+        .unwrap();
+    assert!(files.iter().any(|file| file.file_name == "Map002.json"));
+    export(&game).await.expect("export after realignment");
+}
+
+/// Verified profile of a synthetic plugin whose `LOG` command shows its
+/// `message` argument in game (optional category).
+const LOG_PROFILE: &str = r#"
+    [plugin]
+    name = "Test/Log"
+    title = "Test log"
+    verified_versions = ["1.0"]
+    reference = "synthetic"
+
+    [[command_arg]]
+    command = "LOG"
+    arg = "message"
+    title = "Test log"
+    visible_in = "Battle log"
+    message = true
+"#;
+
+/// Optional-category rows inside an event command list (plugin command
+/// arguments) are realigned like core lines.
+#[tokio::test]
+async fn resync_moves_plugin_command_arguments_of_an_optional_category() {
+    let temporary = tempfile::tempdir().unwrap();
+    let game_root = temporary.path().join("game");
+    let data = game_root.join("data");
+    let plugins = game_root.join("js/plugins/Test");
+    std::fs::create_dir_all(&data).unwrap();
+    std::fs::create_dir_all(&plugins).unwrap();
+    std::fs::write(
+        data.join("System.json"),
+        json!({ "gameTitle": "Test", "terms": {} }).to_string(),
+    )
+    .unwrap();
+    std::fs::write(plugins.join("Log.js"), "/*:\n * @version 1.0\n */\n").unwrap();
+    std::fs::write(
+        game_root.join("js/plugins.js"),
+        "var $plugins =\n[\n{\"name\":\"Test/Log\",\"status\":true,\"description\":\"\",\"parameters\":{}}\n];\n",
+    )
+    .unwrap();
+    let page = vec![
+        command(401, json!(["ようこそ。"])),
+        command(
+            357,
+            json!(["Test/Log", "LOG", "ログ", { "message": "敵が逃げた！" }]),
+        ),
+        command(0, json!([])),
+    ];
+    let map_path = data.join("Map001.json");
+    std::fs::write(&map_path, map_with(page.clone()).to_string()).unwrap();
+
+    let db_file = temporary.path().join("h2s.db");
+    let pool = db::pool::init(db_file.to_str().unwrap()).await.unwrap();
+    let mut state = AppState::new(pool, temporary.path().join("app-data")).unwrap();
+    state.plugin_profiles =
+        std::sync::Arc::new(ProfileSet::parse_all(&[("log.toml", LOG_PROFILE)]).unwrap());
+    let app = mock_builder()
+        .manage(state)
+        .build(mock_context(noop_assets()))
+        .unwrap();
+    let project = open_project(
+        game_root.to_string_lossy().into_owned(),
+        Some("ja".into()),
+        Some("en".into()),
+        app.state(),
+    )
+    .await
+    .unwrap()
+    .project;
+    let category = "plugin_command.Test/Log.LOG.message";
+    set_text_categories(
+        project.id.clone(),
+        vec![CategoryChange {
+            category_key: category.into(),
+            enabled: true,
+            accept_consequences: true,
+        }],
+        app.state(),
+    )
+    .await
+    .expect("enable the plugin command category");
+
+    let mut translated = Vec::new();
+    for file in get_source_files(project.id.clone(), app.state())
+        .await
+        .unwrap()
+    {
+        let page = get_segments(project.id.clone(), file.id, 0, 10_000, app.state())
+            .await
+            .unwrap();
+        for segment in page.items {
+            translated.push((segment.text_category.clone(), segment.json_key.clone()));
+            let target = if segment.text_category.is_some() {
+                "The enemy fled!"
+            } else {
+                "Welcome."
+            };
+            update_segment(segment.id, target.to_string(), app.state())
+                .await
+                .unwrap();
+        }
+    }
+    assert!(
+        translated.contains(&(
+            Some(category.to_string()),
+            "/events/1/pages/0/list/1/parameters/3/message".to_string()
+        )),
+        "{translated:?}"
+    );
+
+    let mut updated = page;
+    updated.insert(0, command(230, json!([60])));
+    std::fs::write(&map_path, map_with(updated).to_string()).unwrap();
+    let refused = export_project(project.id.clone(), None, true, None, app.state())
+        .await
+        .unwrap_err();
+    assert!(
+        refused.contains("list/1/parameters/3/message: source changed"),
+        "{refused}"
+    );
+
+    let summary = resync_project(project.id.clone(), true, app.handle().clone(), app.state())
+        .await
+        .unwrap();
+    assert_eq!((summary.moved, summary.added, summary.gone), (2, 0, 0));
+    let path = export_project(project.id.clone(), None, true, None, app.state())
+        .await
+        .expect("export after realignment");
+    let map = exported_map(Path::new(&path), "data/Map001.json");
+    assert_eq!(
+        map.pointer("/events/1/pages/0/list/2/parameters/3/message")
+            .unwrap(),
+        "The enemy fled!"
+    );
+    assert_eq!(
+        map.pointer("/events/1/pages/0/list/1/parameters/0")
+            .unwrap(),
+        "Welcome."
+    );
 }

@@ -23,6 +23,7 @@ use commands::project::{
     list_projects, open_project, update_segment,
 };
 use commands::qa::{get_qa_report, get_tm_suggestions, qa_check_segment};
+use commands::resync::resync_project;
 use commands::search::search_segments;
 use commands::terminology::{
     archive_terminology_entry, cancel_terminology_scan, create_terminology_entry,
@@ -96,6 +97,7 @@ pub fn run() {
             cancel_translation,
             debug_dump_segments,
             debug_inject_file,
+            resync_project,
             scan_font_status,
             strip_font_prefixes,
             updater_supported,

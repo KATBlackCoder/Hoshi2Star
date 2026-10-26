@@ -183,6 +183,14 @@ impl SnapshotStore {
         Ok(())
     }
 
+    /// Forget the drift recorded for `rel`: the project was realigned on this
+    /// original. The caller saves the store.
+    pub fn clear_drift(&mut self, rel: &str) {
+        if let Some(entry) = self.manifest.files.get_mut(rel) {
+            entry.drift.clear();
+        }
+    }
+
     /// `true` when game-folder bytes with checksum `disk_sha256` are this
     /// original itself or a version already known to correspond to it.
     pub fn is_known_disk(&self, rel: &str, disk_sha256: &str) -> bool {
