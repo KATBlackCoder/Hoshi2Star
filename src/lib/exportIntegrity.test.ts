@@ -23,6 +23,17 @@ describe("parseSourceChange", () => {
     ).toMatchObject({ expected: "北の森へ", found: null });
   });
 
+  it("reads a plugin argument pointer with a space", () => {
+    expect(
+      parseSourceChange(
+        'data/Map001.json /events/1/pages/0/list/2/parameters/3/Text Body: source changed since extraction; expected "看板", found "Sign"',
+      ),
+    ).toMatchObject({
+      pointer: "/events/1/pages/0/list/2/parameters/3/Text Body",
+      found: "Sign",
+    });
+  });
+
   it("ignores every other integrity problem", () => {
     expect(
       parseSourceChange("data/System.json /gameTitle: unplanned text change"),

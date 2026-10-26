@@ -655,7 +655,7 @@
   "exportIntegrity": {
     "title": "Export blocked by the integrity check",
     "description": "No file was written. The check compares every output file with the original and found changes that were not planned:",
-    "gameChanged": "No file was written. The game changed since extraction (an update?): at these locations the original text is no longer the one you translated. Exporting would put the translations in the wrong place. To export, restore the game version used at extraction.",
+    "gameChanged": "No file was written. The game files changed since extraction (a game update, or files replaced, e.g. by an older export): at these locations the original text is no longer the one you translated. Exporting would put the translations in the wrong place. To export, restore the game files as they were at extraction.",
     "expected": "expected: {{text}}",
     "found": "found: {{text}}",
     "foundNothing": "found: nothing (location gone)"

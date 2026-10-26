@@ -479,7 +479,12 @@ pub async fn export_project(
             entries.push((rel, bytes));
         }
 
-        if let Some(store) = snapshot.as_ref() {
+        // Files refused for a changed source were skipped: comparing their
+        // tags with the original would only add unrelated lines.
+        let source_changed = integrity_issues
+            .iter()
+            .any(|issue| matches!(issue, integrity::IntegrityIssue::SourceChanged { .. }));
+        if let Some(store) = snapshot.as_ref().filter(|_| !source_changed) {
             if !renames.is_empty() || has_label_edits {
                 integrity_issues
                     .extend(keke_resolution_issues(store, &files, &game_path, &entries)?);
@@ -750,7 +755,6 @@ async fn fitted_lines(
 /// A segment row to export: `(key, target, is_core, source)`.
 type ExportRow = (String, String, bool, String);
 
-/// Split rows into fitted `(key, value)` pairs and the rest.
 /// `(pointer, recorded source)` of the rows an export is about to write,
 /// checked against the original by [`integrity::verify_sources`].
 fn recorded_sources(rows: &[ExportRow]) -> Vec<(String, String)> {
@@ -759,6 +763,7 @@ fn recorded_sources(rows: &[ExportRow]) -> Vec<(String, String)> {
         .collect()
 }
 
+/// Split rows into fitted `(key, value)` pairs and the rest.
 fn split_fitted(
     rows: Vec<ExportRow>,
     fitted: Option<&HashMap<String, Option<String>>>,

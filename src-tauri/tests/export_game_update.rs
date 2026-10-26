@@ -210,6 +210,28 @@ async fn mv_export_refuses_after_a_line_is_inserted() {
     .await;
 }
 
+/// P-2 with a line that has no Japanese (`♪～`): the shifted dialogue pointer
+/// lands on another `401`, so only the page structure tells it moved.
+#[tokio::test]
+async fn mv_export_refuses_after_a_line_without_japanese_is_inserted() {
+    let page = vec![
+        command(101, json!(["Actor1", 0, 0, 2])),
+        command(401, json!(["こんにちは"])),
+        command(0, json!([])),
+    ];
+    let game = opened_and_translated("www/data", page.clone()).await;
+    let mut updated = page;
+    updated.insert(1, command(401, json!(["♪～"])));
+    std::fs::write(&game.map_path, map_with(updated).to_string()).unwrap();
+
+    assert_refused(
+        &game,
+        "www/data/Map001.json",
+        &["/events/1/pages/0/list/1/parameters/0"],
+    )
+    .await;
+}
+
 /// P-2 in MZ: the inserted line shifts a speaker name (`101[4]`) onto a `401`
 /// and a choice (`102[0][n]`) onto a `401`, which used to fail with
 /// `key not found in JSON`, and a dialogue line onto a face name.

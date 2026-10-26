@@ -170,8 +170,26 @@ async fn load_mv_mz_snapshot(
         let language = source_language.clone();
         let locale_target = (file_name == "System.json").then(|| target_locale.clone());
         let (store_back, outcome) = tokio::task::spawn_blocking(move || {
-            let result =
-                rebuild_original(&rel, &disk, &recorded, &language, &renames).and_then(|rebuilt| {
+            let previous = if snapshotted {
+                store
+                    .read(&rel)
+                    .map(Some)
+                    .map_err(|error| error.to_string())
+            } else {
+                Ok(None)
+            };
+            let result = previous
+                .and_then(|previous| {
+                    rebuild_original(
+                        &rel,
+                        &disk,
+                        &recorded,
+                        &language,
+                        &renames,
+                        previous.as_deref(),
+                    )
+                })
+                .and_then(|rebuilt| {
                     update_snapshot(
                         &mut store,
                         &rel,
@@ -262,11 +280,14 @@ fn rebuild_original(
     recorded: &Recorded,
     source_language: &str,
     reverse_renames: &HashMap<String, String>,
+    previous: Option<&[u8]>,
 ) -> Result<Reconstruction, String> {
     match recorded {
         Recorded::PluginsJs(segments) => reconstruct_plugins_js(label, disk, segments),
-        Recorded::Json { core, labels } => reconstruct_json(label, disk, core, source_language)
-            .and_then(|rebuilt| reverse_keke_edits(label, rebuilt, labels, reverse_renames)),
+        Recorded::Json { core, labels } => {
+            reconstruct_json(label, disk, core, source_language, previous)
+                .and_then(|rebuilt| reverse_keke_edits(label, rebuilt, labels, reverse_renames))
+        }
     }
     .map_err(|error| error.to_string())
 }

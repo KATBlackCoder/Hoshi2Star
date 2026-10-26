@@ -333,12 +333,65 @@ fn same_role(json: &Value, segment: &CoreSegment) -> bool {
         .is_some_and(|code| codes.contains(&code))
 }
 
+/// What identifies each command of a list: its `code`, plus the plugin and
+/// command names of a plugin command (357), whose arguments are keyed by name.
+fn page_signature(json: &Value, list: &str) -> Option<Vec<(Value, Value, Value)>> {
+    let commands = json.pointer(list)?.as_array()?;
+    Some(
+        commands
+            .iter()
+            .map(|command| {
+                let code = command.get("code").cloned().unwrap_or(Value::Null);
+                let parameter = |index: usize| {
+                    if code == 357 {
+                        command
+                            .pointer(&format!("/parameters/{index}"))
+                            .cloned()
+                            .unwrap_or(Value::Null)
+                    } else {
+                        Value::Null
+                    }
+                };
+                (parameter(0), parameter(1), code)
+            })
+            .collect(),
+    )
+}
+
+/// Whether the event command list holding `key` has the same commands on disk
+/// as in the `previous` original (a game update) — a shifted pointer may land
+/// on a command of the same code, so the role alone cannot tell. Always true
+/// outside command lists and on a first capture (no previous original).
+fn same_page(
+    json: &Value,
+    previous: Option<&Value>,
+    key: &str,
+    cache: &mut std::collections::HashMap<String, bool>,
+) -> bool {
+    let Some(previous) = previous else {
+        return true;
+    };
+    let Some(captures) = RE_COMMAND_PARAMETER.captures(key) else {
+        return true;
+    };
+    let Some((list, _)) = captures[1].rsplit_once('/') else {
+        return false;
+    };
+    *cache.entry(list.to_string()).or_insert_with(|| {
+        let disk = page_signature(json, list);
+        disk.is_some() && disk == page_signature(previous, list)
+    })
+}
+
 /// Rebuild the original of an MV/MZ JSON file from its on-disk bytes.
+/// `previous` is the original snapshotted before, when there is one: the disk
+/// then holds either an export or a game update.
 ///
 /// Each core pointer is classified by its disk value:
 /// - equal to `source` → untouched;
 /// - when the value still has the role it was extracted with (see
-///   [`same_role`]):
+///   [`same_role`]) and, after a previous capture, its command list still has
+///   the same commands (see [`same_page`]):
 ///   - equal to `target`, or `\FS[n]` + `target` → a previous export, reset;
 ///   - when `source` contains source-language script but the disk value does
 ///     not → a stale export of an older target (a game update would replace
@@ -352,16 +405,22 @@ pub fn reconstruct_json(
     disk: &[u8],
     segments: &[CoreSegment],
     source_language: &str,
+    previous: Option<&[u8]>,
 ) -> Result<Reconstruction, OriginalsError> {
-    let text = std::str::from_utf8(disk)
-        .map_err(|error| OriginalsError::InvalidJson(file_label.to_string(), error.to_string()))?;
-    let mut json: Value = serde_json::from_str(text)
-        .map_err(|error| OriginalsError::InvalidJson(file_label.to_string(), error.to_string()))?;
+    let invalid = |error: String| OriginalsError::InvalidJson(file_label.to_string(), error);
+    let text = std::str::from_utf8(disk).map_err(|error| invalid(error.to_string()))?;
+    let mut json: Value = serde_json::from_str(text).map_err(|error| invalid(error.to_string()))?;
+    let previous: Option<Value> = previous
+        .map(serde_json::from_slice)
+        .transpose()
+        .map_err(|error| invalid(format!("previous original: {error}")))?;
 
     let mut reset = false;
     let mut drift = Vec::new();
+    let mut pages = std::collections::HashMap::new();
     for segment in segments {
-        let role_kept = same_role(&json, segment);
+        let role_kept = same_role(&json, segment)
+            && same_page(&json, previous.as_ref(), &segment.key, &mut pages);
         match json.pointer_mut(&segment.key) {
             Some(Value::String(current)) => {
                 if *current == segment.source {
@@ -624,6 +683,7 @@ mod tests {
                 event_seg("3/parameters/0", "こんばんは", "Evening", "dialogue"),
             ],
             "ja",
+            None,
         )
         .unwrap();
         assert_eq!(rec.bytes, disk, "the face name must stay as found");
@@ -667,11 +727,49 @@ mod tests {
                 event_seg("4/parameters/3/text", "看板", "Sign", "plugin_text"),
             ],
             "ja",
+            None,
         )
         .unwrap();
         assert!(rec.drift.is_empty(), "{:?}", rec.drift);
         let rebuilt: Value = serde_json::from_slice(&rec.bytes).unwrap();
         assert_eq!(rebuilt, serde_json::from_slice::<Value>(&original).unwrap());
+    }
+
+    #[test]
+    fn shifted_pointer_on_a_same_code_command_is_drift_after_a_previous_capture() {
+        // The update inserted a line without Japanese: the old pointer still
+        // lands on a 401, only the page structure shows the shift.
+        let previous = event_map(serde_json::json!([
+            { "code": 101, "parameters": ["Actor1", 0, 0, 2] },
+            { "code": 401, "parameters": ["こんにちは"] }
+        ]));
+        let disk = event_map(serde_json::json!([
+            { "code": 101, "parameters": ["Actor1", 0, 0, 2] },
+            { "code": 401, "parameters": ["♪～"] },
+            { "code": 401, "parameters": ["こんにちは"] }
+        ]));
+        let segments = [event_seg(
+            "1/parameters/0",
+            "こんにちは",
+            "Hello",
+            "dialogue",
+        )];
+        let rec = reconstruct_json("Map001.json", &disk, &segments, "ja", Some(&previous)).unwrap();
+        assert_eq!(rec.bytes, disk);
+        assert_eq!(rec.drift.len(), 1);
+
+        // Same commands as before: an older export is still recognised.
+        let exported = event_map(serde_json::json!([
+            { "code": 101, "parameters": ["Actor1", 0, 0, 2] },
+            { "code": 401, "parameters": ["Old hello"] }
+        ]));
+        let rec =
+            reconstruct_json("Map001.json", &exported, &segments, "ja", Some(&previous)).unwrap();
+        assert!(rec.drift.is_empty());
+        assert_eq!(
+            serde_json::from_slice::<Value>(&rec.bytes).unwrap(),
+            serde_json::from_slice::<Value>(&previous).unwrap()
+        );
     }
 
     #[test]
@@ -689,6 +787,7 @@ mod tests {
                 "dialogue",
             )],
             "ja",
+            None,
         )
         .unwrap();
         assert_eq!(rec.bytes, disk);
@@ -698,7 +797,8 @@ mod tests {
     #[test]
     fn untouched_file_is_returned_byte_for_byte() {
         let disk = b"{ \"a\" : \"\xe5\x8b\x87\xe8\x80\x85\", \"n\": 1.50 }";
-        let rec = reconstruct_json("X.json", disk, &[seg("/a", "勇者", "Hero")], "ja").unwrap();
+        let rec =
+            reconstruct_json("X.json", disk, &[seg("/a", "勇者", "Hero")], "ja", None).unwrap();
         assert_eq!(rec.bytes, disk);
         assert_eq!(rec.provenance, Provenance::Pristine);
         assert!(rec.drift.is_empty());
@@ -717,6 +817,7 @@ mod tests {
                 seg("/c", "そのまま", ""),
             ],
             "ja",
+            None,
         )
         .unwrap();
         assert_eq!(rec.provenance, Provenance::Reconstructed);
@@ -734,6 +835,7 @@ mod tests {
             disk.as_bytes(),
             &[seg("/a", "勇者", "Hero"), seg("/b", "古い台詞", "Old line")],
             "ja",
+            None,
         )
         .unwrap();
         let value: Value = serde_json::from_slice(&rec.bytes).unwrap();
@@ -757,6 +859,7 @@ mod tests {
             br#"{"a":1}"#,
             &[seg("/a", "勇者", "Hero"), seg("/gone", "消えた", "")],
             "ja",
+            None,
         )
         .unwrap();
         assert_eq!(rec.drift.len(), 2);

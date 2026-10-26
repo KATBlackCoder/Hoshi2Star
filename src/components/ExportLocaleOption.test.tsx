@@ -73,7 +73,7 @@ describe("ExportIntegrityDialog", () => {
     );
 
     expect(
-      screen.getByText(/Le jeu a changé depuis l'extraction/),
+      screen.getByText(/Les fichiers du jeu ont changé depuis l'extraction/),
     ).toBeInTheDocument();
     expect(
       screen.getByText(

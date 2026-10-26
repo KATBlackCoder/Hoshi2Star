@@ -15,7 +15,7 @@ export interface SourceChange {
 
 const JSON_STRING = String.raw`"(?:[^"\\]|\\.)*"`;
 const SOURCE_CHANGE_LINE = new RegExp(
-  String.raw`^(.+?) (\/\S*): source changed since extraction; expected (${JSON_STRING}), found (${JSON_STRING}|nothing)$`,
+  String.raw`^(.+?) (\/.*?): source changed since extraction; expected (${JSON_STRING}), found (${JSON_STRING}|nothing)$`,
 );
 
 export function parseSourceChange(line: string): SourceChange | null {
