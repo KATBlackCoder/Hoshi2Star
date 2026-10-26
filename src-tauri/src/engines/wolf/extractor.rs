@@ -243,8 +243,9 @@ fn extract_files_from_archives(game_dir: &Path, ext: &str) -> Vec<(String, Vec<u
 /// (e.g. a bonus "complete initial state" save under `データ集/`), which
 /// would otherwise collide by stem and shadow the real files.
 ///
-/// v5/v6 archives have no path reconstruction, so all files are accepted
-/// (dormant: revisit if a collision is found on a v5/v6 game).
+/// v5 archives have no path reconstruction and v6 paths are only rebuilt since
+/// RW-1, so all v5/v6 files are accepted for now (revisited in RW-5 against
+/// real v2 archives).
 fn basic_data_entry_name(file: &WolfFile, version: u8) -> Option<&str> {
     if version != 8 {
         return Some(&file.name);

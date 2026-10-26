@@ -51,7 +51,8 @@ pub enum DecryptorError {
 pub struct WolfFile {
     pub name: String,
     /// Full path from the archive root, starting with `/` (e.g. `/BasicData/DataBase.dat`).
-    /// For v5/v6 archives (no directory-tree reconstruction), this is `/` + `name`.
+    /// v6/v8 paths are rebuilt from the directory tree; v5 archives (no tree
+    /// reconstruction) give `/` + `name`.
     pub path: String,
     pub data: Vec<u8>,
     pub unpacked_size: u64,
@@ -1177,7 +1178,7 @@ fn read_uppercase_name(toc: &[u8], name_address: usize) -> &[u8] {
     &s[..end]
 }
 
-/// Read the original (mixed-case) null-terminated name from the v8 name table.
+/// Read the original (mixed-case) null-terminated name from the v6/v8 name table.
 fn read_original_name(toc: &[u8], name_address: usize) -> &[u8] {
     if name_address.saturating_add(4) > toc.len() {
         return b"";
@@ -1227,7 +1228,7 @@ fn build_per_file_key_str(
     ks
 }
 
-/// Build the full archive-relative path of a v8 file entry by walking the
+/// Build the full archive-relative path of a v6/v8 file entry by walking the
 /// directory parent chain (root → file), e.g. `/BasicData/DataBase.dat`.
 fn build_file_path(
     toc: &[u8],
