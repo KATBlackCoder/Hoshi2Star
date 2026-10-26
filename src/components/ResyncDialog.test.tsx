@@ -35,6 +35,7 @@ const PREVIEW: ResyncSummary = {
   gone: 1,
   changedSources: 1,
   orphaned: 1,
+  untouchedCategories: ["plugin_command.Test/Log.LOG.message"],
   goneTranslations: [
     {
       file: "Map001.json",
@@ -78,6 +79,9 @@ describe("ResyncDialog", () => {
       screen.getByText(/Map002\.json \(nouveau fichier\)/),
     ).toBeInTheDocument();
     expect(screen.getByText(/こんばんは → Good evening/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/plugin_command\.Test\/Log\.LOG\.message/),
+    ).toBeInTheDocument();
     expect(calls).toEqual([{ projectId: "p1", apply: false }]);
 
     await userEvent.click(screen.getByRole("button", { name: "Appliquer" }));

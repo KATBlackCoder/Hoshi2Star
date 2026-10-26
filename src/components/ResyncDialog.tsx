@@ -70,6 +70,13 @@ export function ResyncDialog({ projectId }: ResyncDialogProps) {
                 orphaned: summary.orphaned,
               })}
             </p>
+            {summary.untouchedCategories.length > 0 && (
+              <p className="rounded-md bg-amber-500/10 p-2 text-xs">
+                {t("resync.untouchedCategories", {
+                  categories: summary.untouchedCategories.join(", "),
+                })}
+              </p>
+            )}
             {summary.changedSources > 0 && (
               <p className="text-muted-foreground">
                 {t("resync.changedSources", { count: summary.changedSources })}

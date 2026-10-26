@@ -778,4 +778,6 @@ export interface ResyncSummary {
   changedSources: number;
   orphaned: number;
   goneTranslations: GoneTranslation[];
+  /** Enabled categories no longer offered (or now blocked): left as they are. */
+  untouchedCategories: string[];
 }

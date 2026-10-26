@@ -210,6 +210,21 @@ async fn validate_patch_schema(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             &["source_hash", "source_text", "target_text", "lang_pair"],
         ),
         (
+            "orphaned_segments",
+            &[
+                "id",
+                "project_id",
+                "file_name",
+                "json_key",
+                "source_text",
+                "target_text",
+                "status",
+                "qa_score",
+                "segment_kind",
+                "text_category",
+            ],
+        ),
+        (
             "terminology_entries",
             &[
                 "id",

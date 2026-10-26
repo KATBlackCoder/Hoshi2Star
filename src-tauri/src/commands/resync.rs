@@ -27,7 +27,7 @@ use crate::commands::project::{
 use crate::core::{manifest, originals, tm};
 use crate::engines::detector::find_data_dir;
 use crate::engines::filter::{classify_file_type, FileClass};
-use crate::engines::mv_mz::coverage::CoverageReport;
+use crate::engines::mv_mz::coverage::{CategoryState, CoverageReport};
 use crate::engines::mv_mz::resync::{self, Alignment, Line};
 use crate::state::AppState;
 
@@ -75,6 +75,9 @@ pub struct ResyncSummary {
     pub orphaned: usize,
     /// First translations that no longer have a line.
     pub gone_translations: Vec<GoneTranslation>,
+    /// Enabled categories the coverage scan no longer offers (or now blocks):
+    /// their rows are left as they are.
+    pub untouched_categories: Vec<String>,
 }
 
 /// Preview (`apply = false`) or apply the realignment of `project_id`.
@@ -191,6 +194,27 @@ async fn resync(state: &AppState, project_id: &str, apply: bool) -> Result<Resyn
     .into_iter()
     .collect();
 
+    // A category the scan no longer offers (plugin changed, disabled or
+    // unreadable) or now blocks keeps its rows as they are: they are still
+    // in the game, and nothing new is added to it.
+    let offered: HashSet<&str> = report
+        .categories
+        .iter()
+        .filter(|category| category.state != CategoryState::Blocked)
+        .map(|category| category.key.as_str())
+        .collect();
+    let mut untouched: Vec<String> = enabled
+        .iter()
+        .filter(|key| !offered.contains(key.as_str()))
+        .cloned()
+        .collect();
+    untouched.sort();
+    let realigned: HashSet<String> = enabled
+        .iter()
+        .filter(|key| offered.contains(key.as_str()))
+        .cloned()
+        .collect();
+
     let mut plans = Vec::new();
     for (file_id, file_name, file_path, file_type) in &files {
         let core = match classify_file_type(file_type) {
@@ -213,9 +237,10 @@ async fn resync(state: &AppState, project_id: &str, apply: bool) -> Result<Resyn
                     .map(NewRow::core),
             );
         }
-        new.extend(category_rows(&report, &enabled, file_name));
+        let taken: HashSet<String> = new.iter().map(|row| row.line.key.clone()).collect();
+        new.extend(category_rows(&report, &realigned, file_name, taken));
         let old = recorded_rows(&state.db, file_id).await?;
-        let alignment = align_by_category(&old, &new);
+        let alignment = align_by_category(&old, &new, &untouched);
         plans.push(FilePlan {
             file_id: file_id.clone(),
             file_name: file_name.clone(),
@@ -227,7 +252,8 @@ async fn resync(state: &AppState, project_id: &str, apply: bool) -> Result<Resyn
     }
     let new_files = new_data_files(&game_path, &files)?;
 
-    let summary = summarize(&plans, &new_files, apply);
+    let mut summary = summarize(&plans, &new_files, apply);
+    summary.untouched_categories = untouched;
     if !apply {
         return Ok(summary);
     }
@@ -241,7 +267,7 @@ async fn resync(state: &AppState, project_id: &str, apply: bool) -> Result<Resyn
         for &o in &plan.alignment.gone {
             let row = &plan.old[o];
             if !row.target.is_empty() {
-                let _ = tm::insert(
+                let _ = tm::insert_if_absent(
                     &row.line.source,
                     &row.target,
                     &engine,
@@ -252,13 +278,21 @@ async fn resync(state: &AppState, project_id: &str, apply: bool) -> Result<Resyn
             }
         }
     }
+    // The database is realigned: what follows is best effort, so the caller
+    // still learns that it changed (and views reload).
     // The snapshot is the version the project now follows.
     for plan in &plans {
         store.clear_drift(&plan.rel);
     }
-    store.save().map_err(|error| error.to_string())?;
+    if let Err(error) = store.save() {
+        log::warn!("realigned, but the snapshot drift could not be cleared: {error}");
+    }
     if !new_files.is_empty() {
-        originals::ensure_mv_mz_snapshot(&state.db, &state.data_dir, project_id).await?;
+        if let Err(error) =
+            originals::ensure_mv_mz_snapshot(&state.db, &state.data_dir, project_id).await
+        {
+            log::warn!("realigned, new files not snapshotted yet: {error}; export will retry");
+        }
     }
     manifest::refresh_stats(&state.db, project_id).await;
     Ok(summary)
@@ -298,42 +332,55 @@ async fn recorded_rows(db: &SqlitePool, file_id: &str) -> Result<Vec<OldRow>, St
         .collect())
 }
 
-/// Candidates of the enabled optional categories found in `file_name`.
-fn category_rows<'a>(
-    report: &'a CoverageReport,
-    enabled: &'a HashSet<String>,
-    file_name: &'a str,
-) -> impl Iterator<Item = NewRow> + 'a {
-    report
-        .categories
-        .iter()
-        .filter(|category| enabled.contains(&category.key))
-        .flat_map(move |category| {
-            category
-                .candidates
-                .iter()
-                .filter(move |candidate| candidate.file_name == file_name)
-                .map(move |candidate| NewRow {
-                    line: Line::new(
-                        candidate.key.clone(),
-                        candidate.source.clone(),
-                        candidate.kind.as_str(),
-                    ),
-                    scene_id: None,
-                    sequence_index: None,
-                    speaker: None,
-                    branch_path: None,
-                    context_json: Some(candidate.context_json.clone()),
-                    category: Some(category.key.clone()),
-                })
-        })
+/// Candidates of the realigned optional categories found in `file_name`.
+/// Like enabling a category, a candidate whose key another row already holds
+/// (`taken`) is skipped.
+fn category_rows(
+    report: &CoverageReport,
+    realigned: &HashSet<String>,
+    file_name: &str,
+    mut taken: HashSet<String>,
+) -> Vec<NewRow> {
+    let mut rows = Vec::new();
+    for category in &report.categories {
+        if !realigned.contains(&category.key) {
+            continue;
+        }
+        for candidate in &category.candidates {
+            if candidate.file_name != file_name || !taken.insert(candidate.key.clone()) {
+                continue;
+            }
+            rows.push(NewRow {
+                line: Line::new(
+                    candidate.key.clone(),
+                    candidate.source.clone(),
+                    candidate.kind.as_str(),
+                ),
+                scene_id: None,
+                sequence_index: None,
+                speaker: None,
+                branch_path: None,
+                context_json: Some(candidate.context_json.clone()),
+                category: Some(category.key.clone()),
+            });
+        }
+    }
+    rows
 }
 
 /// [`resync::align`] run separately for core rows and for each category, so
-/// a translation never changes category.
-fn align_by_category(old: &[OldRow], new: &[NewRow]) -> Alignment {
+/// a translation never changes category. Rows of an `untouched` category are
+/// neither paired nor gone: they stay as they are.
+fn align_by_category(old: &[OldRow], new: &[NewRow], untouched: &[String]) -> Alignment {
     let mut groups: HashMap<Option<&str>, (Vec<usize>, Vec<usize>)> = HashMap::new();
     for (index, row) in old.iter().enumerate() {
+        if row
+            .category
+            .as_ref()
+            .is_some_and(|category| untouched.contains(category))
+        {
+            continue;
+        }
         groups
             .entry(row.category.as_deref())
             .or_default()
@@ -656,7 +703,7 @@ mod tests {
                 Some("plugin"),
             ),
         ];
-        let alignment = align_by_category(&rows, &lines);
+        let alignment = align_by_category(&rows, &lines, &[]);
         assert_eq!(alignment.paired, vec![(0, 0), (1, 1)]);
     }
 }

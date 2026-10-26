@@ -580,10 +580,21 @@ const LOG_PROFILE: &str = r#"
     message = true
 "#;
 
-/// Optional-category rows inside an event command list (plugin command
-/// arguments) are realigned like core lines.
-#[tokio::test]
-async fn resync_moves_plugin_command_arguments_of_an_optional_category() {
+const LOG_CATEGORY: &str = "plugin_command.Test/Log.LOG.message";
+
+/// A game whose map shows a line, then runs the profiled plugin's `LOG`
+/// command; the plugin command category is enabled and everything translated
+/// (`Welcome.` / `The enemy fled!`).
+struct PluginGame {
+    _temporary: tempfile::TempDir,
+    app: tauri::App<tauri::test::MockRuntime>,
+    project: Project,
+    map_path: PathBuf,
+    plugin_path: PathBuf,
+    page: Vec<Value>,
+}
+
+async fn plugin_game() -> PluginGame {
     let temporary = tempfile::tempdir().unwrap();
     let game_root = temporary.path().join("game");
     let data = game_root.join("data");
@@ -630,11 +641,10 @@ async fn resync_moves_plugin_command_arguments_of_an_optional_category() {
     .await
     .unwrap()
     .project;
-    let category = "plugin_command.Test/Log.LOG.message";
     set_text_categories(
         project.id.clone(),
         vec![CategoryChange {
-            category_key: category.into(),
+            category_key: LOG_CATEGORY.into(),
             enabled: true,
             accept_consequences: true,
         }],
@@ -665,12 +675,34 @@ async fn resync_moves_plugin_command_arguments_of_an_optional_category() {
     }
     assert!(
         translated.contains(&(
-            Some(category.to_string()),
+            Some(LOG_CATEGORY.to_string()),
             "/events/1/pages/0/list/1/parameters/3/message".to_string()
         )),
         "{translated:?}"
     );
 
+    PluginGame {
+        _temporary: temporary,
+        app,
+        project,
+        map_path,
+        plugin_path: plugins.join("Log.js"),
+        page,
+    }
+}
+
+/// Optional-category rows inside an event command list (plugin command
+/// arguments) are realigned like core lines.
+#[tokio::test]
+async fn resync_moves_plugin_command_arguments_of_an_optional_category() {
+    let PluginGame {
+        _temporary: _game_folder,
+        app,
+        project,
+        map_path,
+        page,
+        ..
+    } = plugin_game().await;
     let mut updated = page;
     updated.insert(0, command(230, json!([60])));
     std::fs::write(&map_path, map_with(updated).to_string()).unwrap();
@@ -700,4 +732,74 @@ async fn resync_moves_plugin_command_arguments_of_an_optional_category() {
             .unwrap(),
         "Welcome."
     );
+}
+
+/// A category the coverage scan no longer offers (here, the update changed
+/// the plugin to a version no profile verifies) is left untouched: its rows
+/// are still in the game, so they are neither deleted nor listed as gone.
+#[tokio::test]
+async fn resync_leaves_a_category_no_longer_offered_untouched() {
+    let game = plugin_game().await;
+    let mut updated = game.page.clone();
+    updated.insert(0, command(230, json!([60])));
+    std::fs::write(&game.map_path, map_with(updated).to_string()).unwrap();
+    std::fs::write(&game.plugin_path, "/*:\n * @version 1.1\n */\n").unwrap();
+
+    let summary = resync_project(
+        game.project.id.clone(),
+        true,
+        game.app.handle().clone(),
+        game.app.state(),
+    )
+    .await
+    .unwrap();
+    assert_eq!((summary.moved, summary.gone), (1, 0), "{summary:?}");
+    assert_eq!(summary.untouched_categories, vec![LOG_CATEGORY.to_string()]);
+
+    let db = &game.app.state::<AppState>().db;
+    let kept: Vec<(String, String)> =
+        sqlx::query_as("SELECT json_key, target_text FROM segments WHERE text_category = ?")
+            .bind(LOG_CATEGORY)
+            .fetch_all(db)
+            .await
+            .unwrap();
+    assert_eq!(
+        kept,
+        vec![(
+            "/events/1/pages/0/list/1/parameters/3/message".to_string(),
+            "The enemy fled!".to_string()
+        )]
+    );
+}
+
+/// The translation of a gone line only fills a gap in the translation memory:
+/// it never replaces an entry already there for the same source.
+#[tokio::test]
+async fn resync_never_overwrites_a_translation_memory_entry() {
+    let game = opened_and_translated("www/data", mv_page()).await;
+    let db = &game.app.state::<AppState>().db;
+    sqlx::query("UPDATE tm_entries SET target_text = 'Reviewed' WHERE source_text = ?")
+        .bind("おはようございます。")
+        .execute(db)
+        .await
+        .unwrap();
+    let mut updated = mv_page();
+    updated.remove(1);
+    std::fs::write(&game.map_path, map_with(updated).to_string()).unwrap();
+
+    resync_project(
+        game.project.id.clone(),
+        true,
+        game.app.handle().clone(),
+        game.app.state(),
+    )
+    .await
+    .unwrap();
+    let kept: String =
+        sqlx::query_scalar("SELECT target_text FROM tm_entries WHERE source_text = ?")
+            .bind("おはようございます。")
+            .fetch_one(db)
+            .await
+            .unwrap();
+    assert_eq!(kept, "Reviewed");
 }

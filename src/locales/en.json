@@ -765,6 +765,7 @@
     "goneTranslations": "Translations without a line (kept, and in the translation memory):",
     "cancel": "Cancel",
     "close": "Close",
-    "apply": "Apply"
+    "apply": "Apply",
+    "untouchedCategories": "Categories left as they are, because the game no longer offers them as such (plugin changed, disabled or unreadable) or now blocks them: {{categories}}. Their translations are not touched; check them in text coverage."
   }
 }
