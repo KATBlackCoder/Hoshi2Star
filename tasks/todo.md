@@ -1789,7 +1789,7 @@ Quand on ajoutera FR : créer `translate/fr.toml` + bras `"fr"` dans le `match`.
 
 Chaque étape : code, tests unitaires sur fichiers synthétiques, journal. Pas de build local ; gate en cloud après push autorisé.
 
-**RW-1 — Lecture des archives** (`engines/wolf/decrypt/legacy_xor.rs`), effort M. — **[~] code et tests écrits (`5d90131`), non compilés ; gate cloud non exécuté.** Fait en plus : noms et chemins réels v6 (table de noms DxLib + arbre des dossiers, comme v8).
+**RW-1 — Lecture des archives** (`engines/wolf/decrypt/legacy_xor.rs`), effort M. — **[x] code et tests (`5d90131`) ; gate cloud vert sur `cc7efc7` (724 Rust OK). Vraies archives : à vérifier en RW-9.** Fait en plus : noms et chemins réels v6 (table de noms DxLib + arbre des dossiers, comme v8).
 - v6 : chercher la clé sur l'en-tête chiffré dès l'octet 0, puis contrôler `DX` + version **après** déchiffrement ; garder la voie actuelle pour les en-têtes en clair.
 - v6 : décompression LZ des fichiers compressés (réutiliser `lz_decode` de v8).
 - v8 : lire la version de chiffrement (16 bits hauts de `Flags`) ; choisir la chaîne-clé publique selon cette version (« v2.225 », « v3.00 », « v3.14 ») plutôt qu'au hasard ; version ≥ 331 et hors Pro ⇒ nouvelle erreur `UnsupportedWolfCrypt { crypt_version }` ; 0x64/0xC8 et ≥ 1000 ⇒ WolfX/Pro (erreur existante).
