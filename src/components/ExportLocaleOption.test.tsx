@@ -61,6 +61,34 @@ describe("ExportIntegrityDialog", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("explains a game update and shows expected and found text", () => {
+    render(
+      <ExportIntegrityDialog
+        issues={[
+          'data/Map001.json /events/1/pages/0/list/3/parameters/0: source changed since extraction; expected "どこへ行けばいい？", found "Actor1"',
+          'data/Map001.json /events/1/pages/0/list/2/parameters/4: source changed since extraction; expected "旅人", found nothing',
+        ]}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(/Le jeu a changé depuis l'extraction/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "data/Map001.json /events/1/pages/0/list/3/parameters/0",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("attendu : どこへ行けばいい？"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("trouvé : Actor1")).toBeInTheDocument();
+    expect(
+      screen.getByText("trouvé : rien (emplacement disparu)"),
+    ).toBeInTheDocument();
+  });
+
   it("is hidden without problems", () => {
     render(<ExportIntegrityDialog issues={null} onClose={vi.fn()} />);
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();

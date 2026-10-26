@@ -654,7 +654,11 @@
   },
   "exportIntegrity": {
     "title": "Export bloqué par le contrôle d'intégrité",
-    "description": "Aucun fichier n'a été écrit. Le contrôle compare chaque fichier produit avec l'original et a trouvé des changements non prévus :"
+    "description": "Aucun fichier n'a été écrit. Le contrôle compare chaque fichier produit avec l'original et a trouvé des changements non prévus :",
+    "gameChanged": "Aucun fichier n'a été écrit. Le jeu a changé depuis l'extraction (mise à jour ?) : à ces emplacements, le texte d'origine n'est plus celui que vous avez traduit. Exporter y écrirait les traductions au mauvais endroit. Pour exporter, remettez la version du jeu utilisée à l'extraction.",
+    "expected": "attendu : {{text}}",
+    "found": "trouvé : {{text}}",
+    "foundNothing": "trouvé : rien (emplacement disparu)"
   },
   "textFit": {
     "toolbar": "Mise en page",
