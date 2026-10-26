@@ -38,6 +38,9 @@ pub enum DecryptorError {
          then open the resulting Data/ folder"
     )]
     UnsupportedWolfCrypt(u16),
+    /// Readable archive whose layout the archive writer does not rebuild.
+    #[error("this Wolf RPG archive cannot be rebuilt: {0}")]
+    UnsupportedLayout(&'static str),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -1675,6 +1678,239 @@ fn extract_all_v8(
     })
 }
 
+// ---------------------------------------------------------------------------
+// Archive layout — shared with the archive writer (plan RW, RW-3)
+// ---------------------------------------------------------------------------
+
+/// How a DXA archive is encrypted, as far as rebuilding it is concerned.
+#[derive(Debug, Clone)]
+pub(crate) enum DxaCrypt {
+    /// DXA v6: one 12-byte XOR key for header, TOC and data. `signature_encrypted`
+    /// is `true` when the header is XORed from offset 0 (Wolf 2.23 `Data.wolf`),
+    /// `false` when `DX` + version are in clear and the body is XORed from 4.
+    Xor12 {
+        key: [u8; 12],
+        signature_encrypted: bool,
+    },
+    /// DXA v8: 7-byte keys; `None` for an archive without key (`DXA_FLAG_NO_KEY`).
+    Xor7 { global_key: Option<[u8; 7]> },
+}
+
+/// One file of a DXA archive, located for the writer.
+#[derive(Debug, Clone)]
+pub(crate) struct DxaEntry {
+    /// Full path from the archive root, as in [`WolfFile::path`].
+    pub path: String,
+    /// Offset of the entry within the file table.
+    pub entry_offset: u64,
+    /// Data address, relative to [`DxaLayout::base_offset`].
+    pub data_offset: u64,
+    /// Bytes stored on disk (LZ stream when compressed, raw data otherwise).
+    /// Only needed — and only set — for v6 (`0` for v8).
+    pub stored_size: u64,
+    /// Per-file key of a v8 archive with a key; `None` otherwise.
+    pub file_key: Option<[u8; 7]>,
+}
+
+/// Decrypted structure of a DXA v6/v8 archive: enough to rebuild it without
+/// decoding any file.
+#[derive(Debug, Clone)]
+pub(crate) struct DxaLayout {
+    pub version: u8,
+    pub crypt: DxaCrypt,
+    /// Plaintext TOC (name table | file table | directory table), exactly
+    /// `head_size` bytes.
+    pub toc: Vec<u8>,
+    /// Absolute offset of the TOC in the archive.
+    pub toc_offset: u64,
+    /// Absolute offset of the data area.
+    pub base_offset: u64,
+    /// File table offset within the TOC.
+    pub file_table: u64,
+    pub entries: Vec<DxaEntry>,
+}
+
+/// Read the [`DxaLayout`] of a DXA v6 or v8 archive (same keys and checks as
+/// [`extract_all`]). v5 and the Wolf 2.255 in-archive key are not rebuilt.
+pub(crate) fn read_layout(data: &[u8]) -> Result<DxaLayout, DecryptorError> {
+    let (version, signature_key) = read_signature_any(data)?;
+    match version {
+        6 => read_layout_v6(data, signature_key),
+        8 => read_layout_v8(data),
+        5 => Err(DecryptorError::UnsupportedLayout("DXA v5")),
+        other => Err(DecryptorError::UnsupportedVersion(other)),
+    }
+}
+
+fn read_layout_v6(
+    data: &[u8],
+    signature_key: Option<[u8; 12]>,
+) -> Result<DxaLayout, DecryptorError> {
+    let key = match signature_key {
+        Some(key) => key,
+        None => find_key(data, 6)?,
+    };
+    if key == [0u8; 12] {
+        // Header in clear, data key stored in the archive (Wolf 2.255, see extract_all).
+        return Err(DecryptorError::UnsupportedLayout(
+            "DXA v6 with its key stored in the archive (Wolf 2.255)",
+        ));
+    }
+    let header = read_header_v6(data, &key)?;
+    let toc_offset =
+        u64::try_from(header.index_offset).map_err(|_| DecryptorError::HeaderTooShort)?;
+    let toc_end = toc_offset
+        .checked_add(u64::from(header.index_size))
+        .filter(|&end| end <= data.len() as u64)
+        .ok_or(DecryptorError::HeaderTooShort)?;
+    let file_table =
+        u64::try_from(header.file_table_offset).map_err(|_| DecryptorError::HeaderTooShort)?;
+    let dir_table =
+        u64::try_from(header.dir_table_offset).map_err(|_| DecryptorError::HeaderTooShort)?;
+    let base_offset =
+        u64::try_from(header.base_offset).map_err(|_| DecryptorError::HeaderTooShort)?;
+
+    let mut toc = data[toc_offset as usize..toc_end as usize].to_vec();
+    let raw_entries = parse_index(&mut toc, &key, 6, toc_offset, file_table, dir_table)?;
+    let dirs = parse_darc_dirs(&toc, dir_table as usize);
+
+    let mut entries = Vec::with_capacity(raw_entries.len());
+    for entry in &raw_entries {
+        let name_offset = usize::try_from(entry.name_offset)
+            .ok()
+            .filter(|&ns| ns <= toc.len())
+            .ok_or(DecryptorError::HeaderTooShort)?;
+        let name = decode_name(read_original_name(&toc, name_offset), header.code_page);
+        let parent_idx = find_parent_dir(&dirs, entry.entry_offset, 0x40);
+        let path = build_file_path(
+            &toc,
+            &name,
+            parent_idx,
+            &dirs,
+            file_table as usize,
+            header.code_page,
+        );
+        let stored_size = if entry.is_compressed() {
+            u64::try_from(entry.packed_size).map_err(|_| DecryptorError::HeaderTooShort)?
+        } else {
+            entry.unpacked_size
+        };
+        entries.push(DxaEntry {
+            path,
+            entry_offset: entry.entry_offset,
+            data_offset: entry.data_offset,
+            stored_size,
+            file_key: None,
+        });
+    }
+
+    Ok(DxaLayout {
+        version: 6,
+        crypt: DxaCrypt::Xor12 {
+            key,
+            signature_encrypted: signature_key.is_some(),
+        },
+        toc,
+        toc_offset,
+        base_offset,
+        file_table,
+        entries,
+    })
+}
+
+fn read_layout_v8(data: &[u8]) -> Result<DxaLayout, DecryptorError> {
+    if data.len() < 64 {
+        return Err(DecryptorError::HeaderTooShort);
+    }
+    let u32_le = |off: usize| u32::from_le_bytes(data[off..off + 4].try_into().unwrap());
+    let u64_le = |off: usize| u64::from_le_bytes(data[off..off + 8].try_into().unwrap());
+
+    let head_size = u32_le(4) as usize;
+    let base_offset = u64_le(8);
+    let toc_offset = u64_le(16);
+    let file_table = u64_le(24);
+    let dir_table = u64_le(32);
+    let code_page = u32_le(40);
+    let flags = u32_le(44);
+    let crypt_version = (flags >> 16) as u16;
+    check_v8_crypt_version(crypt_version)?;
+    let has_key = flags & 0x0000_0001 == 0;
+    let no_head_press = flags & 0x0000_0002 != 0;
+
+    let toc_start = usize::try_from(toc_offset)
+        .ok()
+        .filter(|&start| start <= data.len())
+        .ok_or(DecryptorError::HeaderTooShort)?;
+    let (global_key, key_str) = find_v8_key(
+        data,
+        toc_start,
+        head_size,
+        has_key,
+        no_head_press,
+        crypt_version,
+    )?;
+    let mut toc = decompress_v8_toc(
+        data,
+        toc_start,
+        head_size,
+        has_key,
+        no_head_press,
+        &global_key,
+    )?;
+    toc.truncate(head_size);
+    let dirs = parse_darc_dirs(&toc, dir_table as usize);
+
+    const ENTRY_SZ: usize = 0x48;
+    let ft = file_table as usize;
+    let dt = dir_table as usize;
+    let mut entries = Vec::new();
+    if dt > ft && dt <= toc.len() {
+        for i in 0..(dt - ft) / ENTRY_SZ {
+            let base = ft + i * ENTRY_SZ;
+            let u64_at = |off: usize| -> u64 {
+                u64::from_le_bytes(toc[base + off..base + off + 8].try_into().unwrap())
+            };
+            if u64_at(0x08) & 0x10 != 0 {
+                continue; // directory entry
+            }
+            let name_offset = u64_at(0x00) as usize;
+            let entry_offset = (i * ENTRY_SZ) as u64;
+            let parent_idx = find_parent_dir(&dirs, entry_offset, ENTRY_SZ as u64);
+            let name = decode_name(read_original_name(&toc, name_offset), code_page);
+            let path = build_file_path(&toc, &name, parent_idx, &dirs, ft, code_page);
+            let file_key = has_key.then(|| {
+                key_create_7(&build_per_file_key_str(
+                    key_str,
+                    &toc,
+                    name_offset,
+                    parent_idx,
+                    &dirs,
+                    ft,
+                ))
+            });
+            entries.push(DxaEntry {
+                path,
+                entry_offset,
+                data_offset: u64_at(0x28),
+                stored_size: 0,
+                file_key,
+            });
+        }
+    }
+
+    Ok(DxaLayout {
+        version: 8,
+        crypt: DxaCrypt::Xor7 {
+            global_key: has_key.then_some(global_key),
+        },
+        toc,
+        toc_offset,
+        base_offset,
+        file_table,
+        entries,
+    })
+}
+
 /// Synthetic DXA archives in the real DxLib layout, shared by the decryptor and
 /// detector tests.
 #[cfg(test)]
@@ -1865,6 +2101,8 @@ pub(crate) mod test_archives {
             key_conv(&mut stored, f.content.len() as u64, key);
             entries.push((data.len() as u64, f.content.len() as u64, packed));
             data.extend_from_slice(&stored);
+            // DxLib aligns each file's data on 4 bytes.
+            data.resize(data.len().next_multiple_of(4), 0);
         }
         let (mut toc, file_table, dir_table, entry_offsets) = build_dx_toc(files, &entries, 0x40);
         let toc_offset = HEAD + data.len();
