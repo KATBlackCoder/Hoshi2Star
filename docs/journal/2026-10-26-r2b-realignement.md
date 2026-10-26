@@ -124,10 +124,16 @@ Verdict : « à corriger avant fusion » (constat 1 avec test, constat 2 forteme
 - clippy `-D warnings` (aussi avec `--all-targets`), fmt et typecheck OK ;
 - lint : 0 erreur.
 
+## Contrôle des faux positifs sur jeux réels (2026-10-26, Claude, local)
+
+- Contrôle des faux positifs de la garde R2a sur les jeux réels de la session 2 (2026-10-26, Claude, script Python en lecture seule sur la base copiée et les copies de jeux, sans build) : **0 écart** sur 37 543 lignes de 4 projets (MV 15 498, StandGirl ancien 1 191, StandGirl neuf 1 191, 借金JK 19 663), y compris 1 294 lignes traduites ; aucune différence d'espaces ni de fins de ligne. Limite : comparaison au fichier du jeu sur disque (équivalent à la copie de référence sur ces copies jamais exportées) ; `plugins.js` et étiquettes Keke non couverts. Sortie : `test/r2-false-positives.txt` (hors Git).
+- Étape 7 du plan (dérive rendue à l'appelant) : reportée, décision utilisateur ; le refus de l'étape 2 suffit.
+- Étape 12 faite : CHANGELOG, clôture de S-X1 / F dans le rapport d'audit, handoff.
+
 ## Tâches ROADMAP cochées
 
 - Aucune (lot R2 suivi dans `tasks/todo.md`).
 
 ## Prochaine session
 
-- Essai du réalignement sur un jeu réel mis à jour (local), puis étape 12 (CHANGELOG, fermeture de S-X1 / F dans le rapport d'audit) et PR si l'utilisateur la demande.
+- PR de R2 ouverte (2026-10-26) ; fusion par l'utilisateur. Restent non vérifiés en réel : un réalignement sur un vrai jeu mis à jour et l'essai en jeu (accord requis). Suivis : « Suivis R2b » dans `tasks/todo.md`.

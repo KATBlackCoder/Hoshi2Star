@@ -25,7 +25,7 @@ Les cases sportsfan30 (A–D) ci-dessous restent la liste détaillée de R4, R8,
       S-L2 / audit B, P-6, S-L4, demande utilisateur (une seule notification) ; ne jamais écraser
       une cible non vide sur échec technique (retraduction par sélection, `translate.rs:34-41`). `split.rs:155-161`,
       `pipeline.rs:315`, `:577-593`, `stores/llm.ts:224-230`, `translate.rs:241`.
-- [ ] **R2 — Export sûr après une mise à jour du jeu** (bloquant, M–L) — **plan détaillé ci-dessous, validé, R2a en cours** : S-X1 / audit F, P-2 ; inclut
+- [ ] **R2 — Export sûr après une mise à jour du jeu** (bloquant, M–L) — **fait (R2a, E2, R2b), gate cloud vert, PR ouverte ; étape 7 reportée** : S-X1 / audit F, P-2 ; inclut
       la reconstruction du snapshot (`engines/mv_mz/originals.rs:320-345`).
 - [ ] **R3 — Dépendances** (majeur, S) : rustls / webpki (S-D2), zip (S-D1), `deny.toml` (S-D4). S-D5 traité par le retrait du crate (plan RW0 ci-dessous). Modifie `Cargo.lock`.
 - [ ] **R4 — Export partiel et par fichier** (S–M) : lot A sportsfan30 + S-X5 (jamais d'écriture en place).
@@ -262,7 +262,7 @@ de la session 3 (copie de référence qui remet du japonais sans dérive). Preuv
   - Relecture indépendante : décalage vers une commande de même code (`♪～`) corrigé par comparaison de la
     page avec la copie précédente (`same_page`) ; refus sur un ancien export non reconnu (cible CJK, mise en
     page) **conservé** (E1), message élargi — décision utilisateur attendue.
-- [ ] 7. `update_snapshot` : la dérive est rendue à l'appelant (pas seulement dans le journal), pour que
+- [ ] 7. **Reportée** (décision utilisateur du 2026-10-26 : le refus de l'étape 2 suffit à empêcher l'écriture décalée). `update_snapshot` : la dérive est rendue à l'appelant (pas seulement dans le journal), pour que
       l'export puisse dire « le jeu a changé » même avant le contrôle de l'étape 2.
 
 **Étapes — R2b : réaligner après une mise à jour (L, si E3 = a).**
@@ -338,7 +338,7 @@ Lu dans le code : `open_project` / `visit_extracted_files` / `insert_segments` (
 
 **Étapes communes.**
 - [x] 11. Gate complet **en session cloud** (règle du 2026-10-25) : vert le 2026-10-26 sur `608bdbe`. Essai en jeu selon E5 : **non fait** (accord de l'utilisateur requis).
-- [ ] 12. Suivi : journal, handoff, CHANGELOG, et fermeture de S-X1 / F dans le rapport d'audit.
+- [x] 12. Suivi : journal, handoff, CHANGELOG, et fermeture de S-X1 / F dans le rapport d'audit (2026-10-26). Contrôle des faux positifs de la garde R2a sur les jeux réels de la session 2 (2026-10-26, Claude, script Python en lecture seule sur la base copiée et les copies de jeux, sans build) : **0 écart** sur 37 543 lignes de 4 projets (MV 15 498, StandGirl ancien 1 191, StandGirl neuf 1 191, 借金JK 19 663), y compris 1 294 lignes traduites ; aucune différence d'espaces ni de fins de ligne. Limite : comparaison au fichier du jeu sur disque (équivalent à la copie de référence sur ces copies jamais exportées) ; `plugins.js` et étiquettes Keke non couverts. Sortie : `test/r2-false-positives.txt` (hors Git).
 
 **Critère de sortie.** Le scénario P-2 (401 inséré) ne peut plus produire d'archive décalée, en MV comme en
 MZ. La copie de référence ne met plus de japonais dans un champ non textuel. Après réalignement, l'export

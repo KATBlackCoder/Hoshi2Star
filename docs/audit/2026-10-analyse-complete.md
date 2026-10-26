@@ -356,6 +356,11 @@ Mesure vérifiée par exécution le 2026-10-25 avec `cargo llvm-cov --summary-on
 - Le snapshot suit la nouvelle version du jeu et note la dérive (`drift`) dans un simple `log::warn`. L'export ne lit jamais `drift`.
 - Une commande insérée par un patch décale les pointeurs JSON : les traductions atterrissent ailleurs, sans erreur.
 - Reproduction : traduire, insérer un 401 avant une ligne traduite de `Map001.json`, exporter, comparer l'entrée du zip.
+- **Corrigé le 2026-10-26 (lot R2, branche `fix/r2a-export-source-guard`).**
+  - L'export refuse quand une valeur d'origine ne correspond plus au `source_text` enregistré (`IntegrityIssue::SourceChanged`).
+  - La reconstruction de la copie de référence ne remplace plus une valeur dont le rôle a changé (règle E2).
+  - `resync_project` réaligne le projet après une mise à jour du jeu (R2b).
+  - Preuves : tests `src-tauri/tests/export_game_update.rs`, rouges sur `e8a97a9` puis verts ; gate cloud vert ; 0 faux positif sur 37 543 lignes réelles (journaux R2a/R2b).
 
 **S-X2 — Pertes silencieuses à l'injection Wolf v2.**
 - Où : `wolf/injector.rs:245` (`splice_wolf_strings`) et `:731`, `:748`.
@@ -839,7 +844,7 @@ Méthode :
 | **C** — champs visibles non extraits | **Corrigé en partie** (catégories optionnelles, PR #5) | `PROBE C` ; `coverage/mod.rs:405-436`, `:506-530` |
 | **D** — QA bloque des traductions justes | **Toujours présent** | `PROBE D` ; `report.rs:234-240` |
 | **E** — anciens projets sans contexte | **Toujours présent** (synthétique), **non vérifiable** sur projet réel | `PROBE E` ; base copiée |
-| **F** — export sans comparer la source | **Toujours présent**, confirmé en jeu (= S-X1) | `PROBE F` ; P-2 |
+| **F** — export sans comparer la source | **Toujours présent**, confirmé en jeu (= S-X1). **Corrigé le 2026-10-26 (R2)** | `PROBE F` ; P-2 ; `tests/export_game_update.rs` |
 
 **A — corrigé en partie.**
 - Corrigé : `Engine::for_segment` protège `%n` pour `system_term` et pour les textes de plugin qui déclarent `placeholderSyntax: format` (`tokenizer.rs:126`). `PROBE A` : 2 jetons protégés.
@@ -946,7 +951,7 @@ Effort estimé (déduit, pas mesuré) : **S** ≤ une demi-journée, **M** 1 à 
 
 | # | Constat | Gravité | Effort | Preuve | Lot |
 |---|---|---|---|---|---|
-| 1 | S-X1 / F : traductions écrites ailleurs après une mise à jour du jeu ; partie MV bloquée ; snapshot qui remet du japonais | **bloquant** | M–L | P-2 (en jeu), `PROBE F`, relecture | R2 |
+| 1 | S-X1 / F : traductions écrites ailleurs après une mise à jour du jeu ; partie MV bloquée ; snapshot qui remet du japonais | **bloquant** — **corrigé le 2026-10-26** | M–L | P-2 (en jeu), `PROBE F`, relecture | R2 (fait) |
 | 2 | S-L2 / B : panne du fournisseur = `needs_review` massif, un toast par segment, webview tuée ; écrase les traductions en retraduction par sélection | **majeur ; bloquant en retraduction** (déduit), priorité 1 | M | P-6, `PROBE B`, `translate.rs:34-41`, relecture | R1 |
 | 3 | P-5a : répliques voisines recopiées dans la cible, détection incomplète pendant l'exécution | majeur | M | P-5, `sl2-00` (46 critiques trouvés après coup), relecture | R6 |
 | 4 | Export partiel refusé par l'UI (sportsfan30 A) | majeur (bloque son flux) | S | `useAppHandlers.ts:65-67`, `PROBE LotA` | R4 |
