@@ -2,7 +2,7 @@
 
 **Mis à jour :** 2026-10-26 — Claude (lot RW démarré : worktree `../Hoshi2Star-rw`, branche `feat/rw-wolf` ; R2 fusionné, PR #12).
 **Objectif utilisateur :** lot RW, extraction et réinjection Wolf v2/v3 dans l'app (livraison par archive reconstruite).
-**Statut :** R2 fusionné (PR #12, `2331c75`). RW : plan validé le 2026-10-26 ; RW-1 à RW-6 vérifiés (gate cloud vert sur `610cd33`) ; RW-7 en cours.
+**Statut :** R2 fusionné (PR #12, `2331c75`). RW : plan validé le 2026-10-26 ; RW-1 à RW-6 vérifiés (gate cloud vert sur `610cd33`) ; RW-7 écrit, non compilé.
 
 ## En cours (2026-10-26, Claude) — RW (Wolf)
 
@@ -25,7 +25,8 @@
 - **RW-5 écrit** (`e43ab1f`) : `engines/wolf/sources.rs` (`WolfSources` : archives d'abord — `Data.wolf`, `Data/MapData.wolf`, `Data/BasicData.wolf` — puis fichiers libres ; archive illisible ou cartes hors `MapData/` ⇒ refus, marqueur `wolf_unreadable_archive`) ; extracteur et injecteur branchés dessus, anciens chargeurs retirés ; export : fichier venu d'une archive ⇒ archive reconstruite livrée à son chemin, contrôlée par `verify_archive_rebuild` ; `.wolf` stocké sans recompression dans le zip. **Changement de comportement à signaler** : un `.wolf` illisible laissé à côté d'un `Data/` déchiffré par UberWolf refuse désormais le projet (messages mis à jour : retirer les `.wolf`). Autre changement : les archives DXA v5 (Wolf 1.x, sans dossiers) sont refusées à l'ouverture (avant : ouvertes, mais export en fichiers libres ignorés par le jeu). Mémoire de l'export : environ l'archive d'origine + l'archive reconstruite (≈ 4,2 Go pour le jeu 3.658 de 2,1 Go ; correctif `d49cead`). **Non compilé.**
 - RW-5 poussé (`2ad2418`, accord de l'utilisateur, changements de comportement acceptés) ; **gate cloud RW-5 rouge** : 754 OK / 1 échec / 14 ignorés ; seul échec `test_inject_all_does_not_overwrite_wolf` (ancien test qui attendait qu'un faux `.wolf` soit ignoré). Corrigé (attend le refus, `.wolf` intact), non compilé ; tous les nouveaux tests RW-5 OK.
 - Correctif poussé (`610cd33`, accord de l'utilisateur) ; **gate RW-5 vert** sur `610cd33` : fmt, typecheck, Vitest 142, clippy `--all-targets -D warnings` 0, `cargo test --locked --no-fail-fast` **755 OK / 0 échec / 14 ignorés** ; `engines::wolf` 170 OK / 4 ignorés ; e2e Wolf 4/4 ; lint 0 erreur.
-- **Prochaine action exacte** : RW-7 (accents v2, chemin hors Shift-JIS), RW-8 (interface : `wolf_unreadable_files`, `wolf_unreadable_archive`, branche morte `WOLF_V2_UNSUPPORTED`), RW-9, RW-3, RW-6, RW-5, RW-7, RW-8, RW-9. Pas de build local ; gate en cloud après push autorisé.
+- **RW-7 écrit** : `encoding::fold_for_shift_jis` (é → e, œ → oe, « » → ", espaces insécables, tirets) appliqué aux fichiers Shift-JIS (cartes, événements communs, `.dat`), compté (`folded_count`, `WolfExport::folded_texts`, journalisé) ; intégrité alignée ; `encoding::path_warning` pour un jeu v2 dont le chemin a un caractère hors cp932 ou à aller-retour cp932 trompeur (`〜` U+301C), journalisé à l'ouverture et à l'export. Affichage du compte et de l'avertissement : RW-8. **Non compilé.**
+- **Prochaine action exacte** : gate cloud RW-7 (push à demander), puis RW-8 (accents v2, chemin hors Shift-JIS), RW-8 (interface : `wolf_unreadable_files`, `wolf_unreadable_archive`, branche morte `WOLF_V2_UNSUPPORTED`), RW-9, RW-3, RW-6, RW-5, RW-7, RW-8, RW-9. Pas de build local ; gate en cloud après push autorisé.
 
 ## En cours (2026-10-26, Claude) — R2b
 
