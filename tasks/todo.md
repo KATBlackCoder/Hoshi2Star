@@ -1835,7 +1835,7 @@ Chaque étape : code, tests unitaires sur fichiers synthétiques, journal. Pas d
 - Reparser chaque `.mps`, `CommonEvent.dat` et `.dat` produit ; vérifier que seules les chaînes prévues ont changé ; relire l'archive reconstruite (liste des fichiers, contenu des fichiers non modifiés, fichiers traduits).
 - Écart ⇒ `IntegrityIssue` et export refusé (dialogue existant).
 - Corriger au passage `unknown1` des `.dat` (valeur d'origine conservée).
-- **Plan détaillé RW-6 (2026-10-26, Claude) — [~] code et tests écrits (révisé après revue), non compilés ; gate cloud non exécuté :**
+- **Plan détaillé RW-6 (2026-10-26, Claude) — [x] gate cloud vert sur `d216d57` (748 Rust OK) ; archive reconstruite vérifiée en RW-5 :**
   - [x] Type d'écart : réutiliser `engines::mv_mz::integrity::IntegrityIssue` (variantes génériques ; `pointer` = clé Wolf) et `summarize`, pour que l'export refuse avec le même message.
   - [x] Principe (indépendant de l'injecteur) : relire l'original O **réellement lu par l'injecteur** et la sortie N ; (1) structure : O et N avec tous les textes vidés doivent être égaux (`StructureChanged`) ; (2) textes, clé par clé : clé prévue ⇒ N = traduction (`PlannedValueMissing`) ; clé non prévue ⇒ N = O (`UnplannedChange`) ; clé prévue absente de O ⇒ `PlannedValueMissing` ; illisible ⇒ `Unparseable`.
     - cartes (`MapV3`, 101/102, clés `MapData/{carte}/events/…`) et `CommonEvent.dat` (`CommonEventsV3`, clés `CommonEvents/{nom}/…`) ; le conteneur suit la version, comparée par la structure ;
