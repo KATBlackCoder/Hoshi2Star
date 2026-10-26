@@ -861,16 +861,19 @@ async fn mv_mz_pilot_preparation_is_deterministic_and_non_destructive() {
     }
 }
 
-/// Wolf RPG v2 games are refused at open since `wolfrpg-map-parser` was
-/// removed (2026-10-25): the error carries the `wolf_v2_unsupported` marker
-/// the frontend maps to a dedicated message, and no partial project is left.
+/// A Wolf RPG map that cannot be read refuses the whole project at open (plan
+/// RW, RW-4): the error carries the `wolf_unreadable_files` marker and no
+/// partial project is left without that map's dialogue.
 #[tokio::test]
-async fn wolf_v2_game_is_refused_at_open() {
+async fn wolf_unreadable_map_is_refused_at_open() {
+    use hoshi2star_lib::engines::wolf::extractor::WOLF_UNREADABLE_FILES;
+
     let tmp = tempfile::tempdir().unwrap();
     let game_root = tmp.path().join("game");
     let map_dir = game_root.join("Data").join("MapData");
     std::fs::create_dir_all(&map_dir).unwrap();
-    // v2.x map header (WOLFM signature, no LZ4 wrapper).
+    // Map signature stored in clear, then zeros: the parser stops on a
+    // zero-length string.
     let mut mps =
         b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x57\x4F\x4C\x46\x4D\x00\x00\x00\x00\x00"
             .to_vec();
@@ -890,26 +893,120 @@ async fn wolf_v2_game_is_refused_at_open() {
         app.state(),
     )
     .await
-    .expect_err("a Wolf RPG v2 game must be refused");
-    assert!(error.contains("wolf_v2_unsupported"), "{error}");
+    .expect_err("an unreadable Wolf map must refuse the project");
+    assert!(error.contains(WOLF_UNREADABLE_FILES), "{error}");
+    assert!(error.contains("Map001.mps"), "{error}");
 
     let projects: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects")
         .fetch_one(&state.db)
         .await
         .unwrap();
     assert_eq!(projects, 0, "no partial project may be created");
+}
 
-    // Same rule on the real Honoka (v2.225) game when the fixture is present.
+/// Length-prefixed Wolf string (byte count includes the trailing NUL).
+fn wolf_string(bytes: &[u8]) -> Vec<u8> {
+    let mut out = ((bytes.len() + 1) as u32).to_le_bytes().to_vec();
+    out.extend_from_slice(bytes);
+    out.push(0);
+    out
+}
+
+/// A Wolf 2.x map stored in clear (version `0x64`, Shift-JIS): one event, one
+/// page, one Show Message (`101`) command carrying `message`.
+fn wolf_v2_map(message: &str) -> Vec<u8> {
+    let (sjis, _, had_errors) = encoding_rs::SHIFT_JIS.encode(message);
+    assert!(!had_errors, "test message must be Shift-JIS");
+    let mut b = Vec::new();
+    b.extend_from_slice(&[0u8; 10]);
+    b.extend_from_slice(b"WOLFM");
+    b.extend_from_slice(&[0u8; 5]); // NUL, Shift-JIS flag (byte 16), padding
+    b.extend_from_slice(&0x64u32.to_le_bytes()); // version: stored in clear
+    b.push(0); // unknown2
+    b.extend(wolf_string(b"map"));
+    for v in [1u32, 1, 1, 1] {
+        b.extend_from_slice(&v.to_le_bytes()); // tileset, width, height, events
+    }
+    b.extend_from_slice(&[0u8; 12]); // 1x1 tiles, 3 layers
+    b.push(0x6F); // event
+    b.extend_from_slice(&[0x39, 0x30, 0x00, 0x00]);
+    b.extend_from_slice(&0u32.to_le_bytes()); // id
+    b.extend(wolf_string(b"EV001"));
+    b.extend_from_slice(&0u32.to_le_bytes()); // x
+    b.extend_from_slice(&0u32.to_le_bytes()); // y
+    b.extend_from_slice(&1u32.to_le_bytes()); // page count
+    b.extend_from_slice(&[0u8; 4]); // event magic 2
+    b.push(0x79); // page
+    b.extend_from_slice(&0u32.to_le_bytes()); // unknown1
+    b.extend(wolf_string(b"")); // graphic name
+    b.extend_from_slice(&[0u8; 4]); // direction, frame, opacity, render mode
+    b.extend_from_slice(&[0u8; 37]); // conditions
+    b.extend_from_slice(&[0u8; 4]); // movement
+    b.extend_from_slice(&[0, 0]); // flags, route flags
+    b.extend_from_slice(&0u32.to_le_bytes()); // route count
+    b.extend_from_slice(&1u32.to_le_bytes()); // command count
+    b.push(1); // args count + 1
+    b.extend_from_slice(&101u32.to_le_bytes()); // Show Message
+    b.push(0); // indent
+    b.push(1); // string count
+    b.extend(wolf_string(&sjis));
+    b.push(0); // command terminator
+    b.extend_from_slice(&0u32.to_le_bytes()); // features
+    b.extend_from_slice(&[0, 0, 0]); // shadow, collision width / height
+    b.push(0x7A); // end of page
+    b.push(0x70); // end of event
+    b.push(0x66); // end of map
+    b
+}
+
+/// A Wolf 2.x game opens again with its map dialogue (RW-4 lifted the RW0
+/// refusal), decoded from Shift-JIS.
+#[tokio::test]
+async fn wolf_v2_game_opens_with_its_dialogue() {
+    const MESSAGE: &str = "こんにちは、旅の人";
+
+    let tmp = tempfile::tempdir().unwrap();
+    let game_root = tmp.path().join("game");
+    let map_dir = game_root.join("Data").join("MapData");
+    std::fs::create_dir_all(&map_dir).unwrap();
+    std::fs::write(map_dir.join("Map001.mps"), wolf_v2_map(MESSAGE)).unwrap();
+    std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+
+    let db_file = tmp.path().join("h2s.db");
+    let app = mock_app(db_file.to_str().unwrap()).await;
+
+    let project = open_project(
+        game_root.to_str().unwrap().to_string(),
+        None,
+        None,
+        app.state(),
+    )
+    .await
+    .expect("a Wolf 2.x game opens");
+    assert_eq!(project.engine, "wolf");
+
+    let files = get_source_files(project.id.clone(), app.state())
+        .await
+        .expect("get_source_files");
+    let mut sources = Vec::new();
+    for file in files {
+        let page = get_segments(project.id.clone(), file.id, 0, 100_000, app.state())
+            .await
+            .expect("get_segments");
+        sources.extend(page.items.into_iter().map(|segment| segment.source_text));
+    }
+    assert!(sources.iter().any(|s| s == MESSAGE), "{sources:?}");
+
+    // Same on the real Honoka (v2.225) game when the fixture is present.
     let fixture = test_dir().join("月咲流ホノカver1.03");
     if fixture.exists() {
-        let error = open_project(
+        open_project(
             fixture.to_str().unwrap().to_string(),
             None,
             None,
             app.state(),
         )
         .await
-        .expect_err("Honoka (Wolf v2) must be refused");
-        assert!(error.contains("wolf_v2_unsupported"), "{error}");
+        .expect("Honoka (Wolf v2) opens");
     }
 }
