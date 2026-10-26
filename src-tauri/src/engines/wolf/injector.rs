@@ -5,10 +5,9 @@
 // .wolf archives, so no re-encryption is required.  Option B (DXA re-pack) is
 // deferred to F5.
 //
-// .mps / CommonEvent.dat injection: v3.x (LZ4) only, via the in-house
-//   `v3_format` AST. The v2.x layout is refused with
-//   `InjectorError::UnsupportedWolfFormat` since `wolfrpg-map-parser` was
-//   removed (2026-10-25); a replacement parser is planned (lot RW).
+// .mps / CommonEvent.dat injection: in-house `v3_format` AST, for the v3.x
+//   LZ4 layout and the layout stored in clear (v2.x, v3.x `0x64` maps); the
+//   file is written back in the container it was read from (plan RW, RW-4).
 //
 // .dat injection: parse_database() → modify string_values → serialize_dat().
 
@@ -38,13 +37,6 @@ pub enum InjectorError {
     MissingProject(String),
     #[error("v3.x map format error: {0}")]
     V3Format(#[from] V3FormatError),
-    /// v2.x maps / common events can no longer be rewritten; same marker as
-    /// the extractor so the frontend shows one dedicated message.
-    #[error(
-        "{marker}: Wolf RPG v2 maps and common events are not supported yet ({0})",
-        marker = super::extractor::WOLF_V2_UNSUPPORTED
-    )]
-    UnsupportedWolfFormat(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -117,10 +109,9 @@ fn encode_for_wolf(text: &str, is_utf8: bool) -> Result<Vec<u8>, InjectorError> 
 // Step 2 — inject_map (.mps, v3.x only)
 // ---------------------------------------------------------------------------
 
-/// Inject translations into a Wolf RPG `.mps` map file (v3.x LZ4 layout).
-///
-/// A v2.x map returns [`InjectorError::UnsupportedWolfFormat`]: nothing is
-/// written rather than a partially patched file.
+/// Inject translations into a Wolf RPG `.mps` map file (v3.x LZ4 layout or
+/// layout stored in clear). A map that cannot be read returns an error: nothing
+/// is written rather than a partially patched file.
 ///
 /// `map_name` must match the stem used in the segment keys (e.g. `"Map001"`).
 pub fn inject_map(
@@ -134,28 +125,23 @@ pub fn inject_map(
         .map(|t| (t.key.as_str(), t.text.as_str()))
         .collect();
 
-    if v3_format::compression::is_lz4_v3(bytes) {
-        let mut updated = 0usize;
-        let patched = inject_map_v3(map_name, bytes, &translation_map, &mut updated)?;
-        return Ok((
-            patched,
-            InjectionResult {
-                file_path: PathBuf::from(format!("{map_name}.mps")),
-                updated_count: updated,
-            },
-        ));
-    }
-
-    Err(InjectorError::UnsupportedWolfFormat(format!(
-        "{map_name}.mps"
-    )))
+    let mut updated = 0usize;
+    let patched = inject_map_v3(map_name, bytes, &translation_map, &mut updated)?;
+    Ok((
+        patched,
+        InjectionResult {
+            file_path: PathBuf::from(format!("{map_name}.mps")),
+            updated_count: updated,
+        },
+    ))
 }
 
-/// Inject translations into a v3.x (LZ4-compressed) `.mps` map using the
-/// in-house [`v3_format`] parser: parse to AST, replace `string_args` for
-/// `ShowMessage`/`ShowChoice` commands by key, dump, recompress.
+/// Inject translations into a `.mps` map using the in-house [`v3_format`]
+/// parser: unpack, parse to AST, replace `string_args` for
+/// `ShowMessage`/`ShowChoice` commands by key, dump, pack back into the
+/// original container.
 ///
-/// Same `key` format as [`super::extractor::extract_map_segments`]'s v3 path:
+/// Same `key` format as [`super::extractor::extract_map_segments`]:
 /// `MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}[/choices/{choice_idx}]`.
 fn inject_map_v3(
     map_name: &str,
@@ -163,7 +149,7 @@ fn inject_map_v3(
     translations: &HashMap<&str, &str>,
     updated: &mut usize,
 ) -> Result<Vec<u8>, InjectorError> {
-    let decompressed = v3_format::compression::decompress_v3(bytes)?;
+    let decompressed = v3_format::compression::unpack_map(bytes)?;
     let mut map = v3_format::map::MapV3::parse(&decompressed)?;
 
     for (event_idx, event) in map.events.iter_mut().enumerate() {
@@ -209,7 +195,7 @@ fn inject_map_v3(
     }
 
     let dumped = map.dump()?;
-    Ok(v3_format::compression::recompress_v3(&dumped)?)
+    Ok(v3_format::compression::pack_map(dumped)?)
 }
 
 // ---------------------------------------------------------------------------
@@ -419,9 +405,9 @@ pub fn inject_dat(
 
 /// Inject translations into a Wolf RPG `CommonEvent.dat` file.
 ///
-/// Symmetric to [`inject_map`]: v3.5 (Inko, LZ4-compressed) parses to the
-/// in-house [`v3_format`] AST, replaces `string_args` by key, then dumps and
-/// recompresses. A v2.x file returns [`InjectorError::UnsupportedWolfFormat`].
+/// Symmetric to [`inject_map`]: the file (v3.5 LZ4, or stored in clear) parses
+/// to the in-house [`v3_format`] AST, `string_args` are replaced by key, then
+/// it is dumped and packed back into its original container.
 ///
 /// Keys match [`super::extractor::extract_common_events`]:
 /// `CommonEvents/{event_name}/{event_idx}/{cmd_idx}[/choices/{choice_idx}]`
@@ -431,11 +417,6 @@ pub fn inject_common_events(
     translations: &[WolfTranslation],
     _version: &WolfVersion,
 ) -> Result<(Vec<u8>, InjectionResult), InjectorError> {
-    if !v3_format::common_events::is_lz4_v3(bytes) {
-        return Err(InjectorError::UnsupportedWolfFormat(
-            "CommonEvent.dat".to_string(),
-        ));
-    }
     let translation_map: HashMap<&str, &str> = translations
         .iter()
         .map(|t| (t.key.as_str(), t.text.as_str()))
@@ -453,15 +434,15 @@ pub fn inject_common_events(
     ))
 }
 
-/// Inject translations into a v3.5 (LZ4-compressed) `CommonEvent.dat` using the
-/// in-house [`v3_format`] parser — mirrors [`inject_map_v3`] with the flat
+/// Inject translations into a `CommonEvent.dat` using the in-house
+/// [`v3_format`] parser — mirrors [`inject_map_v3`] with the flat
 /// common-event command list.
 fn inject_common_events_v3(
     bytes: &[u8],
     translations: &HashMap<&str, &str>,
     updated: &mut usize,
 ) -> Result<Vec<u8>, InjectorError> {
-    let decompressed = v3_format::common_events::decompress(bytes)?;
+    let decompressed = v3_format::common_events::unpack(bytes)?;
     let mut common_events = v3_format::common_events::CommonEventsV3::parse(&decompressed)?;
 
     for (event_idx, event) in common_events.events.iter_mut().enumerate() {
@@ -504,7 +485,7 @@ fn inject_common_events_v3(
     }
 
     let dumped = common_events.dump()?;
-    Ok(v3_format::common_events::recompress(&dumped)?)
+    Ok(v3_format::common_events::pack(dumped)?)
 }
 
 // ---------------------------------------------------------------------------
@@ -661,23 +642,14 @@ mod tests {
         out
     }
 
-    /// Header of a v2.x `.mps` (WOLFM signature, no LZ4 wrapper): enough for
-    /// the format check, which must refuse it.
-    fn v2_mps_stub() -> Vec<u8> {
-        let mut b =
-            b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x57\x4F\x4C\x46\x4D\x00\x00\x00\x00\x00"
-                .to_vec();
-        b.extend_from_slice(&[0x00; 25]);
-        b.push(0x66);
-        b
-    }
+    /// Japanese texts the extractor's translatable filter keeps.
+    const MESSAGE: &str = "こんにちは、旅の人";
+    const CHOICES: [&str; 2] = ["はい、行きます", "いいえ、残ります"];
 
-    /// Header of a v2.x `CommonEvent.dat` (version byte `0x8F`, no LZ4) with
-    /// zero events.
-    fn v2_common_events_stub() -> Vec<u8> {
-        let mut b = b"\x00\x57\x00\x00\x4F\x4C\x00\x46\x43\x00\x8F".to_vec();
-        b.extend_from_slice(&0u32.to_le_bytes());
-        b
+    /// On-disk bytes of a synthetic map, in the container its `version` selects.
+    fn synthetic_map_bytes(version: u32, is_utf8: bool) -> Vec<u8> {
+        let map = v3_format::map::MapV3::synthetic_messages(version, is_utf8, &[MESSAGE], &CHOICES);
+        v3_format::compression::pack_map(map.dump().unwrap()).unwrap()
     }
 
     // -----------------------------------------------------------------------
@@ -707,44 +679,72 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Step 2 — inject_map: v2.x is refused, nothing is written
+    // Step 2 — maps / common events stored in clear (v2.x, v3.x 0x64): RW-4
     // -----------------------------------------------------------------------
 
+    /// Without translations a map is written back byte for byte; with one, it
+    /// stays in its container and only the translated string changes.
     #[test]
-    fn test_inject_v2_map_is_refused() {
-        let translations = vec![WolfTranslation {
-            key: "MapData/Map001/events/0/pages/0/0".to_string(),
-            text: "Hello".to_string(),
-        }];
-        match inject_map("Map001", &v2_mps_stub(), &translations, &v2()) {
-            Err(InjectorError::UnsupportedWolfFormat(file)) => assert_eq!(file, "Map001.mps"),
-            Err(other) => panic!("expected UnsupportedWolfFormat, got {other}"),
-            Ok(_) => panic!("a v2 map must not be rewritten"),
+    fn test_inject_map_keeps_its_container() {
+        for (version, is_utf8) in [(0x64, false), (0x64, true), (0x67, true)] {
+            let bytes = synthetic_map_bytes(version, is_utf8);
+            let (unchanged, result) = inject_map("Map001", &bytes, &[], &v2()).unwrap();
+            assert_eq!(result.updated_count, 0);
+            if version < 0x65 {
+                assert_eq!(unchanged, bytes, "version {version:#x}");
+            }
+
+            let translations = vec![
+                WolfTranslation {
+                    key: "MapData/Map001/events/0/pages/0/0".to_string(),
+                    text: "Hello, traveller".to_string(),
+                },
+                WolfTranslation {
+                    key: "MapData/Map001/events/0/pages/0/1/choices/1".to_string(),
+                    text: "No, I stay".to_string(),
+                },
+            ];
+            let (patched, result) = inject_map("Map001", &bytes, &translations, &v2()).unwrap();
+            assert_eq!(result.updated_count, 2);
+            assert_eq!(
+                v3_format::compression::is_plain_map(&patched),
+                version < 0x65,
+                "version {version:#x}"
+            );
+            let segs =
+                crate::engines::wolf::extractor::extract_map_segments("Map001", &patched, &v2())
+                    .unwrap();
+            let texts: Vec<&str> = segs.iter().map(|s| s.source_text.as_str()).collect();
+            assert_eq!(texts, ["Hello, traveller", CHOICES[0], "No, I stay"]);
         }
     }
 
     #[test]
-    fn test_inject_v2_common_events_is_refused() {
-        match inject_common_events(&v2_common_events_stub(), &[], &v2()) {
-            Err(InjectorError::UnsupportedWolfFormat(file)) => {
-                assert_eq!(file, "CommonEvent.dat");
-            }
-            Err(other) => panic!("expected UnsupportedWolfFormat, got {other}"),
-            Ok(_) => panic!("a v2 CommonEvent.dat must not be rewritten"),
-        }
-        let message = InjectorError::UnsupportedWolfFormat("CommonEvent.dat".into()).to_string();
-        assert!(
-            message.starts_with(crate::engines::wolf::extractor::WOLF_V2_UNSUPPORTED),
-            "{message}"
-        );
+    fn test_inject_common_events_stored_in_clear() {
+        let common_events =
+            v3_format::common_events::CommonEventsV3::synthetic_messages_v2(&[("Ev001", MESSAGE)]);
+        let bytes = common_events.dump().unwrap();
+
+        let (unchanged, _) = inject_common_events(&bytes, &[], &v2()).unwrap();
+        assert_eq!(unchanged, bytes);
+
+        let translations = vec![WolfTranslation {
+            key: "CommonEvents/Ev001/0/0".to_string(),
+            text: "Hello, traveller".to_string(),
+        }];
+        let (patched, result) = inject_common_events(&bytes, &translations, &v2()).unwrap();
+        assert_eq!(result.updated_count, 1);
+        assert!(v3_format::common_events::is_plain(&patched));
+        let segs = crate::engines::wolf::extractor::extract_common_events(&patched, &v2()).unwrap();
+        assert_eq!(segs[0].source_text, "Hello, traveller");
     }
 
     #[tokio::test]
-    async fn test_export_of_a_v2_map_fails_explicitly() {
+    async fn test_export_of_a_v2_map_writes_it_in_clear() {
         let tmp = tempfile::tempdir().unwrap();
         let map_dir = tmp.path().join("Data").join("MapData");
         std::fs::create_dir_all(&map_dir).unwrap();
-        std::fs::write(map_dir.join("Map001.mps"), v2_mps_stub()).unwrap();
+        std::fs::write(map_dir.join("Map001.mps"), synthetic_map_bytes(0x64, false)).unwrap();
         let mut by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
         by_file.insert(
             "MapData/Map001".to_string(),
@@ -754,11 +754,15 @@ mod tests {
             }],
         );
 
-        let result = inject_all_to_memory(tmp.path(), &by_file, &v2()).await;
-        assert!(
-            matches!(result, Err(InjectorError::UnsupportedWolfFormat(_))),
-            "export must stop with the dedicated error"
-        );
+        let entries = inject_all_to_memory(tmp.path(), &by_file, &v2())
+            .await
+            .unwrap();
+        let (path, bytes) = entries
+            .iter()
+            .find(|(path, _)| path == "Data/MapData/Map001.mps")
+            .unwrap();
+        assert_eq!(path, "Data/MapData/Map001.mps");
+        assert!(v3_format::compression::is_plain_map(bytes));
     }
 
     // -----------------------------------------------------------------------

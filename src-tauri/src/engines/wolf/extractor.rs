@@ -27,20 +27,20 @@ pub enum ExtractorError {
     Io(#[from] std::io::Error),
     #[error("unsupported Wolf RPG version: {0}.{1}")]
     UnsupportedVersion(u8, u8),
-    /// Maps or common events in the Wolf RPG v2 layout (not LZ4-compressed
-    /// v3.x). Reading them is not supported until a new parser replaces the
-    /// removed `wolfrpg-map-parser` crate. Starts with [`WOLF_V2_UNSUPPORTED`]
-    /// so the frontend can show a dedicated message.
+    /// Maps or common events that could not be read (unknown container or
+    /// parse failure). The project is refused as a whole rather than opened
+    /// without their dialogue. Starts with [`WOLF_UNREADABLE_FILES`] so the
+    /// frontend can show a dedicated message.
     #[error(
-        "{marker}: Wolf RPG v2 maps and common events are not supported yet ({0})",
-        marker = WOLF_V2_UNSUPPORTED
+        "{marker}: some Wolf RPG maps or common events could not be read ({0})",
+        marker = WOLF_UNREADABLE_FILES
     )]
-    UnsupportedWolfFormat(String),
+    UnreadableWolfFiles(String),
 }
 
-/// Stable marker at the start of [`ExtractorError::UnsupportedWolfFormat`]
-/// (and of the injector's equivalent), matched by the frontend.
-pub const WOLF_V2_UNSUPPORTED: &str = "wolf_v2_unsupported";
+/// Stable marker at the start of [`ExtractorError::UnreadableWolfFiles`],
+/// matched by the frontend.
+pub const WOLF_UNREADABLE_FILES: &str = "wolf_unreadable_files";
 
 // ---------------------------------------------------------------------------
 // Public output types
@@ -421,9 +421,9 @@ pub fn extract_all_wolf(
     version: &crate::engines::detector::WolfVersion,
 ) -> Result<Vec<(String, String, Vec<WolfSegment>)>, ExtractorError> {
     let mut entries: Vec<(String, String, Vec<WolfSegment>)> = Vec::new();
-    // Files whose format can no longer be read: refusing the whole project is
-    // safer than opening it without its dialogue.
-    let mut unsupported: Vec<String> = Vec::new();
+    // Maps / common events that cannot be read: refusing the whole project is
+    // safer than opening it without their dialogue.
+    let mut unreadable: Vec<String> = Vec::new();
 
     // Maps
     if let Ok(mps_files) = load_mps_files(game_dir, version) {
@@ -433,8 +433,7 @@ pub fn extract_all_wolf(
                     entries.push((format!("{name}.mps"), "wolf_map".to_string(), segs));
                 }
                 Ok(_) => {}
-                Err(ExtractorError::UnsupportedWolfFormat(file)) => unsupported.push(file),
-                Err(e) => eprintln!("warn: skipping {name}.mps — {e}"),
+                Err(e) => unreadable.push(format!("{name}.mps ({e})")),
             }
         }
     }
@@ -466,27 +465,26 @@ pub fn extract_all_wolf(
                 ));
             }
             Ok(_) => {}
-            Err(ExtractorError::UnsupportedWolfFormat(file)) => unsupported.push(file),
-            Err(e) => log::warn!("[h2s] CommonEvent extraction failed: {e}"),
+            Err(e) => unreadable.push(format!("CommonEvent.dat ({e})")),
         }
     }
 
-    reject_unsupported(unsupported)?;
+    reject_unreadable(unreadable)?;
     Ok(entries)
 }
 
-/// Fail with one [`ExtractorError::UnsupportedWolfFormat`] naming the first
+/// Fail with one [`ExtractorError::UnreadableWolfFiles`] naming the first
 /// unreadable files, so the project is never opened without its dialogue.
-fn reject_unsupported(unsupported: Vec<String>) -> Result<(), ExtractorError> {
+fn reject_unreadable(unreadable: Vec<String>) -> Result<(), ExtractorError> {
     const SHOWN: usize = 3;
-    match unsupported.len() {
+    match unreadable.len() {
         0 => Ok(()),
         count => {
-            let mut files = unsupported[..count.min(SHOWN)].join(", ");
+            let mut files = unreadable[..count.min(SHOWN)].join(", ");
             if count > SHOWN {
                 files.push_str(&format!(" and {} more", count - SHOWN));
             }
-            Err(ExtractorError::UnsupportedWolfFormat(files))
+            Err(ExtractorError::UnreadableWolfFiles(files))
         }
     }
 }
@@ -495,33 +493,19 @@ fn reject_unsupported(unsupported: Vec<String>) -> Result<(), ExtractorError> {
 // .mps extraction
 // ---------------------------------------------------------------------------
 
-/// Extract translatable segments from a `.mps` map file.
+/// Extract translatable segments from a `.mps` map file with the in-house
+/// [`v3_format`] parser: v3.x LZ4 maps and maps stored in clear (v2.x Shift-JIS,
+/// v3.x `0x64` UTF-8) share the same flat model; the string encoding comes from
+/// the map's own flag byte.
 ///
-/// `map_name` is the file stem (e.g. `"Map001"`). Only the v3.x layout
-/// (LZ4-compressed, in-house [`v3_format`] parser) is supported; a v2.x map
-/// returns [`ExtractorError::UnsupportedWolfFormat`].
+/// `map_name` is the file stem (e.g. `"Map001"`).
 /// `_version` is reserved for future per-version branching.
 pub fn extract_map_segments(
     map_name: &str,
     bytes: &[u8],
     _version: &crate::engines::detector::WolfVersion,
 ) -> Result<Vec<WolfSegment>, ExtractorError> {
-    if v3_format::compression::is_lz4_v3(bytes) {
-        return extract_map_segments_v3(map_name, bytes);
-    }
-    Err(ExtractorError::UnsupportedWolfFormat(format!(
-        "{map_name}.mps"
-    )))
-}
-
-/// Extract translatable segments from a v3.x (LZ4-compressed) `.mps` map,
-/// using the in-house [`v3_format`] parser. Same `key`/`kind` shape as the
-/// v2.x path, so the injector and CAT UI don't need to branch on version.
-fn extract_map_segments_v3(
-    map_name: &str,
-    bytes: &[u8],
-) -> Result<Vec<WolfSegment>, ExtractorError> {
-    let decompressed = v3_format::compression::decompress_v3(bytes)
+    let decompressed = v3_format::compression::unpack_map(bytes)
         .map_err(|e| ExtractorError::MapParser(format!("{map_name}: {e}")))?;
     let map = v3_format::map::MapV3::parse(&decompressed)
         .map_err(|e| ExtractorError::MapParser(format!("{map_name}: {e}")))?;
@@ -762,27 +746,15 @@ pub(crate) fn load_common_event_bytes(game_dir: &Path) -> Option<Vec<u8>> {
     None
 }
 
-/// Extract translatable segments from `CommonEvent.dat` bytes.
-///
-/// Only the v3.5 layout (LZ4-compressed, [`v3_format::common_events`]) is
-/// supported; a v2.x file returns [`ExtractorError::UnsupportedWolfFormat`].
+/// Extract translatable segments from `CommonEvent.dat` bytes, via
+/// [`v3_format::common_events`]: v3.5 LZ4 files and files stored in clear
+/// (v2.x) share the same flat model. Each event's commands are a flat list
+/// (no pages, unlike `.mps` events).
 pub fn extract_common_events(
     bytes: &[u8],
     _version: &crate::engines::detector::WolfVersion,
 ) -> Result<Vec<WolfSegment>, ExtractorError> {
-    if v3_format::common_events::is_lz4_v3(bytes) {
-        return extract_common_events_v3(bytes);
-    }
-    Err(ExtractorError::UnsupportedWolfFormat(
-        "CommonEvent.dat".to_string(),
-    ))
-}
-
-/// Extracts translatable segments from a v3.5 (Inko) `CommonEvent.dat`, via
-/// [`v3_format::common_events`]. Each event's commands are a flat list (no
-/// pages, unlike `.mps` events).
-fn extract_common_events_v3(bytes: &[u8]) -> Result<Vec<WolfSegment>, ExtractorError> {
-    let decompressed = v3_format::common_events::decompress(bytes)
+    let decompressed = v3_format::common_events::unpack(bytes)
         .map_err(|e| ExtractorError::MapParser(format!("CommonEvent.dat: {e}")))?;
     let common_events = v3_format::common_events::CommonEventsV3::parse(&decompressed)
         .map_err(|e| ExtractorError::MapParser(format!("CommonEvent.dat: {e}")))?;
@@ -847,14 +819,15 @@ fn extract_common_events_v3(bytes: &[u8]) -> Result<Vec<WolfSegment>, ExtractorE
 ///   - `BasicData/*.dat`      → `extract_database_segments` (pairs with `.project`)
 ///   - `BasicData/CommonEvent.dat` → `extract_common_events` (stub in F4-03)
 ///
-/// Encrypted `.wolf` archives are deferred to F4-05.  Individual file parse
-/// errors are logged as warnings and do not abort the overall extraction.
+/// Encrypted `.wolf` archives are deferred to F4-05.  A `.dat` parse error is
+/// logged as a warning; an unreadable map or `CommonEvent.dat` refuses the
+/// extraction ([`ExtractorError::UnreadableWolfFiles`]).
 pub fn extract_wolf_project(
     game_dir: &Path,
     version: &crate::engines::detector::WolfVersion,
 ) -> Result<Vec<WolfSegment>, ExtractorError> {
     let mut segments = Vec::new();
-    let mut unsupported: Vec<String> = Vec::new();
+    let mut unreadable: Vec<String> = Vec::new();
 
     // --- Maps ---
     // Err = no .mps files found (encrypted layout deferred to F4-05).
@@ -862,8 +835,7 @@ pub fn extract_wolf_project(
         for (name, bytes) in mps_files {
             match extract_map_segments(&name, &bytes, version) {
                 Ok(segs) => segments.extend(segs),
-                Err(ExtractorError::UnsupportedWolfFormat(file)) => unsupported.push(file),
-                Err(e) => eprintln!("warn: skipping {name}.mps — {e}"),
+                Err(e) => unreadable.push(format!("{name}.mps ({e})")),
             }
         }
     }
@@ -885,12 +857,11 @@ pub fn extract_wolf_project(
     if let Some(bytes) = load_common_event_bytes(game_dir) {
         match extract_common_events(&bytes, version) {
             Ok(segs) => segments.extend(segs),
-            Err(ExtractorError::UnsupportedWolfFormat(file)) => unsupported.push(file),
-            Err(e) => log::warn!("[h2s] CommonEvent extraction failed: {e}"),
+            Err(e) => unreadable.push(format!("CommonEvent.dat ({e})")),
         }
     }
 
-    reject_unsupported(unsupported)?;
+    reject_unreadable(unreadable)?;
     Ok(segments)
 }
 
@@ -931,48 +902,95 @@ mod tests {
         WolfVersion { major: 3, minor: 0 }
     }
 
+    /// Japanese texts the translatable filter keeps.
+    const MESSAGE: &str = "こんにちは、旅の人";
+    const CHOICES: [&str; 2] = ["はい、行きます", "いいえ、残ります"];
+
+    /// On-disk bytes of a synthetic map, in the container its `version` selects.
+    fn synthetic_map_bytes(version: u32, is_utf8: bool) -> Vec<u8> {
+        let map = v3_format::map::MapV3::synthetic_messages(version, is_utf8, &[MESSAGE], &CHOICES);
+        v3_format::compression::pack_map(map.dump().unwrap()).unwrap()
+    }
+
+    /// v2.x (Shift-JIS `0x64`) and v3.x `0x64` maps are stored in clear and read
+    /// with the same flat model as the LZ4 v3.5 maps (plan RW, RW-4).
     #[test]
-    fn test_v2_map_is_rejected_explicitly() {
-        // Wolf v2 maps are no longer read (wolfrpg-map-parser removed): the
-        // error must say so, never yield an empty or partial map.
-        let bytes = make_empty_mps();
-        match extract_map_segments("Map001", &bytes, &v2()) {
-            Err(ExtractorError::UnsupportedWolfFormat(file)) => assert_eq!(file, "Map001.mps"),
-            other => panic!("expected UnsupportedWolfFormat, got {other:?}"),
+    fn test_extract_map_segments_all_containers() {
+        for (version, is_utf8) in [(0x64, false), (0x64, true), (0x67, true)] {
+            let bytes = synthetic_map_bytes(version, is_utf8);
+            assert_eq!(
+                v3_format::compression::is_plain_map(&bytes),
+                version < 0x65,
+                "version {version:#x}"
+            );
+            let segs = extract_map_segments("Map001", &bytes, &v2()).unwrap();
+            let texts: Vec<&str> = segs.iter().map(|s| s.source_text.as_str()).collect();
+            assert_eq!(texts, [MESSAGE, CHOICES[0], CHOICES[1]]);
+            assert_eq!(segs[0].key, "MapData/Map001/events/0/pages/0/0");
+            assert_eq!(segs[2].key, "MapData/Map001/events/0/pages/0/1/choices/1");
         }
-        let message = ExtractorError::UnsupportedWolfFormat("Map001.mps".into()).to_string();
-        assert!(message.starts_with(WOLF_V2_UNSUPPORTED), "{message}");
     }
 
     #[test]
-    fn test_extract_all_wolf_refuses_a_v2_game() {
+    fn test_extract_all_wolf_reads_a_v2_game() {
+        let game = tempfile::tempdir().unwrap();
+        let map_dir = game.path().join("Data").join("MapData");
+        let basic = game.path().join("Data").join("BasicData");
+        std::fs::create_dir_all(&map_dir).unwrap();
+        std::fs::create_dir_all(&basic).unwrap();
+        std::fs::write(map_dir.join("Map001.mps"), synthetic_map_bytes(0x64, false)).unwrap();
+        let common_events =
+            v3_format::common_events::CommonEventsV3::synthetic_messages_v2(&[("Ev001", MESSAGE)]);
+        std::fs::write(basic.join("CommonEvent.dat"), common_events.dump().unwrap()).unwrap();
+
+        let entries = extract_all_wolf(game.path(), &v2()).unwrap();
+        let map = entries
+            .iter()
+            .find(|(file, _, _)| file == "Map001.mps")
+            .unwrap();
+        assert_eq!(map.1, "wolf_map");
+        assert_eq!(map.2.len(), 3);
+        let ce = entries
+            .iter()
+            .find(|(file, _, _)| file == "CommonEvent.dat")
+            .unwrap();
+        assert_eq!(ce.2[0].source_text, MESSAGE);
+    }
+
+    /// A map that cannot be read refuses the whole project (never opened
+    /// without its dialogue), with the dedicated marker.
+    #[test]
+    fn test_extract_all_wolf_refuses_unreadable_maps() {
         let game = tempfile::tempdir().unwrap();
         let map_dir = game.path().join("Data").join("MapData");
         std::fs::create_dir_all(&map_dir).unwrap();
+        // Signature of a map in clear, then a zero-length string: parse error.
         std::fs::write(map_dir.join("Map001.mps"), make_empty_mps()).unwrap();
         std::fs::write(map_dir.join("Map002.mps"), make_empty_mps()).unwrap();
 
         match extract_all_wolf(game.path(), &v2()) {
-            Err(ExtractorError::UnsupportedWolfFormat(files)) => {
+            Err(error @ ExtractorError::UnreadableWolfFiles(_)) => {
+                let message = error.to_string();
+                assert!(message.starts_with(WOLF_UNREADABLE_FILES), "{message}");
                 assert!(
-                    files.contains("Map001.mps") && files.contains("Map002.mps"),
-                    "{files}"
+                    message.contains("Map001.mps") && message.contains("Map002.mps"),
+                    "{message}"
                 );
             }
-            other => panic!("a v2 game must be refused, got {other:?}"),
+            other => panic!("unreadable maps must refuse the project, got {other:?}"),
         }
     }
 
     #[test]
-    fn test_reject_unsupported_lists_at_most_three_files() {
+    fn test_reject_unreadable_lists_at_most_three_files() {
         let files = (1..=5).map(|i| format!("Map00{i}.mps")).collect();
-        match reject_unsupported(files) {
-            Err(ExtractorError::UnsupportedWolfFormat(text)) => {
+        match reject_unreadable(files) {
+            Err(ExtractorError::UnreadableWolfFiles(text)) => {
                 assert_eq!(text, "Map001.mps, Map002.mps, Map003.mps and 2 more");
             }
             other => panic!("unexpected {other:?}"),
         }
-        assert!(reject_unsupported(Vec::new()).is_ok());
+        assert!(reject_unreadable(Vec::new()).is_ok());
     }
 
     // -----------------------------------------------------------------------
@@ -1137,18 +1155,23 @@ mod tests {
         let mut b = Vec::new();
         b.extend_from_slice(b"\x00\x57\x00\x00\x4F\x4C\x00\x46\x43\x00\x8F");
         b.extend_from_slice(&0u32.to_le_bytes()); // event_count = 0
+        b.push(0x89); // file terminator
         b
     }
 
     #[test]
-    fn test_v2_common_events_are_rejected_explicitly() {
-        let bytes = make_empty_common_event_dat();
-        match extract_common_events(&bytes, &v2()) {
-            Err(ExtractorError::UnsupportedWolfFormat(file)) => {
-                assert_eq!(file, "CommonEvent.dat");
-            }
-            other => panic!("expected UnsupportedWolfFormat, got {other:?}"),
-        }
+    fn test_extract_common_events_stored_in_clear() {
+        let common_events =
+            v3_format::common_events::CommonEventsV3::synthetic_messages_v2(&[("Ev001", MESSAGE)]);
+        let bytes = common_events.dump().unwrap();
+        assert!(v3_format::common_events::is_plain(&bytes));
+        let segs = extract_common_events(&bytes, &v2()).unwrap();
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].source_text, MESSAGE);
+        // An empty v2 file (no events) also reads, with nothing to translate.
+        assert!(extract_common_events(&make_empty_common_event_dat(), &v2())
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -1213,18 +1236,16 @@ mod tests {
             .join("test")
     }
 
-    /// Honoka (Wolf v2.225) must now be refused as a whole, with the dedicated
-    /// error, instead of opening without its maps and common events.
+    /// Honoka (Wolf v2.225): its v2 maps and common events are read again
+    /// (RW-4), no file is refused.
     #[test]
-    fn test_real_honoka_is_refused() {
+    fn test_real_honoka_v2_is_read() {
         let game_dir = test_dir().join("月咲流ホノカver1.03");
         if !game_dir.exists() {
             return;
         }
-        assert!(matches!(
-            extract_all_wolf(&game_dir, &v2()),
-            Err(ExtractorError::UnsupportedWolfFormat(_))
-        ));
+        let entries = extract_all_wolf(&game_dir, &v2()).unwrap();
+        assert!(entries.iter().any(|(_, kind, _)| kind == "wolf_map"));
     }
 
     #[test]
