@@ -1073,3 +1073,158 @@ async fn wolf_v2_export_can_be_repeated_over_its_own_output() {
         std::fs::write(&map_path, &exported).unwrap();
     }
 }
+
+/// DxLib name entry: `[u16 PackNum][u16 Parity][UPPER][original]`, both names
+/// NUL-padded to `PackNum * 4` bytes. Returns its offset in `table`.
+fn push_dx_name(table: &mut Vec<u8>, name: &str) -> u64 {
+    let offset = table.len() as u64;
+    let bytes = name.as_bytes();
+    let pack = bytes.len() / 4 + 1;
+    let parity = bytes
+        .iter()
+        .fold(0u16, |sum, &byte| sum.wrapping_add(u16::from(byte)));
+    table.extend_from_slice(&(pack as u16).to_le_bytes());
+    table.extend_from_slice(&parity.to_le_bytes());
+    for half in [bytes.to_ascii_uppercase(), bytes.to_vec()] {
+        let mut padded = half;
+        padded.resize(pack * 4, 0);
+        table.extend_from_slice(&padded);
+    }
+    offset
+}
+
+/// A `Data.wolf` (DXA v8) holding `MapData/Map001.mps`, built without any
+/// encryption: `DXA_FLAG_NO_KEY | DXA_FLAG_NO_HEAD_PRESS`, crypt version 0.
+fn keyless_data_wolf(map: &[u8]) -> Vec<u8> {
+    const HEAD: usize = 0x40;
+    const ENTRY: usize = 0x48;
+    let mut names = Vec::new();
+    let root_name = push_dx_name(&mut names, "");
+    let dir_name = push_dx_name(&mut names, "MapData");
+    let map_name = push_dx_name(&mut names, "Map001.mps");
+
+    // File table: root head, MapData head, Map001.mps.
+    let entry = |name: u64, attributes: u64, data: u64, size: u64, packed: u64| {
+        let mut e = vec![0u8; ENTRY];
+        e[0..8].copy_from_slice(&name.to_le_bytes());
+        e[8..16].copy_from_slice(&attributes.to_le_bytes());
+        e[0x28..0x30].copy_from_slice(&data.to_le_bytes());
+        e[0x30..0x38].copy_from_slice(&size.to_le_bytes());
+        e[0x38..0x40].copy_from_slice(&packed.to_le_bytes());
+        e[0x40..0x48].copy_from_slice(&u64::MAX.to_le_bytes()); // no Huffman
+        e
+    };
+    let mut files = entry(root_name, 0x10, 0, 0, u64::MAX);
+    files.extend(entry(dir_name, 0x10, 32, 0, u64::MAX));
+    files.extend(entry(map_name, 0x20, 0, map.len() as u64, u64::MAX));
+
+    // Directory table: root (1 child at 0x48), MapData (parent root, 1 child at 0x90).
+    let mut dirs = Vec::new();
+    for value in [
+        0u64,
+        u64::MAX,
+        1,
+        ENTRY as u64,
+        ENTRY as u64,
+        0,
+        1,
+        2 * ENTRY as u64,
+    ] {
+        dirs.extend_from_slice(&value.to_le_bytes());
+    }
+
+    let file_table = names.len() as u64;
+    let dir_table = file_table + files.len() as u64;
+    let mut toc = names;
+    toc.extend(files);
+    toc.extend(dirs);
+
+    let mut archive = Vec::new();
+    archive.extend_from_slice(b"DX");
+    archive.extend_from_slice(&8u16.to_le_bytes());
+    archive.extend_from_slice(&(toc.len() as u32).to_le_bytes());
+    archive.extend_from_slice(&(HEAD as u64).to_le_bytes());
+    archive.extend_from_slice(&((HEAD + map.len()) as u64).to_le_bytes());
+    archive.extend_from_slice(&file_table.to_le_bytes());
+    archive.extend_from_slice(&dir_table.to_le_bytes());
+    archive.extend_from_slice(&932u32.to_le_bytes());
+    archive.extend_from_slice(&(0x1u32 | 0x2).to_le_bytes()); // no key, TOC in clear
+    archive.resize(HEAD, 0);
+    archive.extend_from_slice(map);
+    archive.extend(toc);
+    archive
+}
+
+/// A Wolf game shipped as `Data.wolf` (plan RW, RW-5): the map is read from the
+/// archive (a stale loose copy is ignored, as the game ignores it) and the
+/// export delivers the archive rebuilt with the translation, not a loose file.
+#[tokio::test]
+async fn wolf_archive_game_is_exported_as_a_rebuilt_archive() {
+    use hoshi2star_lib::engines::wolf::decrypt::legacy_xor::extract_all;
+
+    const MESSAGE: &str = "こんにちは、旅の人";
+    const TRANSLATION: &str = "Hello, traveller";
+
+    let tmp = tempfile::tempdir().unwrap();
+    let game_root = tmp.path().join("game");
+    std::fs::create_dir_all(game_root.join("Data").join("MapData")).unwrap();
+    std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+    std::fs::write(
+        game_root.join("Data.wolf"),
+        keyless_data_wolf(&wolf_v2_map(MESSAGE)),
+    )
+    .unwrap();
+    std::fs::write(
+        game_root.join("Data").join("MapData").join("Map001.mps"),
+        wolf_v2_map("古い"),
+    )
+    .unwrap();
+
+    let db_file = tmp.path().join("h2s.db");
+    let app = mock_app(db_file.to_str().unwrap()).await;
+    let project = open_project(
+        game_root.to_str().unwrap().to_string(),
+        None,
+        None,
+        app.state(),
+    )
+    .await
+    .expect("a Wolf game shipped as Data.wolf opens")
+    .project;
+
+    let files = get_source_files(project.id.clone(), app.state())
+        .await
+        .expect("get_source_files");
+    let file = files.first().expect("one source file");
+    let page = get_segments(project.id.clone(), file.id.clone(), 0, 100_000, app.state())
+        .await
+        .expect("get_segments");
+    let segment = page
+        .items
+        .iter()
+        .find(|segment| segment.source_text == MESSAGE)
+        .expect("the message comes from the archive, not the stale loose copy");
+    update_segment(segment.id.clone(), TRANSLATION.to_string(), app.state())
+        .await
+        .expect("update_segment");
+
+    let zip_path = export_project(project.id.clone(), None, false, None, app.state())
+        .await
+        .expect("export");
+    let entries = zip_entries(Path::new(&zip_path));
+    assert_eq!(
+        entries.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["Data.wolf"],
+        "only the rebuilt archive is delivered"
+    );
+    let archive = extract_all(&entries["Data.wolf"]).expect("rebuilt archive reads back");
+    let map = archive
+        .files
+        .iter()
+        .find(|f| f.path == "/MapData/Map001.mps")
+        .expect("map in the rebuilt archive");
+    assert!(map
+        .data
+        .windows(TRANSLATION.len())
+        .any(|window| window == TRANSLATION.as_bytes()));
+}

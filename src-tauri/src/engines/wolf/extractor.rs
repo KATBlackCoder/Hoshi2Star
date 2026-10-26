@@ -1,7 +1,7 @@
 // Wolf RPG text extractor — F4-03/F4-05 implementation.
 
 use super::dat_parser;
-use super::decrypt::legacy_xor::{extract_all, WolfFile};
+use super::sources::{SourcesError, WolfSources};
 use super::v3_format;
 use crate::{engines::filter, llm::tokenizer::Engine as TokEngine};
 use regex::Regex;
@@ -27,6 +27,9 @@ pub enum ExtractorError {
     Io(#[from] std::io::Error),
     #[error("unsupported Wolf RPG version: {0}.{1}")]
     UnsupportedVersion(u8, u8),
+    /// An archive the game reads cannot be read (plan RW, RW-5).
+    #[error(transparent)]
+    Sources(#[from] SourcesError),
     /// Maps or common events that could not be read (unknown container or
     /// parse failure). The project is refused as a whole rather than opened
     /// without their dialogue. Starts with [`WOLF_UNREADABLE_FILES`] so the
@@ -160,254 +163,6 @@ pub fn extract_wolf_speaker_names(source_texts: &[String]) -> Vec<SpeakerName> {
 }
 
 // ---------------------------------------------------------------------------
-// File access helpers
-// ---------------------------------------------------------------------------
-
-/// Collect `.mps` files from `Data/MapData/` (unencrypted layout first),
-/// falling back to decrypting `.wolf` archives when the directory is absent or empty.
-///
-/// Returns `Vec<(stem_name, raw_bytes)>`. Returns `Ok(vec![])` if no files are found.
-pub(crate) fn load_mps_files(
-    game_dir: &Path,
-    _version: &crate::engines::detector::WolfVersion,
-) -> Result<Vec<(String, Vec<u8>)>, ExtractorError> {
-    // 1. Unencrypted layout: Data/MapData/*.mps (Option A — written by inject_all)
-    let map_dir = game_dir.join("Data").join("MapData");
-    if map_dir.exists() {
-        let mut result = Vec::new();
-        for entry in std::fs::read_dir(&map_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("mps") {
-                let name = path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-                let bytes = std::fs::read(&path)?;
-                result.push((name, bytes));
-            }
-        }
-        if !result.is_empty() {
-            return Ok(result);
-        }
-    }
-
-    // 2. Encrypted archives: Data/*.wolf and root Data.wolf
-    Ok(extract_files_from_archives(game_dir, "mps"))
-}
-
-// ---------------------------------------------------------------------------
-// Archive extraction helpers (F4-05)
-// ---------------------------------------------------------------------------
-
-/// Walk all `.wolf` archives in `Data/` (and root `Data.wolf`) and collect
-/// files whose extension matches `ext` (lowercase, no dot).
-/// Returns `Vec<(stem, bytes)>`.
-fn extract_files_from_archives(game_dir: &Path, ext: &str) -> Vec<(String, Vec<u8>)> {
-    let mut results = Vec::new();
-
-    let archive_paths = collect_wolf_archive_paths(game_dir);
-    for archive_path in archive_paths {
-        let Ok(data) = std::fs::read(&archive_path) else {
-            continue;
-        };
-        let Ok(archive) = extract_all(&data) else {
-            continue;
-        };
-        for file in archive.files {
-            let lower = file.name.to_lowercase();
-            // Strip optional directory prefix (e.g. "MapData/Map001.mps" → "Map001.mps")
-            let base = lower.rsplit('/').next().unwrap_or(&lower);
-            if base.ends_with(&format!(".{ext}")) {
-                let stem = Path::new(base)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-                results.push((stem, file.data));
-            }
-        }
-    }
-
-    results
-}
-
-/// Returns the filename of `file` if it should be considered a `BasicData`
-/// database/.project entry, or `None` if it should be skipped.
-///
-/// v8 archives carry full reconstructed paths (see
-/// [`super::decrypt::legacy_xor::WolfFile::path`]) — only files directly
-/// under a top-level `BasicData/` directory are accepted. Some games bundle
-/// duplicate copies of the database files inside nested "sample data" folders
-/// (e.g. a bonus "complete initial state" save under `データ集/`), which
-/// would otherwise collide by stem and shadow the real files.
-///
-/// v5 archives have no path reconstruction and v6 paths are only rebuilt since
-/// RW-1, so all v5/v6 files are accepted for now (revisited in RW-5 against
-/// real v2 archives).
-fn basic_data_entry_name(file: &WolfFile, version: u8) -> Option<&str> {
-    if version != 8 {
-        return Some(&file.name);
-    }
-    let (dir, base) = file.path.trim_start_matches('/').split_once('/')?;
-    if dir.eq_ignore_ascii_case("BasicData") && !base.contains('/') {
-        Some(base)
-    } else {
-        None
-    }
-}
-
-/// Walk all `.wolf` archives and pair `.project` + `.dat` files by stem.
-/// Returns `Vec<(stem, project_bytes, dat_bytes)>`.
-#[allow(clippy::type_complexity)]
-fn extract_dat_pairs_from_archives(game_dir: &Path) -> Vec<(String, Vec<u8>, Vec<u8>)> {
-    let mut project_map: HashMap<String, Vec<u8>> = HashMap::new();
-    let mut dat_map: HashMap<String, Vec<u8>> = HashMap::new();
-
-    let archive_paths = collect_wolf_archive_paths(game_dir);
-    for archive_path in archive_paths {
-        let Ok(data) = std::fs::read(&archive_path) else {
-            continue;
-        };
-        let Ok(archive) = extract_all(&data) else {
-            continue;
-        };
-        let version = archive.version;
-        for file in archive.files {
-            let Some(base) = basic_data_entry_name(&file, version).map(str::to_lowercase) else {
-                continue;
-            };
-            let path = Path::new(&base);
-            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            let stem = stem.to_string();
-            if stem.eq_ignore_ascii_case("SysDataBaseBasic") {
-                continue;
-            }
-            match path.extension().and_then(|e| e.to_str()) {
-                Some("project") => {
-                    project_map.insert(stem, file.data);
-                }
-                Some("dat") => {
-                    dat_map.insert(stem, file.data);
-                }
-                _ => {}
-            }
-        }
-    }
-
-    project_map
-        .into_iter()
-        .filter_map(|(stem, project_bytes)| {
-            dat_map
-                .remove(&stem)
-                .map(|dat_bytes| (stem, project_bytes, dat_bytes))
-        })
-        .collect()
-}
-
-/// Collect paths of all `.wolf` archives: `Data/*.wolf` + root `Data.wolf`.
-fn collect_wolf_archive_paths(game_dir: &Path) -> Vec<std::path::PathBuf> {
-    let mut paths = Vec::new();
-
-    // Multi-archive layout: Data/*.wolf
-    let data_dir = game_dir.join("Data");
-    if let Ok(entries) = std::fs::read_dir(&data_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("wolf") {
-                paths.push(path);
-            }
-        }
-    }
-
-    // Single monolithic archive at root: Data.wolf
-    let root_wolf = game_dir.join("Data.wolf");
-    if root_wolf.exists() {
-        paths.push(root_wolf);
-    }
-
-    paths
-}
-
-/// Load raw bytes for a single `.mps` file by stem.
-///
-/// Tries `Data/MapData/{stem}.mps` first, then falls back to decrypting archives.
-pub(crate) fn load_mps_for_stem(game_dir: &Path, stem: &str) -> Option<Vec<u8>> {
-    let unencrypted = game_dir
-        .join("Data")
-        .join("MapData")
-        .join(format!("{stem}.mps"));
-    if unencrypted.exists() {
-        return std::fs::read(&unencrypted).ok();
-    }
-    let target = format!("{}.mps", stem.to_lowercase());
-    for ap in collect_wolf_archive_paths(game_dir) {
-        let Ok(data) = std::fs::read(&ap) else {
-            continue;
-        };
-        let Ok(archive) = extract_all(&data) else {
-            continue;
-        };
-        for file in archive.files {
-            let lower = file.name.to_lowercase();
-            let base = lower.rsplit('/').next().unwrap_or(&lower);
-            if base == target {
-                return Some(file.data);
-            }
-        }
-    }
-    None
-}
-
-/// Load `.project` + `.dat` bytes for a single database stem.
-///
-/// Tries `Data/BasicData/{stem}.project` + `.dat` first, then archives.
-pub(crate) fn load_dat_for_stem(game_dir: &Path, stem: &str) -> Option<(Vec<u8>, Vec<u8>)> {
-    let proj = game_dir
-        .join("Data")
-        .join("BasicData")
-        .join(format!("{stem}.project"));
-    let dat = game_dir
-        .join("Data")
-        .join("BasicData")
-        .join(format!("{stem}.dat"));
-    if proj.exists() && dat.exists() {
-        if let (Ok(pb), Ok(db)) = (std::fs::read(&proj), std::fs::read(&dat)) {
-            return Some((pb, db));
-        }
-    }
-    // Fallback: scan archives for both files
-    let proj_target = format!("{}.project", stem.to_lowercase());
-    let dat_target = format!("{}.dat", stem.to_lowercase());
-    let mut project_bytes: Option<Vec<u8>> = None;
-    let mut dat_bytes: Option<Vec<u8>> = None;
-    for ap in collect_wolf_archive_paths(game_dir) {
-        let Ok(data) = std::fs::read(&ap) else {
-            continue;
-        };
-        let Ok(archive) = extract_all(&data) else {
-            continue;
-        };
-        for file in archive.files {
-            let lower = file.name.to_lowercase();
-            let base = lower.rsplit('/').next().unwrap_or(&lower);
-            if base == proj_target {
-                project_bytes = Some(file.data);
-            } else if base == dat_target {
-                dat_bytes = Some(file.data);
-            }
-        }
-        if project_bytes.is_some() && dat_bytes.is_some() {
-            break;
-        }
-    }
-    project_bytes.zip(dat_bytes)
-}
-
-// ---------------------------------------------------------------------------
 // Project-level extractor with file grouping (F4-05)
 // ---------------------------------------------------------------------------
 
@@ -425,38 +180,36 @@ pub fn extract_all_wolf(
     // safer than opening it without their dialogue.
     let mut unreadable: Vec<String> = Vec::new();
 
+    // Archives first, then loose files, as the game reads them.
+    let sources = WolfSources::load(game_dir)?;
+
     // Maps
-    if let Ok(mps_files) = load_mps_files(game_dir, version) {
-        for (name, bytes) in mps_files {
-            match extract_map_segments(&name, &bytes, version) {
-                Ok(segs) if !segs.is_empty() => {
-                    entries.push((format!("{name}.mps"), "wolf_map".to_string(), segs));
-                }
-                Ok(_) => {}
-                Err(e) => unreadable.push(format!("{name}.mps ({e})")),
+    for map in sources.maps() {
+        let name = map.stem();
+        match extract_map_segments(&name, &map.bytes, version) {
+            Ok(segs) if !segs.is_empty() => {
+                entries.push((format!("{name}.mps"), "wolf_map".to_string(), segs));
             }
+            Ok(_) => {}
+            Err(e) => unreadable.push(format!("{name}.mps ({e})")),
         }
     }
 
     // Databases
-    match load_dat_files(game_dir) {
-        Ok(dat_files) => {
-            for (name, project_bytes, dat_bytes) in dat_files {
-                match extract_database_segments(&name, &project_bytes, &dat_bytes, version) {
-                    Ok(segs) if !segs.is_empty() => {
-                        entries.push((format!("{name}.dat"), "wolf_database".to_string(), segs));
-                    }
-                    Ok(_) => {}
-                    Err(e) => eprintln!("warn: skipping {name}.dat — {e}"),
-                }
+    for (project, dat) in sources.databases() {
+        let name = dat.stem();
+        match extract_database_segments(&name, &project.bytes, &dat.bytes, version) {
+            Ok(segs) if !segs.is_empty() => {
+                entries.push((format!("{name}.dat"), "wolf_database".to_string(), segs));
             }
+            Ok(_) => {}
+            Err(e) => eprintln!("warn: skipping {name}.dat — {e}"),
         }
-        Err(e) => eprintln!("warn: could not load .dat files — {e}"),
     }
 
     // Common Events
-    if let Some(bytes) = load_common_event_bytes(game_dir) {
-        match extract_common_events(&bytes, version) {
+    if let Some(common_events) = sources.common_events() {
+        match extract_common_events(&common_events.bytes, version) {
             Ok(segs) if !segs.is_empty() => {
                 entries.push((
                     "CommonEvent.dat".to_string(),
@@ -602,50 +355,6 @@ fn is_known_translatable_field(name: &str) -> bool {
 // .dat Database extraction
 // ---------------------------------------------------------------------------
 
-/// Collect `.dat` / `.project` pairs from `Data/BasicData/` (unencrypted layout first),
-/// falling back to decrypting `.wolf` archives when the directory is absent or empty.
-///
-/// Returns `Vec<(stem_name, project_bytes, dat_bytes)>`.
-#[allow(clippy::type_complexity)]
-pub(crate) fn load_dat_files(
-    game_dir: &Path,
-) -> Result<Vec<(String, Vec<u8>, Vec<u8>)>, ExtractorError> {
-    let basic_data_dir = game_dir.join("Data").join("BasicData");
-
-    if basic_data_dir.exists() {
-        let mut result = Vec::new();
-        for entry in std::fs::read_dir(&basic_data_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("project") {
-                continue;
-            }
-            let stem = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_string();
-            // WolfTL skips SysDataBaseBasic — it only contains engine internals.
-            if stem == "SysDataBaseBasic" {
-                continue;
-            }
-            let dat_path = path.with_extension("dat");
-            if !dat_path.exists() {
-                continue;
-            }
-            let project_bytes = std::fs::read(&path)?;
-            let dat_bytes = std::fs::read(&dat_path)?;
-            result.push((stem, project_bytes, dat_bytes));
-        }
-        if !result.is_empty() {
-            return Ok(result);
-        }
-    }
-
-    // 2. Encrypted archives: extract .project + .dat pairs by stem
-    Ok(extract_dat_pairs_from_archives(game_dir))
-}
-
 /// Extract translatable string segments from a Wolf RPG Database file pair.
 ///
 /// Only fields that are of String type (indexInfo ≥ 0x07D0) are considered.
@@ -717,35 +426,6 @@ pub fn extract_database_segments(
 // CommonEvents extraction
 // ---------------------------------------------------------------------------
 
-/// Load raw bytes for `CommonEvent.dat`.
-///
-/// Tries `Data/BasicData/CommonEvent.dat` first, then scans `.wolf` archives.
-pub(crate) fn load_common_event_bytes(game_dir: &Path) -> Option<Vec<u8>> {
-    let unencrypted = game_dir
-        .join("Data")
-        .join("BasicData")
-        .join("CommonEvent.dat");
-    if unencrypted.exists() {
-        return std::fs::read(&unencrypted).ok();
-    }
-    for ap in collect_wolf_archive_paths(game_dir) {
-        let Ok(data) = std::fs::read(&ap) else {
-            continue;
-        };
-        let Ok(archive) = extract_all(&data) else {
-            continue;
-        };
-        for file in archive.files {
-            let lower = file.name.to_lowercase();
-            let base = lower.rsplit('/').next().unwrap_or(&lower);
-            if base == "commonevent.dat" {
-                return Some(file.data);
-            }
-        }
-    }
-    None
-}
-
 /// Extract translatable segments from `CommonEvent.dat` bytes, via
 /// [`v3_format::common_events`]: v3.5 LZ4 files and files stored in clear
 /// (v2.x) share the same flat model. Each event's commands are a flat list
@@ -814,14 +494,14 @@ pub fn extract_common_events(
 
 /// Extract ALL translatable segments from a Wolf RPG game directory.
 ///
-/// Scans `game_dir/Data/` for unencrypted files:
+/// Reads the files the game reads ([`WolfSources`]: archives first, then
+/// loose `Data/` files):
 ///   - `MapData/*.mps`        → `extract_map_segments`
 ///   - `BasicData/*.dat`      → `extract_database_segments` (pairs with `.project`)
-///   - `BasicData/CommonEvent.dat` → `extract_common_events` (stub in F4-03)
+///   - `BasicData/CommonEvent.dat` → `extract_common_events`
 ///
-/// Encrypted `.wolf` archives are deferred to F4-05.  A `.dat` parse error is
-/// logged as a warning; an unreadable map or `CommonEvent.dat` refuses the
-/// extraction ([`ExtractorError::UnreadableWolfFiles`]).
+/// A `.dat` parse error is logged as a warning; an unreadable archive, map or
+/// `CommonEvent.dat` refuses the extraction.
 pub fn extract_wolf_project(
     game_dir: &Path,
     version: &crate::engines::detector::WolfVersion,
@@ -829,33 +509,29 @@ pub fn extract_wolf_project(
     let mut segments = Vec::new();
     let mut unreadable: Vec<String> = Vec::new();
 
+    let sources = WolfSources::load(game_dir)?;
+
     // --- Maps ---
-    // Err = no .mps files found (encrypted layout deferred to F4-05).
-    if let Ok(mps_files) = load_mps_files(game_dir, version) {
-        for (name, bytes) in mps_files {
-            match extract_map_segments(&name, &bytes, version) {
-                Ok(segs) => segments.extend(segs),
-                Err(e) => unreadable.push(format!("{name}.mps ({e})")),
-            }
+    for map in sources.maps() {
+        let name = map.stem();
+        match extract_map_segments(&name, &map.bytes, version) {
+            Ok(segs) => segments.extend(segs),
+            Err(e) => unreadable.push(format!("{name}.mps ({e})")),
         }
     }
 
     // --- Databases ---
-    match load_dat_files(game_dir) {
-        Ok(dat_files) => {
-            for (name, project_bytes, dat_bytes) in dat_files {
-                match extract_database_segments(&name, &project_bytes, &dat_bytes, version) {
-                    Ok(segs) => segments.extend(segs),
-                    Err(e) => eprintln!("warn: skipping {name}.dat — {e}"),
-                }
-            }
+    for (project, dat) in sources.databases() {
+        let name = dat.stem();
+        match extract_database_segments(&name, &project.bytes, &dat.bytes, version) {
+            Ok(segs) => segments.extend(segs),
+            Err(e) => eprintln!("warn: skipping {name}.dat — {e}"),
         }
-        Err(e) => eprintln!("warn: could not load .dat files — {e}"),
     }
 
     // --- Common Events ---
-    if let Some(bytes) = load_common_event_bytes(game_dir) {
-        match extract_common_events(&bytes, version) {
+    if let Some(common_events) = sources.common_events() {
+        match extract_common_events(&common_events.bytes, version) {
             Ok(segs) => segments.extend(segs),
             Err(e) => unreadable.push(format!("CommonEvent.dat ({e})")),
         }
@@ -1354,19 +1030,20 @@ mod tests {
         if !game_dir.exists() {
             return;
         }
-        let pairs = extract_dat_pairs_from_archives(&game_dir);
-        let by_stem: HashMap<&str, &[u8]> = pairs
-            .iter()
-            .map(|(stem, _project, dat)| (stem.as_str(), dat.as_slice()))
+        let sources = WolfSources::load(&game_dir).unwrap();
+        let by_stem: HashMap<String, usize> = sources
+            .databases()
+            .into_iter()
+            .map(|(_project, dat)| (dat.stem(), dat.bytes.len()))
             .collect();
 
         assert_eq!(
-            by_stem.get("database").map(|d| d.len()),
+            by_stem.get("database").copied(),
             Some(85738),
             "must pick the real BasicData/DataBase.dat, not the 257-byte sample copy"
         );
         assert_eq!(
-            by_stem.get("cdatabase").map(|d| d.len()),
+            by_stem.get("cdatabase").copied(),
             Some(90631),
             "must pick the real BasicData/CDataBase.dat, not the 257-byte sample copy"
         );

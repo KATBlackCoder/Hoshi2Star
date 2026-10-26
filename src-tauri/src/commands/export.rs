@@ -998,9 +998,17 @@ async fn collect_wolf_zip_entries(
 fn write_zip(path: &Path, entries: Vec<(String, Vec<u8>)>) -> Result<(), String> {
     let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipWriter::new(file);
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
     for (rel_path, bytes) in entries {
+        // A rebuilt Wolf archive is already compressed and can weigh gigabytes:
+        // stored as is (plan RW, decision D1).
+        let method = if rel_path.to_ascii_lowercase().ends_with(".wolf") {
+            zip::CompressionMethod::Stored
+        } else {
+            zip::CompressionMethod::Deflated
+        };
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(method)
+            .large_file(bytes.len() as u64 >= u64::from(u32::MAX));
         zip.start_file(&rel_path, options)
             .map_err(|e| e.to_string())?;
         zip.write_all(&bytes).map_err(|e| e.to_string())?;

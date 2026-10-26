@@ -25,8 +25,8 @@ pub enum DecryptorError {
     /// This archive likely uses WolfX/v3.5+ ChaCha20 encryption, not yet supported.
     #[error(
         "archive may use WolfX encryption (v3.5+) which is not supported. \
-         Use UberWolf to decrypt your game files first, \
-         then open the Data/ folder directly (planned support: v0.5.0)"
+         Use UberWolf to decrypt your game files first, then move the .wolf \
+         archives out of the game folder and open it again"
     )]
     PossibleWolfX,
     /// DXA v8 archive packed by WOLF RPG Editor 3.31+ ("new crypt": encrypted
@@ -34,8 +34,8 @@ pub enum DecryptorError {
     /// of `DARC_HEAD::Flags`. Not read natively (plan RW, decision D2).
     #[error(
         "this archive uses the newer Wolf RPG encryption (crypt version {0}, editor 3.31+), \
-         which Hoshi2Star does not read. Decrypt the game with UberWolf first, \
-         then open the resulting Data/ folder"
+         which Hoshi2Star does not read. Decrypt the game with UberWolf first, then \
+         move the .wolf archives out of the game folder and open it again"
     )]
     UnsupportedWolfCrypt(u16),
     /// Readable archive whose layout the archive writer does not rebuild.
