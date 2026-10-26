@@ -75,6 +75,25 @@ Toutes avec `CARGO_TARGET_DIR=/home/user/.cache/h2s-target DOCS_RS=1` (dictionna
 - `pnpm i --frozen-lockfile` OK ; `pnpm typecheck` OK ; `pnpm test` : 137 réussis (36 fichiers) ; `pnpm lint` : 0 erreur, 10 avertissements (les mêmes qu'avant).
 - Non exécuté : gate avec le vrai dictionnaire ; faux positifs sur les 3 jeux réels de la session 2 (36 352 pointeurs, `test/` absent du cloud) ; essai en jeu (E5, demande l'accord de l'utilisateur).
 
+## Seconde relecture (sous-agent indépendant, lecture du diff + essai du regex sous node)
+
+Verdict : « principe bon, à corriger avant fusion » (constats 1 et 2 importants).
+- 1, important, **confirmé et corrigé** : la règle de rôle ne voit pas un décalage vers une commande de même code.
+  - Test rouge ajouté : `mv_export_refuses_after_a_line_without_japanese_is_inserted`. Un `401 "♪～"` inséré avant la seule réplique traduite : sans correctif, l'export passe, `♪～` devient `EN1` et la réplique japonaise est décalée.
+  - Correctif : `reconstruct_json` reçoit la copie de référence précédente quand elle existe. Une valeur d'une liste de commandes n'est remise à la source que si la liste a gardé les mêmes commandes : suite des `code`, et nom du plugin et de la commande pour un 357 (`same_page`).
+  - Test unitaire : `shifted_pointer_on_a_same_code_command_is_drift_after_a_previous_capture`.
+  - Limite restante : à la première capture d'un projet ancien (pas de copie précédente), seul le rôle est contrôlé.
+- 2, important, **non corrigé sur le fond, à trancher par l'utilisateur** : refus quand le dossier contient un ancien export que la reconstruction ne reconnaît pas. Cas : checksum inconnu ; cible CJK modifiée depuis ; ou texte mis en page MZ avec une cible CJK.
+  - Le refus suit E1. L'accepter reviendrait à masquer aussi un vrai changement japonais → japonais fait en place par une mise à jour.
+  - Fait : le message dit maintenant « fichiers du jeu changés (mise à jour, ou fichiers remplacés, par exemple par un ancien export) ». La remise des fichiers d'origine débloque.
+- 3, mineur, corrigé : la doc de `split_fitted` avait été déplacée par erreur.
+- 4, mineur, corrigé : un pointeur contenant une espace (argument de plugin) n'était pas reconnu par `parseSourceChange`. Test Vitest ajouté.
+- 5, mineur, corrigé : après un `SourceChanged`, `keke_resolution_issues` n'est plus lancé, pour ne pas ajouter de lignes hors sujet.
+- Gate après corrections (`DOCS_RS=1`) :
+  - fmt et clippy `--all-targets -D warnings` OK ;
+  - `cargo test --no-fail-fast` : 703 OK, 2 échecs lindera attendus, 12 ignorés ;
+  - typecheck OK, Vitest 138 (36 fichiers), lint 0 erreur (10 avertissements).
+
 ## Tâches ROADMAP cochées
 
 - Aucune (lot R2 suivi dans `tasks/todo.md`).

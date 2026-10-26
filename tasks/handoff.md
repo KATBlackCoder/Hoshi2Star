@@ -15,7 +15,10 @@ pas de PR (non demandée). Arrêt demandé avant R2b, pour validation.
   la garde seule (sans E2) laissait passer P-2 en MV.
 - **Bloqué** : `lindera.dev` refusé (403) par le réseau de l'environnement cloud ⇒ `lindera-ipadic` ne
   compile pas. Vérifs faites avec `DOCS_RS=1` (dictionnaire factice) : fmt, clippy `--all-targets -D warnings`,
-  701 tests Rust OK / 2 échecs lindera attendus (identiques sur `e8a97a9`) / 12 ignorés ; Vitest 137 ; lint 0 erreur.
+  avant relecture 701 tests Rust OK / 2 échecs lindera attendus (identiques sur `e8a97a9`) / 12 ignorés ; Vitest 137 ; lint 0 erreur.
+- Relecture indépendante faite. Corrigés : décalage vers une commande de même code (`same_page`) et 3 mineurs.
+  **Décision attendue** : refus sur un ancien export non reconnu (cible CJK ou mise en page), conservé selon E1.
+  Gate après corrections : 703 Rust OK / 2 échecs lindera / 12 ignorés ; Vitest 138.
 - Non vérifié : gate avec le vrai dictionnaire ; faux positifs sur les 3 jeux réels (session 2) ; essai en jeu.
 - **Prochaine action exacte** :
   1. Autoriser `lindera.dev` (accès réseau de l'environnement cloud), relancer le gate complet sans `DOCS_RS`

@@ -259,6 +259,9 @@ de la session 3 (copie de référence qui remet du japonais sans dérive). Preuv
     le dialogue dit pour l'instant de remettre la version du jeu utilisée à l'extraction.
   - Vérifié avec un dictionnaire lindera factice (`DOCS_RS=1`, `lindera.dev` refusé par le réseau cloud) :
     gate complet **à refaire** avec le vrai dictionnaire. Faux positifs sur jeux réels : non vérifiés.
+  - Relecture indépendante : décalage vers une commande de même code (`♪～`) corrigé par comparaison de la
+    page avec la copie précédente (`same_page`) ; refus sur un ancien export non reconnu (cible CJK, mise en
+    page) **conservé** (E1), message élargi — décision utilisateur attendue.
 - [ ] 7. `update_snapshot` : la dérive est rendue à l'appelant (pas seulement dans le journal), pour que
       l'export puisse dire « le jeu a changé » même avant le contrôle de l'étape 2.
 
