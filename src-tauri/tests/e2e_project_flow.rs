@@ -982,7 +982,8 @@ async fn wolf_v2_game_opens_with_its_dialogue() {
         app.state(),
     )
     .await
-    .expect("a Wolf 2.x game opens");
+    .expect("a Wolf 2.x game opens")
+    .project;
     assert_eq!(project.engine, "wolf");
 
     let files = get_source_files(project.id.clone(), app.state())
