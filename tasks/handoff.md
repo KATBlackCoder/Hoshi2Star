@@ -14,7 +14,8 @@
 - **Poussé** le 2026-10-26 (`origin/feat/rw-wolf` @ `cc7efc7`, accord de l'utilisateur) ; **gate cloud RW-1 vert** sur `cc7efc7` : fmt OK, typecheck OK, Vitest 142/142, clippy `--all-targets -D warnings` 0 avertissement, `cargo test --locked` 724 OK / 0 échec / 12 ignorés (717 sur `main`, +7 RW-1), lint 0 erreur (10 avertissements frontend connus). Lecture de vraies archives non couverte (tests `diag_*` ignorés).
 - Environnement cloud (hors périmètre, à traiter à part) : le hook `PreToolUse` bloque toute commande dont le texte contient la sous-chaîne interdite de npm, y compris la commande d'installation de pnpm et même une note qui la cite (motif trop large ; contourné par `pnpm i`) ; le conteneur cloud n'a pas les bibliothèques GTK/WebKit de Tauri (installées à la main via apt pour clippy) : à mettre dans le script de setup cloud.
 - **RW-2 écrit** (`engines/detector.rs`, `legacy_xor.rs`) : version lue dans le magic de la base `BasicData` (dossier libre, puis archive qui la contient, seules les entrées base déchiffrées via `extract_matching`), puis version de chiffrement v8 ; la page de codes n'est plus utilisée. **Non compilé** : gate cloud à faire.
-- **Prochaine action exacte** : gate cloud RW-2 (push à demander), puis RW-4, RW-3, RW-6, RW-5, RW-7, RW-8, RW-9. Pas de build local ; gate en cloud après push autorisé.
+- RW-2 poussé (`151e9f2`, accord de l'utilisateur) ; gate cloud RW-2 demandé, résultat à reporter ici (attendu : 727 tests Rust).
+- **Prochaine action exacte** : reporter le gate RW-2, puis RW-4, RW-3, RW-6, RW-5, RW-7, RW-8, RW-9. Pas de build local ; gate en cloud après push autorisé.
 
 ## En cours (2026-10-26, Claude) — R2b
 
