@@ -1311,16 +1311,32 @@ fn decompress_v8_toc(
     Ok(toc_raw)
 }
 
+/// A decrypted TOC is plausible when its root `DARC_DIRECTORY` record (first
+/// record of the directory table) has no parent and a sane child count — the
+/// check of the `dxa8.py` prototype. An uncompressed TOC (`no_head_press`, e.g. an
+/// archive rebuilt by Hoshi2Star) "decrypts" with any key without error, so this
+/// is what rejects a wrong key: 8 bytes cover every position of a 7-byte key.
+fn is_plausible_toc(toc: &[u8], dir_table: usize) -> bool {
+    let Some(root) = dir_table
+        .checked_add(32)
+        .and_then(|end| toc.get(dir_table..end))
+    else {
+        return false;
+    };
+    let parent = u64::from_le_bytes(root[8..16].try_into().unwrap());
+    let child_count = u64::from_le_bytes(root[16..24].try_into().unwrap());
+    parent == u64::MAX && child_count < 100_000
+}
+
 /// Try each known v8 key string — the one registered for `crypt_version` first —
-/// and return `(global_key, key_string)` for the first that successfully
-/// decompresses the TOC to at least `head_size` bytes.
-///
-/// With an uncompressed TOC (`no_head_press`, e.g. an archive rebuilt by Hoshi2Star)
-/// every key "succeeds", so the crypt-version match is what selects the right one.
+/// and return `(global_key, key_string)` for the first that decompresses the TOC
+/// to at least `head_size` bytes AND yields a plausible root directory
+/// ([`is_plausible_toc`]); the crypt version only orders the attempts.
 fn find_v8_key(
     data: &[u8],
     toc_offset: usize,
     head_size: usize,
+    dir_table: usize,
     has_key: bool,
     no_head_press: bool,
     crypt_version: u16,
@@ -1336,16 +1352,15 @@ fn find_v8_key(
         .filter(|&&(_, version, _)| version != crypt_version);
     for &(_, _, key_str) in preferred.chain(others) {
         let global_key = key_create_7(key_str);
-        if decompress_v8_toc(
+        let toc = decompress_v8_toc(
             data,
             toc_offset,
             head_size,
             has_key,
             no_head_press,
             &global_key,
-        )
-        .is_ok()
-        {
+        );
+        if toc.is_ok_and(|toc| is_plausible_toc(&toc, dir_table)) {
             return Ok((global_key, key_str));
         }
     }
@@ -1529,6 +1544,7 @@ fn extract_all_v8(
         data,
         toc_offset,
         head_size,
+        dir_table,
         has_key,
         no_head_press,
         crypt_version,
@@ -1845,6 +1861,7 @@ fn read_layout_v8(data: &[u8]) -> Result<DxaLayout, DecryptorError> {
         data,
         toc_start,
         head_size,
+        dir_table as usize,
         has_key,
         no_head_press,
         crypt_version,
@@ -2742,14 +2759,29 @@ mod tests {
     }
 
     #[test]
-    fn test_find_v8_key_prefers_the_crypt_version_key() {
-        // Uncompressed TOC: every key "decompresses", so the crypt version decides.
-        let archive = make_v8_dx_archive(v8_key_string("v3.14"), 314, &[]);
-        let toc_offset = u64::from_le_bytes(archive[16..24].try_into().unwrap()) as usize;
-        let (_, key_str) = find_v8_key(&archive, toc_offset, 0, true, true, 314).unwrap();
-        assert_eq!(key_str, v8_key_string("v3.14"));
-        let (_, key_str) = find_v8_key(&archive, toc_offset, 0, true, true, 0).unwrap();
-        assert_eq!(key_str, v8_key_string("v2.225"));
+    fn test_find_v8_key_rejects_an_implausible_toc() {
+        // Uncompressed TOC: every key "decompresses"; only the root-directory check
+        // tells the real key, whatever crypt version the header claims.
+        for (key_name, claimed_crypt) in [("v3.14", 314), ("v3.14", 0), ("v2.225", 314)] {
+            let archive = make_v8_dx_archive(v8_key_string(key_name), claimed_crypt, &[]);
+            let toc_offset = u64::from_le_bytes(archive[16..24].try_into().unwrap()) as usize;
+            let dir_table = u64::from_le_bytes(archive[32..40].try_into().unwrap()) as usize;
+            let (_, key_str) = find_v8_key(
+                &archive,
+                toc_offset,
+                0,
+                dir_table,
+                true,
+                true,
+                claimed_crypt,
+            )
+            .unwrap();
+            assert_eq!(
+                key_str,
+                v8_key_string(key_name),
+                "{key_name} / {claimed_crypt}"
+            );
+        }
     }
 
     #[test]

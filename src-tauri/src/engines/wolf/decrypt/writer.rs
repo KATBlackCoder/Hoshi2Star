@@ -386,6 +386,19 @@ mod tests {
         assert_eq!(file(&reread, "/Game.dat"), GAME);
     }
 
+    /// The header's crypt version only orders the key attempts: an archive
+    /// encrypted with the "v3.14" key but labelled crypt 0 must still read back
+    /// once its TOC is rewritten uncompressed.
+    #[test]
+    fn test_v8_rebuild_with_mismatched_crypt_version_reads_back() {
+        let archive = make_v8_dx_archive(v8_key_string("v3.14"), 0, &v8_files());
+        let translated: &[u8] = b"translated title map";
+        let (rebuilt, _) = rebuild(&archive, &[("/MapData/TitleMap.mps", translated)]);
+        let reread = extract_all(&rebuilt).unwrap();
+        assert_eq!(file(&reread, "/MapData/TitleMap.mps"), translated);
+        assert_eq!(file(&reread, "/Game.dat"), GAME);
+    }
+
     #[test]
     fn test_unknown_path_is_refused_and_nothing_written() {
         let archive = make_v6_dx_archive(&v2_20_key(), &v6_files(), 932, true).bytes;
@@ -412,8 +425,9 @@ mod tests {
     }
 
     /// Real-archive check (plan RW, decision D5): `H2S_WOLF_ARCHIVES` lists
-    /// `.wolf` files separated by `:` (never in Git). Needs about three times
-    /// the archive size in memory. Run:
+    /// `.wolf` files separated by `:` (never in Git). Up to four copies are alive
+    /// at once (archive, decoded files, rebuilt archive, re-read files): about
+    /// four to five times the archive size in memory — start with a small one. Run:
     /// `H2S_WOLF_ARCHIVES=… cargo test -j 2 -- --ignored wolf_real`.
     #[test]
     #[ignore = "needs H2S_WOLF_ARCHIVES (real game archives)"]
