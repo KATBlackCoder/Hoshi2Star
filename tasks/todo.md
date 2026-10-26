@@ -21,11 +21,11 @@ Détail, preuves et critères : `docs/audit/2026-10-analyse-complete.md`, « Lot
 Un plan détaillé par lot avant tout code. Ordre conseillé : R1, R2, R3, R4, R5, puis R6 à R10.
 Les cases sportsfan30 (A–D) ci-dessous restent la liste détaillée de R4, R8, R9, R10.
 
-- [ ] **R1 — Panne du fournisseur : arrêt propre et une seule notification** (majeur, priorité 1, M) — **plan détaillé ci-dessous** :
+- [x] **R1 — Panne du fournisseur : arrêt propre et une seule notification** (majeur, priorité 1, M) — fait, fusionné le 2026-10-25 (PR #10, `af0c08e`) ; plan ci-dessous :
       S-L2 / audit B, P-6, S-L4, demande utilisateur (une seule notification) ; ne jamais écraser
       une cible non vide sur échec technique (retraduction par sélection, `translate.rs:34-41`). `split.rs:155-161`,
       `pipeline.rs:315`, `:577-593`, `stores/llm.ts:224-230`, `translate.rs:241`.
-- [ ] **R2 — Export sûr après une mise à jour du jeu** (bloquant, M–L) : S-X1 / audit F, P-2 ; inclut
+- [ ] **R2 — Export sûr après une mise à jour du jeu** (bloquant, M–L) — **fait (R2a, E2, R2b), gate cloud vert, PR ouverte ; étape 7 reportée** : S-X1 / audit F, P-2 ; inclut
       la reconstruction du snapshot (`engines/mv_mz/originals.rs:320-345`).
 - [ ] **R3 — Dépendances** (majeur, S) : rustls / webpki (S-D2), zip (S-D1), `deny.toml` (S-D4). S-D5 traité par le retrait du crate (plan RW0 ci-dessous). Modifie `Cargo.lock`.
 - [ ] **R4 — Export partiel et par fichier** (S–M) : lot A sportsfan30 + S-X5 (jamais d'écriture en place).
@@ -174,6 +174,189 @@ technique laisse simplement la ligne telle qu'elle était.
 - Attente croissante : ne pas bloquer l'interface ; les durées restent côté backend, la progression continue.
 
 **Effort estimé.** M, 1,5 à 2 jours (annulation comprise).
+
+### Plan détaillé — R2 : export sûr après une mise à jour du jeu (2026-10-25, Claude) — PLAN VALIDÉ le 2026-10-25 (E1 = a, E2 oui, E3 = a, E4 oui, E5 oui) ; R2a (étapes 1–6) implémentée le 2026-10-26 sur `fix/r2a-export-source-guard`, gate complet en attente (réseau) ; R2b en attente de validation
+
+**Constats couverts.** S-X1 / audit F (P-2 : traduction écrite dans le nom de visage d'une commande 101,
+partie MV bloquée en jeu ; MZ : export qui échoue avec `key not found in JSON`), aggravé par la relecture
+de la session 3 (copie de référence qui remet du japonais sans dérive). Preuves : rapport, P-2 et
+« Seconde relecture ».
+
+**Comportement actuel (lu dans le code de `main` @ `af0c08e`).**
+- Les segments MV/MZ sont adressés par pointeur JSON (`/events/6/pages/0/list/5/parameters/0`). Un patch
+  du jeu qui insère une commande décale tous les pointeurs suivants de la page.
+- Export : la requête lit `source_text` (`export.rs:369-372`), puis le jette (`:396-398`). `inject_to_bytes`
+  n'accepte qu'un pointeur existant sur une chaîne (`injector.rs:30-40`). `verify_json_edit`
+  (`integrity.rs:80-124`) compare la sortie à la copie de référence, jamais à `source_text`. Le contrôle
+  équivalent existe pour `plugins.js` seulement (`OriginalChanged`, `integrity.rs:287-293`).
+- Copie de référence : `ensure_fresh_mv_mz_snapshot` (`core/originals.rs:83`, appelé par l'export) relit
+  le jeu. Si le fichier a changé, `reconstruct_json` (`engines/mv_mz/originals.rs:310-370`) remet la
+  source sous chaque ancien pointeur dont la valeur « n'a plus de japonais » (`stale_export`, `:331-337`).
+  Après une insertion, un nom de visage `Actor1` sous un ancien pointeur de dialogue devient donc une
+  réplique japonaise, **sans être compté en dérive**. `update_snapshot` (`core/originals.rs:277-310`)
+  adopte la reconstruction avec un simple `log::warn`.
+- La dérive n'apparaît que dans la boîte de couverture (`coverage.rs:383-398`), sans bloquer quoi que ce soit.
+- L'export d'un seul fichier (`debug_inject_file`, `export.rs:1052+`) suit le même chemin, et écrit en
+  place (S-X5, traité par R4).
+
+**Comportement visé.**
+1. Aucune traduction n'est jamais écrite sous un pointeur dont la valeur d'origine n'est plus la source
+   enregistrée. L'export refuse et liste les segments concernés (fichier, emplacement, attendu, trouvé),
+   avec le dialogue d'intégrité qui existe déjà. Rien n'est écrit.
+2. La reconstruction de la copie de référence ne modifie plus une valeur dont le rôle a changé (un nom de
+   visage, un choix…) : elle la signale en dérive.
+3. Après une mise à jour du jeu, l'utilisateur peut **réaligner** son projet : les traductions suivent
+   leurs répliques à leur nouvel emplacement, les répliques nouvelles arrivent non traduites, celles qui
+   ont disparu sont listées. Sans cela, le point 1 bloquerait l'export pour toujours.
+
+**Décisions — validées par l'utilisateur le 2026-10-25 : E1 = (a), E2 oui, E3 = (a), E4 oui, E5 oui.**
+- E1. Écart source / jeu à l'export :
+  - (a) **recommandé** : refuser tout l'export, avec la liste. Même règle que la porte d'intégrité
+    actuelle, qui ne produit jamais d'archive partielle ;
+  - (b) exporter le reste en ignorant les segments en écart, avec un avertissement.
+- E2. Reconstruction : la règle `stale_export` ne s'applique plus que si le **rôle** de la valeur est le
+  même. Pour une commande d'événement, le `code` de la commande et l'index du paramètre doivent
+  correspondre au type du segment (dialogue = 401 ou 405, `parameters/0` ; locuteur = 101,
+  `parameters/4` ; choix = 102, `parameters/0/n`). Dans les autres fichiers, le chemin est inchangé par
+  construction. Sinon, la valeur est laissée telle quelle et signalée en dérive. Recommandé : oui.
+- E3. Réalignement (point 3) :
+  - (a) **recommandé** : dans R2, en seconde partie (R2b), car sans lui une mise à jour bloque l'export ;
+  - (b) dans un lot séparé, plus tard.
+- E4. Règle d'appariement du réalignement (si E3 = a) : par fichier et par page d'événement. On apparie
+  d'abord les répliques à source identique dans l'ordre (plus longue sous-suite commune, comme un `diff`),
+  puis rien d'autre : pas d'appariement approximatif d'une source modifiée. Une source modifiée devient
+  « nouvelle », non traduite, et l'ancienne traduction est proposée dans la mémoire de traduction.
+  Recommandé : oui.
+- E5. Vérification : le gate en cloud, plus des tests d'intégration qui reproduisent P-2 sur un jeu
+  synthétique. L'essai en jeu sur la copie de la session 2 (`test/_ingame/MV_SX1`) demande de lancer l'app
+  en local : il n'est fait que si tu l'acceptes.
+
+**Étapes — R2a : refuser l'écart (M).**
+- [x] 1. `integrity.rs` : nouvelle variante `IntegrityIssue::SourceChanged { file, pointer, expected, found }`,
+      avec son libellé dans `summarize`. Tests unitaires.
+- [x] 2. `export.rs` (`export_project`, branche JSON MV/MZ) : avant `inject_to_bytes`, comparer pour chaque
+      ligne la valeur d'origine (copie de référence parsée une fois par fichier) à `source_text`. Tout écart
+      donne `SourceChanged`. Les lignes de mise en page (`split_fitted`) gardent leur pointeur, donc le contrôle
+      se fait avant. Les étiquettes Keke et `plugins.js` ont déjà leurs propres contrôles.
+- [x] 3. Même contrôle dans `debug_inject_file` (export d'un seul fichier).
+- [x] 4. Frontend : le dialogue d'intégrité (`integrityIssuesOf`, `useAppHandlers.ts`) affiche ces écarts
+      lisiblement, avec fichier, emplacement, attendu et trouvé, plus une phrase « le jeu a changé depuis
+      l'extraction » et le lien vers le réalignement (R2b). Textes fr/en.
+- [x] 5. Tests d'intégration (fait dans `tests/export_game_update.rs`, jeu synthétique écrit par le test) reproduisant P-2 :
+      - insertion d'un 401 avant une ligne traduite ⇒ export refusé, `SourceChanged` listé, aucune archive ;
+      - même chose en MZ, avec un nom de locuteur et un choix (fin de `key not found in JSON`) ;
+      - jeu inchangé ⇒ export identique à aujourd'hui (non-régression des allers-retours).
+
+**Étapes — R2a bis : reconstruction sans changement de rôle (S–M).**
+- [x] 6. `reconstruct_json` : règle E2 (contrôle du `code` et de l'index de paramètre à partir de
+      `segment_kind`, déjà en base). Tests : nom de visage sous un ancien pointeur de dialogue ⇒ laissé tel
+      quel et compté en dérive ; ancienne cible exportée au même rôle ⇒ toujours remise à la source.
+  **Fait le 2026-10-26 (Claude)** — étapes 1 à 6, détail et preuves : `docs/journal/2026-10-26-r2a-garde-source-export.md`.
+  - Test rouge puis vert (`tests/export_game_update.rs`) ; la garde seule (1–3) laissait passer P-2 en MV
+    (copie de référence reconstruite avec le japonais sous le pointeur décalé), d'où l'étape 6 dans R2a.
+  - Rôle (étape 6) déduit du pointeur et du `code` de la commande sur disque, affiné par `segment_kind` ;
+    appliqué aussi à `was_exported`. Le lien vers le réalignement (étape 4) viendra avec R2b (étape 9) :
+    le dialogue dit pour l'instant de remettre la version du jeu utilisée à l'extraction.
+  - Vérifié avec un dictionnaire lindera factice (`DOCS_RS=1`, `lindera.dev` refusé par le réseau cloud) :
+    gate complet **à refaire** avec le vrai dictionnaire. Faux positifs sur jeux réels : non vérifiés.
+  - Relecture indépendante : décalage vers une commande de même code (`♪～`) corrigé par comparaison de la
+    page avec la copie précédente (`same_page`) ; refus sur un ancien export non reconnu (cible CJK, mise en
+    page) **conservé** (E1), message élargi — décision utilisateur attendue.
+- [ ] 7. **Reportée** (décision utilisateur du 2026-10-26 : le refus de l'étape 2 suffit à empêcher l'écriture décalée). `update_snapshot` : la dérive est rendue à l'appelant (pas seulement dans le journal), pour que
+      l'export puisse dire « le jeu a changé » même avant le contrôle de l'étape 2.
+
+**Étapes — R2b : réaligner après une mise à jour (L, si E3 = a).**
+- [x] 8. Commande `resync_project` : ré-extraction des fichiers changés depuis la copie de référence, avec
+      la même extraction qu'à l'ouverture. Appariement E4, puis, dans une transaction :
+      - déplacement des traductions (cible, statut, score, contexte) vers les nouveaux pointeurs ;
+      - insertion des nouvelles répliques en `untranslated` ;
+      - segments disparus conservés à part, jamais supprimés en silence (statut ou table d'orphelins :
+        à préciser au moment du code) ;
+      - copie de référence remplacée par la nouvelle version.
+- [x] 9. Interface : action « Réaligner après une mise à jour du jeu », proposée quand l'export signale un
+      écart ou que la couverture voit une dérive. Récapitulatif unique : déplacés, nouveaux, disparus,
+      sources modifiées.
+- [x] 10. Tests : insertion, suppression, modification d'une réplique, page réordonnée, plusieurs fichiers ;
+      un export après réalignement passe et chaque traduction est à sa nouvelle place.
+
+**Plan détaillé R2b (2026-10-26, Claude) — constat 2 de la relecture R2a : refus conservé (E1), décision utilisateur du 2026-10-26.**
+Lu dans le code : `open_project` / `visit_extracted_files` / `insert_segments` (`commands/project.rs`), `scan_project` /
+`enable_category` (`commands/coverage.rs`), `SnapshotStore` (`engines/mv_mz/originals.rs`), `tm::insert`.
+- Source de vérité : la copie de référence **après** `ensure_fresh_mv_mz_snapshot` (elle suit déjà la nouvelle version
+  du jeu, exports défaits). Rien n'est relu ailleurs ; la copie n'est pas réécrite, seule sa dérive est effacée.
+- Nouvelles répliques attendues :
+  - segments de base : `dispatch_extract` sur la copie, exactement comme à l'ouverture ;
+  - catégories optionnelles qui ont des segments (dont Keke et `plugins.js`) : candidats du même `coverage::scan`
+    que l'activation.
+- Appariement (E4), fichier par fichier :
+  - pointeur dans une liste de commandes (`…/list/N/parameters/…`) : groupe = la liste. Plus longue sous-suite
+    commune sur `(source, type compatible)` ; `unknown` est compatible avec tout. Préfixe et suffixe communs
+    retirés d'abord ; au-delà de 16 M cases, repli glouton dans l'ordre (sous-suite valide, pas forcément maximale) ;
+  - autre pointeur (base de données, `displayName`, notes Keke, `plugins.js`) : même clé et même source.
+  - Une source modifiée devient nouvelle et non traduite ; l'ancienne ligne part aux orphelins.
+- Application, dans une transaction :
+  - lignes appariées mises à jour sur place : `json_key` et contexte d'extraction ; `id`, cible, statut, score et
+    catégorie conservés. L'`id` gardé préserve les occurrences terminologiques (FK en cascade) ;
+  - clés passées d'abord par une valeur temporaire unique (index unique partiel des catégories) ;
+  - `rowid` renuméroté dans le nouvel ordre du fichier, car `get_segments` trie par `rowid` ;
+  - nouvelles lignes `untranslated` ;
+  - fichier JSON nouveau dans le jeu : `source_files` + segments, puis capture de sa copie de référence ;
+  - lignes disparues traduites copiées dans une nouvelle table `orphaned_segments` (migration 0012), puis supprimées ;
+    les non traduites sont simplement supprimées ;
+  - traductions des lignes disparues ou à source modifiée ajoutées à la mémoire de traduction (`tm::insert`).
+- Après validation de la transaction : dérive effacée dans la copie de référence (`SnapshotStore::clear_drift`).
+- Commande : `resync_project(project_id, apply)`. `apply = false` donne l'aperçu, sans écriture. Sinon on recalcule
+  et on applique. Retour : `ResyncSummary`, avec par fichier les déplacés, nouveaux, disparus et sources modifiées,
+  plus des exemples bornés. MV/MZ seulement.
+- Interface : bouton « Réaligner le projet… » dans le dialogue d'intégrité quand le jeu a changé, et dans l'avis de
+  dérive de la couverture. `ResyncDialog` montre l'aperçu, puis « Appliquer », puis le récapitulatif. Textes fr/en.
+- Hors périmètre, à lister : réglages de mise en page par message (`text_fit_overrides`, clé = pointeur du 101) et
+  catégories désactivées (`parked_segments`). Ils deviennent caducs, sans risque : chacun n'est réutilisé que si la
+  source est identique. Les fichiers disparus du jeu restent exportés depuis la copie, comme aujourd'hui.
+
+**R2b fait le 2026-10-26 (Claude)**, détail : `docs/journal/2026-10-26-r2b-realignement.md`.
+- Commits : `d897f54` (appariement), `fe5f9df` (commande, migration 0012, tests), `e7cb87f` (interface).
+- Tests : 9 tests d'intégration dans `export_game_update.rs` (5 pour R2b : insertion MV, locuteurs et choix MZ,
+  suppression + réécriture, nouveau fichier, argument de commande de plugin) ; page réordonnée couverte en
+  unitaire (`engines/mv_mz/resync.rs`).
+- Gate complet réel vert le 2026-10-26 sur `608bdbe` : 717 tests Rust, 142 Vitest, clippy, fmt, typecheck, lint.
+- Relecture indépendante : catégorie plus proposée laissée intacte, mémoire de traduction jamais écrasée, 4 mineurs
+  corrigés ; gate réel ensuite : 719 tests Rust, 142 Vitest. Suivis listés ci-dessous.
+- Limites : une catégorie optionnelle n'est pas proposée dans un fichier ajouté par la mise à jour avant une
+  nouvelle activation ; `text_fit_overrides` et `parked_segments` deviennent caducs (sans risque).
+
+**Suivis R2b (relecture du 2026-10-26, mineurs non bloquants, à planifier) :**
+- [ ] Repli glouton de `pair_list` (au-delà de 16 M cases) : une source répétée lointaine peut rendre orphelines les
+      lignes intermédiaires (jamais mal placées). Piste : diff de Myers en O(ND).
+- [ ] Fichier sans ligne déplacée : contexte (`speaker`, `context_json`, `segment_kind` `unknown`) non rafraîchi.
+- [ ] `text_fit_overrides` : clé = pointeur du 101 ; avec des messages répétés identiques, un réglage peut passer au
+      mauvais message après un décalage. Piste : migrer les pointeurs avec les paires déplacées.
+- [ ] `orphaned_segments` : ni lecture ni restauration dans l'interface.
+- [ ] Pas de garde serveur contre un réalignement pendant une traduction (seul le bouton est désactivé).
+- [ ] Récapitulatif : expliquer les limites d'E4 (page insérée avant les autres, étiquette Keke insérée, ligne que
+      l'extracteur actuel ne produit plus).
+
+**Étapes communes.**
+- [x] 11. Gate complet **en session cloud** (règle du 2026-10-25) : vert le 2026-10-26 sur `608bdbe`. Essai en jeu selon E5 : **non fait** (accord de l'utilisateur requis).
+- [x] 12. Suivi : journal, handoff, CHANGELOG, et fermeture de S-X1 / F dans le rapport d'audit (2026-10-26). Contrôle des faux positifs de la garde R2a sur les jeux réels de la session 2 (2026-10-26, Claude, script Python en lecture seule sur la base copiée et les copies de jeux, sans build) : **0 écart** sur 37 543 lignes de 4 projets (MV 15 498, StandGirl ancien 1 191, StandGirl neuf 1 191, 借金JK 19 663), y compris 1 294 lignes traduites ; aucune différence d'espaces ni de fins de ligne. Limite : comparaison au fichier du jeu sur disque (équivalent à la copie de référence sur ces copies jamais exportées) ; `plugins.js` et étiquettes Keke non couverts. Sortie : `test/r2-false-positives.txt` (hors Git).
+
+**Critère de sortie.** Le scénario P-2 (401 inséré) ne peut plus produire d'archive décalée, en MV comme en
+MZ. La copie de référence ne met plus de japonais dans un champ non textuel. Après réalignement, l'export
+remet chaque traduction à sa nouvelle place. Gate cloud vert.
+
+**Hors périmètre.** Wolf (RW), écriture en place de l'export d'un fichier (R4), appariement approximatif
+des sources modifiées (pourra s'appuyer plus tard sur la mémoire de traduction), mise en forme JSON (S-X10).
+
+**Risques.**
+- Faux positifs du contrôle de l'étape 2 : un segment dont la source enregistrée a été normalisée à
+  l'extraction (espaces, fins de ligne) ne serait plus égal. Le vérifier sur les 3 jeux de la session 2 avec
+  un test d'aller-retour sans changement (0 écart attendu sur 36 352 pointeurs).
+- Le réalignement touche la base sur beaucoup de lignes : une transaction unique, et un aperçu du
+  récapitulatif avant d'appliquer.
+- Les étiquettes Keke et les catégories optionnelles ont leurs propres clés : à couvrir dans le réalignement,
+  ou à exclure explicitement et à lister.
+
+**Effort estimé.** R2a + R2a bis : M, environ 1 jour. R2b : L, 2 à 3 jours.
 
 ### Plan — RW0 : retirer `wolfrpg-map-parser` (2026-10-25, Claude) — PLAN VALIDÉ le 2026-10-25 (W1 = a, W2–W4 oui) ; étapes 1–7 faites, gate cloud vert ; fusionné (PR #11, `252bcff`)
 

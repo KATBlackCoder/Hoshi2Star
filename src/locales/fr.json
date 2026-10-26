@@ -645,7 +645,8 @@
     "scanFailed": "Impossible d'analyser le texte supplémentaire : {{error}}",
     "notCoveredTitle": "Texte de plugin non couvert ({{count}})",
     "notCoveredHint": "Ces paramètres de plugin contiennent du texte, mais aucun profil vérifié ne prouve qu'ils servent seulement à l'affichage : ils restent non traduits. Un indice est une supposition tirée du code du plugin, jamais une garantie.",
-    "notCoveredHintLabel": "Indice :"
+    "notCoveredHintLabel": "Indice :",
+    "driftResync": "Réaligner le projet…"
   },
   "exportLocale": {
     "label": "Changer aussi le réglage de langue du jeu ({{current}} → {{target}})",
@@ -654,7 +655,12 @@
   },
   "exportIntegrity": {
     "title": "Export bloqué par le contrôle d'intégrité",
-    "description": "Aucun fichier n'a été écrit. Le contrôle compare chaque fichier produit avec l'original et a trouvé des changements non prévus :"
+    "description": "Aucun fichier n'a été écrit. Le contrôle compare chaque fichier produit avec l'original et a trouvé des changements non prévus :",
+    "gameChanged": "Aucun fichier n'a été écrit. Les fichiers du jeu ont changé depuis l'extraction (mise à jour du jeu, ou fichiers remplacés, par exemple par un ancien export) : à ces emplacements, le texte d'origine n'est plus celui que vous avez traduit. Exporter y écrirait les traductions au mauvais endroit. Pour exporter, remettez les fichiers du jeu tels qu'à l'extraction.",
+    "expected": "attendu : {{text}}",
+    "found": "trouvé : {{text}}",
+    "foundNothing": "trouvé : rien (emplacement disparu)",
+    "resync": "Réaligner le projet…"
   },
   "textFit": {
     "toolbar": "Mise en page",
@@ -742,5 +748,24 @@
       "bom_detected": "BOM",
       "constraint_violation": "règle d'affichage"
     }
+  },
+  "resync": {
+    "title": "Réaligner après une mise à jour du jeu",
+    "description": "Aperçu : rien n'a encore été modifié. Chaque traduction suit sa réplique à son nouvel emplacement ; les répliques nouvelles ou réécrites arrivent non traduites ; les traductions des répliques disparues sont conservées à part et restent proposées par la mémoire de traduction.",
+    "appliedDescription": "Réalignement appliqué. Vous pouvez relancer l'export.",
+    "loading": "Comparaison du projet avec la version actuelle du jeu…",
+    "nothingToDo": "Le projet correspond déjà à la version actuelle du jeu : rien à réaligner.",
+    "totals": "{{moved}} déplacée(s), {{added}} nouvelle(s), {{gone}} disparue(s) dont {{orphaned}} traduite(s), conservée(s) à part.",
+    "changedSources": "Dont {{count}} réplique(s) réécrite(s) : comptée(s) comme disparue(s) puis nouvelle(s), jamais appariée(s) par approximation.",
+    "file": "Fichier",
+    "moved": "Déplacées",
+    "added": "Nouvelles",
+    "gone": "Disparues",
+    "newFile": "nouveau fichier",
+    "goneTranslations": "Traductions sans réplique (conservées, et dans la mémoire de traduction) :",
+    "cancel": "Annuler",
+    "close": "Fermer",
+    "apply": "Appliquer",
+    "untouchedCategories": "Catégories laissées telles quelles, car le jeu ne les propose plus en l'état (plugin modifié, désactivé ou illisible) ou les bloque : {{categories}}. Leurs traductions ne sont pas touchées ; vérifiez-les dans la couverture du texte."
   }
 }

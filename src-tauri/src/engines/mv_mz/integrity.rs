@@ -34,6 +34,17 @@ pub enum IntegrityIssue {
     /// The original value no longer matches what was extracted (or a fill-in
     /// target is no longer empty): the edit would overwrite unknown text.
     OriginalChanged { file: String, pointer: String },
+    /// The original value at a translated pointer is no longer the source
+    /// recorded at extraction: the game changed since (an update that
+    /// inserted a command shifts every later pointer of the page). Exporting
+    /// would write the translation over unrelated text. `found` is `None`
+    /// when the pointer no longer exists.
+    SourceChanged {
+        file: String,
+        pointer: String,
+        expected: String,
+        found: Option<String>,
+    },
     /// A cross-file reference (e.g. a battle-command tag looking up a skill
     /// type by name) would resolve differently after export.
     LinkedReferenceChanged {
@@ -61,6 +72,24 @@ impl fmt::Display for IntegrityIssue {
                 f,
                 "{file} {pointer}: the original text no longer matches what was extracted"
             ),
+            // Strings are JSON-quoted so the line stays one line and the
+            // frontend (`parseSourceChange`) can read them back exactly.
+            Self::SourceChanged {
+                file,
+                pointer,
+                expected,
+                found,
+            } => {
+                let quote = |text: &str| Value::String(text.to_string()).to_string();
+                let found = found
+                    .as_deref()
+                    .map_or_else(|| "nothing".to_string(), quote);
+                write!(
+                    f,
+                    "{file} {pointer}: source changed since extraction; expected {}, found {found}",
+                    quote(expected)
+                )
+            }
             Self::LinkedReferenceChanged {
                 file,
                 pointer,
@@ -74,6 +103,35 @@ impl fmt::Display for IntegrityIssue {
             }
         }
     }
+}
+
+/// Check, before injecting, that every pointer about to be translated still
+/// holds in `original` the source text recorded at extraction (`sources`:
+/// pointer → source). Any other value means the game changed since: the
+/// translation belongs elsewhere, so the export must not write it.
+pub fn verify_sources<'a>(
+    file: &str,
+    original: &Value,
+    sources: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> Vec<IntegrityIssue> {
+    sources
+        .into_iter()
+        .filter_map(|(pointer, source)| {
+            let found = original.pointer(pointer);
+            if found.and_then(Value::as_str) == Some(source) {
+                return None;
+            }
+            Some(IntegrityIssue::SourceChanged {
+                file: file.to_string(),
+                pointer: pointer.to_string(),
+                expected: source.to_string(),
+                found: found.map(|value| match value {
+                    Value::String(text) => text.clone(),
+                    other => other.to_string(),
+                }),
+            })
+        })
+        .collect()
 }
 
 /// Verify that `output` differs from `original` exactly by `planned` edits.
@@ -377,6 +435,61 @@ mod tests {
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect()
+    }
+
+    #[test]
+    fn unchanged_sources_pass_and_shifted_ones_are_listed() {
+        let original: Value = serde_json::from_str(
+            r#"{"list":[{"code":101,"parameters":["Actor2",0,0,2]},{"code":401,"parameters":["新しい"]}]}"#,
+        )
+        .unwrap();
+        let issues = verify_sources(
+            "www/data/Map001.json",
+            &original,
+            [
+                ("/list/1/parameters/0", "新しい"),
+                ("/list/0/parameters/0", "こんばんは"),
+                ("/list/1/parameters/4", "村人"),
+                ("/list/0/parameters/1", "北へ"),
+            ],
+        );
+        let changed =
+            |pointer: &str, expected: &str, found: Option<&str>| IntegrityIssue::SourceChanged {
+                file: "www/data/Map001.json".into(),
+                pointer: pointer.into(),
+                expected: expected.into(),
+                found: found.map(Into::into),
+            };
+        assert_eq!(
+            issues,
+            vec![
+                changed("/list/0/parameters/0", "こんばんは", Some("Actor2")),
+                changed("/list/1/parameters/4", "村人", None),
+                changed("/list/0/parameters/1", "北へ", Some("0")),
+            ]
+        );
+    }
+
+    #[test]
+    fn source_changed_renders_one_quoted_line() {
+        let issue = IntegrityIssue::SourceChanged {
+            file: "data/Map001.json".into(),
+            pointer: "/events/1/pages/0/list/3/parameters/0".into(),
+            expected: "「行く」\"よ\"\n".into(),
+            found: Some("Actor1".into()),
+        };
+        assert_eq!(
+            issue.to_string(),
+            r#"data/Map001.json /events/1/pages/0/list/3/parameters/0: source changed since extraction; expected "「行く」\"よ\"\n", found "Actor1""#
+        );
+        let gone = IntegrityIssue::SourceChanged {
+            file: "data/Map001.json".into(),
+            pointer: "/events/1/pages/0/list/2/parameters/4".into(),
+            expected: "旅人".into(),
+            found: None,
+        };
+        assert!(gone.to_string().ends_with(", found nothing"));
+        assert_eq!(summarize(&[gone]).lines().count(), 1);
     }
 
     #[test]

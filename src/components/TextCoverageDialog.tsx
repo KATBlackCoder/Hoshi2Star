@@ -44,6 +44,7 @@ import {
   useCoverageStore,
 } from "@/stores/coverage";
 import { refreshProjectData } from "@/stores/project";
+import { openResyncDialog } from "@/stores/resync";
 import { useIsTranslating } from "@/stores/llm";
 
 interface TextCoverageDialogProps {
@@ -178,6 +179,14 @@ export function TextCoverageDialog({ projectId }: TextCoverageDialogProps) {
                 reconstructed={view.reconstructed}
                 driftedFiles={view.driftedFiles}
                 pluginsUnreadable={view.pluginsUnreadable}
+                onResync={
+                  projectId
+                    ? () => {
+                        setOpen(false);
+                        void openResyncDialog(projectId);
+                      }
+                    : undefined
+                }
               />
 
               {view.categories.length === 0 && (
@@ -479,10 +488,12 @@ function Notices({
   reconstructed,
   driftedFiles,
   pluginsUnreadable,
+  onResync,
 }: {
   reconstructed: boolean;
   driftedFiles: { file: string; pointers: number }[];
   pluginsUnreadable: string | null;
+  onResync?: () => void;
 }) {
   const { t } = useTranslation();
   if (!reconstructed && driftedFiles.length === 0 && !pluginsUnreadable) {
@@ -499,9 +510,23 @@ function Notices({
       {driftedFiles.length > 0 && (
         <p className="flex gap-2 rounded-md bg-amber-500/10 p-2 text-xs">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden />
-          {t("coverage.driftNotice", {
-            files: driftedFiles.map((entry) => entry.file).join(", "),
-          })}
+          <span>
+            {t("coverage.driftNotice", {
+              files: driftedFiles.map((entry) => entry.file).join(", "),
+            })}
+            {onResync && (
+              <>
+                {" "}
+                <button
+                  type="button"
+                  className="font-medium underline underline-offset-2"
+                  onClick={onResync}
+                >
+                  {t("coverage.driftResync")}
+                </button>
+              </>
+            )}
+          </span>
         </p>
       )}
       {pluginsUnreadable && (

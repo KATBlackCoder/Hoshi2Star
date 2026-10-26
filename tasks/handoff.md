@@ -1,13 +1,43 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-25 — Claude (RW0 fusionné, R1 à jour avec `main`).
-**Objectif utilisateur :** lancer une analyse complète de l'app dans une session dédiée, puis
-traiter les retours de sportsfan30 (F95zone) et étudier RuneTranslate avec REA.
-**Statut :** analyse complète :
-- sessions 1, 2 (MV/MZ) et 3 faites le 2026-10-25 ; Wolf reporté (session 2 bis, après REA) ;
-- code applicatif modifié depuis : RW0 (PR #11, fusionnée) ; R1 (PR #10, ouverte) ;
-- sessions 1 à 3 commitées et poussées (`6edd29b` … `54c22e3`, `fb6be51`) ;
-- lot R1 : implémenté, essai réel fait, commité (`7be55e4`) et poussé sur `fix/r1-provider-outage` ; PR #10 ouverte vers `main` (non fusionnée) ; `main` (avec RW0) fusionné dans la branche le 2026-10-25.
+**Mis à jour :** 2026-10-26 — Claude (R2 clos : étape 12 faite, faux positifs contrôlés, PR ouverte).
+**Objectif utilisateur :** lot R2, export sûr après une mise à jour du jeu (S-X1 / audit F, P-2).
+**Statut :** R2a (étapes 1–6) et R2b (étapes 8–10) faites et poussées sur `fix/r2a-export-source-guard` ;
+pas de PR (non demandée). Constat 2 de la relecture R2a : refus conservé (E1), décision utilisateur du 2026-10-26.
+
+## En cours (2026-10-26, Claude) — R2b
+
+- Journal : `docs/journal/2026-10-26-r2b-realignement.md`. Commits `d897f54`, `fe5f9df`, `e7cb87f`.
+- `resync_project(project_id, apply)` : aperçu puis application en une transaction ; orphelins dans
+  `orphaned_segments` (migration 0012) et mémoire de traduction ; `ResyncDialog` depuis le dialogue d'intégrité.
+- **Gate complet réel vert** (2026-10-26, `lindera.dev` autorisé, `608bdbe`) : 717 tests Rust OK / 0 échec / 12 ignorés ;
+  Vitest 142 ; clippy `-D warnings` (aussi `--all-targets`), fmt, typecheck OK ; lint 0 erreur.
+- **Prochaine action exacte** :
+  1. Fusion de la PR de R2 par l'utilisateur (relecture faite, gate cloud vert, 0 faux positif sur 37 543 lignes réelles).
+  2. Non vérifiés en réel : réalignement sur un vrai jeu mis à jour ; essai en jeu (accord requis).
+  3. Étape 7 reportée (décision utilisateur) ; suivis dans `tasks/todo.md`, « Suivis R2b ».
+  4. Ensuite : étude REA de RuneTranslate (binaire, décision utilisateur du 2026-10-26) puis lot RW ; ou lot R3/R4.
+
+## En cours (2026-10-26, Claude) — R2a
+
+- Journal : `docs/journal/2026-10-26-r2a-garde-source-export.md` (preuves rouge/vert, comptes du gate).
+- Fait : `IntegrityIssue::SourceChanged` + `verify_sources` ; contrôle dans `export_project` et
+  `debug_inject_file` ; règle E2 (`same_role` dans `reconstruct_json`) ; dialogue d'intégrité fr/en ;
+  tests `src-tauri/tests/export_game_update.rs` (P-2 MV, P-2 MZ locuteur + choix, jeu inchangé).
+- Prouvé : test rouge sur `e8a97a9` (MV : visage `Actor2` → `EN2` ; MZ : `key not found in JSON`), puis vert ;
+  la garde seule (sans E2) laissait passer P-2 en MV.
+- **Bloqué** : `lindera.dev` refusé (403) par le réseau de l'environnement cloud ⇒ `lindera-ipadic` ne
+  compile pas. Vérifs faites avec `DOCS_RS=1` (dictionnaire factice) : fmt, clippy `--all-targets -D warnings`,
+  avant relecture 701 tests Rust OK / 2 échecs lindera attendus (identiques sur `e8a97a9`) / 12 ignorés ; Vitest 137 ; lint 0 erreur.
+- Relecture indépendante faite. Corrigés : décalage vers une commande de même code (`same_page`) et 3 mineurs.
+  **Décision attendue** : refus sur un ancien export non reconnu (cible CJK ou mise en page), conservé selon E1.
+  Gate après corrections : 703 Rust OK / 2 échecs lindera / 12 ignorés ; Vitest 138.
+- Non vérifié : gate avec le vrai dictionnaire ; faux positifs sur les 3 jeux réels (session 2) ; essai en jeu.
+- **Prochaine action exacte** :
+  1. Autoriser `lindera.dev` (accès réseau de l'environnement cloud), relancer le gate complet sans `DOCS_RS`
+     sur la branche poussée.
+  2. Contrôle des faux positifs sur les jeux réels (0 `SourceChanged` attendu sur un jeu non modifié).
+  3. R2b faite le 2026-10-26 (voir plus haut).
 
 ## En cours (2026-10-25, Claude) — RW0 puis R1
 
@@ -16,7 +46,10 @@ traiter les retours de sportsfan30 (F95zone) et étudier RuneTranslate avec REA.
 - **R1** (panne du fournisseur) : branche `fix/r1-provider-outage`, PR #10 ouverte (commits `7be55e4`, `53d6217`), essai réel fait ; son gate cloud a échoué faute de pouvoir récupérer le fork. Son suivi détaillé (plan R1, journal R1) est sur sa branche.
 - **RW0 fusionné** le 2026-10-25 (PR #11, `252bcff`). `main` a été fusionné dans `fix/r1-provider-outage` (fusion plutôt que rebase : le hook du projet interdit le push forcé) ; conflits résolus en gardant les deux côtés (CHANGELOG : Fixed + Removed ; `tasks/todo.md` : plans R1 et RW0).
 - **R1 vérifié** : gate cloud du 2026-10-25 sur `98236f1` (R1 + `main` avec RW0) : fmt OK, typecheck OK, Vitest 133 OK (35 fichiers), clippy `--locked -D warnings` OK, `cargo test --locked` 695 OK / 0 échec / 12 ignorés, lint 0 erreur (10 avertissements, les mêmes que sur `main`) ; tests R1 ciblés et tests RW0 tous verts.
-- **Prochaine action exacte** : fusion de la PR #10 par l'utilisateur ; ensuite plan détaillé du lot R2 (export sûr après mise à jour du jeu), sans code avant validation.
+- **R1 fusionné** le 2026-10-25 (PR #10, `af0c08e`) ; `main` local à jour. Branche locale `fix/r1-provider-outage` supprimable.
+- **R2** (export sûr après mise à jour du jeu) : plan détaillé dans `tasks/todo.md` (« Plan détaillé — R2 »), **validé le 2026-10-25** : E1 = (a) refus total de l'export en cas d'écart ; E2 oui (reconstruction sans changement de rôle) ; E3 = (a) réalignement R2b dans R2 ; E4 oui (appariement exact par page) ; E5 oui (gate cloud + tests P-2 synthétiques ; essai en jeu seulement avec accord).
+- **R2a non commencé** : branche `fix/r2a-export-source-guard` créée depuis `main` @ `af0c08e` ; seuls `tasks/todo.md` et `tasks/handoff.md` y sont modifiés. Arrêt demandé par l'utilisateur pendant la lecture de `ExportIntegrityDialog.tsx` (textes `exportIntegrity.*`). Reprise prévue le 2026-10-26 dans une nouvelle session.
+- **Prochaine action exacte** : sur `fix/r2a-export-source-guard`, étape 1 du plan R2 (`IntegrityIssue::SourceChanged` dans `engines/mv_mz/integrity.rs`, `:21-77`), puis étapes 2 à 5 (contrôle avant `inject_to_bytes` dans `export.rs:369-460` et `debug_inject_file`, affichage dans `ExportIntegrityDialog.tsx`, tests P-2). Pas de build ni de tests en local : gate en cloud. Le hook PreToolUse bloque toute commande contenant la chaîne de l'installation npm (y compris sous pnpm) : passer par des scripts en fichier pour les textes qui la citent.
 - À corriger à part : le hook PreToolUse qui interdit les installations npm/yarn bloque aussi l'installation pnpm (sous-chaîne) ; contourné par `pnpm i`.
 
 ## Session 3 (2026-10-25, Claude) — reprise

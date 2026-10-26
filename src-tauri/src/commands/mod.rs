@@ -9,6 +9,7 @@ mod pack_terminology;
 pub mod pilot;
 pub mod project;
 pub mod qa;
+pub mod resync;
 pub mod search;
 pub mod terminology;
 pub mod text_fit;

@@ -170,8 +170,26 @@ async fn load_mv_mz_snapshot(
         let language = source_language.clone();
         let locale_target = (file_name == "System.json").then(|| target_locale.clone());
         let (store_back, outcome) = tokio::task::spawn_blocking(move || {
-            let result =
-                rebuild_original(&rel, &disk, &recorded, &language, &renames).and_then(|rebuilt| {
+            let previous = if snapshotted {
+                store
+                    .read(&rel)
+                    .map(Some)
+                    .map_err(|error| error.to_string())
+            } else {
+                Ok(None)
+            };
+            let result = previous
+                .and_then(|previous| {
+                    rebuild_original(
+                        &rel,
+                        &disk,
+                        &recorded,
+                        &language,
+                        &renames,
+                        previous.as_deref(),
+                    )
+                })
+                .and_then(|rebuilt| {
                     update_snapshot(
                         &mut store,
                         &rel,
@@ -211,8 +229,8 @@ async fn recorded_segments(
     file_id: &str,
     plugins_js: bool,
 ) -> Result<Recorded, String> {
-    let rows: Vec<(String, String, String, Option<String>)> = sqlx::query_as(
-        "SELECT json_key, source_text, target_text, context_json FROM segments \
+    let rows: Vec<(String, String, String, Option<String>, String)> = sqlx::query_as(
+        "SELECT json_key, source_text, target_text, context_json, segment_kind FROM segments \
          WHERE source_file_id = ?",
     )
     .bind(file_id)
@@ -222,7 +240,7 @@ async fn recorded_segments(
     if plugins_js {
         return Ok(Recorded::PluginsJs(
             rows.into_iter()
-                .map(|(key, source, target, context)| PluginSegment {
+                .map(|(key, source, target, context, _)| PluginSegment {
                     fill_in: crate::engines::mv_mz::coverage::plugins::context_is_fill_in(
                         context.as_deref(),
                     ),
@@ -237,7 +255,7 @@ async fn recorded_segments(
     // segments are reverted inside their note afterwards.
     let mut labels: HashMap<String, Vec<(usize, String, String)>> = HashMap::new();
     let mut core = Vec::new();
-    for (key, source, target, _) in rows {
+    for (key, source, target, _, kind) in rows {
         if let Some((occurrence, _, pointer)) = keke::parse_label_key(&key) {
             labels
                 .entry(pointer)
@@ -248,6 +266,7 @@ async fn recorded_segments(
                 key,
                 source,
                 target,
+                kind,
             });
         }
     }
@@ -261,11 +280,14 @@ fn rebuild_original(
     recorded: &Recorded,
     source_language: &str,
     reverse_renames: &HashMap<String, String>,
+    previous: Option<&[u8]>,
 ) -> Result<Reconstruction, String> {
     match recorded {
         Recorded::PluginsJs(segments) => reconstruct_plugins_js(label, disk, segments),
-        Recorded::Json { core, labels } => reconstruct_json(label, disk, core, source_language)
-            .and_then(|rebuilt| reverse_keke_edits(label, rebuilt, labels, reverse_renames)),
+        Recorded::Json { core, labels } => {
+            reconstruct_json(label, disk, core, source_language, previous)
+                .and_then(|rebuilt| reverse_keke_edits(label, rebuilt, labels, reverse_renames))
+        }
     }
     .map_err(|error| error.to_string())
 }

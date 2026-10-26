@@ -722,9 +722,11 @@ fn classify_vx_ace_file(file_name: &str) -> &'static str {
 /// Collect sorted MV/MZ file metadata without reading or parsing file bodies.
 /// Each JSON document is loaded later, immediately before extraction, so only
 /// one parsed tree needs to be resident at a time.
-type JsonFileEntry = (String, PathBuf, String);
+pub(crate) type JsonFileEntry = (String, PathBuf, String);
 
-fn collect_json_file_entries(data_dir: &Path) -> Result<Vec<JsonFileEntry>, std::io::Error> {
+pub(crate) fn collect_json_file_entries(
+    data_dir: &Path,
+) -> Result<Vec<JsonFileEntry>, std::io::Error> {
     let mut results = Vec::new();
 
     let entries = std::fs::read_dir(data_dir)?;
@@ -893,19 +895,7 @@ where
                         continue;
                     }
                 };
-                let segments = dispatch_extract(&file_name, &json_value)
-                    .into_iter()
-                    .map(|s| ExtractedFileSeg {
-                        key: s.key,
-                        source_text: s.source,
-                        segment_kind: s.kind.as_str().to_string(),
-                        scene_id: s.context.scene_id,
-                        sequence_index: s.context.sequence_index,
-                        speaker: s.context.speaker,
-                        branch_path: s.context.branch_path,
-                        context_json: s.context.context_json,
-                    })
-                    .collect();
+                let segments = extract_mv_mz_file(&file_name, &json_value);
                 visit(ExtractedFile {
                     file_name,
                     file_path: source_path.to_string_lossy().to_string(),
@@ -962,6 +952,26 @@ where
         }
     }
     Ok(())
+}
+
+/// Core segments of one MV/MZ data file, as `open_project` extracts them.
+pub(crate) fn extract_mv_mz_file(
+    file_name: &str,
+    json: &serde_json::Value,
+) -> Vec<ExtractedFileSeg> {
+    dispatch_extract(file_name, json)
+        .into_iter()
+        .map(|s| ExtractedFileSeg {
+            key: s.key,
+            source_text: s.source,
+            segment_kind: s.kind.as_str().to_string(),
+            scene_id: s.context.scene_id,
+            sequence_index: s.context.sequence_index,
+            speaker: s.context.speaker,
+            branch_path: s.context.branch_path,
+            context_json: s.context.context_json,
+        })
+        .collect()
 }
 
 /// Insert one `source_files` row inside the open-project transaction.

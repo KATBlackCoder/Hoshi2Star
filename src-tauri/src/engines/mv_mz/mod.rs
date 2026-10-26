@@ -10,4 +10,5 @@ pub mod locale;
 pub mod originals;
 pub mod plugins_js;
 pub mod profiles;
+pub mod resync;
 pub mod terminology;

@@ -146,6 +146,32 @@ pub async fn insert(
     Ok(())
 }
 
+/// Insert a TM entry only when none exists for this source and language
+/// pair: suggestions kept from elsewhere (a realignment) never replace one.
+pub async fn insert_if_absent(
+    source_text: &str,
+    target_text: &str,
+    engine: &str,
+    lang_pair: &str,
+    db: &SqlitePool,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO tm_entries \
+             (id, source_hash, source_text, target_text, engine, lang_pair, confidence) \
+         VALUES (?, ?, ?, ?, ?, ?, 1.0) \
+         ON CONFLICT(source_hash, lang_pair) DO NOTHING",
+    )
+    .bind(uuid::Uuid::new_v4().to_string())
+    .bind(hash_source(source_text))
+    .bind(source_text)
+    .bind(target_text)
+    .bind(engine)
+    .bind(lang_pair)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
 /// Fuzzy lookup: scans all TM entries for `lang_pair` in memory, scores each
 /// against `source_text` using normalised Levenshtein, and returns the top
 /// `limit` suggestions with score >= `threshold`.

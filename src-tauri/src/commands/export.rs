@@ -390,6 +390,7 @@ pub async fn export_project(
                 .map(|(key, target, _, source)| (key, target, source))
                 .collect();
             has_label_edits |= !label_rows.is_empty();
+            let sources = recorded_sources(&rows);
             let (fitted_rows, rows) = split_fitted(rows, fitted.get(&file.id));
 
             // For mv_mz: apply prefix to core Map segments only (optional
@@ -433,9 +434,20 @@ pub async fn export_project(
                 }
                 _ => {
                     let raw = read_original_json(snapshot.as_ref(), &rel, file)?;
+                    let original: serde_json::Value = serde_json::from_str(&raw)
+                        .map_err(|e| format!("parse {}: {e}", file.file_name))?;
+                    // A game update since extraction: refuse before injecting
+                    // (a shifted pointer may not even exist any more).
+                    let changed = integrity::verify_sources(
+                        &rel,
+                        &original,
+                        sources.iter().map(|(k, v)| (k.as_str(), v.as_str())),
+                    );
+                    if !changed.is_empty() {
+                        integrity_issues.extend(changed);
+                        continue;
+                    }
                     if note_file && (!label_rows.is_empty() || !renames.is_empty()) {
-                        let original: serde_json::Value = serde_json::from_str(&raw)
-                            .map_err(|e| format!("parse {}: {e}", file.file_name))?;
                         translations.extend(
                             keke::note_rewrites(&original, &label_rows, &renames)
                                 .map_err(|e| format!("{}: {e}", file.file_name))?,
@@ -467,7 +479,12 @@ pub async fn export_project(
             entries.push((rel, bytes));
         }
 
-        if let Some(store) = snapshot.as_ref() {
+        // Files refused for a changed source were skipped: comparing their
+        // tags with the original would only add unrelated lines.
+        let source_changed = integrity_issues
+            .iter()
+            .any(|issue| matches!(issue, integrity::IntegrityIssue::SourceChanged { .. }));
+        if let Some(store) = snapshot.as_ref().filter(|_| !source_changed) {
             if !renames.is_empty() || has_label_edits {
                 integrity_issues
                     .extend(keke_resolution_issues(store, &files, &game_path, &entries)?);
@@ -737,6 +754,14 @@ async fn fitted_lines(
 
 /// A segment row to export: `(key, target, is_core, source)`.
 type ExportRow = (String, String, bool, String);
+
+/// `(pointer, recorded source)` of the rows an export is about to write,
+/// checked against the original by [`integrity::verify_sources`].
+fn recorded_sources(rows: &[ExportRow]) -> Vec<(String, String)> {
+    rows.iter()
+        .map(|(key, _, _, source)| (key.clone(), source.clone()))
+        .collect()
+}
 
 /// Split rows into fitted `(key, value)` pairs and the rest.
 fn split_fitted(
@@ -1122,6 +1147,7 @@ pub async fn debug_inject_file(
     } else {
         HashMap::new()
     };
+    let sources = recorded_sources(&rows);
     let (fitted_rows, rows) = split_fitted(rows, fitted.get(&file.id));
 
     // Apply font-size prefix in-memory (never written to DB).
@@ -1188,9 +1214,17 @@ pub async fn debug_inject_file(
                 None
             };
             let raw = read_original_json(snapshot.as_ref(), &rel, &file)?;
+            let original: serde_json::Value =
+                serde_json::from_str(&raw).map_err(|e| format!("parse {}: {e}", file.file_name))?;
+            let changed = integrity::verify_sources(
+                &rel,
+                &original,
+                sources.iter().map(|(k, v)| (k.as_str(), v.as_str())),
+            );
+            if !changed.is_empty() {
+                return Err(integrity::summarize(&changed));
+            }
             if !label_rows.is_empty() {
-                let original: serde_json::Value = serde_json::from_str(&raw)
-                    .map_err(|e| format!("parse {}: {e}", file.file_name))?;
                 segs.extend(
                     keke::note_rewrites(&original, &label_rows, &HashMap::new())
                         .map_err(|e| format!("{}: {e}", file.file_name))?,

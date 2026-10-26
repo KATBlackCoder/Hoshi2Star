@@ -202,7 +202,7 @@ async fn fresh_schema_and_repeated_startup_are_idempotent() {
             .fetch_all(&reopened)
             .await
             .unwrap();
-    assert_eq!(versions, (1..=11).collect::<Vec<_>>());
+    assert_eq!(versions, (1..=12).collect::<Vec<_>>());
 
     let tables: Vec<String> = sqlx::query_scalar(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'terminology_%' \
