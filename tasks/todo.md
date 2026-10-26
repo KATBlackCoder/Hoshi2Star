@@ -319,12 +319,12 @@ Lu dans le code : `open_project` / `visit_extracted_files` / `insert_segments` (
 - Tests : 9 tests d'intégration dans `export_game_update.rs` (5 pour R2b : insertion MV, locuteurs et choix MZ,
   suppression + réécriture, nouveau fichier, argument de commande de plugin) ; page réordonnée couverte en
   unitaire (`engines/mv_mz/resync.rs`).
-- Vérifié avec `DOCS_RS=1` (lindera factice) ; gate complet avec le vrai dictionnaire **à refaire**.
+- Gate complet réel vert le 2026-10-26 sur `608bdbe` : 717 tests Rust, 142 Vitest, clippy, fmt, typecheck, lint.
 - Limites : une catégorie optionnelle n'est pas proposée dans un fichier ajouté par la mise à jour avant une
   nouvelle activation ; `text_fit_overrides` et `parked_segments` deviennent caducs (sans risque).
 
 **Étapes communes.**
-- [ ] 11. Gate complet **en session cloud** (règle du 2026-10-25). Essai en jeu selon E5.
+- [x] 11. Gate complet **en session cloud** (règle du 2026-10-25) : vert le 2026-10-26 sur `608bdbe`. Essai en jeu selon E5 : **non fait** (accord de l'utilisateur requis).
 - [ ] 12. Suivi : journal, handoff, CHANGELOG, et fermeture de S-X1 / F dans le rapport d'audit.
 
 **Critère de sortie.** Le scénario P-2 (401 inséré) ne peut plus produire d'archive décalée, en MV comme en

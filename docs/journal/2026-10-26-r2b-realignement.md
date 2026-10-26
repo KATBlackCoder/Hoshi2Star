@@ -2,7 +2,7 @@
 
 **Phase** : F5 (lots R de l'analyse complète)
 **Durée estimée** : 3h
-**Statut** : 🔄 En cours — implémenté et testé ; relecture indépendante en cours ; gate complet avec le vrai dictionnaire à refaire
+**Statut** : 🔄 En cours — implémenté, gate complet réel vert ; relecture indépendante en cours
 **Outil** : Claude (session cloud)
 **Branche et commit de départ** : `fix/r2a-export-source-guard` @ `c9ff649` (R2a faite)
 **Objectif / plan / story** : `tasks/todo.md`, « Plan détaillé — R2 », étapes 8 à 10 et « Plan détaillé R2b ».
@@ -83,8 +83,13 @@ Toutes avec `CARGO_TARGET_DIR=/home/user/.cache/h2s-target DOCS_RS=1` (dictionna
 - `cargo fmt --check` OK ; `cargo clippy --locked --all-targets -- -D warnings` OK.
 - `cargo test --locked --no-fail-fast` : 715 réussis, 2 échecs (analyseur japonais lindera, attendus), 12 ignorés.
 - `pnpm typecheck` OK ; `pnpm test` : 142 réussis (37 fichiers) ; `pnpm lint` : 0 erreur, 10 avertissements (préexistants).
+- Gate complet réel du 2026-10-26 (sans `DOCS_RS`, `lindera.dev` autorisé), sur `608bdbe` :
+  - `pnpm i --frozen-lockfile` OK, `cargo fmt --check` OK, `pnpm typecheck` OK ;
+  - `pnpm test` : 142 réussis (37 fichiers) ;
+  - `cargo clippy --locked -- -D warnings` OK, et avec `--all-targets` OK ;
+  - `cargo test --locked` : 717 réussis, 0 échec, 12 ignorés (analyseur japonais compris), hors sonde temporaire du relecteur ;
+  - `pnpm lint` : 0 erreur, 10 avertissements (préexistants).
 - Non exécuté :
-  - gate avec le vrai dictionnaire ;
   - réalignement sur un jeu réel mis à jour (aucun dans le cloud) ;
   - essai en jeu (E5, demande l'accord de l'utilisateur) ;
   - interface lancée réellement : seuls les tests Vitest ont tourné.
@@ -99,4 +104,4 @@ Toutes avec `CARGO_TARGET_DIR=/home/user/.cache/h2s-target DOCS_RS=1` (dictionna
 ## Prochaine session
 
 - Résultat de la relecture indépendante R2b : corriger ce qui est confirmé (entrée ajoutée ici).
-- Autoriser `lindera.dev`, relancer le gate complet ; essai du réalignement sur un jeu réel mis à jour (local), puis étape 12 (CHANGELOG, fermeture de S-X1 / F dans le rapport d'audit) et PR si l'utilisateur la demande.
+- Essai du réalignement sur un jeu réel mis à jour (local), puis étape 12 (CHANGELOG, fermeture de S-X1 / F dans le rapport d'audit) et PR si l'utilisateur la demande.
