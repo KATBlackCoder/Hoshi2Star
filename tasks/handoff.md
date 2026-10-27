@@ -64,7 +64,8 @@
 - PR #16 (`feat/wr-wolf-wrap` → `main`) ouverte ; relecture et fusion par l'utilisateur.
 - **Suivi écrit (2026-10-27)** : le 18 par défaut de la fenêtre de taille de police à l'export (Wolf) ; branche `fix/wolf-export-font-default`, worktree `../Hoshi2Star-font`, empilée sur `feat/wr-wolf-wrap` ; gate vert.
 - `fix/wolf-export-font-default` poussé ; **gate cloud vert sur `61dc603`** (Vitest 156, `cargo test` 787 OK / 0 échec, clippy 0).
-- **Prochaine action** : PR de `fix/wolf-export-font-default`, avec accord : vers `main` après la fusion de la PR #16, ou vers `feat/wr-wolf-wrap` en attendant.
+- **PR #17 ouverte** (2026-10-27, accord de l'utilisateur) : https://github.com/KATBlackCoder/Hoshi2Star/pull/17, `fix/wolf-export-font-default` → `feat/wr-wolf-wrap`, empilée sur la PR #16.
+- **Prochaine action** : relecture et fusion de la PR #16 par l'utilisateur, puis recibler la PR #17 sur `main`, et la relire et la fusionner.
 
 ## Abandonné (2026-10-27, Claude) — EX : export d'essai
 
