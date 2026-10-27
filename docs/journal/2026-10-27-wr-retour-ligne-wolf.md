@@ -148,6 +148,15 @@
   - lint : 0 erreur, et 10 avertissements, tous hérités de `main`.
 - CHANGELOG mis à jour (Added). PR ouverte avec l'accord de l'utilisateur.
 
+## Suivi : taille de police proposée à l'export (2026-10-27)
+
+- Demande de l'utilisateur, faite « après fusion de la PR #16 ». La PR était encore ouverte (vérifié avec `gh`) ;
+  le correctif est donc sur `fix/wolf-export-font-default`, empilée sur `feat/wr-wolf-wrap`, dans le worktree
+  `../Hoshi2Star-font`.
+- `FontSizeDialog` partait toujours de 18. Pour Wolf, il propose maintenant la taille du jeu des réglages de
+  mise en page (champ vide si elle est inconnue). Détail dans `tasks/todo.md`, « Suivi WR ».
+- Formatage vérifié (`rustfmt --check`, `prettier`). Non compilé, aucun test exécuté.
+
 ## Prochaine session
 
 - Relecture et fusion de la PR par l'utilisateur. Suivi : défaut 18 de la fenêtre de taille de police à l'export (Wolf).

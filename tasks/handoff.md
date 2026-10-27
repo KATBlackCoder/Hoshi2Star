@@ -61,7 +61,9 @@
 - WR-9 préparé (2026-10-27) : `pnpm i` dans le worktree ; base sauvegardée (`~/.local/share/com.blackat.hoshi2star/backups/hoshi2star-avant-essai-wr9-20261027-181808.db`, intégrité OK, 3 234 segments). Le lancement depuis le worktree applique la migration 0013 à la vraie base ; l'app de `main` l'accepte ensuite comme base plus récente. Mesure sur `APP` (une seule carte) : 22 em, mais 3 lignes ⇒ fixer 4 lignes à la main.
 - **WR-9 OK en jeu (2026-10-27)** : tous les messages dans le cadre, portraits conservés, aucune ligne isolée (captures `RAE-PLAN/essais/wolf-v223/WR9-captures/`). Corrigés pendant l'essai : listes de la boîte illisibles en thème sombre ; remarques Wolf en anglais.
 - **Gate final vert sur `4221f9e`** (2026-10-27) : fmt, typecheck, Vitest 153, clippy 0, `cargo test` 786 OK / 0 échec / 15 ignorés, lint 0 erreur ; CHANGELOG ajouté.
-- **Prochaine action** : PR `feat/wr-wolf-wrap` → `main` ouverte avec l'accord de l'utilisateur ; reste sa relecture et sa fusion. Suivi hors lot : défaut 18 de la fenêtre de taille de police à l'export (`tasks/todo.md`, « Suivi WR »).
+- PR #16 (`feat/wr-wolf-wrap` → `main`) ouverte ; relecture et fusion par l'utilisateur.
+- **Suivi écrit (2026-10-27)** : le 18 par défaut de la fenêtre de taille de police à l'export (Wolf) ; branche `fix/wolf-export-font-default`, worktree `../Hoshi2Star-font`, empilée sur `feat/wr-wolf-wrap` ; non compilé.
+- **Prochaine action** : avec l'accord de l'utilisateur, pousser `fix/wolf-export-font-default` et lancer le gate cloud ; ouvrir sa PR vers `main` une fois la PR #16 fusionnée, sinon vers `feat/wr-wolf-wrap`.
 
 ## Abandonné (2026-10-27, Claude) — EX : export d'essai
 

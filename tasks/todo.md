@@ -1042,8 +1042,15 @@ les cibles en base ne changent pas, comme pour le text fitting MZ.
       - les choix du menu titre et de la difficulté tiennent (textes courts).
     - Suite de l'essai : les remarques Wolf ne sont plus envoyées par le backend (texte anglais) ; la boîte de
       dialogue les écrit en fr/en d'après les réglages en cours.
-- [ ] **Suivi WR (hors lot)** : la fenêtre d'export « Appliquer une taille de police » propose `\f[18]` par défaut.
-  Pour Wolf, c'est 1,5 fois la taille du jeu 2.23 (K5). Proposer la taille du jeu quand elle est connue, ou aucune taille.
+- [x] **Suivi WR (hors lot)** : la fenêtre d'export « Appliquer une taille de police » proposait `\f[18]` par défaut.
+  Pour Wolf, c'est 1,5 fois la taille du jeu 2.23 (K5). **Écrit le 2026-10-27, demande de l'utilisateur**, branche
+  `fix/wolf-export-font-default` empilée sur `feat/wr-wolf-wrap` (PR #16 encore ouverte) :
+  - `scan_font_status` renvoie `game_font_size` (Wolf : taille du jeu des réglages de mise en page) ;
+  - pour Wolf, `FontSizeDialog` propose cette taille ; si elle est inconnue, le champ est vide et « Appliquer » est
+    grisé jusqu'à une saisie, avec une ligne d'aide qui rappelle que « Ignorer » garde la taille du jeu ;
+  - MV/MZ inchangé (18) ;
+  - tests : Vitest `FontSizeDialog.test.tsx` (3 cas) et e2e `wolf_font_scan_reports_the_game_font_size`.
+  **Non compilé** : gate cloud à faire.
 
 **Critère de sortie.** Sur 2.23, aucun message 101 traduit ne sort du cadre en jeu, sauf ceux que le rapport
 signale. Les codes, `@N` et l'intégrité RW-6 sont intacts. Le gate cloud est vert.
