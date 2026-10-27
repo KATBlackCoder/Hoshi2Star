@@ -125,6 +125,8 @@
   base en a 13. Cause confirmée : la liste est figée dans le test. Solution : `1..=13`. Preuve attendue : la relance
   du gate. Leçon ajoutée.
 
+- Relance sur `f02e174` (session cloud) : fmt OK, `cargo test` **786 OK / 0 échec / 15 ignorés**. **Gate vert.**
+
 ## Prochaine session
 
-- Pousser la correction (accord requis) et relancer `cargo test` en cloud ; puis essai en jeu WR-9 et PR.
+- Essai en jeu WR-9 (app lancée depuis le worktree, projet `APP` 2.23, mise en page activée, taille du jeu 12), puis PR.

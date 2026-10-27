@@ -57,7 +57,8 @@
 - **WR-4 à WR-7 écrits** (`feat/wr-wolf-wrap`) : `engines/wolf/layout/`, `commands/wolf_text_fit.rs`, migration `0013`, branchements export / QA / réglages, interface, tests. Écarts au plan listés dans `tasks/todo.md` (choix non signalés, police = seul fichier du dossier, mesure sans repli Shift-JIS).
 - **Poussé** le 2026-10-27 (accord de l'utilisateur) : `origin/feat/wr-wolf-wrap` @ `95e7a76`. Gate cloud (WR-8) demandé dans une session cloud « Gate cloud WR », qui ne fait que rapporter : résultat à relever dans son transcript.
 - **Gate cloud du 2026-10-27 sur `95e7a76`** : tout est vert sauf 1 test, 785 OK / 1 échec / 15 ignorés ; Vitest 153 ; clippy 0. L'échec vient de la liste des migrations figée à `1..=12` (`tests/terminology_migration.rs:205`), passée à `1..=13`, commitée et pas encore poussée.
-- **Prochaine action** : avec accord, pousser la correction et relancer `cargo test` en cloud ; puis essai en jeu sur `APP` 2.23, avec la mise en page activée et la taille du jeu à 12 (WR-9) ; puis PR.
+- **Gate vert** sur `f02e174` (poussé avec accord) : `cargo test` 786 OK / 0 échec / 15 ignorés, fmt OK ; le reste est inchangé depuis `95e7a76`.
+- **Prochaine action** : essai en jeu WR-9 (accord requis : app lancée depuis `../Hoshi2Star-wr`, projet `APP` 2.23, mise en page activée, taille du jeu 12, export, décompression sur `RAE-PLAN/essais/wolf-v223/APP`), puis PR.
 
 ## Abandonné (2026-10-27, Claude) — EX : export d'essai
 
