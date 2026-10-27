@@ -34,20 +34,26 @@
 - **PR ouverte** le 2026-10-27 : https://github.com/KATBlackCoder/Hoshi2Star/pull/13 (`feat/rw-wolf` → `main`, accord de l'utilisateur).
 - **Prochaine action exacte** : relecture et fusion de la PR #13 par l'utilisateur ; essai en jeu 3.658 facultatif. Après fusion : les sessions « Export d'essai » (plan EX validé) et « Retour à la ligne Wolf » partent de `main` ; leurs plans sont non commités dans le dossier principal, à mettre sur leurs branches avant de mettre `main` à jour. (tests réels `--ignored` chez l'utilisateur, essai en jeu de l'export de l'app), puis PR. Pas de build local ; gate en cloud après push autorisé. Suites hors RW : garde « jeu mis à jour » Wolf (copie d'origine, équivalent R2) ; écriture en flux de l'archive dans le zip si l'export du jeu de 2,1 Go peine.
 
-## Reporté (2026-10-27, Claude) — WR : retour à la ligne Wolf à l'export (plan seulement)
+## En cours (2026-10-27, Claude) — WR : retour à la ligne Wolf à l'export
 
-- **Reporté par décision de l'utilisateur le 2026-10-27**, pendant WR-1. Il reprendra plus tard, dans une autre session.
-- Capture A faite (choix collés à droite hors écran ; `\f` sans effet sur un choix) ; écrans B à M non capturés.
+- **Repris le 2026-10-27** (décision de l'utilisateur, « ok on va essayer »), avec la méthode du budget en em (K9).
+  RW (PR #13) et DX (PR #15, `80b4fc5`) sont fusionnés. Branche prévue : `feat/wr-wolf-wrap` depuis `main`, dans un
+  worktree, pour ne pas changer la branche du dossier partagé. Le constat K9, non commité dans le dossier principal,
+  ira dans le premier commit WR.
+- K10 ajouté : largeurs d'origine en em sur tout le jeu. Les lignes avec visage vont jusqu'à 25 em, contre 22 sans visage.
+- WR-1 réduit à 6 captures (B, C, D, I, K, L) dans la WCAL existante ; détail dans `tasks/todo.md`.
+- Ancien report du même jour : capture A faite (choix collés à droite hors écran ; `\f` sans effet sur un choix).
 
 - Plan : `tasks/todo.md`, « Plan — WR ». **Validé le 2026-10-27** (WR-E0 à WR-E6 = recommandations). Aucun code applicatif, rien commité.
 - WR-1 : variante `RAE-PLAN/essais/wolf-v223/WCAL` construite et relue hors jeu (outil `RAE-PLAN/wolf/_outils/build_wolf_wcal.py`) ; fiche `WCAL.FICHE.md`, captures attendues dans `WCAL-captures/` (`capture.fish <lettre>`).
 - Journal : `docs/journal/2026-10-27-wr-retour-ligne-wolf.md`.
-- Prérequis : RW n'est pas fusionné et n'a pas de PR. Ordre à convenir avec EX (`collect_wolf_zip_entries`).
+- Prérequis levé : RW et DX sont fusionnés. EX est abandonné. Point d'accroche : `collect_wolf_zip_entries` (après `apply_font_prefix`, avant `wolf_to_memory`), pour les portées `Release` et `Debug`.
 - Constats clés :
   - les `\n` parasites viennent du tokenizer, qui impose au LLM chaque `\n` comme jeton ;
   - la donnée en jeu (~276 px coupés à `\f[18]`) contredit le modèle simple (lignes d'origine de 320 à 336 px à 16 px) ⇒ calibrage en jeu obligatoire avant tout code (WR-1) ;
   - les réglages numériques de `Game.dat` ne sont pas décodés.
-- **Prochaine action, à la reprise** : relancer WCAL (`RAE-PLAN/essais/wolf-v223/WCAL.FICHE.md`) et capturer les écrans B à M ; lire les captures (largeurs, lignes, taille par défaut, police réelle) ; puis WR-2 (`Game.dat`) et WR-3 (règle de budget). Le code attend la fusion de RW.
+- **WR-1 fait (2026-10-27)** : budget de 22 em et 4 lignes, avec ou sans visage ; taille par défaut `\f[12]` ; `\f[18]` = 1,5 fois (K5 expliqué). Détail : `tasks/todo.md`, « Résultats WR-1 ».
+- **Prochaine action** : WR-2 (taille par défaut lue dans `SysDatabase`, `基本フォントサイズ`), WR-3 (règle de budget), puis le code (WR-4 et suivants) dans un worktree `feat/wr-wolf-wrap` depuis `main`. K9, K10 et les résultats de WR-1 iront dans le premier commit.
 
 ## Abandonné (2026-10-27, Claude) — EX : export d'essai
 

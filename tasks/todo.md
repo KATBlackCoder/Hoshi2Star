@@ -737,6 +737,33 @@ les cibles en base ne changent pas, comme pour le text fitting MZ.
   - `text_fit::enabled_kinds`, `set_text_fit` (via `support`), `qa.rs:133` (`drop_line_width`) et `report.rs:116`
     ne s'appliquent qu'à `mv_mz`.
   - Dernière migration : `0012`.
+- **K9. Point de calibrage tiré de l'essai DX** (2026-10-27, captures de l'utilisateur, zip de debug **sans** `\f`) :
+  - méthode : largeurs mesurées avec `fontTools` sur `mplus-2c-medium.ttf`, avancées divisées par `unitsPerEm` ;
+  - texte visible avant le bord de l'écran (~595 px de capture), sur trois messages :
+    - « ※Thank you for downloading the trial version of » : 23,45 em ;
+    - « You can select the difficulty level for the fishing » : 23,64 em ;
+    - « The difficulty level can be changed anytime by ir » : 23,32 em ;
+  - les trois donnent **25,2 à 25,5 px/em** : le jeu dessine bien avec les métriques de la police livrée, sans
+    substitution visible sous Wine. Cela lève en partie K5, dont la mesure était faite avec `\f[18]` ;
+  - les lignes japonaises d'origine de la carte titre mesurent **22 em au plus**.
+  - ⇒ **Budget mesuré en em** : la taille de police s'annule. Le budget d'un jeu vaut la largeur de ses lignes d'origine
+    dans sa propre police, par type de fenêtre ; aucune mesure de fenêtre en pixels n'est nécessaire. Ici :
+    ~22 em sûrs ; débordement constaté au-delà de ~23 em.
+  - Reste à vérifier avec WCAL : fenêtre avec visage, choix, effet d'un `\f[n]`, police chiffrée (WolfX, estimation).
+  - Capture A (WCAL) recoupe K9 : 16,0 px par chiffre de 0,63 em, soit **25,4 px/em**.
+- **K10. Largeur des lignes d'origine en em, dans la vraie police, sur tout le jeu 2.23** (2026-10-27, fontTools ;
+  codes retirés ; textes à `\ax`/`\ay`/`\mx`/`\my`/`<C>`/`<R>` exclus) :
+  - sans visage, cartes : 409 lignes, p99 21 em, **max 22 em** ⇒ conforme à K9 ;
+  - sans visage, `CommonEvent.dat` : max 32,9 em ; 29 lignes au-delà de 23 em. Ce sont surtout les messages
+    d'erreur du 基本システム (événement 143), qui débordent sans doute aussi en japonais ;
+  - avec visage, cartes : p99 22 em, **max 25 em** ; 4 lignes au-delà de 23 em, dont la ligne de 25 em reprise dans
+    l'écran L de WCAL ;
+  - avec visage, `CommonEvent.dat` : p99 24 em, max 28 em.
+  - ⇒ Deux conséquences :
+    - le budget (WR-3) doit être une statistique robuste par type, et non le maximum : il faut écarter les messages
+      système, qui débordent probablement eux-mêmes ;
+    - **les lignes avec visage dépassent celles sans visage** : la fenêtre avec visage n'est peut-être pas plus
+      étroite. C'est le point clé à vérifier en jeu.
 
 ### Décisions à prendre (recommandation en premier)
 
@@ -845,9 +872,53 @@ les cibles en base ne changent pas, comme pour le text fitting MZ.
       - le pas est de 16,0 px par chiffre, identique avec `\f[12]` : `\f` n'agit pas sur un choix ;
       - le 3e choix, laissé d'origine, n'est plus visible. Non vérifié sur `W0` ;
       - indice, à confirmer par l'écran B : taille de police des choix de 24 à 26 px.
-    - **Reprise** : relancer WCAL (commande dans la fiche), choisir le 1er choix, capturer les écrans B à M,
-      puis lire les captures. B seul donne déjà la taille par défaut, l'espacement et la police réelle.
-- [ ] **WR-2. Décodage de `Game.dat`** (lecture seule, Python).
+    - **Reprise WR, ajustée par K9/K10 (2026-10-27)** : la largeur sans visage est connue. WCAL n'est pas
+      reconstruite : on capture **6 écrans**, et on fait défiler les autres sans les capturer.
+      - **B** : bord intérieur de la fenêtre sans visage, en em. La règle est lue contre le cadre, pas contre
+        le bord de l'écran (K9 mesurait au bord de l'écran).
+      - **C** : `\f[18]` ⇒ correspondance entre `\f[n]` et px/em. Nécessaire pour combiner le budget au préfixe
+        d'export et pour la réduction R5.
+      - **D** et **K** : capacité en lignes et comportement de la fenêtre (6 lignes), sans puis avec visage.
+      - **I** : bord de la fenêtre avec visage, en em, par la règle.
+      - **L** : la ligne d'origine de 25 em avec visage tient-elle ? (K10).
+      - Écrans non capturés : E (icônes, rares en dialogue), F et J (redondants avec C), G (lignes système hors
+        budget), H (les choix centrés s'agrandissent, vu en W2), M (redondant avec C).
+      - Police WolfX (3.658) : pas de variante maintenant. `Metrics::Estimated` reste une limite signalée.
+  - [x] **Résultats WR-1 (2026-10-27).** L'utilisateur a capturé A à L ; les captures sont dans `WCAL-captures/`
+    (`A-2`, `B`, `C`, `D`, `E`, `F`, `GH`, `I`, `J`, `K`, `L`). Mesures en Python (PIL) :
+    - **Rendu.** La fenêtre de 640 × 480 est le jeu natif en 320 × 240 agrandi 2 fois. Les mots 320 et 240 sont dans
+      `Game.dat`, données après les chaînes.
+      - Avances arrondies au pixel, à la taille par défaut : chiffre 16 px, `M` 21 px, pleine chasse 26 px,
+        soit **25,4 à 26 px/em**.
+      - C'est la vraie police : le rapport `M` / `i` est conforme, sans police de repli.
+    - **Taille par défaut = `\f[12]`** : F (`\f[12]`) est identique à B au pixel près.
+      - **`\f[18]`** (C, J) : 25 px par chiffre, 39 px en pleine chasse, soit environ 39 px/em = **1,5 fois**.
+      - La taille est donc proportionnelle à n, environ 2,17 px/em par unité de n (rendu agrandi 2 fois compris).
+      - ⇒ **K5 expliqué** : l'export RW-9 en `\f[18]` agrandissait le texte de 50 %.
+    - **Fenêtre de message.** Cadre de x = 21 à 614, texte dès x = 41 (marge de 20 px), soit 573 px jusqu'au cadre
+      (≈ 22,3 em) et environ 553 px avec une marge symétrique à droite (≈ 21,5 em).
+      - Le texte n'est **pas coupé au cadre** : il continue jusqu'au bord de l'écran.
+    - **Avec visage (`@N`), même largeur** (cadre de 27 à 619, texte dès 47). Dans ce jeu, le portrait est un buste
+      derrière la fenêtre et le nom est dans un onglet au-dessus : aucun rétrécissement.
+    - **4 lignes par fenêtre**, avec ou sans visage (D, K). La 5e est dessinée sous le cadre et coupée par l'écran ;
+      la fenêtre ne grandit pas.
+    - **L** : la ligne d'origine de 25 em (avec visage) **déborde** jusqu'au bord de l'écran, « ね。 » coupés. C'est un
+      défaut du jeu d'origine : le budget ne peut pas être le maximum.
+    - **Icône `\i[n]`** : 20 px à la taille par défaut (≈ 0,78 em).
+    - **Choix.**
+      - Centrés (H, 60 chiffres) : la fenêtre grandit et sort de l'écran des deux côtés.
+      - `<R>` du titre (A) : débordement à droite.
+      - Effet de `\f` sur un choix : **non tranché**, car `\f[12]` vaut la taille par défaut.
+      - Le 3e choix du titre est invisible avec de longs choix, vu deux fois.
+    - ⇒ **Budget de ce jeu : 22 em, 4 lignes**, avec ou sans visage. Il concorde avec K9 (débordement au-delà de
+      ~23 em) et avec K10 (lignes d'origine des cartes : max 22 em sans visage, p99 22 em avec visage).
+- [ ] **WR-2. Taille par défaut du jeu.** **Ajusté après WR-1** : il ne faut plus décoder `Game.dat`.
+  La base système déclare la donnée `基本フォントサイズ` (« taille de police de base ») dans le type
+  `システム変数名` de `SysDatabase.project`, avec `ﾒｯｾｰｼﾞｳｨﾝﾄﾞｳ X/Y座標` (position de la fenêtre de message) juste avant.
+  - À vérifier : sa valeur vaut 12 dans `SysDatabase.dat` 2.23, lue avec `dat_parser` dans un test `#[ignore]`.
+  - Sinon : champ manuel, selon R2.
+  - Sans préfixe d'export, cette taille n'est pas nécessaire (K9).
+- [ ] **WR-2 (ancien libellé). Décodage de `Game.dat`** (lecture seule, Python) — remplacé par la ligne ci-dessus.
   - Comparer `m_unknown1` d'au moins 3 jeux 2.x de `RAE-PLAN/` (extraits avec `dxa6.py`) et de 3.658 (`dxa8.py`),
     à la lumière de WR-1.
   - Si la taille par défaut et l'espacement sont identifiés : lecteur `engines/wolf/game_dat.rs`.

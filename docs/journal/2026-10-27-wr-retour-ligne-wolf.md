@@ -83,6 +83,23 @@
     à comparer avec `W0`.
 - Le lot est **reporté** par décision de l'utilisateur. Écrans B à M non capturés.
 
+## Reprise et WR-1 terminé (2026-10-27)
+
+- Reprise demandée par l'utilisateur après la fusion de RW (PR #13) et de DX (PR #15, `main` @ `80b4fc5`).
+  Constat K9 apporté par la session parente (budget en em) ; K10 ajouté (largeurs d'origine en em sur tout le jeu).
+- WR-1 réduit à 6 écrans ; l'utilisateur a tout capturé (A à L). Résultats détaillés dans `tasks/todo.md`,
+  « Résultats WR-1 » :
+  - taille par défaut `\f[12]` ;
+  - `\f[18]` = 1,5 fois, ce qui explique K5 ;
+  - fenêtre de ~22 em (22,3 em jusqu'au cadre), même largeur avec visage ;
+  - 4 lignes par fenêtre ;
+  - texte non coupé au cadre ;
+  - ligne d'origine de 25 em qui déborde (défaut du jeu) ;
+  - icône de 20 px ;
+  - choix qui sortent de l'écran.
+- `SysDatabase.project` déclare `基本フォントサイズ` : piste pour la taille par défaut (WR-2 ajusté).
+
 ## Prochaine session
 
-- Relancer WCAL et capturer les écrans B à M, puis lire les captures `RAE-PLAN/essais/wolf-v223/WCAL-captures/` et consigner les mesures dans le plan (WR-1), puis WR-2 et WR-3.
+- WR-2 : lire `基本フォントサイズ` dans `SysDatabase.dat`. WR-3 : règle de budget (p99 des lignes des cartes,
+  arrondi ; lignes max = max des cartes). Ensuite, le code dans un worktree `feat/wr-wolf-wrap` depuis `main`.
