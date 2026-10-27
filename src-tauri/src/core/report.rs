@@ -173,15 +173,19 @@ async fn evaluate_project(
             &semantic_context,
         );
         // Text fitting lays these out at export: raw line width does not matter.
-        if fit_mv_mz
-            && is_fitted_segment(
+        let fitted = if fit_mv_mz {
+            is_fitted_segment(
                 &row.file_name,
                 &row.json_key,
                 &row.segment_kind,
                 fit_dialogue,
                 fit_descriptions,
             )
-        {
+        } else {
+            // Wolf RPG messages (plan WR); `fit_dialogue` is false elsewhere.
+            fit_dialogue && crate::engines::wolf::layout::is_fitted_key(&row.json_key)
+        };
+        if fitted {
             result.drop_line_width();
         }
         let variant_count = variants

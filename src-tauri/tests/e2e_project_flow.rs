@@ -1074,6 +1074,92 @@ async fn wolf_v2_export_can_be_repeated_over_its_own_output() {
     }
 }
 
+/// Wolf text fitting (plan WR): with fitting on, the exported message is
+/// cleaned of its stray line break and rewrapped to the window, and the export
+/// still passes the integrity gate (RW-6 rereads the fitted text).
+#[tokio::test]
+async fn wolf_export_rewraps_messages_when_text_fitting_is_on() {
+    use hoshi2star_lib::commands::text_fit::{scan_text_fit, set_text_fit};
+    use hoshi2star_lib::core::text_fit::TextFitSettings;
+
+    const MESSAGE: &str = "こんにちは、旅の人。\nようこそ、川のそばの町へ。";
+    // An LLM-style translation: the line break pushed before the final dot.
+    const TRANSLATION: &str = "aaaa bbbb cccc dddd eeee \n.";
+    // 10 em per line, no font file: 20 half-width characters per line.
+    const FITTED: &str = "aaaa bbbb cccc\ndddd eeee.";
+
+    let tmp = tempfile::tempdir().unwrap();
+    let game_root = tmp.path().join("game");
+    let map_path = game_root.join("Data").join("MapData").join("Map001.mps");
+    std::fs::create_dir_all(map_path.parent().unwrap()).unwrap();
+    std::fs::write(&map_path, wolf_v2_map(MESSAGE)).unwrap();
+    std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+
+    let db_file = tmp.path().join("h2s.db");
+    let app = mock_app(db_file.to_str().unwrap()).await;
+    let project = open_project(
+        game_root.to_str().unwrap().to_string(),
+        None,
+        None,
+        app.state(),
+    )
+    .await
+    .expect("a Wolf 2.x game opens")
+    .project;
+    let files = get_source_files(project.id.clone(), app.state())
+        .await
+        .expect("get_source_files");
+    let file = files.first().expect("one source file");
+    let page = get_segments(project.id.clone(), file.id.clone(), 0, 100_000, app.state())
+        .await
+        .expect("get_segments");
+    let segment = page
+        .items
+        .iter()
+        .find(|segment| segment.source_text == MESSAGE)
+        .expect("the map message");
+    update_segment(segment.id.clone(), TRANSLATION.to_string(), app.state())
+        .await
+        .expect("update_segment");
+
+    // One map message is too few to measure the window: set it.
+    let settings = TextFitSettings {
+        enabled_dialogue: true,
+        wolf_width_em: Some(10.0),
+        wolf_max_lines: Some(4),
+        ..TextFitSettings::default_for("wolf")
+    };
+    set_text_fit(project.id.clone(), settings.clone(), app.state())
+        .await
+        .expect("Wolf text fitting settings are accepted");
+    let scan = scan_text_fit(project.id.clone(), None, app.state())
+        .await
+        .expect("scan");
+    assert_eq!((scan.dialogue.total, scan.dialogue.rewrapped), (1, 1));
+
+    let zip_path = export_project(project.id.clone(), None, false, None, app.state())
+        .await
+        .expect("Wolf export with text fitting");
+    let exported = zip_entries(Path::new(&zip_path))
+        .remove("Data/MapData/Map001.mps")
+        .expect("exported map");
+    assert!(
+        exported
+            .windows(FITTED.len())
+            .any(|window| window == FITTED.as_bytes()),
+        "the exported map carries the rewrapped message"
+    );
+
+    // Wolf has no new page: refused, as are descriptions.
+    let new_page = TextFitSettings {
+        overflow: hoshi2star_lib::engines::mv_mz::layout::fit::Overflow::NewPage,
+        ..settings
+    };
+    assert!(set_text_fit(project.id.clone(), new_page, app.state())
+        .await
+        .is_err());
+}
+
 /// DxLib name entry: `[u16 PackNum][u16 Parity][UPPER][original]`, both names
 /// NUL-padded to `PackNum * 4` bytes. Returns its offset in `table`.
 fn push_dx_name(table: &mut Vec<u8>, name: &str) -> u64 {

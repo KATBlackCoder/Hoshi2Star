@@ -314,19 +314,21 @@ export function AppToolbar({
         </Button>
       )}
 
-      {activeProjectId && activeProject?.engine === "mv_mz" && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 gap-1.5 text-xs"
-          title={t("textFit.toolbarHint")}
-          onClick={() => void openTextFitDialog(activeProjectId)}
-          disabled={isTranslating || isPilotRunning}
-        >
-          <WrapText className="h-3.5 w-3.5" />
-          {t("textFit.toolbar")}
-        </Button>
-      )}
+      {activeProjectId &&
+        (activeProject?.engine === "mv_mz" ||
+          activeProject?.engine === "wolf") && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1.5 text-xs"
+            title={t("textFit.toolbarHint")}
+            onClick={() => void openTextFitDialog(activeProjectId)}
+            disabled={isTranslating || isPilotRunning}
+          >
+            <WrapText className="h-3.5 w-3.5" />
+            {t("textFit.toolbar")}
+          </Button>
+        )}
 
       {developerTools && activeProject?.engine === "mv_mz" && (
         <Button

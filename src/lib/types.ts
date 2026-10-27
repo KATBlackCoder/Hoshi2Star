@@ -647,6 +647,26 @@ export interface TextFitSettings {
   minFontSize: number;
   /** Dialogue font size emitted at every page start (`null` = the game's). */
   dialogueFontSize: number | null;
+  /** Wolf RPG: message line width in em (`null` = measured on the game). */
+  wolfWidthEm?: number | null;
+  /** Wolf RPG: lines per message window (`null` = measured). */
+  wolfMaxLines?: number | null;
+  /** Wolf RPG: the game's default font size, `\f[n]` units (`null` = unknown). */
+  wolfBaseFontSize?: number | null;
+}
+
+/** Wolf RPG message window, in em of the game's default font size. */
+export interface WolfBudget {
+  widthEm: number;
+  maxLines: number;
+}
+
+export interface WolfFitInfo {
+  /** Measured on the game's original map messages (`null`: too few). */
+  measured: WolfBudget | null;
+  /** In use: the project's values where set, the measured ones otherwise. */
+  budget: WolfBudget | null;
+  baseFontSize: number | null;
 }
 
 export interface TextFitGeometry {
@@ -678,6 +698,8 @@ export interface TextFitView {
   font: TextFitFont | null;
   warnings: TextFitLayoutWarning[];
   notes: string[];
+  /** Wolf RPG: the measured message window (absent for MZ). */
+  wolf?: WolfFitInfo | null;
 }
 
 export type FitOutcome =

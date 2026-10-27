@@ -39,9 +39,26 @@ function validSize(value: number | null): boolean {
   );
 }
 
+/** Wolf RPG overrides: `null`/absent = measured (or unknown font size). */
+function validWolf(settings: TextFitSettings): boolean {
+  const { wolfWidthEm: width, wolfMaxLines: lines } = settings;
+  const base = settings.wolfBaseFontSize;
+  return (
+    (width == null || (width >= 4 && width <= 200)) &&
+    (lines == null || (Number.isInteger(lines) && lines >= 1 && lines <= 20)) &&
+    (base == null || (Number.isInteger(base) && base >= 4 && base <= 96))
+  );
+}
+
+/** Empty input → `null` (measured value), a number otherwise. */
+function optionalNumber(value: string): number | null {
+  return value === "" ? null : Number(value);
+}
+
 /**
- * Text fitting settings (RPG Maker MZ): what is laid out at export, how, and
- * what that does to this game — with live counts for the draft settings.
+ * Text fitting settings (RPG Maker MZ; Wolf RPG messages): what is laid out
+ * at export, how, and what that does to this game — with live counts for the
+ * draft settings.
  */
 export function TextFitDialog({ projectId }: TextFitDialogProps) {
   const { t } = useTranslation();
@@ -68,7 +85,11 @@ export function TextFitDialog({ projectId }: TextFitDialogProps) {
   useEffect(() => {
     if (!open || !projectId || !draft || !draftKey || !view?.supported) return;
     if (draftKey === scannedFor.current) return;
-    if (!validSize(draft.minFontSize) || !validSize(draft.dialogueFontSize))
+    if (
+      !validSize(draft.minFontSize) ||
+      !validSize(draft.dialogueFontSize) ||
+      !validWolf(draft)
+    )
       return;
     const handle = window.setTimeout(() => {
       scannedFor.current = draftKey;
@@ -83,7 +104,8 @@ export function TextFitDialog({ projectId }: TextFitDialogProps) {
   const valid =
     draft !== null &&
     validSize(draft.minFontSize) &&
-    validSize(draft.dialogueFontSize);
+    validSize(draft.dialogueFontSize) &&
+    validWolf(draft);
 
   const save = async () => {
     if (!projectId || !draft || !valid) return;
@@ -99,16 +121,24 @@ export function TextFitDialog({ projectId }: TextFitDialogProps) {
     }
   };
 
+  const counts = (key: string, value: FitCounts) => t(key, { ...value });
+  const geometry = view?.geometry ?? null;
+  const wolf = view?.wolf ?? null;
+  /** Measured Wolf line width, rounded for display. */
+  const measuredWidth = wolf?.measured
+    ? Number(wolf.measured.widthEm.toFixed(1))
+    : null;
+
   const openRow = (fileId: string, segmentId: string | null) => {
     setActiveFile(fileId);
     if (segmentId) setActiveSegment(segmentId);
-    setInspectorTab("preview");
-    if (!inspectorOpen) toggleInspector();
+    // The in-game preview lays out MZ texts only.
+    if (!wolf) {
+      setInspectorTab("preview");
+      if (!inspectorOpen) toggleInspector();
+    }
     setOpen(false);
   };
-
-  const counts = (key: string, value: FitCounts) => t(key, { ...value });
-  const geometry = view?.geometry ?? null;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -141,30 +171,40 @@ export function TextFitDialog({ projectId }: TextFitDialogProps) {
                   />
                   <span>
                     <span className="font-medium">
-                      {t("textFit.enableDialogue")}
+                      {t(
+                        wolf
+                          ? "textFit.wolf.enableDialogue"
+                          : "textFit.enableDialogue",
+                      )}
                     </span>
                     <span className="block text-xs text-muted-foreground">
-                      {t("textFit.enableDialogueHint")}
+                      {t(
+                        wolf
+                          ? "textFit.wolf.enableDialogueHint"
+                          : "textFit.enableDialogueHint",
+                      )}
                     </span>
                   </span>
                 </label>
-                <label className="flex items-start gap-3">
-                  <Checkbox
-                    className="mt-0.5"
-                    checked={draft.enabledDescriptions}
-                    onCheckedChange={(value) =>
-                      update({ enabledDescriptions: value === true })
-                    }
-                  />
-                  <span>
-                    <span className="font-medium">
-                      {t("textFit.enableDescriptions")}
+                {!wolf && (
+                  <label className="flex items-start gap-3">
+                    <Checkbox
+                      className="mt-0.5"
+                      checked={draft.enabledDescriptions}
+                      onCheckedChange={(value) =>
+                        update({ enabledDescriptions: value === true })
+                      }
+                    />
+                    <span>
+                      <span className="font-medium">
+                        {t("textFit.enableDescriptions")}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {t("textFit.enableDescriptionsHint")}
+                      </span>
                     </span>
-                    <span className="block text-xs text-muted-foreground">
-                      {t("textFit.enableDescriptionsHint")}
-                    </span>
-                  </span>
-                </label>
+                  </label>
+                )}
               </section>
 
               <section className="grid gap-3 sm:grid-cols-2">
@@ -196,11 +236,17 @@ export function TextFitDialog({ projectId }: TextFitDialogProps) {
                       update({ overflow: e.target.value as FitOverflow })
                     }
                   >
-                    <option value="new_page">
-                      {t("textFit.overflowNewPage")}
-                    </option>
+                    {!wolf && (
+                      <option value="new_page">
+                        {t("textFit.overflowNewPage")}
+                      </option>
+                    )}
                     <option value="shrink">
-                      {t("textFit.overflowShrink")}
+                      {t(
+                        wolf
+                          ? "textFit.wolf.overflowShrink"
+                          : "textFit.overflowShrink",
+                      )}
                     </option>
                     <option value="leave">{t("textFit.overflowLeave")}</option>
                   </select>
@@ -220,31 +266,123 @@ export function TextFitDialog({ projectId }: TextFitDialogProps) {
                     }
                   />
                 </label>
-                <label className="space-y-1">
-                  <span className="text-xs font-medium">
-                    {t("textFit.dialogueFontSize")}
-                  </span>
-                  <Input
-                    type="number"
-                    min={FONT_MIN}
-                    max={FONT_MAX}
-                    placeholder={String(geometry?.fontSize ?? "")}
-                    value={draft.dialogueFontSize ?? ""}
-                    aria-invalid={!validSize(draft.dialogueFontSize)}
-                    onChange={(e) =>
-                      update({
-                        dialogueFontSize:
-                          e.target.value === "" ? null : Number(e.target.value),
-                      })
-                    }
-                  />
-                  <span className="block text-xs text-muted-foreground">
-                    {t("textFit.dialogueFontSizeHint", {
-                      size: geometry?.fontSize ?? 26,
-                    })}
-                  </span>
-                </label>
+                {wolf ? (
+                  <>
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium">
+                        {t("textFit.wolf.baseFontSize")}
+                      </span>
+                      <Input
+                        type="number"
+                        min={4}
+                        max={96}
+                        value={draft.wolfBaseFontSize ?? ""}
+                        aria-invalid={!validWolf(draft)}
+                        onChange={(e) =>
+                          update({
+                            wolfBaseFontSize: optionalNumber(e.target.value),
+                          })
+                        }
+                      />
+                      <span className="block text-xs text-muted-foreground">
+                        {t("textFit.wolf.baseFontSizeHint")}
+                      </span>
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium">
+                        {t("textFit.wolf.widthEm")}
+                      </span>
+                      <Input
+                        type="number"
+                        min={4}
+                        max={200}
+                        step={0.5}
+                        placeholder={
+                          measuredWidth === null ? "" : String(measuredWidth)
+                        }
+                        value={draft.wolfWidthEm ?? ""}
+                        onChange={(e) =>
+                          update({
+                            wolfWidthEm: optionalNumber(e.target.value),
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium">
+                        {t("textFit.wolf.maxLines")}
+                      </span>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={20}
+                        placeholder={
+                          wolf.measured ? String(wolf.measured.maxLines) : ""
+                        }
+                        value={draft.wolfMaxLines ?? ""}
+                        onChange={(e) =>
+                          update({
+                            wolfMaxLines: optionalNumber(e.target.value),
+                          })
+                        }
+                      />
+                      <span className="block text-xs text-muted-foreground">
+                        {t("textFit.wolf.measuredHint")}
+                      </span>
+                    </label>
+                  </>
+                ) : (
+                  <label className="space-y-1">
+                    <span className="text-xs font-medium">
+                      {t("textFit.dialogueFontSize")}
+                    </span>
+                    <Input
+                      type="number"
+                      min={FONT_MIN}
+                      max={FONT_MAX}
+                      placeholder={String(geometry?.fontSize ?? "")}
+                      value={draft.dialogueFontSize ?? ""}
+                      aria-invalid={!validSize(draft.dialogueFontSize)}
+                      onChange={(e) =>
+                        update({
+                          dialogueFontSize:
+                            e.target.value === ""
+                              ? null
+                              : Number(e.target.value),
+                        })
+                      }
+                    />
+                    <span className="block text-xs text-muted-foreground">
+                      {t("textFit.dialogueFontSizeHint", {
+                        size: geometry?.fontSize ?? 26,
+                      })}
+                    </span>
+                  </label>
+                )}
               </section>
+
+              {wolf && (
+                <section className="space-y-1 rounded-lg border p-3 text-xs">
+                  <p className="font-medium">{t("textFit.detected")}</p>
+                  <p>
+                    {wolf.measured
+                      ? t("textFit.wolf.window", {
+                          width: measuredWidth,
+                          lines: wolf.measured.maxLines,
+                        })
+                      : t("textFit.wolf.notMeasured")}
+                  </p>
+                  <p>
+                    {view.font?.loaded
+                      ? t("textFit.wolf.fontMeasured", {
+                          file: view.font.file,
+                        })
+                      : t("textFit.fontEstimated", {
+                          error: view.font?.error ?? "",
+                        })}
+                  </p>
+                </section>
+              )}
 
               {geometry && (
                 <section className="space-y-1 rounded-lg border p-3 text-xs">
@@ -328,11 +466,18 @@ export function TextFitDialog({ projectId }: TextFitDialogProps) {
                 {scan && (
                   <>
                     <p className="text-xs">
-                      {counts("textFit.dialogueCounts", scan.dialogue)}
+                      {counts(
+                        wolf
+                          ? "textFit.wolf.dialogueCounts"
+                          : "textFit.dialogueCounts",
+                        scan.dialogue,
+                      )}
                     </p>
-                    <p className="text-xs">
-                      {counts("textFit.descriptionCounts", scan.descriptions)}
-                    </p>
+                    {!wolf && (
+                      <p className="text-xs">
+                        {counts("textFit.descriptionCounts", scan.descriptions)}
+                      </p>
+                    )}
                     {scan.rows.length > 0 && (
                       <div className="rounded-lg border">
                         <p className="border-b px-3 py-1.5 text-xs font-medium">
