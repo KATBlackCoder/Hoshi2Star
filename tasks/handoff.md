@@ -1,8 +1,8 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-27 — Claude (lot RW : RW-1 à RW-6 vérifiés, RW-7 et RW-8 écrits ; worktree `../Hoshi2Star-rw`, branche `feat/rw-wolf`).
+**Mis à jour :** 2026-10-27 — Claude (lot RW : RW-1 à RW-8 vérifiés ; reste RW-9 ; worktree `../Hoshi2Star-rw`, branche `feat/rw-wolf`).
 **Objectif utilisateur :** lot RW, extraction et réinjection Wolf v2/v3 dans l'app (livraison par archive reconstruite).
-**Statut :** R2 fusionné (PR #12, `2331c75`). RW : plan validé le 2026-10-26 ; RW-1 à RW-6 vérifiés (gate cloud vert sur `610cd33`) ; RW-7 et RW-8 écrits, non compilés, non poussés.
+**Statut :** R2 fusionné (PR #12, `2331c75`). RW : plan validé le 2026-10-26 ; RW-1 à RW-8 vérifiés (gate cloud vert sur `1661ab5`) ; reste RW-9 (essais réels) puis PR.
 
 ## En cours (2026-10-26, Claude) — RW (Wolf)
 
@@ -27,8 +27,8 @@
 - Correctif poussé (`610cd33`, accord de l'utilisateur) ; **gate RW-5 vert** sur `610cd33` : fmt, typecheck, Vitest 142, clippy `--all-targets -D warnings` 0, `cargo test --locked --no-fail-fast` **755 OK / 0 échec / 14 ignorés** ; `engines::wolf` 170 OK / 4 ignorés ; e2e Wolf 4/4 ; lint 0 erreur.
 - **RW-7 écrit** : `encoding::fold_for_shift_jis` (é → e, œ → oe, « » → ", espaces insécables, tirets) appliqué aux fichiers Shift-JIS (cartes, événements communs, `.dat`), compté (`folded_count`, `WolfExport::folded_texts`, journalisé) ; intégrité alignée ; `encoding::path_warning` pour un jeu v2 dont le chemin a un caractère hors cp932 ou à aller-retour cp932 trompeur (`〜` U+301C), journalisé à l'ouverture et à l'export. Affichage du compte et de l'avertissement : RW-8. **Non compilé.**
 - **RW-8 écrit** (2026-10-27) : `preflight_export` renvoie `wolf` (archives annoncées, Shift-JIS, nombre de traductions accentuées, avertissement de chemin) sans lire d'archive ; boîte d'export : `ExportWolfNotes` ; erreurs `wolf_unreadable_archive` / `wolf_unreadable_files` avec détail en description du toast ; branche et clés `wolfV2Unsupported` retirées. `export_project` inchangé. **Non compilé.**
-- RW-7 + RW-8 poussés (`1661ab5`, accord de l'utilisateur, 2026-10-27) ; gate cloud demandé, résultat à reporter ici (attendu environ 760 Rust OK / 14 ignorés, Vitest environ 145).
-- **Prochaine action exacte** : reporter le gate RW-7 + RW-8, puis RW-9 (tests réels `--ignored` chez l'utilisateur, essai en jeu de l'export de l'app), puis PR. Pas de build local ; gate en cloud après push autorisé. Suites hors RW : garde « jeu mis à jour » Wolf (copie d'origine, équivalent R2) ; écriture en flux de l'archive dans le zip si l'export du jeu de 2,1 Go peine.
+- RW-7 + RW-8 poussés (`1661ab5`, accord de l'utilisateur, 2026-10-27) ; **gate cloud vert** sur `1661ab5` : fmt, typecheck, Vitest **145/145**, clippy `--all-targets -D warnings` 0, `cargo test --locked --no-fail-fast` **760 OK / 0 échec / 14 ignorés**, lint 0 erreur (10 avertissements connus) ; tests ciblés RW-7/RW-8 et e2e Wolf 5/5 OK. Prettier (contrôle en plus) : écart sur `src/components/editor/ProjectList.tsx` **déjà présent sur `main`** (`2331c75`), hors lignes RW-8 ; noté à part dans `tasks/todo.md`.
+- **Prochaine action exacte** : RW-9 (tests réels `--ignored` chez l'utilisateur, essai en jeu de l'export de l'app), puis PR. Pas de build local ; gate en cloud après push autorisé. Suites hors RW : garde « jeu mis à jour » Wolf (copie d'origine, équivalent R2) ; écriture en flux de l'archive dans le zip si l'export du jeu de 2,1 Go peine.
 
 ## En cours (2026-10-26, Claude) — R2b
 

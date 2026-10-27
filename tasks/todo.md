@@ -1860,7 +1860,7 @@ Chaque étape : code, tests unitaires sur fichiers synthétiques, journal. Pas d
 **RW-7 — Encodage et chemins** (`engines/wolf/encoding.rs`), effort S.
 - D3 : repli des accents en v2, avec le compte des lignes touchées.
 - Avertissement si le chemin du jeu ou de l'export contient un caractère hors Shift-JIS : un jeu v2 n'y démarre pas, constaté en jeu.
-- **Plan détaillé RW-7 (2026-10-26, Claude) — [~] code et tests écrits, non compilés ; gate cloud non exécuté :**
+- **Plan détaillé RW-7 (2026-10-26, Claude) — [x] gate cloud vert sur `1661ab5` (760 Rust OK, Vitest 145) :**
   - [x] `encoding::fold_for_shift_jis(texte) -> Cow<str>` : inchangé si tout s'encode ; sinon chaque caractère hors Shift-JIS devient sa lettre de base (décomposition canonique, marques combinantes retirées : é → e, Ç → C), `œ/Œ/æ/Æ/ß` → `oe/OE/ae/AE/ss`, `« » „` → `"`, `‚` → `'`, espaces insécables → espace, `– —` → `-` ; tout autre caractère reste et l'encodeur le refuse comme aujourd'hui (erreur explicite, pas de `?` silencieux).
   - [x] Injecteur : pour un fichier Shift-JIS (drapeau de la carte, de `CommonEvent.dat`, magic du `.dat`), chaque traduction est repliée avant d'être posée ; `InjectionResult::folded_count` compte les textes repliés ; UTF-8 inchangé (D3 : accents écrits tels quels en v3).
   - [x] Intégrité : la valeur attendue d'une clé prévue est la traduction repliée quand le fichier est Shift-JIS.
@@ -1871,12 +1871,14 @@ Chaque étape : code, tests unitaires sur fichiers synthétiques, journal. Pas d
 **RW-8 — Interface**, effort S.
 - Messages fr/en pour les nouvelles erreurs.
 - Lignes du rapport d'export : archive reconstruite, accents repliés, avertissement de police v3.
-- **Plan détaillé RW-8 (2026-10-27, Claude) — [~] code et tests écrits, non compilés ; gate cloud non exécuté :**
+- **Plan détaillé RW-8 (2026-10-27, Claude) — [x] gate cloud vert sur `1661ab5` (760 Rust OK, Vitest 145) :**
   - Choix : `export_project` garde son retour (chemin du zip ; 29 appels dans les tests) ; les lignes du rapport sont annoncées **avant** l'export par `preflight_export`, que la boîte de confirmation appelle déjà.
   - [x] `ExportPreflight.wolf` (`WolfExportPreflight`, projets Wolf) : `archives` (archives que le jeu lit d'abord et que l'export reconstruit : `Data.wolf`, `Data/MapData.wolf`, `Data/BasicData.wolf`, sans les lire), `shiftJis` (version détectée), `accentedTexts` (traductions que le repli modifie), `pathWarning` (RW-7). Coût : aucun déchiffrement d'archive.
   - [x] Boîte de confirmation d'export : lignes Wolf — archive reconstruite à décompresser par-dessus le jeu ; v2 : N textes écrits sans accents ; v3 : N textes accentués, vérifier la police en jeu ; avertissement de chemin.
   - [x] Erreurs : `projectError.ts` remplace la branche morte `WOLF_V2_UNSUPPORTED` par `wolf_unreadable_archive` et `wolf_unreadable_files` (ouverture et export), détail du backend en description du toast ; clés fr/en ajoutées, clés `wolfV2Unsupported` retirées ; « Moteur non détecté » cite Wolf RPG 2.x et 3.x.
   - [x] Tests : Vitest `projectError` (nouvelles clés, détail, deux langues) ; e2e Rust `preflight_export` sur un jeu v2 avec traduction accentuée (Shift-JIS, compte, sans archive) et sur un jeu `Data.wolf` (archive annoncée).
+
+- Hors périmètre RW, noté le 2026-10-27 : `src/components/editor/ProjectList.tsx` n'est pas au format Prettier (écart déjà présent sur `main` @ `2331c75`, environ 250 lignes, JSX de la page d'accueil) ; `pnpm lint` ne lance pas Prettier. À corriger dans un commit à part (`prettier --write` sur ce fichier), et envisager d'ajouter `prettier --check` au gate.
 
 **RW-9 — Vérification**, effort S.
 - Gate cloud.
