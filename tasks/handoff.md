@@ -1,8 +1,8 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-26 — Claude (lot RW démarré : worktree `../Hoshi2Star-rw`, branche `feat/rw-wolf` ; R2 fusionné, PR #12).
+**Mis à jour :** 2026-10-27 — Claude (lot RW : RW-1 à RW-6 vérifiés, RW-7 et RW-8 écrits ; worktree `../Hoshi2Star-rw`, branche `feat/rw-wolf`).
 **Objectif utilisateur :** lot RW, extraction et réinjection Wolf v2/v3 dans l'app (livraison par archive reconstruite).
-**Statut :** R2 fusionné (PR #12, `2331c75`). RW : plan validé le 2026-10-26 ; RW-1 à RW-6 vérifiés (gate cloud vert sur `610cd33`) ; RW-7 écrit, non compilé.
+**Statut :** R2 fusionné (PR #12, `2331c75`). RW : plan validé le 2026-10-26 ; RW-1 à RW-6 vérifiés (gate cloud vert sur `610cd33`) ; RW-7 et RW-8 écrits, non compilés, non poussés.
 
 ## En cours (2026-10-26, Claude) — RW (Wolf)
 
@@ -26,7 +26,8 @@
 - RW-5 poussé (`2ad2418`, accord de l'utilisateur, changements de comportement acceptés) ; **gate cloud RW-5 rouge** : 754 OK / 1 échec / 14 ignorés ; seul échec `test_inject_all_does_not_overwrite_wolf` (ancien test qui attendait qu'un faux `.wolf` soit ignoré). Corrigé (attend le refus, `.wolf` intact), non compilé ; tous les nouveaux tests RW-5 OK.
 - Correctif poussé (`610cd33`, accord de l'utilisateur) ; **gate RW-5 vert** sur `610cd33` : fmt, typecheck, Vitest 142, clippy `--all-targets -D warnings` 0, `cargo test --locked --no-fail-fast` **755 OK / 0 échec / 14 ignorés** ; `engines::wolf` 170 OK / 4 ignorés ; e2e Wolf 4/4 ; lint 0 erreur.
 - **RW-7 écrit** : `encoding::fold_for_shift_jis` (é → e, œ → oe, « » → ", espaces insécables, tirets) appliqué aux fichiers Shift-JIS (cartes, événements communs, `.dat`), compté (`folded_count`, `WolfExport::folded_texts`, journalisé) ; intégrité alignée ; `encoding::path_warning` pour un jeu v2 dont le chemin a un caractère hors cp932 ou à aller-retour cp932 trompeur (`〜` U+301C), journalisé à l'ouverture et à l'export. Affichage du compte et de l'avertissement : RW-8. **Non compilé.**
-- **Prochaine action exacte** : gate cloud RW-7 (push à demander), puis RW-8 (accents v2, chemin hors Shift-JIS), RW-8 (interface : `wolf_unreadable_files`, `wolf_unreadable_archive`, branche morte `WOLF_V2_UNSUPPORTED`), RW-9, RW-3, RW-6, RW-5, RW-7, RW-8, RW-9. Pas de build local ; gate en cloud après push autorisé.
+- **RW-8 écrit** (2026-10-27) : `preflight_export` renvoie `wolf` (archives annoncées, Shift-JIS, nombre de traductions accentuées, avertissement de chemin) sans lire d'archive ; boîte d'export : `ExportWolfNotes` ; erreurs `wolf_unreadable_archive` / `wolf_unreadable_files` avec détail en description du toast ; branche et clés `wolfV2Unsupported` retirées. `export_project` inchangé. **Non compilé.**
+- **Prochaine action exacte** : gate cloud RW-7 + RW-8 (push à demander), puis RW-9 (tests réels `--ignored` chez l'utilisateur, essai en jeu de l'export de l'app), puis PR. Pour mémoire : RW-8 (accents v2, chemin hors Shift-JIS), RW-8 (interface : `wolf_unreadable_files`, `wolf_unreadable_archive`, branche morte `WOLF_V2_UNSUPPORTED`), RW-9, RW-3, RW-6, RW-5, RW-7, RW-8, RW-9. Pas de build local ; gate en cloud après push autorisé.
 
 ## En cours (2026-10-26, Claude) — R2b
 
