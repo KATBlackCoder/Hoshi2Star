@@ -427,7 +427,8 @@
   "toasts": {
     "exportSuccess": "ZIP exported — hoshi2star.zip ready",
     "exportError": "Export error: {{error}}",
-    "wolfV2Unsupported": "Export not possible: this Wolf RPG v2 project contains maps or common events that are not supported for now. Nothing was written."
+    "wolfUnreadableArchive": "Export not possible: a Wolf RPG archive of the game cannot be read. Nothing was written.",
+    "wolfUnreadableFiles": "Export not possible: Wolf RPG maps or common events could not be read. Nothing was written."
   },
   "lang": {
     "toggle": "EN"
@@ -467,13 +468,14 @@
     "delete": "Delete project",
     "deleted": "Project \"{{name}}\" deleted",
     "openError": "Failed to open project",
-    "engineNotFound": "No game engine detected. Supported: RPG Maker MV/MZ, Wolf RPG v3.",
+    "engineNotFound": "No game engine detected. Supported: RPG Maker MV/MZ, Wolf RPG 2.x and 3.x.",
     "deleteError": "Failed to delete project",
     "confirmDeleteTitle": "Delete \"{{name}}\"?",
     "confirmDeleteDesc": "This will permanently remove all segments, translations, terminology occurrences, and project-specific terminology from the database. The game files on disk are not affected.",
     "confirmDeleteCancel": "Cancel",
     "confirmDeleteConfirm": "Delete",
-    "wolfV2Unsupported": "Wolf RPG v2 game not supported yet: its maps and common events cannot be read for now. A new reader is planned."
+    "wolfUnreadableArchive": "A Wolf RPG archive of this game cannot be read (3.31+ or WolfX encryption, or an unknown layout). Decrypt the game with UberWolf, then move the .wolf files out of the game folder before opening it again.",
+    "wolfUnreadableFiles": "Wolf RPG maps or common events could not be read: the project is not opened, so that their dialogue is not lost."
   },
   "updater": {
     "title": "Update available",
@@ -647,6 +649,12 @@
     "notCoveredHint": "These plugin settings contain text, but no verified profile proves they are display-only, so they stay untranslated. A hint is a guess from the plugin code, never a guarantee.",
     "notCoveredHintLabel": "Hint:",
     "driftResync": "Realign the project…"
+  },
+  "exportWolf": {
+    "archives": "The zip will hold {{archives}} rebuilt with the translations: unpack it over the game (the game reads its archives before the Data folder).",
+    "folded": "{{count}} translation(s) will be written without accents (é → e): this Wolf RPG 2.x game (Shift-JIS) cannot display them.",
+    "fontAccents": "{{count}} translation(s) contain accents: check in game that the font displays them (it did not on a Wolf 3.658 game).",
+    "pathWarning": "The game folder path contains characters (such as 〜 or accented letters) that stop a Wolf RPG 2.x game from starting: copy the game to a folder with a plain name (unaccented letters, digits) before running it."
   },
   "exportLocale": {
     "label": "Also switch the game's language setting ({{current}} → {{target}})",

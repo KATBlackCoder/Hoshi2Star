@@ -18,6 +18,10 @@ const MAGIC_PREFIX: [u8; 16] = [
 /// header prefix that is written/read uncompressed.
 const HEADER_SIZE: usize = 25;
 
+/// First map `version` stored LZ4-compressed (WOLF RPG Editor 3.x). Older maps
+/// (`0x64`: v2.x Shift-JIS, and some v3.x UTF-8 maps) are stored in clear.
+const VERSION_LZ4: u32 = 0x65;
+
 /// Returns `true` if `bytes` looks like an LZ4-wrapped v3.x map/database
 /// file: the fixed 16-byte magic prefix, a UTF-8 flag byte (`0x00` or
 /// `0x55`), three zero bytes, and a `version >= 0x65` byte that selects the
@@ -28,6 +32,54 @@ pub(crate) fn is_lz4_v3(bytes: &[u8]) -> bool {
         && matches!(bytes[16], 0x00 | 0x55)
         && bytes[17..20] == [0x00, 0x00, 0x00]
         && bytes[20] >= 0x65
+}
+
+/// Returns `true` if `bytes` looks like a map stored in clear (v2.x, or a v3.x
+/// `0x64` map): same 20-byte signature and flag byte as [`is_lz4_v3`], with a
+/// `version < 0x65`. The file itself is then the `header[0..25] ++ payload`
+/// buffer [`super::map::MapV3::parse`] expects.
+pub(crate) fn is_plain_map(bytes: &[u8]) -> bool {
+    bytes.len() > HEADER_SIZE
+        && bytes[0..16] == MAGIC_PREFIX
+        && matches!(bytes[16], 0x00 | 0x55)
+        && bytes[17..20] == [0x00, 0x00, 0x00]
+        && u32::from_le_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]) < VERSION_LZ4
+}
+
+/// On-disk `.mps` bytes → `header[0..25] ++ payload` for [`super::map::MapV3::parse`],
+/// whatever the container (LZ4 for `version >= 0x65`, clear otherwise).
+pub(crate) fn unpack_map(bytes: &[u8]) -> Result<Vec<u8>, V3FormatError> {
+    if is_lz4_v3(bytes) {
+        decompress_v3(bytes)
+    } else if is_plain_map(bytes) {
+        Ok(bytes.to_vec())
+    } else {
+        Err(V3FormatError::InvalidMagic {
+            offset: 0,
+            expected: MAGIC_PREFIX.to_vec(),
+            found: bytes[..bytes.len().min(MAGIC_PREFIX.len())].to_vec(),
+            context: "map file (neither LZ4 v3.x nor clear layout)",
+        })
+    }
+}
+
+/// Inverse of [`unpack_map`] for a [`super::map::MapV3::dump`] result: recompressed
+/// only when the map `version` selects the LZ4 layout, so a map stored in clear
+/// is written back in clear.
+pub(crate) fn pack_map(dumped: Vec<u8>) -> Result<Vec<u8>, V3FormatError> {
+    let version = dumped
+        .get(20..24)
+        .map(|v| u32::from_le_bytes([v[0], v[1], v[2], v[3]]))
+        .ok_or(V3FormatError::UnexpectedEof {
+            offset: 20,
+            needed: 4,
+            available: dumped.len().saturating_sub(20),
+        })?;
+    if version >= VERSION_LZ4 {
+        recompress_v3(&dumped)
+    } else {
+        Ok(dumped)
+    }
 }
 
 /// Decompresses an LZ4-wrapped v3.x file into `header[0..25] ++ payload`,
@@ -149,6 +201,37 @@ mod tests {
         let mut bytes = header.to_vec();
         bytes.extend_from_slice(&[0u8; 13]);
         assert!(!is_lz4_v3(&bytes));
+    }
+
+    #[test]
+    fn test_plain_map_detected_by_version_and_kept_in_clear() {
+        for (version, utf8) in [(0x64, false), (0x64, true)] {
+            let mut bytes = synthetic_header(version, utf8).to_vec();
+            bytes.extend_from_slice(b"clear payload");
+            assert!(is_plain_map(&bytes));
+            assert!(!is_lz4_v3(&bytes));
+            assert_eq!(unpack_map(&bytes).unwrap(), bytes);
+            assert_eq!(pack_map(bytes.clone()).unwrap(), bytes);
+        }
+    }
+
+    #[test]
+    fn test_lz4_map_round_trips_through_unpack_and_pack() {
+        let mut plain = synthetic_header(0x67, true).to_vec();
+        plain.extend_from_slice(b"payload of a v3.5 map");
+        let packed = pack_map(plain.clone()).unwrap();
+        assert!(is_lz4_v3(&packed));
+        assert!(!is_plain_map(&packed));
+        assert_eq!(unpack_map(&packed).unwrap(), plain);
+    }
+
+    #[test]
+    fn test_unpack_map_rejects_unknown_content() {
+        let garbage = b"definitely not a Wolf RPG map file at all".to_vec();
+        assert!(matches!(
+            unpack_map(&garbage),
+            Err(V3FormatError::InvalidMagic { .. })
+        ));
     }
 
     #[test]

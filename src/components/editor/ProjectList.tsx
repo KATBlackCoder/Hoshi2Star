@@ -31,7 +31,7 @@ import {
 } from "@/stores/project";
 import type { Project, ProjectStats } from "@/lib/types";
 import { engineLabel, relativeDate } from "@/lib/format";
-import { openProjectErrorKey } from "@/lib/projectError";
+import { openProjectErrorKey, wolfReadErrorDetail } from "@/lib/projectError";
 import { STATUS_SUMMARY } from "@/lib/statusSummary";
 import { toast } from "sonner";
 import { useUiStore } from "@/stores/ui";
@@ -71,7 +71,9 @@ export function ProjectList() {
     try {
       await openProject(project.gamePath);
     } catch (err) {
-      toast.error(t(openProjectErrorKey(err)));
+      toast.error(t(openProjectErrorKey(err)), {
+        description: wolfReadErrorDetail(err),
+      });
     } finally {
       setIsOpening(null);
     }
@@ -108,7 +110,9 @@ export function ProjectList() {
     try {
       await openProject(selected as string);
     } catch (err) {
-      toast.error(t(openProjectErrorKey(err)));
+      toast.error(t(openProjectErrorKey(err)), {
+        description: wolfReadErrorDetail(err),
+      });
     } finally {
       setOpeningNew(false);
     }

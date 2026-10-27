@@ -55,7 +55,6 @@ const VALID_FIELD_START: u32 = 0x03E8;
 // Signals that an extra string follows in the type data header
 const STRING_INDICATOR: u32 = 0x0001_D4C0;
 /// Public re-export for the injector (F4-04).
-pub(crate) const STRING_INDICATOR_PUB: u32 = STRING_INDICATOR;
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -85,7 +84,7 @@ pub enum DatParseError {
 // Public output types
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DatField {
     pub name: String,
     pub index_info: u32,
@@ -103,7 +102,7 @@ impl DatField {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DatEntry {
     /// Row name from the .project schema (used by injector F4-04).
     #[allow(dead_code)]
@@ -113,17 +112,21 @@ pub struct DatEntry {
     pub string_values: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DatType {
     /// Type name from the .project schema (used by injector F4-04).
     #[allow(dead_code)]
     pub name: String,
+    /// `unknown1` of the type header, written back as read (plan RW, RW-6).
+    pub unknown1: u32,
+    /// Extra string present when `unknown1 == STRING_INDICATOR`, written back as read.
+    pub unknown1_string: Option<String>,
     /// Active fields (first `fields_size` entries from the .project schema).
     pub fields: Vec<DatField>,
     pub entries: Vec<DatEntry>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DatFile {
     pub types: Vec<DatType>,
     /// Encoding flag — used by the injector to write back the correct magic bytes.
@@ -318,9 +321,11 @@ fn parse_dat_types(
         let fields_size = read_u32(&mut c)? as usize;
 
         // Optional extra string present when unknown1 == STRING_INDICATOR.
-        if unknown1 == STRING_INDICATOR {
-            let _ = read_wolf_string(&mut c, is_utf8)?;
-        }
+        let unknown1_string = if unknown1 == STRING_INDICATOR {
+            Some(read_wolf_string(&mut c, is_utf8)?)
+        } else {
+            None
+        };
 
         // Read indexInfo for each active field; borrow name from project schema.
         let mut fields = Vec::with_capacity(bounded_cap(&c, fields_size));
@@ -374,6 +379,8 @@ fn parse_dat_types(
 
         dat_types.push(DatType {
             name: proj.name.clone(),
+            unknown1,
+            unknown1_string,
             fields,
             entries,
         });

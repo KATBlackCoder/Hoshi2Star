@@ -427,7 +427,8 @@
   "toasts": {
     "exportSuccess": "ZIP exporté — hoshi2star.zip prêt",
     "exportError": "Erreur export : {{error}}",
-    "wolfV2Unsupported": "Export impossible : ce projet Wolf RPG v2 contient des cartes ou des événements communs qui ne sont plus pris en charge pour l'instant. Rien n'a été écrit."
+    "wolfUnreadableArchive": "Export impossible : une archive Wolf RPG du jeu est illisible. Rien n'a été écrit.",
+    "wolfUnreadableFiles": "Export impossible : des cartes ou des événements communs Wolf RPG n'ont pas pu être lus. Rien n'a été écrit."
   },
   "lang": {
     "toggle": "FR"
@@ -467,13 +468,14 @@
     "delete": "Supprimer le projet",
     "deleted": "Projet « {{name}} » supprimé",
     "openError": "Impossible d'ouvrir le projet",
-    "engineNotFound": "Moteur de jeu non détecté. Supportés : RPG Maker MV/MZ, Wolf RPG v3.",
+    "engineNotFound": "Moteur de jeu non détecté. Supportés : RPG Maker MV/MZ, Wolf RPG 2.x et 3.x.",
     "deleteError": "Impossible de supprimer le projet",
     "confirmDeleteTitle": "Supprimer « {{name}} » ?",
     "confirmDeleteDesc": "Tous les segments, traductions, occurrences terminologiques et termes propres à ce projet seront définitivement supprimés de la base de données. Les fichiers du jeu sur le disque ne sont pas touchés.",
     "confirmDeleteCancel": "Annuler",
     "confirmDeleteConfirm": "Supprimer",
-    "wolfV2Unsupported": "Jeu Wolf RPG v2 pas encore pris en charge : ses cartes et événements communs ne peuvent pas être lus pour l'instant. Une nouvelle lecture est prévue."
+    "wolfUnreadableArchive": "Une archive Wolf RPG de ce jeu est illisible (chiffrement 3.31+ ou WolfX, ou disposition inconnue). Déchiffrer le jeu avec UberWolf, puis retirer les fichiers .wolf du dossier du jeu avant de le rouvrir.",
+    "wolfUnreadableFiles": "Des cartes ou des événements communs Wolf RPG n'ont pas pu être lus : le projet n'est pas ouvert, pour ne pas perdre leurs dialogues."
   },
   "updater": {
     "title": "Mise à jour disponible",
@@ -647,6 +649,12 @@
     "notCoveredHint": "Ces paramètres de plugin contiennent du texte, mais aucun profil vérifié ne prouve qu'ils servent seulement à l'affichage : ils restent non traduits. Un indice est une supposition tirée du code du plugin, jamais une garantie.",
     "notCoveredHintLabel": "Indice :",
     "driftResync": "Réaligner le projet…"
+  },
+  "exportWolf": {
+    "archives": "Le zip contiendra {{archives}} reconstruit avec les traductions : le décompresser par-dessus le jeu (le jeu lit ses archives avant le dossier Data).",
+    "folded": "{{count}} traduction(s) seront écrites sans accents (é → e) : ce jeu Wolf RPG 2.x (Shift-JIS) ne peut pas les afficher.",
+    "fontAccents": "{{count}} traduction(s) contiennent des accents : vérifier en jeu que la police les affiche (ce n'était pas le cas sur un jeu Wolf 3.658).",
+    "pathWarning": "Le chemin du dossier du jeu contient des caractères (comme 〜 ou des lettres accentuées) qui empêchent un jeu Wolf RPG 2.x de démarrer : copier le jeu dans un dossier au nom simple (lettres sans accent, chiffres) avant de le lancer."
   },
   "exportLocale": {
     "label": "Changer aussi le réglage de langue du jeu ({{current}} → {{target}})",

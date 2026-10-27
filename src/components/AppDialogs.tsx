@@ -15,6 +15,7 @@ import { TranslateAllDialog } from "@/components/TranslateAllDialog";
 import { FontSizeDialog } from "@/components/FontSizeDialog";
 import { TextCoverageDialog } from "@/components/TextCoverageDialog";
 import { ExportLocaleOption } from "@/components/ExportLocaleOption";
+import { ExportWolfNotes } from "@/components/ExportWolfNotes";
 import { ExportIntegrityDialog } from "@/components/ExportIntegrityDialog";
 import { ExportFitSummary } from "@/components/ExportFitSummary";
 import { TextFitDialog } from "@/components/TextFitDialog";
@@ -105,6 +106,9 @@ export function AppDialogs({ handlers }: AppDialogsProps) {
               checked={switchLocale}
               onCheckedChange={setSwitchLocale}
             />
+          )}
+          {exportPreflight?.wolf && (
+            <ExportWolfNotes notes={exportPreflight.wolf} />
           )}
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setExportDialog(null)}>

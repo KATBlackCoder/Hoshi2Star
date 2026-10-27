@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cmd=$(jq -r '.tool_input.command // empty'); if echo \"$cmd\" | grep -qE '(npm install|yarn add|git push --force)'; then printf '{\"continue\": false, \"stopReason\": \"INTERDIT: utiliser pnpm. Commande bloquée.\"}'; exit 2; fi"
+            "command": "cmd=$(jq -r '.tool_input.command // empty'); if printf '%s\\n' \"$cmd\" | grep -qE '(^|[;&]|\\|[[:space:]])[[:space:]]*(sudo[[:space:]]+)?(npm[[:space:]]+(install|i)([[:space:]]|$)|yarn[[:space:]]+add([[:space:]]|$)|git[[:space:]]+push([[:space:]]+[^;&|]*)?[[:space:]](--force[^[:space:]]*|-f)([[:space:]]|$))'; then printf '{\"continue\": false, \"stopReason\": \"INTERDIT: utiliser pnpm (et pas de push forcé). Commande bloquée.\"}'; exit 2; fi"
           }
         ]
       }

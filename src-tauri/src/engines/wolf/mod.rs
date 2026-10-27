@@ -3,5 +3,7 @@ pub mod decrypt;
 pub(crate) mod encoding;
 pub mod extractor;
 pub mod injector;
+pub(crate) mod integrity;
 pub(crate) mod placeholders;
+pub mod sources;
 pub(crate) mod v3_format;

@@ -861,16 +861,19 @@ async fn mv_mz_pilot_preparation_is_deterministic_and_non_destructive() {
     }
 }
 
-/// Wolf RPG v2 games are refused at open since `wolfrpg-map-parser` was
-/// removed (2026-10-25): the error carries the `wolf_v2_unsupported` marker
-/// the frontend maps to a dedicated message, and no partial project is left.
+/// A Wolf RPG map that cannot be read refuses the whole project at open (plan
+/// RW, RW-4): the error carries the `wolf_unreadable_files` marker and no
+/// partial project is left without that map's dialogue.
 #[tokio::test]
-async fn wolf_v2_game_is_refused_at_open() {
+async fn wolf_unreadable_map_is_refused_at_open() {
+    use hoshi2star_lib::engines::wolf::extractor::WOLF_UNREADABLE_FILES;
+
     let tmp = tempfile::tempdir().unwrap();
     let game_root = tmp.path().join("game");
     let map_dir = game_root.join("Data").join("MapData");
     std::fs::create_dir_all(&map_dir).unwrap();
-    // v2.x map header (WOLFM signature, no LZ4 wrapper).
+    // Map signature stored in clear, then zeros: the parser stops on a
+    // zero-length string.
     let mut mps =
         b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x57\x4F\x4C\x46\x4D\x00\x00\x00\x00\x00"
             .to_vec();
@@ -890,26 +893,425 @@ async fn wolf_v2_game_is_refused_at_open() {
         app.state(),
     )
     .await
-    .expect_err("a Wolf RPG v2 game must be refused");
-    assert!(error.contains("wolf_v2_unsupported"), "{error}");
+    .expect_err("an unreadable Wolf map must refuse the project");
+    assert!(error.contains(WOLF_UNREADABLE_FILES), "{error}");
+    assert!(error.contains("Map001.mps"), "{error}");
 
     let projects: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects")
         .fetch_one(&state.db)
         .await
         .unwrap();
     assert_eq!(projects, 0, "no partial project may be created");
+}
 
-    // Same rule on the real Honoka (v2.225) game when the fixture is present.
+/// Length-prefixed Wolf string (byte count includes the trailing NUL).
+fn wolf_string(bytes: &[u8]) -> Vec<u8> {
+    let mut out = ((bytes.len() + 1) as u32).to_le_bytes().to_vec();
+    out.extend_from_slice(bytes);
+    out.push(0);
+    out
+}
+
+/// A Wolf 2.x map stored in clear (version `0x64`, Shift-JIS): one event, one
+/// page, one Show Message (`101`) command carrying `message`.
+fn wolf_v2_map(message: &str) -> Vec<u8> {
+    let (sjis, _, had_errors) = encoding_rs::SHIFT_JIS.encode(message);
+    assert!(!had_errors, "test message must be Shift-JIS");
+    let mut b = Vec::new();
+    b.extend_from_slice(&[0u8; 10]);
+    b.extend_from_slice(b"WOLFM");
+    b.extend_from_slice(&[0u8; 5]); // NUL, Shift-JIS flag (byte 16), padding
+    b.extend_from_slice(&0x64u32.to_le_bytes()); // version: stored in clear
+    b.push(0); // unknown2
+    b.extend(wolf_string(b"map"));
+    for v in [1u32, 1, 1, 1] {
+        b.extend_from_slice(&v.to_le_bytes()); // tileset, width, height, events
+    }
+    b.extend_from_slice(&[0u8; 12]); // 1x1 tiles, 3 layers
+    b.push(0x6F); // event
+    b.extend_from_slice(&[0x39, 0x30, 0x00, 0x00]);
+    b.extend_from_slice(&0u32.to_le_bytes()); // id
+    b.extend(wolf_string(b"EV001"));
+    b.extend_from_slice(&0u32.to_le_bytes()); // x
+    b.extend_from_slice(&0u32.to_le_bytes()); // y
+    b.extend_from_slice(&1u32.to_le_bytes()); // page count
+    b.extend_from_slice(&[0u8; 4]); // event magic 2
+    b.push(0x79); // page
+    b.extend_from_slice(&0u32.to_le_bytes()); // unknown1
+    b.extend(wolf_string(b"")); // graphic name
+    b.extend_from_slice(&[0u8; 4]); // direction, frame, opacity, render mode
+    b.extend_from_slice(&[0u8; 37]); // conditions
+    b.extend_from_slice(&[0u8; 4]); // movement
+    b.extend_from_slice(&[0, 0]); // flags, route flags
+    b.extend_from_slice(&0u32.to_le_bytes()); // route count
+    b.extend_from_slice(&1u32.to_le_bytes()); // command count
+    b.push(1); // args count + 1
+    b.extend_from_slice(&101u32.to_le_bytes()); // Show Message
+    b.push(0); // indent
+    b.push(1); // string count
+    b.extend(wolf_string(&sjis));
+    b.push(0); // command terminator
+    b.extend_from_slice(&0u32.to_le_bytes()); // features
+    b.extend_from_slice(&[0, 0, 0]); // shadow, collision width / height
+    b.push(0x7A); // end of page
+    b.push(0x70); // end of event
+    b.push(0x66); // end of map
+    b
+}
+
+/// A Wolf 2.x game opens again with its map dialogue (RW-4 lifted the RW0
+/// refusal), decoded from Shift-JIS.
+#[tokio::test]
+async fn wolf_v2_game_opens_with_its_dialogue() {
+    const MESSAGE: &str = "こんにちは、旅の人";
+
+    let tmp = tempfile::tempdir().unwrap();
+    let game_root = tmp.path().join("game");
+    let map_dir = game_root.join("Data").join("MapData");
+    std::fs::create_dir_all(&map_dir).unwrap();
+    std::fs::write(map_dir.join("Map001.mps"), wolf_v2_map(MESSAGE)).unwrap();
+    std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+
+    let db_file = tmp.path().join("h2s.db");
+    let app = mock_app(db_file.to_str().unwrap()).await;
+
+    let project = open_project(
+        game_root.to_str().unwrap().to_string(),
+        None,
+        None,
+        app.state(),
+    )
+    .await
+    .expect("a Wolf 2.x game opens")
+    .project;
+    assert_eq!(project.engine, "wolf");
+
+    let files = get_source_files(project.id.clone(), app.state())
+        .await
+        .expect("get_source_files");
+    let mut sources = Vec::new();
+    for file in files {
+        let page = get_segments(project.id.clone(), file.id, 0, 100_000, app.state())
+            .await
+            .expect("get_segments");
+        sources.extend(page.items.into_iter().map(|segment| segment.source_text));
+    }
+    assert!(sources.iter().any(|s| s == MESSAGE), "{sources:?}");
+
+    // Same on the real Honoka (v2.225) game when the fixture is present.
     let fixture = test_dir().join("月咲流ホノカver1.03");
     if fixture.exists() {
-        let error = open_project(
+        open_project(
             fixture.to_str().unwrap().to_string(),
             None,
             None,
             app.state(),
         )
         .await
-        .expect_err("Honoka (Wolf v2) must be refused");
-        assert!(error.contains("wolf_v2_unsupported"), "{error}");
+        .expect("Honoka (Wolf v2) opens");
     }
+}
+
+/// A Wolf export unpacked over the game becomes the original of the next export:
+/// re-exporting must pass the integrity gate (plan RW, RW-6 — no "source
+/// changed" check without a pristine copy of the Wolf files).
+#[tokio::test]
+async fn wolf_v2_export_can_be_repeated_over_its_own_output() {
+    const MESSAGE: &str = "こんにちは、旅の人";
+    const FIRST: &str = "Hello, traveller";
+    const SECOND: &str = "Welcome, traveller";
+
+    let tmp = tempfile::tempdir().unwrap();
+    let game_root = tmp.path().join("game");
+    let map_path = game_root.join("Data").join("MapData").join("Map001.mps");
+    std::fs::create_dir_all(map_path.parent().unwrap()).unwrap();
+    std::fs::write(&map_path, wolf_v2_map(MESSAGE)).unwrap();
+    std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+
+    let db_file = tmp.path().join("h2s.db");
+    let app = mock_app(db_file.to_str().unwrap()).await;
+    let project = open_project(
+        game_root.to_str().unwrap().to_string(),
+        None,
+        None,
+        app.state(),
+    )
+    .await
+    .expect("a Wolf 2.x game opens")
+    .project;
+
+    let files = get_source_files(project.id.clone(), app.state())
+        .await
+        .expect("get_source_files");
+    let file = files.first().expect("one source file");
+    let page = get_segments(project.id.clone(), file.id.clone(), 0, 100_000, app.state())
+        .await
+        .expect("get_segments");
+    let segment = page
+        .items
+        .iter()
+        .find(|segment| segment.source_text == MESSAGE)
+        .expect("the map message");
+
+    for translation in [FIRST, SECOND] {
+        update_segment(segment.id.clone(), translation.to_string(), app.state())
+            .await
+            .expect("update_segment");
+        let zip_path = export_project(project.id.clone(), None, false, None, app.state())
+            .await
+            .expect("Wolf export (first, then over its own output)");
+        let exported = zip_entries(Path::new(&zip_path))
+            .remove("Data/MapData/Map001.mps")
+            .expect("exported map");
+        assert!(
+            exported
+                .windows(translation.len())
+                .any(|window| window == translation.as_bytes()),
+            "the exported map carries {translation:?}"
+        );
+        // Unpack the export over the game, as the user does.
+        std::fs::write(&map_path, &exported).unwrap();
+    }
+}
+
+/// DxLib name entry: `[u16 PackNum][u16 Parity][UPPER][original]`, both names
+/// NUL-padded to `PackNum * 4` bytes. Returns its offset in `table`.
+fn push_dx_name(table: &mut Vec<u8>, name: &str) -> u64 {
+    let offset = table.len() as u64;
+    let bytes = name.as_bytes();
+    let pack = bytes.len() / 4 + 1;
+    let parity = bytes
+        .iter()
+        .fold(0u16, |sum, &byte| sum.wrapping_add(u16::from(byte)));
+    table.extend_from_slice(&(pack as u16).to_le_bytes());
+    table.extend_from_slice(&parity.to_le_bytes());
+    for half in [bytes.to_ascii_uppercase(), bytes.to_vec()] {
+        let mut padded = half;
+        padded.resize(pack * 4, 0);
+        table.extend_from_slice(&padded);
+    }
+    offset
+}
+
+/// A `Data.wolf` (DXA v8) holding `MapData/Map001.mps`, built without any
+/// encryption: `DXA_FLAG_NO_KEY | DXA_FLAG_NO_HEAD_PRESS`, crypt version 0.
+fn keyless_data_wolf(map: &[u8]) -> Vec<u8> {
+    const HEAD: usize = 0x40;
+    const ENTRY: usize = 0x48;
+    let mut names = Vec::new();
+    let root_name = push_dx_name(&mut names, "");
+    let dir_name = push_dx_name(&mut names, "MapData");
+    let map_name = push_dx_name(&mut names, "Map001.mps");
+
+    // File table: root head, MapData head, Map001.mps.
+    let entry = |name: u64, attributes: u64, data: u64, size: u64, packed: u64| {
+        let mut e = vec![0u8; ENTRY];
+        e[0..8].copy_from_slice(&name.to_le_bytes());
+        e[8..16].copy_from_slice(&attributes.to_le_bytes());
+        e[0x28..0x30].copy_from_slice(&data.to_le_bytes());
+        e[0x30..0x38].copy_from_slice(&size.to_le_bytes());
+        e[0x38..0x40].copy_from_slice(&packed.to_le_bytes());
+        e[0x40..0x48].copy_from_slice(&u64::MAX.to_le_bytes()); // no Huffman
+        e
+    };
+    let mut files = entry(root_name, 0x10, 0, 0, u64::MAX);
+    files.extend(entry(dir_name, 0x10, 32, 0, u64::MAX));
+    files.extend(entry(map_name, 0x20, 0, map.len() as u64, u64::MAX));
+
+    // Directory table: root (1 child at 0x48), MapData (parent root, 1 child at 0x90).
+    let mut dirs = Vec::new();
+    for value in [
+        0u64,
+        u64::MAX,
+        1,
+        ENTRY as u64,
+        ENTRY as u64,
+        0,
+        1,
+        2 * ENTRY as u64,
+    ] {
+        dirs.extend_from_slice(&value.to_le_bytes());
+    }
+
+    let file_table = names.len() as u64;
+    let dir_table = file_table + files.len() as u64;
+    let mut toc = names;
+    toc.extend(files);
+    toc.extend(dirs);
+
+    let mut archive = Vec::new();
+    archive.extend_from_slice(b"DX");
+    archive.extend_from_slice(&8u16.to_le_bytes());
+    archive.extend_from_slice(&(toc.len() as u32).to_le_bytes());
+    archive.extend_from_slice(&(HEAD as u64).to_le_bytes());
+    archive.extend_from_slice(&((HEAD + map.len()) as u64).to_le_bytes());
+    archive.extend_from_slice(&file_table.to_le_bytes());
+    archive.extend_from_slice(&dir_table.to_le_bytes());
+    archive.extend_from_slice(&932u32.to_le_bytes());
+    archive.extend_from_slice(&(0x1u32 | 0x2).to_le_bytes()); // no key, TOC in clear
+    archive.resize(HEAD, 0);
+    archive.extend_from_slice(map);
+    archive.extend(toc);
+    archive
+}
+
+/// A Wolf game shipped as `Data.wolf` (plan RW, RW-5): the map is read from the
+/// archive (a stale loose copy is ignored, as the game ignores it) and the
+/// export delivers the archive rebuilt with the translation, not a loose file.
+#[tokio::test]
+async fn wolf_archive_game_is_exported_as_a_rebuilt_archive() {
+    use hoshi2star_lib::engines::wolf::decrypt::legacy_xor::extract_all;
+
+    const MESSAGE: &str = "こんにちは、旅の人";
+    const TRANSLATION: &str = "Hello, traveller";
+
+    let tmp = tempfile::tempdir().unwrap();
+    let game_root = tmp.path().join("game");
+    std::fs::create_dir_all(game_root.join("Data").join("MapData")).unwrap();
+    std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+    std::fs::write(
+        game_root.join("Data.wolf"),
+        keyless_data_wolf(&wolf_v2_map(MESSAGE)),
+    )
+    .unwrap();
+    std::fs::write(
+        game_root.join("Data").join("MapData").join("Map001.mps"),
+        wolf_v2_map("古い"),
+    )
+    .unwrap();
+
+    let db_file = tmp.path().join("h2s.db");
+    let app = mock_app(db_file.to_str().unwrap()).await;
+    let project = open_project(
+        game_root.to_str().unwrap().to_string(),
+        None,
+        None,
+        app.state(),
+    )
+    .await
+    .expect("a Wolf game shipped as Data.wolf opens")
+    .project;
+
+    let files = get_source_files(project.id.clone(), app.state())
+        .await
+        .expect("get_source_files");
+    let file = files.first().expect("one source file");
+    let page = get_segments(project.id.clone(), file.id.clone(), 0, 100_000, app.state())
+        .await
+        .expect("get_segments");
+    let segment = page
+        .items
+        .iter()
+        .find(|segment| segment.source_text == MESSAGE)
+        .expect("the message comes from the archive, not the stale loose copy");
+    update_segment(segment.id.clone(), TRANSLATION.to_string(), app.state())
+        .await
+        .expect("update_segment");
+
+    let zip_path = export_project(project.id.clone(), None, false, None, app.state())
+        .await
+        .expect("export");
+    let entries = zip_entries(Path::new(&zip_path));
+    assert_eq!(
+        entries.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["Data.wolf"],
+        "only the rebuilt archive is delivered"
+    );
+    let archive = extract_all(&entries["Data.wolf"]).expect("rebuilt archive reads back");
+    let map = archive
+        .files
+        .iter()
+        .find(|f| f.path == "/MapData/Map001.mps")
+        .expect("map in the rebuilt archive");
+    assert!(map
+        .data
+        .windows(TRANSLATION.len())
+        .any(|window| window == TRANSLATION.as_bytes()));
+}
+
+/// The export dialog announces what a Wolf export will do (plan RW, RW-8):
+/// accents folded for a Shift-JIS game, the archive delivered rebuilt.
+#[tokio::test]
+async fn wolf_export_preflight_announces_folding_and_archives() {
+    use hoshi2star_lib::commands::export::preflight_export;
+
+    const MESSAGE: &str = "こんにちは、旅の人";
+
+    let tmp = tempfile::tempdir().unwrap();
+    let db_file = tmp.path().join("h2s.db");
+    let app = mock_app(db_file.to_str().unwrap()).await;
+
+    // Loose Wolf 2.x game, accented translation.
+    let loose = tmp.path().join("loose");
+    std::fs::create_dir_all(loose.join("Data").join("MapData")).unwrap();
+    std::fs::write(loose.join("Game.ini"), b"").unwrap();
+    std::fs::write(
+        loose.join("Data").join("MapData").join("Map001.mps"),
+        wolf_v2_map(MESSAGE),
+    )
+    .unwrap();
+    let project = open_project(loose.to_str().unwrap().to_string(), None, None, app.state())
+        .await
+        .expect("loose Wolf 2.x game opens")
+        .project;
+    let files = get_source_files(project.id.clone(), app.state())
+        .await
+        .expect("get_source_files");
+    let page = get_segments(
+        project.id.clone(),
+        files[0].id.clone(),
+        0,
+        100_000,
+        app.state(),
+    )
+    .await
+    .expect("get_segments");
+    let segment = page
+        .items
+        .iter()
+        .find(|segment| segment.source_text == MESSAGE)
+        .expect("the map message");
+    update_segment(
+        segment.id.clone(),
+        "Élève, déjà là".to_string(),
+        app.state(),
+    )
+    .await
+    .expect("update_segment");
+
+    let wolf = preflight_export(project.id.clone(), app.state())
+        .await
+        .expect("preflight")
+        .wolf
+        .expect("Wolf notes");
+    assert!(wolf.shift_jis);
+    assert_eq!(wolf.accented_texts, 1);
+    assert!(wolf.archives.is_empty());
+    assert!(wolf.path_warning.is_none());
+
+    // Game shipped as Data.wolf: the archive is announced.
+    let archived = tmp.path().join("archived");
+    std::fs::create_dir_all(&archived).unwrap();
+    std::fs::write(archived.join("Game.ini"), b"").unwrap();
+    std::fs::write(
+        archived.join("Data.wolf"),
+        keyless_data_wolf(&wolf_v2_map(MESSAGE)),
+    )
+    .unwrap();
+    let project = open_project(
+        archived.to_str().unwrap().to_string(),
+        None,
+        None,
+        app.state(),
+    )
+    .await
+    .expect("archived Wolf game opens")
+    .project;
+    let wolf = preflight_export(project.id.clone(), app.state())
+        .await
+        .expect("preflight")
+        .wolf
+        .expect("Wolf notes");
+    assert_eq!(wolf.archives, ["Data.wolf"]);
+    assert_eq!(wolf.accented_texts, 0);
 }
