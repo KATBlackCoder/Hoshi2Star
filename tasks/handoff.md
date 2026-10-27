@@ -31,7 +31,8 @@
 - RW-9 (2026-10-27) : test réel `wolf_real_round_trip` **OK** sur 90 vrais fichiers (2.23 et 3.658, extraits dans `RAE-PLAN/essais/extraits/`, hors Git).
 - RW-9 (2026-10-27) : test réel `wolf_real_archive_rebuild` **OK** sur le vrai `Data.wolf` 2.23 (204 Mo).
 - RW-9 (2026-10-27) : **essai en jeu 2.23 OK** depuis l'app (zip = `Data.wolf` reconstruit seul ; jeu lancé, textes traduits affichés). Constats hors RW : pas de retour à la ligne automatique Wolf (débordements), pas d'export partiel pour tester. Base de l'app : projet de test `APP` réduit à `sys＿タイトル.mps` (sauvegarde `backups/hoshi2star-avant-essai-rw9-20261027-080135.db`).
-- **Prochaine action exacte** : essai en jeu 3.658 (facultatif, ~4,2 Go de mémoire à l'export) ou PR directement (tests réels `--ignored` chez l'utilisateur, essai en jeu de l'export de l'app), puis PR. Pas de build local ; gate en cloud après push autorisé. Suites hors RW : garde « jeu mis à jour » Wolf (copie d'origine, équivalent R2) ; écriture en flux de l'archive dans le zip si l'export du jeu de 2,1 Go peine.
+- **PR ouverte** le 2026-10-27 : https://github.com/KATBlackCoder/Hoshi2Star/pull/13 (`feat/rw-wolf` → `main`, accord de l'utilisateur).
+- **Prochaine action exacte** : relecture et fusion de la PR #13 par l'utilisateur ; essai en jeu 3.658 facultatif. Après fusion : les sessions « Export d'essai » (plan EX validé) et « Retour à la ligne Wolf » partent de `main` ; leurs plans sont non commités dans le dossier principal, à mettre sur leurs branches avant de mettre `main` à jour. (tests réels `--ignored` chez l'utilisateur, essai en jeu de l'export de l'app), puis PR. Pas de build local ; gate en cloud après push autorisé. Suites hors RW : garde « jeu mis à jour » Wolf (copie d'origine, équivalent R2) ; écriture en flux de l'archive dans le zip si l'export du jeu de 2,1 Go peine.
 
 ## En cours (2026-10-26, Claude) — R2b
 
