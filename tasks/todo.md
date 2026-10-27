@@ -423,7 +423,15 @@ compile en cloud ; un jeu Wolf v2 donne un message clair, jamais un projet parti
 
 **Effort estimé.** S à M (environ une demi-journée), vérification en cloud comprise.
 
-## Plan — EX : export d'essai, segments traduits seulement (2026-10-27, Claude) — PLAN VALIDÉ le 2026-10-27 (D1 = a, D2 = a, D3 oui, D4 oui, D5 noter, D6 = a) ; aucun code, en attente de la fusion de RW
+## Plan — EX : export d'essai, segments traduits seulement (2026-10-27, Claude) — ABANDONNÉ le 2026-10-27 (décision utilisateur), aucun code
+
+**Abandon (2026-10-27, décision de l'utilisateur, après la fusion de RW).** La règle produit est maintenue :
+l'export n'est autorisé que si tout ce qui doit être traduit l'est. Pas d'export d'essai pour l'utilisateur final.
+Le besoin de test en jeu sera couvert par un **outil de debug** (un bouton qui extrait ou injecte pour le test).
+Pistes, non validées : `debug_inject_file` (`commands/export.rs`, refuse aujourd'hui les non-traduits) et
+`export_debug_json` existent déjà, sans bouton (les clés i18n `debugInject*` restent dans `fr.json` / `en.json`) ;
+emplacement possible : section « Diagnostic » de `src/components/settings/DeveloperSettings.tsx`.
+Ce bouton demande son propre plan. Les constats C1 à C7 ci-dessous restent valables comme référence.
 
 **But.** Tester en jeu pendant la traduction. Aujourd'hui l'export est refusé tant qu'un segment est
 `untranslated`. Le 2026-10-27, pour essayer l'export Wolf en jeu, il a fallu réduire un projet de test
@@ -561,6 +569,107 @@ Il faut :
 - Un projet à moitié traduit produit `hoshi2star-trial.zip` sans toucher aux segments non traduits.
 - Portes d'intégrité et R2 inchangées ; export complet inchangé.
 - Tests Rust et Vitest verts au gate cloud.
+
+**Effort estimé.** M (environ une journée), gate cloud compris.
+
+## Plan — DX : export de debug pour tester en jeu (2026-10-27, Claude) — PLAN VALIDÉ le 2026-10-27 (DX-1 à DX-3 = défauts) ; implémentation en cours sur `feat/dx-debug-export`
+
+**En bref.**
+- Un bouton **« Export de debug »**, visible seulement quand « Afficher les outils de diagnostic » est coché
+  (réglages, `developerTools`, désactivé par défaut), pour les projets MV/MZ et Wolf.
+- Il écrit `hoshi2star-debug.zip` : traductions présentes injectées, le reste laissé d'origine.
+- **Ce qu'il ne touche jamais :**
+  - l'export normal (`export_project`, sa boîte, sa règle « tout traduit » et son refus sur erreur critique) ;
+  - les portes d'intégrité MV/MZ et Wolf ;
+  - la garde R2.
+
+**Pourquoi c'est sûr, et en quoi c'est différent d'EX.**
+- Le moteur est le même que celui du plan EX abandonné : les constats C1 à C7 de « Plan — EX » restent valables.
+  L'export injecte déjà seulement les cibles non vides, les portes ne contrôlent que les valeurs prévues,
+  et la mise en page saute les messages incomplets.
+- Ce qui change :
+  - l'emplacement : outil de diagnostic, rien dans le parcours d'export normal ;
+  - une commande séparée ;
+  - un zip marqué debug.
+
+**Pourquoi pas les commandes debug existantes.**
+- `debug_inject_file` et `export_debug_json` (`commands/export.rs:1156`, `:1359`) ne sont appelées par aucun écran
+  et n'ont aucun test.
+- `debug_inject_file` est inadaptée :
+  - elle écrit **dans le dossier du jeu** ;
+  - elle ne traite qu'un fichier ;
+  - elle refuse les non-traduits ;
+  - pour Wolf, elle écrit des fichiers libres que le jeu ignore, puisqu'il lit ses archives.
+- On les laisse telles quelles. Leur retrait éventuel fera l'objet d'un suivi séparé.
+
+### Décisions (défaut recommandé en premier)
+
+- **DX-1. Segments traduits en erreur QA critique : les écarter** (laissés d'origine, nombre affiché).
+  - Le filtre `target_text != '' AND status != 'needs_review'`, appliqué après l'audit, doit couvrir toutes les sources
+    de cibles (détail dans « Plan — EX », D1) : lignes MV/MZ, `plugin_rows`, `linked_skill_type_renames`,
+    `project_targets` (mise en page), segments Wolf.
+  - Autre choix : tout injecter. Déconseillé : `MissingPlaceholder` et les contraintes de plugin peuvent casser le jeu.
+  - **Effet de bord accepté :** l'audit écrit les statuts et scores QA, comme avant un export normal.
+- **DX-2. Aucune option** (pas de taille de police, pas de changement de langue). La mise en page MZ s'applique
+  d'après les réglages du projet, comme à l'export.
+- **DX-3. Laisser `debug_inject_file`, `export_debug_json` et les clés `debugInject*` en place** (suivi à part).
+
+### Étapes (avec les défauts)
+
+- [x] 0. Branche `feat/dx-debug-export` depuis `main` (`2d9ecd7` ou plus récent).
+  - WR est reporté (« Plan — WR ») : DX passe avant.
+  - WR touche `apply_font_prefix` et `collect_wolf_zip_entries` ; il se mettra à jour sur DX à sa reprise.
+- [x] 1. **Rust, sélection des cibles.**
+  - Extraire de `export_project` le cœur commun : lecture des cibles, injection, portes d'intégrité, écriture du zip,
+    `remember_written`.
+  - Ajouter un paramètre `ExportScope::{Release, Debug}` et un fragment SQL unique par portée, transmis à
+    `plugin_rows`, `linked_skill_type_renames`, `fitted_lines`/`project_targets` (cible écartée = vide)
+    et `collect_wolf_zip_entries`.
+  - `export_project` garde sa signature et son comportement (`Release`) ; ses tests existants doivent rester verts sans modification.
+- [x] 2. **Rust, commande** `export_debug_project(project_id) -> DebugExport { zip_path, exported, untranslated, skipped_critical }`,
+  ajoutée au `generate_handler!` unique de `lib.rs`.
+  - Audit QA, sans refus sur `critical_count` : les segments critiques sont écartés (DX-1).
+  - Refus explicite si `exported == 0`.
+  - Pas de préfixe de police, pas de `locale`.
+  - Écrit `hoshi2star-debug.zip` à la racine du jeu, avec le commentaire de zip
+    « Hoshi2Star DEBUG export — not for distribution (N/M segments) ».
+  - `remember_written` reste appliqué comme à l'export normal.
+- [x] 3. **Frontend.**
+  - Dans `AppToolbar.tsx`, bouton « Export de debug » à côté du Pilote A/B, si `developerTools` est coché et que
+    le moteur est `mv_mz` ou `wolf`.
+  - Boîte de confirmation en une étape :
+    - les non-traduits et les segments en erreur critique restent d'origine ;
+    - à décompresser sur une **copie** du jeu ;
+    - à ne pas distribuer ;
+    - pour Wolf : sans copie d'origine, un zip décompressé sur le vrai jeu devient la base des exports suivants.
+  - Toast de succès avec le chemin et les trois nombres.
+  - Une erreur d'intégrité ouvre `ExportIntegrityDialog` comme à l'export normal.
+  - Ajouter les clés i18n `fr`/`en`, le type `DebugExport` dans `types.ts`, et une phrase dans `settings.developer` sur l'export de debug.
+- [x] 4. **Tests Rust** (`src-tauri/tests/`, sur le modèle de `export_game_update.rs` et `e2e_project_flow.rs`) :
+  - projet MV/MZ mixte : traduits injectés, valeurs non traduites identiques à l'original, `hoshi2star-debug.zip` écrit,
+    `hoshi2star.zip` absent, nombres justes ;
+  - segment critique (placeholder manquant) : écarté et compté ;
+  - projet Wolf mixte (archive e2e sans clé) : intégrité RW-6 verte ;
+  - R2 : jeu modifié sur disque ⇒ refus `SourceChanged` ;
+  - aucun segment exportable ⇒ refus, aucun fichier écrit ;
+  - `export_project` refuse toujours un projet avec erreur critique (inchangé).
+- [x] 5. **Tests Vitest :**
+  - bouton absent si le réglage est décoché ;
+  - bouton présent pour `mv_mz` et `wolf` si coché, absent pour les autres moteurs ;
+  - appel de `export_debug_project` ;
+  - toast de debug ;
+  - la boîte d'export normale est inchangée (refus « bloqué » si des segments sont non traduits).
+- [x] 6. **Suivi :** CHANGELOG (Added, outil de diagnostic), journal `docs/journal/`, `tasks/handoff.md`.
+- [ ] 7. **Gate cloud** (non exécuté ; code écrit sans compilation locale) sur la branche poussée (push après ton accord) : fmt, clippy `--all-targets -D warnings`,
+  `cargo test --locked`, typecheck, Vitest, lint. Aucun build ni test local.
+- [ ] 8. **Essai en jeu** (avec ton accord) : un projet Wolf et un projet MV/MZ à moitié traduits, zip décompressé sur une copie.
+
+**Suivi séparé (non autorisé par ce plan) :** retirer `debug_inject_file`, `export_debug_json` et les clés `debugInject*` inutilisées.
+
+**Critère de sortie.**
+- Avec le réglage de diagnostic coché, un projet à moitié traduit produit `hoshi2star-debug.zip`.
+- L'export normal est strictement inchangé.
+- Gate cloud vert.
 
 **Effort estimé.** M (environ une journée), gate cloud compris.
 

@@ -6,6 +6,7 @@ import { useProjectStore } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { useLlmStore } from "@/stores/llm";
 import type {
+  DebugExport,
   ExportPreflight,
   FitScan,
   FontScanResult,
@@ -50,6 +51,7 @@ export function useAppHandlers() {
   const [exportFit, setExportFit] = useState<FitScan | null>(null);
   const [switchLocale, setSwitchLocale] = useState(false);
   const [integrityIssues, setIntegrityIssues] = useState<string[] | null>(null);
+  const [showDebugExport, setShowDebugExport] = useState(false);
 
   const { t } = useTranslation();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
@@ -134,16 +136,44 @@ export function useAppHandlers() {
       });
       toast.success(t("toasts.exportSuccess"), { description: zipPath });
     } catch (err) {
-      const issues = integrityIssuesOf(String(err));
-      if (issues) {
-        setIntegrityIssues(issues);
-      } else if (wolfReadErrorKey(err)) {
-        toast.error(t(`toasts.${wolfReadErrorKey(err)}`), {
-          description: wolfReadErrorDetail(err),
-        });
-      } else {
-        toast.error(t("toasts.exportError", { error: String(err) }));
-      }
+      reportExportError(err);
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
+  function reportExportError(err: unknown) {
+    const issues = integrityIssuesOf(String(err));
+    if (issues) {
+      setIntegrityIssues(issues);
+    } else if (wolfReadErrorKey(err)) {
+      toast.error(t(`toasts.${wolfReadErrorKey(err)}`), {
+        description: wolfReadErrorDetail(err),
+      });
+    } else {
+      toast.error(t("toasts.exportError", { error: String(err) }));
+    }
+  }
+
+  /** Developer tool: export the translations ready so far, for a test in game. */
+  async function handleDebugExportConfirm() {
+    setShowDebugExport(false);
+    if (!activeProjectId) return;
+    setIsExporting(true);
+    try {
+      const result = await invoke<DebugExport>("export_debug_project", {
+        projectId: activeProjectId,
+      });
+      toast.success(t("debugExport.success"), {
+        description: t("debugExport.successDesc", {
+          path: result.zipPath,
+          exported: result.exported,
+          untranslated: result.untranslated,
+          skipped: result.skippedCritical,
+        }),
+      });
+    } catch (err) {
+      reportExportError(err);
     } finally {
       setIsExporting(false);
     }
@@ -222,6 +252,7 @@ export function useAppHandlers() {
     exportFit,
     switchLocale,
     integrityIssues,
+    showDebugExport,
     // Setters
     setShowSettings,
     setShowAbout,
@@ -229,11 +260,13 @@ export function useAppHandlers() {
     setShowTranslateAll,
     setSwitchLocale,
     setIntegrityIssues,
+    setShowDebugExport,
     // Handlers
     handleExportAll,
     handleExportConfirm,
     handleExportFontApply,
     handleExportFontSkip,
+    handleDebugExportConfirm,
     handleTranslateAll,
     handleTranslateAllStart,
     handleTranslate,

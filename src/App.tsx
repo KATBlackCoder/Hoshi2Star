@@ -101,6 +101,7 @@ export default function App() {
               onTranslateAll={() => void handlers.handleTranslateAll()}
               onExportAll={() => void handlers.handleExportAll()}
               onOpenPilot={openPilot}
+              onDebugExport={() => handlers.setShowDebugExport(true)}
               isExporting={handlers.isExporting}
             />
 

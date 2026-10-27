@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { integrityIssuesOf, useAppHandlers } from "@/hooks/useAppHandlers";
 import { useProjectStore } from "@/stores/project";
 import type {
+  DebugExport,
   ExportPreflight,
   FitScan,
   ProjectStats,
@@ -39,6 +40,13 @@ const PREFLIGHT: ExportPreflight = {
   },
 };
 
+const DEBUG_RESULT: DebugExport = {
+  zipPath: "C:/game/hoshi2star-debug.zip",
+  exported: 6,
+  untranslated: 3,
+  skippedCritical: 1,
+};
+
 const INTEGRITY_ERROR =
   "Export blocked: the integrity check found 2 problem(s); no file was written.\n" +
   "data/System.json /gameTitle: unplanned change\n" +
@@ -48,14 +56,17 @@ interface MockOptions {
   untranslated: number;
   preflight?: ExportPreflight | Error;
   exportResult?: string | Error;
+  debugResult?: DebugExport | Error;
   fit?: { view: TextFitView; scan: FitScan };
 }
 
-/** Mock the backend; returns the arguments of every `export_project` call. */
+/** Mock the backend; returns the arguments of every `export_project` and
+ * `export_debug_project` call, with the command name. */
 function mockBackend({
   untranslated,
   preflight,
   exportResult,
+  debugResult,
   fit,
 }: MockOptions) {
   const exportCalls: unknown[] = [];
@@ -75,6 +86,10 @@ function mockBackend({
         exportCalls.push(args);
         if (exportResult instanceof Error) throw exportResult.message;
         return exportResult ?? "C:/game/hoshi2star.zip";
+      case "export_debug_project":
+        exportCalls.push({ cmd, ...(args as object) });
+        if (debugResult instanceof Error) throw debugResult.message;
+        return debugResult ?? DEBUG_RESULT;
       case "plugin:event|listen":
         return 1;
       case "plugin:event|unlisten":
@@ -226,5 +241,63 @@ describe("useAppHandlers — text fitting summary", () => {
       await result.current.handleExportAll();
     });
     expect(result.current.exportFit).toBeNull();
+  });
+});
+
+describe("useAppHandlers — debug export (developer tool)", () => {
+  it("never goes through the normal export gate", async () => {
+    const exportCalls = mockBackend({ untranslated: 3 });
+    const { result } = renderHook(() => useAppHandlers());
+
+    act(() => result.current.setShowDebugExport(true));
+    expect(result.current.showDebugExport).toBe(true);
+    await act(async () => {
+      await result.current.handleDebugExportConfirm();
+    });
+
+    expect(result.current.showDebugExport).toBe(false);
+    expect(result.current.exportDialog).toBeNull();
+    expect(exportCalls).toHaveLength(1);
+    expect(exportCalls[0]).toMatchObject({
+      cmd: "export_debug_project",
+      projectId: "p1",
+    });
+    expect(toast.success).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        description: expect.stringContaining("C:/game/hoshi2star-debug.zip"),
+      }),
+    );
+  });
+
+  it("lists integrity problems in the dialog, as the normal export does", async () => {
+    mockBackend({ untranslated: 3, debugResult: new Error(INTEGRITY_ERROR) });
+    const { result } = renderHook(() => useAppHandlers());
+
+    await act(async () => {
+      await result.current.handleDebugExportConfirm();
+    });
+
+    expect(result.current.integrityIssues).toEqual([
+      "data/System.json /gameTitle: unplanned change",
+      "js/plugins.js line 4: unplanned change",
+    ]);
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("reports other refusals as a toast", async () => {
+    mockBackend({
+      untranslated: 10,
+      debugResult: new Error("Debug export: no translation"),
+    });
+    const { result } = renderHook(() => useAppHandlers());
+
+    await act(async () => {
+      await result.current.handleDebugExportConfirm();
+    });
+
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(result.current.isExporting).toBe(false);
   });
 });

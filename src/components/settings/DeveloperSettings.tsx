@@ -68,6 +68,13 @@ export function DeveloperSettings({
           {t("settings.developer.pilotExplanation")}
         </p>
       </div>
+
+      <div className="flex items-start gap-3 rounded-xl bg-muted/40 p-4">
+        <Bug className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <p className="text-pretty text-xs leading-5 text-muted-foreground">
+          {t("settings.developer.debugExportExplanation")}
+        </p>
+      </div>
     </section>
   );
 }

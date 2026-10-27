@@ -1,7 +1,7 @@
 # Point de reprise — Hoshi2Star
 
 **Mis à jour :** 2026-10-27 — Claude (RW fusionné, PR #13 ; plans EX et WR et notes Bakin rangés par la PR de suivi `docs/plans-ex-wr-bakin`).
-**Objectif utilisateur :** prochain lot EX (export d'essai des seuls segments traduits), plan validé, prêt pour l'étape 0 ; WR (retour à la ligne Wolf) reporté.
+**Objectif utilisateur :** lot DX (export de debug dans les outils de diagnostic), plan à valider ; EX abandonné (l'export exige une traduction complète) ; WR (retour à la ligne Wolf) reporté.
 **Statut :** RW **fusionné** le 2026-10-27 (PR #13, `3288534`) : gate cloud vert sur `1661ab5` (760 Rust OK), tests réels `--ignored` OK, essai en jeu de l'export de l'app OK sur Wolf 2.23 ; essai 3.658 non fait. EX : voir sa section ; WR : reporté.
 
 ## Terminé (2026-10-27, Claude) — RW (Wolf), fusionné par la PR #13
@@ -49,15 +49,17 @@
   - les réglages numériques de `Game.dat` ne sont pas décodés.
 - **Prochaine action, à la reprise** : relancer WCAL (`RAE-PLAN/essais/wolf-v223/WCAL.FICHE.md`) et capturer les écrans B à M ; lire les captures (largeurs, lignes, taille par défaut, police réelle) ; puis WR-2 (`Game.dat`) et WR-3 (règle de budget). Le code attend la fusion de RW.
 
-## En cours (2026-10-27, Claude) — EX : export d'essai (plan seulement)
+## Abandonné (2026-10-27, Claude) — EX : export d'essai
 
-- Plan : `tasks/todo.md`, « Plan — EX ». **Validé le 2026-10-27** avec les recommandations (D1 = a, D2 = a, D3 oui,
-  D4 oui, D5 noter, D6 = a). Aucun code, rien commité.
-- Constat : le backend n'exporte déjà que les cibles non vides, et la QA ne lit que celles-ci. Le refus « non traduit »
-  est uniquement dans le frontend (`useAppHandlers.ts:66`, version RW).
-- Bloquant : RW (`feat/rw-wolf`) n'est ni fusionné ni en PR (revérifié le 2026-10-27 : `origin/feat/rw-wolf` = `1661ab5`,
-  la branche locale `9d28ae2` a des commits non poussés) ; l'implémentation part de `main` après sa fusion.
-- **Prochaine action** : fusion de RW par l'utilisateur, ordre convenu avec le lot « retour à la ligne Wolf », puis étape 0 du plan EX.
+- Plan validé puis **abandonné par l'utilisateur** après la fusion de RW. L'export exige toujours une traduction complète : c'est la règle produit.
+- Remplacement envisagé : un bouton de debug qui extrait ou injecte pour tester en jeu. Pistes dans `tasks/todo.md`, « Plan — EX », section « Abandon ».
+- Aucun code ni branche créés.
+- **Remplacé par DX** : plan dans `tasks/todo.md`, « Plan — DX ». **Validé le 2026-10-27** (défauts DX-1 à DX-3). Implémentation en cours sur `feat/dx-debug-export` (depuis `main` @ `2d9ecd7`).
+- **Étapes 1 à 6 faites le 2026-10-27** (code, tests Rust `src-tauri/tests/export_debug.rs`, tests Vitest, CHANGELOG,
+  journal `docs/journal/2026-10-27-dx-export-debug.md`). **Rien de commité, aucun build ni test lancé** (seulement
+  `rustfmt --check` et prettier).
+- **Prochaine action** : accord de l'utilisateur pour le commit (le hook pre-commit lance clippy : demander avant
+  `--no-verify`) et le push, puis gate cloud complet (étape 7), PR, essai en jeu avec accord (étape 8).
 
 ## En cours (2026-10-26, Claude) — Bakin sous Linux (étude locale, hors produit)
 

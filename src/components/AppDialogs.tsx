@@ -37,6 +37,9 @@ interface AppDialogsProps {
 export function AppDialogs({ handlers }: AppDialogsProps) {
   const { t } = useTranslation();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const activeEngine = useProjectStore(
+    (s) => s.projects.find((p) => p.id === s.activeProjectId)?.engine,
+  );
 
   const {
     showSettings,
@@ -51,15 +54,18 @@ export function AppDialogs({ handlers }: AppDialogsProps) {
     exportFit,
     switchLocale,
     integrityIssues,
+    showDebugExport,
     setShowSettings,
     setShowAbout,
     setExportDialog,
     setShowTranslateAll,
     setSwitchLocale,
     setIntegrityIssues,
+    setShowDebugExport,
     handleExportConfirm,
     handleExportFontApply,
     handleExportFontSkip,
+    handleDebugExportConfirm,
     handleTranslateAllStart,
   } = handlers;
 
@@ -143,6 +149,32 @@ export function AppDialogs({ handlers }: AppDialogsProps) {
           <AlertDialogFooter>
             <AlertDialogAction onClick={() => setExportDialog(null)}>
               {t("toolbar.exportAllClose")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Debug export (developer tool) — test the translations ready so far */}
+      <AlertDialog open={showDebugExport}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("debugExport.title")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("debugExport.description")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+            <li>{t("debugExport.untouched")}</li>
+            <li>{t("debugExport.copyOnly")}</li>
+            <li>{t("debugExport.notForRelease")}</li>
+            {activeEngine === "wolf" && <li>{t("debugExport.wolfNote")}</li>}
+          </ul>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setShowDebugExport(false)}>
+              {t("debugExport.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={() => void handleDebugExportConfirm()}>
+              {t("debugExport.confirm")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
