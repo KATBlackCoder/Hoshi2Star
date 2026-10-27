@@ -123,6 +123,15 @@ fn candidate_archives(game_dir: &Path) -> Vec<(PathBuf, PathBuf, &'static str)> 
     archives
 }
 
+/// Archives the game reads first and an export rebuilds when they hold a
+/// translated file (relative paths, `/` separators), found without reading them.
+pub(crate) fn archive_paths(game_dir: &Path) -> Vec<String> {
+    candidate_archives(game_dir)
+        .iter()
+        .map(|(_, relative, _)| display_path(relative))
+        .collect()
+}
+
 /// `archive` relative path with `/` separators (zip entry name, messages).
 pub(crate) fn display_path(path: &Path) -> String {
     path.components()

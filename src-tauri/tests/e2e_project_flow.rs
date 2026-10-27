@@ -1228,3 +1228,90 @@ async fn wolf_archive_game_is_exported_as_a_rebuilt_archive() {
         .windows(TRANSLATION.len())
         .any(|window| window == TRANSLATION.as_bytes()));
 }
+
+/// The export dialog announces what a Wolf export will do (plan RW, RW-8):
+/// accents folded for a Shift-JIS game, the archive delivered rebuilt.
+#[tokio::test]
+async fn wolf_export_preflight_announces_folding_and_archives() {
+    use hoshi2star_lib::commands::export::preflight_export;
+
+    const MESSAGE: &str = "こんにちは、旅の人";
+
+    let tmp = tempfile::tempdir().unwrap();
+    let db_file = tmp.path().join("h2s.db");
+    let app = mock_app(db_file.to_str().unwrap()).await;
+
+    // Loose Wolf 2.x game, accented translation.
+    let loose = tmp.path().join("loose");
+    std::fs::create_dir_all(loose.join("Data").join("MapData")).unwrap();
+    std::fs::write(loose.join("Game.ini"), b"").unwrap();
+    std::fs::write(
+        loose.join("Data").join("MapData").join("Map001.mps"),
+        wolf_v2_map(MESSAGE),
+    )
+    .unwrap();
+    let project = open_project(loose.to_str().unwrap().to_string(), None, None, app.state())
+        .await
+        .expect("loose Wolf 2.x game opens")
+        .project;
+    let files = get_source_files(project.id.clone(), app.state())
+        .await
+        .expect("get_source_files");
+    let page = get_segments(
+        project.id.clone(),
+        files[0].id.clone(),
+        0,
+        100_000,
+        app.state(),
+    )
+    .await
+    .expect("get_segments");
+    let segment = page
+        .items
+        .iter()
+        .find(|segment| segment.source_text == MESSAGE)
+        .expect("the map message");
+    update_segment(
+        segment.id.clone(),
+        "Élève, déjà là".to_string(),
+        app.state(),
+    )
+    .await
+    .expect("update_segment");
+
+    let wolf = preflight_export(project.id.clone(), app.state())
+        .await
+        .expect("preflight")
+        .wolf
+        .expect("Wolf notes");
+    assert!(wolf.shift_jis);
+    assert_eq!(wolf.accented_texts, 1);
+    assert!(wolf.archives.is_empty());
+    assert!(wolf.path_warning.is_none());
+
+    // Game shipped as Data.wolf: the archive is announced.
+    let archived = tmp.path().join("archived");
+    std::fs::create_dir_all(&archived).unwrap();
+    std::fs::write(archived.join("Game.ini"), b"").unwrap();
+    std::fs::write(
+        archived.join("Data.wolf"),
+        keyless_data_wolf(&wolf_v2_map(MESSAGE)),
+    )
+    .unwrap();
+    let project = open_project(
+        archived.to_str().unwrap().to_string(),
+        None,
+        None,
+        app.state(),
+    )
+    .await
+    .expect("archived Wolf game opens")
+    .project;
+    let wolf = preflight_export(project.id.clone(), app.state())
+        .await
+        .expect("preflight")
+        .wolf
+        .expect("Wolf notes");
+    assert_eq!(wolf.archives, ["Data.wolf"]);
+    assert_eq!(wolf.accented_texts, 0);
+}
