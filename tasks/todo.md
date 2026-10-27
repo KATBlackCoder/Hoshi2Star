@@ -1012,8 +1012,33 @@ les cibles en base ne changent pas, comme pour le text fitting MZ.
   - **Relance sur `f02e174`** (session cloud, vrai dictionnaire lindera) : fmt OK ;
     `cargo test --locked --no-fail-fast` **786 OK / 0 échec / 15 ignorés** ; test des migrations OK. Le reste du gate
     est inchangé depuis `95e7a76` (seul un test a changé) : **gate vert**.
-- [ ] **WR-9. Essai en jeu** (ton accord) : le projet `APP` 2.23 réexporté. Attendu : le message de remerciement
+- [x] **WR-9. Essai en jeu** (ton accord) : le projet `APP` 2.23 réexporté. Attendu : le message de remerciement
   et les répliques de Gyoin dans le cadre, sans ligne « . » isolée.
+  - 2026-10-27 :
+    - **Boîte Mise en page.** L'app a été lancée depuis le worktree, ce qui a appliqué la migration 13. Écarts vus,
+      corrigés dans l'interface (fichier de la boîte et textes fr/en) :
+      - listes déroulantes illisibles en thème sombre ; défaut déjà présent dans la version MZ ;
+      - remarques Wolf en anglais, sous le titre MZ des plugins.
+    - **Réglages enregistrés :** messages ajustés, réduire, minimum 8, 4 lignes, taille du jeu 12, largeur mesurée
+      (22 em).
+    - **Export.** La fenêtre « Appliquer une taille de police » propose `\f[18]` : réponse « Ignorer ». Le défaut 18
+      est un piège pour Wolf (K5) : amélioration à prévoir.
+    - **Vérifié hors jeu** (archive `APP/Data.wolf` relue avec `dxa6.py` et `wolf_v2.py`) :
+      - les 27 messages sont recomposés, sans ligne « . » ni « ! » isolée ;
+      - `@2`/`@4` sont conservés ;
+      - 3 lignes au plus ;
+      - ligne la plus large : 21,77 em, pour un budget de 22.
+      Les choix ne sont pas modifiés (prévu).
+    - **En jeu : OK** (10 captures dans `RAE-PLAN/essais/wolf-v223/WR9-captures/`, hors Git) :
+      - remerciements, avertissements et difficulté sur 3 lignes, dans le cadre ;
+      - répliques de Gyoin avec cartouche « ??? » et buste, donc `@2` reconnu ;
+      - la ligne la plus large (« …I haven't seen in a while, ») tient avant le bord ;
+      - aucun « . » isolé ;
+      - les choix du menu titre et de la difficulté tiennent (textes courts).
+    - Suite de l'essai : les remarques Wolf ne sont plus envoyées par le backend (texte anglais) ; la boîte de
+      dialogue les écrit en fr/en d'après les réglages en cours.
+- [ ] **Suivi WR (hors lot)** : la fenêtre d'export « Appliquer une taille de police » propose `\f[18]` par défaut.
+  Pour Wolf, c'est 1,5 fois la taille du jeu 2.23 (K5). Proposer la taille du jeu quand elle est connue, ou aucune taille.
 
 **Critère de sortie.** Sur 2.23, aucun message 101 traduit ne sort du cadre en jeu, sauf ceux que le rapport
 signale. Les codes, `@N` et l'intégrité RW-6 sont intacts. Le gate cloud est vert.

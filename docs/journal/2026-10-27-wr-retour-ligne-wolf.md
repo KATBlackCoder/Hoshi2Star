@@ -127,6 +127,18 @@
 
 - Relance sur `f02e174` (session cloud) : fmt OK, `cargo test` **786 OK / 0 échec / 15 ignorés**. **Gate vert.**
 
+## WR-9 : essai en jeu (2026-10-27)
+
+- La base a été sauvegardée (`backups/hoshi2star-avant-essai-wr9-20261027-181808.db`). L'app a été lancée depuis
+  le worktree, avec `CARGO_TARGET_DIR` sur la cible du worktree RW (compilation en 40 s) ; migration 13 appliquée.
+- Écarts relevés par l'utilisateur dans la boîte de dialogue, corrigés :
+  - listes déroulantes illisibles en thème sombre (défaut ancien, partagé avec MZ) ;
+  - remarques Wolf en anglais, sous un titre MZ.
+- Projet `APP` : messages ajustés, taille du jeu 12, 4 lignes. Export avec « Ignorer » à la question de taille de
+  police, puis décompression sur `APP`.
+- Relecture hors jeu de `Data.wolf` : 27 messages recomposés, 3 lignes au plus, ligne la plus large 21,77 em.
+- En jeu : **OK**. Captures dans `RAE-PLAN/essais/wolf-v223/WR9-captures/`.
+
 ## Prochaine session
 
-- Essai en jeu WR-9 (app lancée depuis le worktree, projet `APP` 2.23, mise en page activée, taille du jeu 12), puis PR.
+- Pousser les corrections de l'essai, repasser le gate, puis PR (accord requis).

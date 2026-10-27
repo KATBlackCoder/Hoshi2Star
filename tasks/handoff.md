@@ -2,7 +2,7 @@
 
 **Mis à jour :** 2026-10-27 — Claude (WR : code écrit sur `feat/wr-wolf-wrap`, worktree `../Hoshi2Star-wr`, non compilé).
 **Objectif utilisateur :** lot WR, retour à la ligne des messages Wolf à l'export. RW (PR #13) et DX (PR #15) fusionnés ; EX abandonné.
-**Statut :** WR-1 à WR-7 faits ; code et tests **non compilés** (pas de build local) ; gate cloud (WR-8) après accord pour pousser, puis essai en jeu (WR-9).
+**Statut :** WR-1 à WR-9 faits : gate cloud vert sur `f02e174`, essai en jeu 2.23 OK. Les corrections d'interface faites pendant l'essai ne sont pas poussées ; il reste à pousser et à repasser le gate, puis à ouvrir la PR (accord requis).
 
 ## Terminé (2026-10-27, Claude) — RW (Wolf), fusionné par la PR #13
 
@@ -58,7 +58,9 @@
 - **Poussé** le 2026-10-27 (accord de l'utilisateur) : `origin/feat/wr-wolf-wrap` @ `95e7a76`. Gate cloud (WR-8) demandé dans une session cloud « Gate cloud WR », qui ne fait que rapporter : résultat à relever dans son transcript.
 - **Gate cloud du 2026-10-27 sur `95e7a76`** : tout est vert sauf 1 test, 785 OK / 1 échec / 15 ignorés ; Vitest 153 ; clippy 0. L'échec vient de la liste des migrations figée à `1..=12` (`tests/terminology_migration.rs:205`), passée à `1..=13`, commitée et pas encore poussée.
 - **Gate vert** sur `f02e174` (poussé avec accord) : `cargo test` 786 OK / 0 échec / 15 ignorés, fmt OK ; le reste est inchangé depuis `95e7a76`.
-- **Prochaine action** : essai en jeu WR-9 (accord requis : app lancée depuis `../Hoshi2Star-wr`, projet `APP` 2.23, mise en page activée, taille du jeu 12, export, décompression sur `RAE-PLAN/essais/wolf-v223/APP`), puis PR.
+- WR-9 préparé (2026-10-27) : `pnpm i` dans le worktree ; base sauvegardée (`~/.local/share/com.blackat.hoshi2star/backups/hoshi2star-avant-essai-wr9-20261027-181808.db`, intégrité OK, 3 234 segments). Le lancement depuis le worktree applique la migration 0013 à la vraie base ; l'app de `main` l'accepte ensuite comme base plus récente. Mesure sur `APP` (une seule carte) : 22 em, mais 3 lignes ⇒ fixer 4 lignes à la main.
+- **WR-9 OK en jeu (2026-10-27)** : tous les messages dans le cadre, portraits conservés, aucune ligne isolée (captures `RAE-PLAN/essais/wolf-v223/WR9-captures/`). Corrigés pendant l'essai : listes de la boîte illisibles en thème sombre ; remarques Wolf en anglais.
+- **Prochaine action** (accord requis) : pousser les corrections de l'essai, relancer le gate (typecheck, Vitest, clippy, `cargo test`), puis ouvrir la PR `feat/wr-wolf-wrap` → `main`. Avant : essai WR-9 (accord requis : app lancée depuis `../Hoshi2Star-wr`, projet `APP` 2.23, mise en page activée, taille du jeu 12, export, décompression sur `RAE-PLAN/essais/wolf-v223/APP`), puis PR.
 
 ## Abandonné (2026-10-27, Claude) — EX : export d'essai
 
