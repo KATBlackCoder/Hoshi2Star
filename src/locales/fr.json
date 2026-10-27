@@ -241,6 +241,8 @@
     "label": "Taille de police ({{code}})",
     "replaceLabel": "Remplacer les {{code}} existants ({{count}} segments)",
     "hintMvMz": "Note : nécessite RPG Maker MZ ou un plugin de messages (ex. VisuStella Message Core) pour MV.",
+    "hintWolfGame": "La taille normale de ce jeu est {{size}}. Une taille plus grande agrandit tous les textes et peut les faire sortir de la fenêtre de message.",
+    "hintWolfUnknown": "La taille normale de ce jeu est inconnue (à indiquer dans Mise en page). « Ignorer » garde la taille du jeu.",
     "skip": "Ignorer",
     "apply": "Appliquer & injecter"
   },

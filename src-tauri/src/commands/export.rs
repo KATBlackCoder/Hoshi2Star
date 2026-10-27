@@ -138,6 +138,10 @@ pub struct FontScanResult {
     pub total_translated: i64,
     /// Engine of the project (`"wolf"`, `"mv_mz"`, etc.).
     pub engine: String,
+    /// Wolf RPG: the game's default font size set in the text fitting
+    /// settings (`None`: unknown, or another engine). The dialog proposes it
+    /// instead of a fixed size that would enlarge every text.
+    pub game_font_size: Option<u32>,
 }
 
 /// Scan translated segments for existing font-size prefixes.
@@ -213,10 +217,20 @@ pub async fn scan_font_status(
         })
         .count() as i64;
 
+    let game_font_size = if engine == "wolf" {
+        text_fit::load_settings_for_engine(&state.db, &resolved_pid, "wolf")
+            .await
+            .map_err(|e| e.to_string())?
+            .wolf_base_font_size
+    } else {
+        None
+    };
+
     Ok(FontScanResult {
         existing_font_count,
         total_translated,
         engine,
+        game_font_size,
     })
 }
 
