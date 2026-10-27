@@ -60,7 +60,7 @@
 - **Gate vert** sur `f02e174` (poussé avec accord) : `cargo test` 786 OK / 0 échec / 15 ignorés, fmt OK ; le reste est inchangé depuis `95e7a76`.
 - WR-9 préparé (2026-10-27) : `pnpm i` dans le worktree ; base sauvegardée (`~/.local/share/com.blackat.hoshi2star/backups/hoshi2star-avant-essai-wr9-20261027-181808.db`, intégrité OK, 3 234 segments). Le lancement depuis le worktree applique la migration 0013 à la vraie base ; l'app de `main` l'accepte ensuite comme base plus récente. Mesure sur `APP` (une seule carte) : 22 em, mais 3 lignes ⇒ fixer 4 lignes à la main.
 - **WR-9 OK en jeu (2026-10-27)** : tous les messages dans le cadre, portraits conservés, aucune ligne isolée (captures `RAE-PLAN/essais/wolf-v223/WR9-captures/`). Corrigés pendant l'essai : listes de la boîte illisibles en thème sombre ; remarques Wolf en anglais.
-- **Prochaine action** (accord requis) : pousser les corrections de l'essai, relancer le gate (typecheck, Vitest, clippy, `cargo test`), puis ouvrir la PR `feat/wr-wolf-wrap` → `main`. Avant : essai WR-9 (accord requis : app lancée depuis `../Hoshi2Star-wr`, projet `APP` 2.23, mise en page activée, taille du jeu 12, export, décompression sur `RAE-PLAN/essais/wolf-v223/APP`), puis PR.
+- **Prochaine action** (accord requis) : pousser les corrections de l'essai, relancer le gate (typecheck, Vitest, clippy, `cargo test`), puis ouvrir la PR `feat/wr-wolf-wrap` → `main`.
 
 ## Abandonné (2026-10-27, Claude) — EX : export d'essai
 
