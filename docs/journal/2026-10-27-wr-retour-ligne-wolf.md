@@ -1,0 +1,88 @@
+# Journal — 2026-10-27 — WR : retour à la ligne des textes Wolf à l'export (conception)
+
+**Phase** : F4
+**Durée estimée** : 1h
+**Statut** : 🔄 En cours (plan à valider)
+**Outil** : Claude
+**Branche et commit de départ** : `main` @ `2331c75` (lecture du code sur `feat/rw-wolf` @ `9d28ae2`, worktree `../Hoshi2Star-rw`)
+**Objectif / plan / story** : concevoir le retour à la ligne automatique des textes Wolf à l'export ; plan dans `tasks/todo.md`, « Plan — WR »
+
+---
+
+## Ce qui a été fait
+
+- Reprise faite (handoff, leçons, état Git). RW n'est **pas fusionné** et n'a pas de PR (`gh pr list --state all` s'arrête à #12).
+- Lecture sur `feat/rw-wolf` :
+  - text fitting MZ (`core/text_fit.rs`, `engines/mv_mz/layout/*`) ;
+  - `apply_font_prefix` et `collect_wolf_zip_entries` (`commands/export.rs`) ;
+  - `engines/wolf/placeholders.rs` et l'extracteur Wolf ;
+  - les verrous `mv_mz` (`qa.rs:133`, `report.rs:116`, `set_text_fit`).
+- Format de `Game.dat` lu dans WolfTL (`WolfTL/WolfRPG/GameDat.hpp`, MIT). `Game.dat` 2.23 est en clair :
+  police principale `M+ 2c medium`, réglages numériques dans `m_unknown1` (22 octets), non décodés.
+- Mesures en lecture seule (Python `-I`, scripts dans le scratchpad, outils `RAE-PLAN/wolf/_outils/wolf_v2.py`)
+  sur les 18 cartes et le `CommonEvent.dat` extraits du 2.23 :
+  - messages avec visage : 3 lignes au plus, largeur p99 45 colonnes demi-chasse, max 52 ;
+  - messages sans visage : largeur p99 48 ;
+  - choix : p99 20.
+- Mesure avec la vraie police (`mplus-2c-medium.ttf`, fontTools) :
+  - « ※Thank you for downloading th » vaut 276 px à 18 px ;
+  - les lignes d'origine de la même fenêtre valent 320 à 336 px à 16 px ;
+  - les deux ne collent pas ⇒ calibrage en jeu obligatoire.
+- Cibles du projet de test `APP`, lues dans la base de l'app en lecture seule : les `\n` parasites sont rejetés en fin de phrase par le LLM.
+- Plan WR écrit dans `tasks/todo.md` ; relu par un conseiller avant écriture.
+
+## Fichiers créés
+
+- `docs/journal/2026-10-27-wr-retour-ligne-wolf.md`
+
+## Fichiers modifiés
+
+- `tasks/todo.md` — section « Plan — WR » (avant « Études REA »).
+- `tasks/handoff.md` — section WR.
+
+## Décisions prises
+
+- Aucune décision produit : WR-E0 à WR-E6 attendent l'utilisateur.
+
+## Problèmes rencontrés
+
+- `tasks/todo.md` et `tasks/handoff.md` sont modifiés en parallèle par d'autres sessions (EX, Bakin), sans commit.
+  Ajouts faits par insertion ciblée ; aucune de leurs lignes n'a été touchée.
+
+## Corrections et erreurs à ne plus répéter
+
+- Aucune.
+
+## Vérifications et limites
+
+- Aucun build ni test : plan seulement. Le contrôle a porté sur la cohérence des références `fichier:ligne`
+  (relues sur `feat/rw-wolf`).
+- Hypothèse non vérifiée : la police du jeu est bien chargée sous Wine depuis le dossier du jeu.
+
+## Suite — plan validé, WR-1 préparé (2026-10-27)
+
+- Plan validé par l'utilisateur avec les recommandations WR-E0 à WR-E6.
+- Outil `RAE-PLAN/wolf/_outils/build_wolf_wcal.py` (hors Git), qui réutilise `build_wolf_tests.py`, `wolf_v2.py`
+  et `dxa6.py`. Variante `RAE-PLAN/essais/wolf-v223/WCAL` construite depuis `W0` :
+  - 16 textes de `SYS＿タイトル.mps` remplacés par des règles graduées (écrans A à M) ;
+  - relecture conforme : seules les chaînes prévues changent, structure identique octet pour octet ;
+  - archive reconstruite (204 388 312 octets), 1 373 fichiers relus conformes, DXA 6, clé et page de codes inchangées.
+- Fiche d'essai `RAE-PLAN/essais/wolf-v223/WCAL.FICHE.md` ; script de capture `capture.fish` (spectacle `-a`).
+- Pas encore lancé en jeu.
+
+## Essai WCAL partiel et report (2026-10-27)
+
+- L'utilisateur a lancé WCAL sous Wine.
+  - Le terminal ne montre que du bruit sans effet sur le jeu : `dmsynth` `Underrun` (son), puis un blocage de
+    `loader_section` à la fermeture.
+- Capture A (menu titre), copiée dans `RAE-PLAN/essais/wolf-v223/WCAL-captures/A.png` et mesurée en Python (PIL) :
+  - écran de 640 × 480, sans mise à l'échelle ;
+  - choix `<R>` : le texte part de x ≈ 233 et sort de l'écran à 639 (26 chiffres visibles sur 40) ;
+  - pas de 16,0 px par chiffre, identique avec `\f[12]` ⇒ `\f` n'agit pas sur un choix ;
+  - le 3e choix (`ゲーム終了`, d'origine) n'est pas visible, d'après l'utilisateur. Cause non établie ;
+    à comparer avec `W0`.
+- Le lot est **reporté** par décision de l'utilisateur. Écrans B à M non capturés.
+
+## Prochaine session
+
+- Relancer WCAL et capturer les écrans B à M, puis lire les captures `RAE-PLAN/essais/wolf-v223/WCAL-captures/` et consigner les mesures dans le plan (WR-1), puis WR-2 et WR-3.

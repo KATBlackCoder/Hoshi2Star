@@ -423,6 +423,377 @@ compile en cloud ; un jeu Wolf v2 donne un message clair, jamais un projet parti
 
 **Effort estimé.** S à M (environ une demi-journée), vérification en cloud comprise.
 
+## Plan — EX : export d'essai, segments traduits seulement (2026-10-27, Claude) — PLAN VALIDÉ le 2026-10-27 (D1 = a, D2 = a, D3 oui, D4 oui, D5 noter, D6 = a) ; aucun code, en attente de la fusion de RW
+
+**But.** Tester en jeu pendant la traduction. Aujourd'hui l'export est refusé tant qu'un segment est
+`untranslated`. Le 2026-10-27, pour essayer l'export Wolf en jeu, il a fallu réduire un projet de test
+à une seule carte dans la base.
+
+**Prérequis bloquant.**
+- Le lot RW (`feat/rw-wolf`, tête `9d28ae2`) **n'est pas fusionné et n'a pas de PR** (vérifié le 2026-10-27 :
+  `gh pr list --state all` s'arrête à #12).
+- Ce plan est écrit sur le code de `feat/rw-wolf`, qui modifie `export.rs`, `useAppHandlers.ts` et `AppDialogs.tsx`.
+- L'implémentation attend la fusion de RW. Branche de travail `feat/ex-trial-export`, à créer depuis `main` après cette fusion.
+- La session « Retour à la ligne des textes Wolf à l'export » travaille sur le chemin d'export Wolf
+  (`collect_wolf_zip_entries`, injecteur). Il faut convenir de l'ordre des deux lots avant de toucher `export.rs`.
+
+### Constats (lus sur `feat/rw-wolf`, non exécutés)
+
+- **C1. L'export injecte déjà seulement les cibles non vides.**
+  - MV/MZ : `export.rs:370-373`, plus `plugin_rows` `:935-947` et `linked_skill_type_renames` `:854-874`.
+  - Wolf : `export.rs:1025-1028`, et l'injecteur cherche chaque clé une par une (`wolf/injector.rs:195`).
+  - Un segment non traduit garde donc déjà le texte d'origine. Rien ne recopie la source dans la cible :
+    `UnchangedSource` et `SourceScriptRemaining` ne sont pas déclenchés.
+- **C2. L'audit QA d'export ne lit déjà que les segments qui ont une cible**, ou le statut `translated`,
+  `reviewed` ou `needs_review` (`core/report.rs:97`). Il bloque sur `critical_count > 0` (`export.rs:286-295`).
+  La liste des erreurs critiques est large (`qa.rs:694-713`) : fuite de contexte, expansion suspecte,
+  répétition incohérente, terminologie critique… Après l'audit, une cible non vide est en `needs_review`
+  **si et seulement si** elle a une erreur critique (`report.rs`, `next_status`).
+- **C3. La mise en page MZ saute un message incomplet** (« not fully translated yet », `layout/plan.rs:154`,
+  `:201`). Les lignes traduites d'un tel message partent sans mise en page.
+- **C4. Les portes d'intégrité ne contrôlent que les valeurs prévues.**
+  - MV/MZ : `verify_sources` et `verify_json_edit`.
+  - Wolf : `PlannedValueMissing` ne porte que sur les clés prévues (`wolf/integrity.rs:127-151`).
+  - Un segment non traduit n'est donc jamais signalé. Ces portes restent intactes.
+- **C5. Le seul refus « non traduit » est dans le frontend** : `useAppHandlers.ts:66`
+  (`untranslatedCount > 0` ouvre la boîte « blocked »). Hors périmètre, `debug_inject_file` refuse aussi (`export.rs:1181`).
+- **C6. Mémoire des fichiers écrits (R2).**
+  - Chaque export retient le sha de chaque fichier écrit, 16 au plus par fichier (`KNOWN_DISK_LIMIT`, `mv_mz/originals.rs:96`).
+  - Un fichier du jeu au sha inconnu est reconstruit : l'export est défait là où la cible courante correspond
+    (`core/originals.rs:164`). Sinon, R2 refuse l'export (`SourceChanged`).
+  - Des essais fréquents rendent ce cas plus probable. Le risque est un refus, pas une corruption silencieuse.
+- **C7. Wolf n'a pas de copie d'origine** : l'export relit le jeu (RW-6). Après décompression d'un essai,
+  un segment dont on efface ensuite la traduction garde l'ancienne traduction sur disque.
+  C'est le même cas, déjà connu, que pour l'export complet.
+
+**Conséquence.** L'essai ne demande ni de recopier la source ni de nouvelle logique QA pour les non-traduits.
+Il faut :
+1. une commande d'export d'essai, qui partage le code de l'export complet ;
+2. une règle pour les segments traduits en erreur critique (D1) ;
+3. un zip marqué comme essai (D2) ;
+4. le parcours dans l'interface.
+
+### Décisions à prendre (recommandation en premier)
+
+- **D1. Segments traduits en erreur critique, en mode essai.**
+  - **(a) Recommandé : les écarter.** Ils restent d'origine, leur nombre est affiché après l'export, et l'essai n'est pas bloqué.
+    - En pratique : en mode essai, filtre unique `target_text != '' AND status != 'needs_review'`, appliqué
+      après l'audit (C2) à **toutes** les sources de cibles : lignes MV/MZ, `plugin_rows`,
+      `linked_skill_type_renames`, `project_targets` (mise en page), segments Wolf.
+    - Une cible écartée est vue comme vide par la mise en page : le message passe en « incomplet ».
+  - (b) Refuser comme l'export complet. Plus simple, mais une seule fuite de contexte bloque l'essai.
+  - (c) Les injecter avec un avertissement. Déconseillé : `MissingPlaceholder` et les contraintes de plugin
+    peuvent casser le jeu.
+- **D2. Marquage du zip.**
+  - **(a) Recommandé :** nom distinct `hoshi2star-trial.zip`, plus un commentaire de zip
+    (« Hoshi2Star trial export: N/M segments »). Un essai n'écrase jamais `hoshi2star.zip` et ne se confond pas avec une livraison.
+  - (b) Un fichier témoin dans le zip. Déconseillé : il atterrit dans le dossier du jeu à la décompression.
+  - Nom français (`hoshi2star-essai.zip`) possible : à toi de choisir.
+- **D3. Changement de langue du jeu (`System.json` `locale`) en essai : recommandé, autorisé.**
+  C'est la même option, décochée par défaut.
+- **D4. Aucun segment exportable : recommandé, refus explicite**, sans zip vide. Dans l'interface, le bouton
+  d'essai est grisé si aucun segment n'est traduit.
+- **D5. Limite de 16 sha (C6) : recommandé, la noter sans la changer.** Hors périmètre, et l'échec est un refus.
+  Autre choix : la porter à 64 dans ce lot, avec un test.
+- **D6. Où proposer l'essai.**
+  - **(a) Recommandé :** un bouton « Exporter un essai » dans la boîte « export bloqué », qui mène à une confirmation propre à l'essai.
+  - (b) En plus, une entrée permanente dans la barre d'outils.
+
+### Étapes (si D1 = a, D2 = a, D3 = oui, D4 = oui, D5 = noter, D6 = a)
+
+- [ ] 0. RW fusionné. Créer `feat/ex-trial-export` depuis `main`. Ordre convenu avec le lot « retour à la ligne Wolf ».
+- [ ] 1. **Rust, portée d'export.**
+  - Factoriser le corps de `export_project` en `export_with_scope(scope: ExportScope, …)`, avec
+    `ExportScope::{Full, Trial}` et un seul fragment SQL de sélection des cibles par portée.
+  - `export_project` garde sa signature et son comportement (`Full`).
+  - Nouvelle commande `export_trial_project(project_id, font_size, replace_existing, set_locale)
+    -> TrialExport { zip_path, exported, untranslated, skipped_critical }`, enregistrée dans `generate_handler!`.
+  - En `Trial` :
+    - pas de refus sur `critical_count` ; les segments critiques sont écartés (D1) ;
+    - refus si `exported == 0` (D4) ;
+    - zip `hoshi2star-trial.zip` avec commentaire (D2) ;
+    - `remember_written` comme en export complet. Il est indispensable : le jeu reçoit ces fichiers.
+  - Portes d'intégrité MV/MZ et Wolf, et garde R2 : **inchangées**.
+- [ ] 2. **Rust, sources de cibles.**
+  - Passer la portée à `plugin_rows`, `linked_skill_type_renames`, `fitted_lines`/`project_targets`
+    (une cible écartée devient vide) et `collect_wolf_zip_entries`.
+  - `wolf_preflight` compte les accents sur les seules cibles exportées.
+- [ ] 3. **Frontend.**
+  - `useAppHandlers.ts` : état `exportTrial` ; `handleTrialExport`, qui charge le préflight et la mise en page
+    puis ouvre la confirmation d'essai ; `doExport` appelle `export_trial_project` en mode essai.
+  - Toast de succès propre à l'essai : chemin, plus « N exportés, M laissés d'origine, K écartés (erreur critique) ».
+  - `AppDialogs.tsx` : bouton d'essai dans la boîte « blocked », grisé si rien n'est traduit ; variante d'essai
+    de la confirmation, qui explique que :
+    - les non-traduits restent en japonais ;
+    - les erreurs critiques sont écartées ;
+    - le zip est à essayer, pas à distribuer.
+  - Clés i18n `fr.json` et `en.json` ; type `TrialExport` dans `types.ts`.
+- [ ] 4. **Tests Rust** (`src-tauri/tests/`, sur le modèle de `export_game_update.rs` et `e2e_project_flow.rs`) :
+  - a. MV, projet mixte : les traduits sont injectés, chaque valeur non traduite est identique à l'original,
+    on obtient `hoshi2star-trial.zip` et non `hoshi2star.zip`, les comptes sont justes ;
+  - b. segment critique (placeholder manquant) : écarté, laissé d'origine, compté ; l'export complet refuse toujours ;
+  - c. mise en page MZ activée et message dont une ligne est écartée : message non mis en page, aucune ligne d'origine modifiée ;
+  - d. `plugins.js` et renommage Keke d'un type de compétence écarté : non appliqués, porte Keke verte ;
+  - e. R2 : jeu modifié sur disque, l'essai est refusé (`SourceChanged`) comme l'export complet ;
+  - f. Wolf (archive e2e sans clé de RW) : projet mixte exporté, intégrité RW-6 verte ; second essai sur la sortie décompressée du premier ;
+  - g. aucun segment exportable : refus explicite, aucun fichier écrit.
+- [ ] 5. **Tests Vitest :**
+  - la boîte « blocked » propose l'essai, et le grise si rien n'est traduit ;
+  - l'essai appelle `export_trial_project` avec les bons arguments ;
+  - le toast d'essai s'affiche ;
+  - l'export complet est inchangé ;
+  - l'erreur d'intégrité ouvre toujours `ExportIntegrityDialog`.
+- [ ] 6. **Suivi :** CHANGELOG (Added), journal `docs/journal/`, `tasks/handoff.md`.
+- [ ] 7. **Gate cloud** sur la branche poussée (push après ton accord) : fmt, clippy `--all-targets -D warnings`,
+  `cargo test --locked`, typecheck, Vitest, lint. Aucun build ni test local.
+- [ ] 8. **Essai en jeu** (avec ton accord) : un projet MV/MZ et un projet Wolf à moitié traduits ;
+  zip d'essai décompressé sur une copie.
+
+### Limites assumées (à écrire dans l'interface ou dans la doc)
+
+- Wolf : effacer une traduction après avoir décompressé un essai ne remet pas le japonais (C7).
+- MV/MZ : un fichier dont toutes les cibles ont été effacées n'est pas dans le zip, et le jeu garde la version d'un essai précédent.
+- MV/MZ : un message partiellement traduit mélange japonais et traduction, sans mise en page (C3).
+- Les références croisées propres aux plugins (noms cherchés par chaîne) peuvent échouer en jeu tant que
+  tout n'est pas traduit : c'est justement ce que l'essai sert à révéler.
+
+**Critère de sortie.**
+- Un projet à moitié traduit produit `hoshi2star-trial.zip` sans toucher aux segments non traduits.
+- Portes d'intégrité et R2 inchangées ; export complet inchangé.
+- Tests Rust et Vitest verts au gate cloud.
+
+**Effort estimé.** M (environ une journée), gate cloud compris.
+
+## Plan — WR : retour à la ligne des textes Wolf à l'export (2026-10-27, Claude) — PLAN VALIDÉ le 2026-10-27 (WR-E0 à WR-E6 = recommandations) ; **REPORTÉ le 2026-10-27 (décision utilisateur)** pendant WR-1, aucun code applicatif
+
+**But.** Wolf ne coupe pas les lignes. Constaté en jeu le 2026-10-27 (Wolf 2.23, essai RW-9) : une traduction
+plus longue que l'original sort du cadre (« Thank you for downloading th… »), et des choix débordent.
+Les traductions LLM ajoutent aussi des retours à la ligne parasites. Mise en page **à l'export seulement** ;
+les cibles en base ne changent pas, comme pour le text fitting MZ.
+
+**Prérequis.**
+- RW (`feat/rw-wolf`, tête `9d28ae2`) **n'est pas fusionné et n'a pas de PR** (vérifié le 2026-10-27,
+  `gh pr list --state all` s'arrête à #12). Ce plan est lu sur le code de `feat/rw-wolf`.
+- Le lot EX (plan validé, ci-dessus) touche aussi `collect_wolf_zip_entries` : ordre à convenir (WR-E0).
+- La livraison par archive reconstruite (RW-3/RW-5) n'est pas modifiée.
+
+### Constats (lus ou mesurés le 2026-10-27, sans build)
+
+- **K1. Modèle Wolf.**
+  - Un message (commande 101) est **un seul segment**, lignes séparées par `\n` ; préfixe de visage `@N\n` en tête.
+  - Chaque choix (102) est un segment (`…/choices/i`). Clés = index de commande (`extractor.rs:276`, `:455`).
+  - Les champs de base de données sont dessinés par le 基本システム, à des largeurs propres à chaque écran.
+- **K2. Rien à réutiliser côté Wolf, beaucoup côté MZ.**
+  - `mv_mz/layout/font.rs` : `GameFont` (TTF/WOFF1), `Metrics::Estimated` (demi-chasse = ½ em, pleine chasse = 1 em,
+    exact pour ＭＳ ゴシック) ; `wrap.rs` : coupures UAX #14, codes jamais coupés, coupe équilibrée.
+  - `text.rs::TokenKind` (`Text`, `Newline`, `Color`, `Icon`, `Position`, `FontSize`, `Inserted{sample}`, `Control`,
+    `Unknown`) suffit à décrire les codes Wolf.
+  - La géométrie et le tokenizer MZ restent propres à MZ.
+- **K3. Police réelle.**
+  - `Game.dat` 2.23 est en clair. Format WolfTL (`GameDat.hpp`) : police principale `M+ 2c medium`,
+    sous-polices `Arial Black`, `ＭＳ ゴシック`. Le fichier `mplus-2c-medium.ttf` est à la racine du jeu
+    (latin proportionnel : 0,49 em par lettre anglaise en moyenne).
+  - Jeu 3.658 : polices `font*.ttf.wolfx` chiffrées WolfX (non lisibles, `decrypt/wolfx.rs`) ⇒ `Metrics::Estimated`.
+  - Autres jeux de `RAE-PLAN/` : polices `.ttf`/`.otf` livrées dans le dossier.
+  - Les réglages numériques de `Game.dat` (taille de police par défaut, espacement, résolution) sont dans
+    `m_unknown1`, un tableau de 22 octets que WolfTL ne nomme pas. Pour 2.23 :
+    `10 04 08 01 3c 01 01 03 00 01 00 06 09 00 00 04 04 01 01 00 00 01`. **Non décodé.**
+- **K4. Largeur des lignes d'origine, jeu 2.23** (18 cartes + `CommonEvent.dat`, en colonnes demi-chasse) :
+  - messages avec visage : 1 717 messages, **3 lignes au plus** ; largeur p99 45, max 52 ;
+  - messages sans visage : 4 lignes au plus (5 pour un message d'erreur système) ; largeur p99 48 ;
+  - choix : p99 20, max 34.
+  - Ce sont des **bornes basses** de la largeur utile, pas la largeur de la fenêtre.
+- **K5. Une donnée en jeu ne colle pas au modèle simple.**
+  - Le texte coupé, exporté avec `\f[18]`, mesure environ **276 px** dans la vraie police : « ※Thank you for downloading th ».
+  - Les lignes japonaises d'origine de la même fenêtre mesurent **320 à 336 px** si la taille par défaut est 16 px.
+  - Elles s'affichaient pourtant en entier.
+  - Avec une taille par défaut de 16 px et sans espacement entre caractères, il faudrait environ 7 px d'espacement
+    par caractère pour réconcilier les deux mesures : peu plausible.
+  - Deux lectures restent possibles :
+    - **taille par défaut d'environ 13 px ou moins** : le `\f[18]` choisi à l'export agrandissait alors le texte
+      d'environ 40 % et causait à lui seul une bonne part du débordement. Un export sans préfixe peut déjà aider ;
+    - **police remplacée sous Wine** : le jeu ne dessinerait pas avec `mplus-2c-medium.ttf`.
+  - ⇒ **Pas de constante de largeur sans calibrage en jeu** (étape WR-1).
+- **K6. Retours parasites : cause trouvée.**
+  - Dans le projet `APP`, on voit par exemple « …River~" ⏎ ⏎! », « including ⏎, and may differ », « …the work ⏎. ».
+  - Le tokenizer envoie chaque `\n` au LLM comme un jeton `⟦ph_n⟧` (`placeholders.rs`, motif `\n`). Une réponse
+    où il manque un jeton est rejetée (`llm/tokenizer.rs:250`, `MissingPlaceholder`).
+  - Le modèle doit donc les replacer quelque part, et il les jette en fin de phrase.
+  - Pour un message Wolf, la position d'un `\n` dans une cible LLM n'a donc **aucun sens**, sauf cas protégés (R3).
+- **K7. Ordre dans l'export** (`export.rs::collect_wolf_zip_entries`) :
+  - `apply_font_prefix` s'applique d'abord, à **tous** les segments Wolf, choix et base de données compris ;
+  - puis `wolf_to_memory`, qui replie les caractères hors Shift-JIS (`œ`→`oe`, `«`→`"`), compte `folded_texts`
+    et contrôle chaque fichier produit (RW-6).
+- **K8. Réglages MZ verrouillés sur MZ.**
+  - `text_fit::enabled_kinds`, `set_text_fit` (via `support`), `qa.rs:133` (`drop_line_width`) et `report.rs:116`
+    ne s'appliquent qu'à `mv_mz`.
+  - Dernière migration : `0012`.
+
+### Décisions à prendre (recommandation en premier)
+
+- **WR-E0. Base de travail.**
+  - (a) Recommandé : attendre la fusion de RW, puis `feat/wr-wolf-wrap` depuis `main`, après EX ou avant selon ton choix.
+    EX ne touche que le filtre des cibles, WR le texte : le conflit est petit, mais il faut un ordre.
+  - (b) Brancher depuis `feat/rw-wolf` tout de suite. À éviter : deux lots empilés sur une PR non ouverte.
+- **WR-E1. Largeur utile.**
+  - (a) Recommandé : **par jeu et par type** (message avec visage / sans visage). Le budget en em vaut le p99 des
+    largeurs des lignes d'origine, mesurées avec la police du jeu ; il est corrigé par le facteur trouvé au calibrage
+    (WR-1) et modifiable par projet (WR-E4). Sans police lisible : `Metrics::Estimated`.
+  - (b) Constantes par résolution. Rejeté : chaque 基本システム dessine sa fenêtre à sa manière.
+- **WR-E2. Retours à la ligne.**
+  - (a) Recommandé : `Reflow` par défaut pour Wolf. Chaque message est nettoyé (R3), rejoint puis recoupé, **même
+    s'il tient déjà** : les `\n` des cibles LLM sont mal placés par construction (K6).
+  - `Keep` reste possible : on garde les retours de la cible, on retire les seuls parasites évidents (R3.4) et on
+    coupe les lignes trop larges.
+- **WR-E3. Trop de lignes pour la fenêtre.** Wolf n'a pas de code de nouvelle page connu. Ajouter des commandes 101
+    changerait la structure de l'événement (clés par index, contrôle RW-6) : **exclu**.
+  - (a) Recommandé : réduire la police du message (`\f[m]` en tête, après `@N\n`) jusqu'à `min_font_size`, puis
+    laisser le message tel quel et le signaler.
+  - (b) Laisser et signaler seulement.
+  - Nouvelle page seulement si le calibrage trouve un code qui le fait.
+- **WR-E4. Réglages.**
+  - (a) Recommandé : réutiliser `project_text_fit` (`enabled_dialogue`, `line_breaks`, `overflow`, `min_font_size`)
+    en levant le verrou `mv_mz` pour Wolf. `Overflow::NewPage` est refusé pour Wolf.
+  - Migration `0013` : colonnes nullables `wolf_width_em`, `wolf_face_width_em`, `wolf_max_lines`,
+    `wolf_face_max_lines` (`NULL` = valeur mesurée).
+  - Activé par défaut pour les projets Wolf ? Recommandé : **non**, comme MZ ; la boîte d'export le propose.
+- **WR-E5. Périmètre v1.**
+  - (a) Recommandé :
+    - messages 101 des cartes et de `CommonEvent.dat` ;
+    - choix 102 signalés seulement : largeur cible > largeur d'origine, surtout s'ils sont collés à un bord (`<R>`).
+      Ils sont réduits seulement si le calibrage montre que `\f` agit sur un choix ;
+    - **base de données hors v1** : largeurs inconnues, dessin propre au 基本システム.
+- **WR-E6. Cause des parasites (K6).** Ne plus exiger du LLM le nombre exact de `\n` dans un message Wolf :
+    recommandé comme **lot séparé** (pipeline LLM, hors export). WR nettoie à l'export dans tous les cas.
+
+### Règles (si E1 = a, E2 = a, E3 = a)
+
+- **R1. Tokenizer Wolf** (`engines/wolf/layout/text.rs`, nouveau), produit des `mv_mz::layout::text::Token` :
+  - `@N\n` en tête : retiré, recollé tel quel en sortie ; il impose la largeur « avec visage » ;
+  - `\c[n]` → `Color` ; `\f[n]` → `FontSize(n)` ;
+  - `\i[n]` → `Inserted { sample }`, fait d'espaces pleine chasse de la largeur mesurée en WR-1.
+    `TokenKind::Icon` vaut la constante MZ de 36 px (`text.rs:293`). Si l'échantillon ne suffit pas, WR-4 ajoute
+    un petit paramètre de largeur d'icône, signalé dans la PR ;
+  - `\r[base,ruby]` → `Inserted { sample: base }` ;
+  - valeurs insérées : `\v[n]`, `\v?[n]`, `\self`, `\cself`, `\sys` → échantillon « 0000 » ; `\s[n]`, `\sysS`,
+    `\udb`/`\cdb`/`\sdb` → échantillon de 6 caractères pleine chasse, valeur prudente signalée comme estimée ;
+  - `\E`, `\!`, `\.`, `\^`, `\>`, `\<`, `\A±` → `Control` (sans largeur) ; `\\` → barre visible ;
+  - texte contenant `\ax`, `\ay`, `\mx`, `\my`, `\space[n]`, `\-[n]`, `<L>`, `<C>`, `<R>` : **laissé tel quel**, compté comme « non ajusté (codes de position) ».
+- **R2. Mesure.**
+  - Largeur d'un caractère : celle du texte **replié** quand le fichier est Shift-JIS (`fold_for_shift_jis`),
+    plus l'espacement trouvé en WR-1.
+  - La sortie garde le texte non replié : l'injecteur replie ensuite et `folded_texts` reste juste.
+  - Le budget venu des lignes d'origine est exprimé en em **à la taille par défaut du jeu S0**.
+    Pour mesurer à une autre taille (préfixe `\f[n]` d'export, réduction R5), il faut connaître S0 : budget en px
+    = budget em × S0, puis mesure de la cible à la taille `n` ou `m`.
+  - S0 inconnu (ni `Game.dat` décodé, ni champ manuel rempli) :
+    - mise en page à la taille du jeu seulement, sans préfixe ;
+    - pas de réduction ;
+    - avec un préfixe d'export, la mise en page est indisponible et la boîte d'export le dit.
+- **R3. Nettoyage avant recoupe (mode Reflow).**
+  1. Toujours gardés : le préfixe `@N\n` ; les lignes vides (paragraphe) ; une ligne qui commence par un code
+     d'alignement ou par une indentation pleine chasse (`　`) ; une première ligne « nom : » quand la ligne
+     d'origine en est une (`魚淫さん：`).
+  2. Tous les autres `\n` deviennent une espace ; aucun séparateur pour une langue cible sans espaces (zh/ja/ko,
+     comme `no_space_join` en MZ).
+  3. Les espaces sont normalisées : pas de doublon, pas d'espace avant `. , ! ? ; : … ) 」 』`, ni après `( 「 『`.
+     Espaces en début et en fin de ligne retirées.
+  4. En `Keep`, seul R3.3 s'applique, plus la suppression des `\n` suivis uniquement de ponctuation (« \n. »).
+- **R4. Recoupe.**
+  - Avec `wrap::pieces` et `wrap::wrap` (UAX #14, coupe équilibrée), sur la largeur du type de message.
+  - Une ligne trop large même seule (un mot très long) est laissée et signalée.
+- **R5. Lignes en trop** (E3 = a ; seulement si S0 est connu, voir R2) :
+  - essayer `\f[m]` pour m allant de la taille de départ vers `min_font_size`, en recoupant à chaque essai ;
+  - le code s'écrit en tête du message, après `@N\n`. S'il y a déjà un préfixe d'export, on le **remplace**
+    (même règle que `apply_font_prefix` avec `replace_existing`), sans l'empiler ;
+  - si rien ne tient : message laissé nettoyé et recoupé, puis signalé.
+- **R6. Choix** (E5 = a) : pas de changement, mesure seulement. Ils sont signalés au rapport et en contrôle qualité.
+
+### Étapes
+
+- [ ] **WR-0.** Décisions E0–E6 **validées le 2026-10-27 (recommandations)**. Reste : branche `feat/wr-wolf-wrap`
+  depuis `main` après la fusion de RW, ordre avec EX à convenir. WR-1 à WR-3 n'en ont pas besoin (hors dépôt).
+- [ ] **WR-1. Calibrage en jeu** (avant tout code ; ton accord, ~15 min de ton côté).
+  - Variante `RAE-PLAN/essais/wolf-v223/WCAL` (hors Git), construite comme W1/W3 avec `wolf_v2.py` et `dxa6.py`.
+    Elle contient, dans des messages de `sys＿タイトル.mps` :
+    - des règles graduées (`0123456789` numérotées par dizaines, `MMMM…`, `iiii…`), avec et sans `@2`, à la
+      taille par défaut puis à `\f[18]` ;
+    - un message de 6 lignes, pour la capacité par fenêtre ;
+    - une ligne avec `\i[1]` ;
+    - un choix centré long, un choix `<R>` long, et un choix précédé de `\f[12]`.
+  - Tu lances le jeu et tu fais des captures avec spectacle `-a`.
+  - Résultats attendus : largeur utile en px (avec et sans visage), lignes par fenêtre, espacement entre
+    caractères, taille par défaut, effet de `\f` sur un choix. Ils expliquent K5.
+  - **Contrôle de validité** : dans la vraie police, le rapport de largeur `MMMM` / `iiii` vaut environ 0,8 / 0,3.
+    Une police de repli à chasse fixe donne environ 1 / 1. Dans ce cas, Wine remplace la police : le calibrage
+    ne vaut pas pour les joueurs Windows, et il faut d'abord faire charger la police du jeu.
+  - Même chose sur 3.658 (`Metrics::Estimated`), facultatif.
+  - **WCAL construite le 2026-10-27** (`RAE-PLAN/wolf/_outils/build_wolf_wcal.py`, hors Git) : 16 textes de
+    `SYS＿タイトル.mps` (écrans A à M), relecture conforme ; archive reconstruite (204 388 312 octets),
+    1 373 fichiers relus conformes, clé et page de codes inchangées. Fiche : `RAE-PLAN/essais/wolf-v223/WCAL.FICHE.md`.
+    - Essai du 2026-10-27 : seule la capture **A** a été faite (`WCAL-captures/A.png`). Elle montre :
+      - les choix `<R>` du menu titre partent de x ≈ 233 et sortent de l'écran, en 640 × 480, sans agrandissement ;
+      - le pas est de 16,0 px par chiffre, identique avec `\f[12]` : `\f` n'agit pas sur un choix ;
+      - le 3e choix, laissé d'origine, n'est plus visible. Non vérifié sur `W0` ;
+      - indice, à confirmer par l'écran B : taille de police des choix de 24 à 26 px.
+    - **Reprise** : relancer WCAL (commande dans la fiche), choisir le 1er choix, capturer les écrans B à M,
+      puis lire les captures. B seul donne déjà la taille par défaut, l'espacement et la police réelle.
+- [ ] **WR-2. Décodage de `Game.dat`** (lecture seule, Python).
+  - Comparer `m_unknown1` d'au moins 3 jeux 2.x de `RAE-PLAN/` (extraits avec `dxa6.py`) et de 3.658 (`dxa8.py`),
+    à la lumière de WR-1.
+  - Si la taille par défaut et l'espacement sont identifiés : lecteur `engines/wolf/game_dat.rs`.
+    Sinon : champ manuel « taille de police du jeu », vide par défaut, avec les limites de R2 tant qu'il est vide
+    (pas de préfixe, pas de réduction).
+- [ ] **WR-3. Règle de budget** (E1). Comparer le p99 des lignes d'origine (vraie police) aux largeurs de WR-1,
+  puis fixer le facteur et la marge. Résultat consigné ici, avec les chiffres.
+- [ ] **WR-4. Rust, mise en page** : `engines/wolf/layout/{mod,text,fit}.rs`.
+  - Réutilise `mv_mz::layout::{font, wrap, text::Token}` sans les refactorer.
+  - `measure_game(sources, font) -> WolfBudget` : budgets par type, lignes max, police résolue.
+  - Police : nom lu dans `Game.dat`, puis fichier `.ttf`/`.otf` du dossier du jeu dont le nom de famille correspond
+    (table `name`) ; sinon `Estimated`.
+  - `fit_message(text, budget, settings) -> (String, WolfFitOutcome)`.
+- [ ] **WR-5. Branchement dans l'export.**
+  - Dans `collect_wolf_zip_entries`, après `apply_font_prefix` et avant `wolf_to_memory` : messages 101 seulement
+    (clés sans `/choices/`, hors `Database/`).
+  - Le contrôle RW-6 relit donc exactement le texte ajusté.
+  - Compte rendu : ajustés, réduits, laissés trop longs (clés), non ajustés (codes de position), choix trop larges.
+  - Il est journalisé et renvoyé par `WolfExport`.
+  - `preflight_export` annonce que la mise en page est active.
+- [ ] **WR-6. Réglages et contrôle qualité.**
+  - Lever le verrou `mv_mz` dans `support`, `enabled_kinds`, `qa.rs:133` (ne plus signaler la largeur des lignes
+    des messages Wolf ajustés) et `report.rs:116`.
+  - Migration `0013` (E4) ; refus de `NewPage` pour Wolf.
+  - `TextFitDialog` : variante Wolf (champs utiles, budgets mesurés affichés, réglage manuel) ; textes fr/en.
+  - L'aperçu MZ (`TextFitPreviewPanel`) est hors v1.
+- [ ] **WR-7. Tests.**
+  - Unitaires Rust, avec les TTF synthétiques de `font.rs` :
+    - `@N\n` gardé ;
+    - « nom : » gardé ;
+    - lignes vides et indentation gardées ;
+    - `\n` parasites (cas réels de K6) ;
+    - codes jamais coupés ;
+    - ruby compté par sa base ;
+    - repli Shift-JIS mesuré, sortie non repliée ;
+    - `\f[m]` qui remplace le préfixe sans s'empiler ;
+    - texte à codes de position intact ;
+    - cible CJK sans espaces.
+  - Intégration : `open_project` sur un faux jeu Wolf, puis `export_project`. Le message long sort recoupé et
+    l'intégrité RW-6 passe ; l'export sans mise en page reste octet pour octet identique à aujourd'hui.
+  - Réel `#[ignore]` (`H2S_WOLF_GAMES`) : sur 2.23, chaque ligne ajustée tient dans son budget.
+  - Vitest : variante Wolf de `TextFitDialog`.
+- [ ] **WR-8. Gate cloud** après ton accord pour pousser : fmt, clippy `--all-targets -D warnings`,
+  `cargo test --locked`, typecheck, Vitest, lint. Aucun build ni test local.
+- [ ] **WR-9. Essai en jeu** (ton accord) : le projet `APP` 2.23 réexporté. Attendu : le message de remerciement
+  et les répliques de Gyoin dans le cadre, sans ligne « . » isolée.
+
+**Critère de sortie.** Sur 2.23, aucun message 101 traduit ne sort du cadre en jeu, sauf ceux que le rapport
+signale. Les codes, `@N` et l'intégrité RW-6 sont intacts. Le gate cloud est vert.
+
+**Hors périmètre, noté.** Base de données (E5) ; cause LLM des `\n` (E6) ; aperçu de mise en page Wolf ;
+WolfX (polices 3.658 illisibles) ; indentation pendante japonaise après `※` (non reproduite en cible).
+
+**Effort estimé.** M à L, selon WR-1/WR-2 : 1 à 2 jours, gate compris, plus l'essai en jeu.
+
 ## Études REA d'applications tierces (2026-10-25)
 
 Dossier local `RAE-PLAN/` (ignoré par Git) : règles, index et modèle dans `RAE-PLAN/README.md`.
@@ -431,6 +802,29 @@ les idées retenues deviennent un plan ici.
 
 - [ ] RuneTranslate 1.3.1 — architecture multi-moteurs (17 moteurs). Plan et prompt :
       `RAE-PLAN/runetranslate/PLAN.md`. Licence à vérifier avant analyse.
+- [x] Bakin (format `rbpack`/`.rbr`, démo v0.7, Bakin 1.2.1.8) — étude close le 2026-10-26 :
+      `RAE-PLAN/bakin/rapport.md` (§7), `RAE-PLAN/essais/RESULTATS.md`.
+      - Prouvé en jeu sous Linux : réinjection à longueur libre (menus et dialogues), avec les quatre
+        formes de tailles de blocs recalculées.
+      - Le dictionnaire `/Dic` n'a rien affiché.
+      - Lancement Linux : GE-Proton 11-6 + correctif VAO (`RAE-PLAN/bakin/linux-recherche-globale.md`).
+      - **Décision de l'utilisateur (2026-10-26)** : l'extraction et la réinjection Bakin se feront **une fois Wolf
+        terminé**, pas avant.
+      - Jeux Bakin disponibles dans `RAE-PLAN/` (version lue dans les DLL) :
+        - しこトラ v0.7 : 1.2.1.8, seul essayé en jeu ;
+        - ダブルぴーす : 1.6.0.0 ;
+        - どーにゃの監獄島 : 2.1.0.3, avec `kmyDX12.dll` ;
+        - 黄泉下りのソワレ : 2.7.0.1, OpenGL seul ; son journal parle de langues intégrées (`Find localization: ja`).
+      - Les versions 2.x ont un `bakinplayer.exe` rangé dans `bakinplayer.pak` (zip) et un octet de plus dans
+        l'en-tête de `data.rbpack`. Le plan devra couvrir ces versions, pas seulement la 1.2.
+      - **Pas d'implémentation autorisée par cette ligne** : le moteur Rust Bakin (ROADMAP F5) demande
+        son propre plan.
+      - Avant ce plan : comprendre `Cast`, `NItem`, `NSkill`, `Camera` et le `Layout.rbr` de Bakin 1.6
+        (candidats de taille rejetés).
+- [x] Bakin sous Lutris : **vérifié le 2026-10-26**. B7 a été lancé depuis Lutris 0.5.22 avec GE-Proton 11-6 et le
+      correctif VAO : écran titre, écran Options et sortie normale. Procédure : `RAE-PLAN/bakin/lutris-bakin.md` ;
+      journal : `docs/journal/2026-10-26-bakin-lutris.md`. Piège trouvé : une espace en fin de chemin du préfixe
+      crée un autre préfixe sans prévenir.
 
 ## Retours utilisateur sportsfan30 (F95zone, 2026-10-25) — NON DÉMARRÉ
 

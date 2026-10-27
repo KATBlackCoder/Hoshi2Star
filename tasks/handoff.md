@@ -1,10 +1,10 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-27 — Claude (lot RW : RW-1 à RW-8 vérifiés ; reste RW-9 ; worktree `../Hoshi2Star-rw`, branche `feat/rw-wolf`).
-**Objectif utilisateur :** lot RW, extraction et réinjection Wolf v2/v3 dans l'app (livraison par archive reconstruite).
-**Statut :** R2 fusionné (PR #12, `2331c75`). RW : plan validé le 2026-10-26 ; RW-1 à RW-8 vérifiés (gate cloud vert sur `1661ab5`) ; reste RW-9 (essais réels) puis PR.
+**Mis à jour :** 2026-10-27 — Claude (RW fusionné, PR #13 ; plans EX et WR et notes Bakin rangés par la PR de suivi `docs/plans-ex-wr-bakin`).
+**Objectif utilisateur :** prochain lot EX (export d'essai des seuls segments traduits), plan validé, prêt pour l'étape 0 ; WR (retour à la ligne Wolf) reporté.
+**Statut :** RW **fusionné** le 2026-10-27 (PR #13, `3288534`) : gate cloud vert sur `1661ab5` (760 Rust OK), tests réels `--ignored` OK, essai en jeu de l'export de l'app OK sur Wolf 2.23 ; essai 3.658 non fait. EX : voir sa section ; WR : reporté.
 
-## En cours (2026-10-26, Claude) — RW (Wolf)
+## Terminé (2026-10-27, Claude) — RW (Wolf), fusionné par la PR #13
 
 - Plan validé : `tasks/todo.md`, « Plan détaillé — RW ». Branche `feat/rw-wolf` dans le worktree `../Hoshi2Star-rw` (depuis `origin/main` @ `2331c75`). Commits locaux ; push seulement avec accord (gate cloud).
 - Base : étude REA RuneTranslate + prototypes Python validés **en jeu** sur Wolf 2.23 et 3.658 (preuves locales hors Git : `RAE-PLAN/wolf/`, `RAE-PLAN/essais/RESULTATS.md`). Constat clé : **l'archive `.wolf` passe avant les fichiers libres** (v2 et v3) ; l'archive reconstruite est acceptée par le jeu.
@@ -33,6 +33,66 @@
 - RW-9 (2026-10-27) : **essai en jeu 2.23 OK** depuis l'app (zip = `Data.wolf` reconstruit seul ; jeu lancé, textes traduits affichés). Constats hors RW : pas de retour à la ligne automatique Wolf (débordements), pas d'export partiel pour tester. Base de l'app : projet de test `APP` réduit à `sys＿タイトル.mps` (sauvegarde `backups/hoshi2star-avant-essai-rw9-20261027-080135.db`).
 - **PR ouverte** le 2026-10-27 : https://github.com/KATBlackCoder/Hoshi2Star/pull/13 (`feat/rw-wolf` → `main`, accord de l'utilisateur).
 - **Prochaine action exacte** : relecture et fusion de la PR #13 par l'utilisateur ; essai en jeu 3.658 facultatif. Après fusion : les sessions « Export d'essai » (plan EX validé) et « Retour à la ligne Wolf » partent de `main` ; leurs plans sont non commités dans le dossier principal, à mettre sur leurs branches avant de mettre `main` à jour. (tests réels `--ignored` chez l'utilisateur, essai en jeu de l'export de l'app), puis PR. Pas de build local ; gate en cloud après push autorisé. Suites hors RW : garde « jeu mis à jour » Wolf (copie d'origine, équivalent R2) ; écriture en flux de l'archive dans le zip si l'export du jeu de 2,1 Go peine.
+
+## Reporté (2026-10-27, Claude) — WR : retour à la ligne Wolf à l'export (plan seulement)
+
+- **Reporté par décision de l'utilisateur le 2026-10-27**, pendant WR-1. Il reprendra plus tard, dans une autre session.
+- Capture A faite (choix collés à droite hors écran ; `\f` sans effet sur un choix) ; écrans B à M non capturés.
+
+- Plan : `tasks/todo.md`, « Plan — WR ». **Validé le 2026-10-27** (WR-E0 à WR-E6 = recommandations). Aucun code applicatif, rien commité.
+- WR-1 : variante `RAE-PLAN/essais/wolf-v223/WCAL` construite et relue hors jeu (outil `RAE-PLAN/wolf/_outils/build_wolf_wcal.py`) ; fiche `WCAL.FICHE.md`, captures attendues dans `WCAL-captures/` (`capture.fish <lettre>`).
+- Journal : `docs/journal/2026-10-27-wr-retour-ligne-wolf.md`.
+- Prérequis : RW n'est pas fusionné et n'a pas de PR. Ordre à convenir avec EX (`collect_wolf_zip_entries`).
+- Constats clés :
+  - les `\n` parasites viennent du tokenizer, qui impose au LLM chaque `\n` comme jeton ;
+  - la donnée en jeu (~276 px coupés à `\f[18]`) contredit le modèle simple (lignes d'origine de 320 à 336 px à 16 px) ⇒ calibrage en jeu obligatoire avant tout code (WR-1) ;
+  - les réglages numériques de `Game.dat` ne sont pas décodés.
+- **Prochaine action, à la reprise** : relancer WCAL (`RAE-PLAN/essais/wolf-v223/WCAL.FICHE.md`) et capturer les écrans B à M ; lire les captures (largeurs, lignes, taille par défaut, police réelle) ; puis WR-2 (`Game.dat`) et WR-3 (règle de budget). Le code attend la fusion de RW.
+
+## En cours (2026-10-27, Claude) — EX : export d'essai (plan seulement)
+
+- Plan : `tasks/todo.md`, « Plan — EX ». **Validé le 2026-10-27** avec les recommandations (D1 = a, D2 = a, D3 oui,
+  D4 oui, D5 noter, D6 = a). Aucun code, rien commité.
+- Constat : le backend n'exporte déjà que les cibles non vides, et la QA ne lit que celles-ci. Le refus « non traduit »
+  est uniquement dans le frontend (`useAppHandlers.ts:66`, version RW).
+- Bloquant : RW (`feat/rw-wolf`) n'est ni fusionné ni en PR (revérifié le 2026-10-27 : `origin/feat/rw-wolf` = `1661ab5`,
+  la branche locale `9d28ae2` a des commits non poussés) ; l'implémentation part de `main` après sa fusion.
+- **Prochaine action** : fusion de RW par l'utilisateur, ordre convenu avec le lot « retour à la ligne Wolf », puis étape 0 du plan EX.
+
+## En cours (2026-10-26, Claude) — Bakin sous Linux (étude locale, hors produit)
+
+- Livrable : `RAE-PLAN/bakin/linux-recherche-globale.md` ; journal : `docs/journal/2026-10-26-bakin-linux-recherche.md`.
+- Causes trouvées : sous Proton 11, VAO 0 refusé (`glVertexAttribPointer` → 1282, fenêtre blanche) ; sous wine-cachyos, plugins `.dlp` non chargés.
+- Hook VAO compilé (`RAE-PLAN/bakin/_outils/bakin_vao_hook.so`), non essayé sur le jeu.
+- T4 fait le 2026-10-26 : cause racine confirmée, un bug de Wine 11.0 (`memdup_attribs` tronque les attributs au premier 0, le contexte partagé recréé perd le profil compatibilité et devient core) ; détail dans `linux-recherche-globale.md` §3.5.
+- **T1 fait le 2026-10-26 : le jeu fonctionne sous Linux** (titre, carte 3D, dialogues), avec GE-Proton 11-6 + hook VAO (`RAE-PLAN/bakin/_outils/t1.fish`). Reste une erreur `glBindTexture` `(634)` unique, sans effet visible (§7).
+- Nettoyage fait (préfixe T4 et journal de 37 Mo mis à la corbeille). Script de lancement des variantes : `RAE-PLAN/bakin/_outils/bakin.fish <B0|B1|B2|B3> [args]` ; fiche Bakin mise à jour.
+- Essais en jeu de traduction (2026-10-26) : **B0 OK** (archive reconstruite acceptée), **B1 OK** (textes traduits, accents, couleurs, variable `\$[島の名前]`), **B2 plante** (OverflowException) : les `.rbr` ont des tailles de blocs int32 à recalculer. `rbpack.size_fields` / `fix_sizes` ajoutés, variante **B4** construite et contrôlée hors jeu (`essais/RESULTATS.md`).
+- B4 (tailles recalculées) : plus d'overflow, mais NullReferenceException dans `LayoutManager..ctor` (écran de chargement). Variantes d'isolement B5 (seul `Layout.rbr`) et B6 (seul `Map_000.rbr`) construites.
+- B5 plante (faute dans `Layout.rbr`), **B6 OK : dialogues de carte traduits à longueur libre validés en jeu**. Cause de B5 trouvée : les écrans de `Layout.rbr` sont des objets `[taille][GUID][16 nuls][nom]` non détectés ; détecteur `_screens` ajouté, en-tête compté depuis l'octet 23 ; variante B7 construite.
+- **B7 OK en jeu (2026-10-26) : traduction Bakin à longueur libre validée** (menu titre, dialogues, cartouche de nom, codes couleur et variables), avec les quatre formes de tailles de blocs recalculées. Règle consignée dans `tasks/lessons.md`.
+- B3 (dictionnaire) : aucun effet, même avec `/Dic /L=EN` ; le lanceur ne transmet probablement pas `/Dic` (non bloquant).
+- **Lutris : vérifié le 2026-10-26.**
+  - B7 a été lancé depuis Lutris 0.5.22 : écran titre, Options et sortie normale. Le correctif est chargé (`created VAO 2`) et le journal du jeu ne contient aucune exception.
+  - Procédure mise à jour dans `RAE-PLAN/bakin/lutris-bakin.md`. Sa copie en doc Claude, liée depuis ce fichier, n'est **pas** à jour.
+  - Journal de session : `docs/journal/2026-10-26-bakin-lutris.md`.
+  - Restes :
+    - le vrai préfixe `pfx-bakin-t1` n'a **pas** été essayé sous Lutris : l'utilisateur a choisi de ne pas relancer ;
+    - le préfixe parasite `"/home/blackat/pfx-bakin-t1 "` a été mis à la corbeille le 2026-10-26, avec son accord ;
+    - le jeu Lutris contient encore `prefix: '/home/blackat/pfx-bakin-t1 '`, avec une espace : à corriger dans Lutris, sinon le prochain lancement recrée ce préfixe ;
+    - retirer `BAKIN_VAO_LOG` dans Lutris ;
+    - ancien journal du correctif : `~/bakin-vao-hook.log.avant-lutris`.
+- **Étude Bakin close (2026-10-26)** :
+  - `RAE-PLAN/bakin/rapport.md` §7 (résultats en jeu, quatre formes de tailles, limites) ; recommandation révisée : livraison par archive reconstruite, et non par dictionnaire ;
+  - contrôle hors jeu des 73 `.rbr` des deux démos : `Cast`, `NItem`, `NSkill`, `Camera` et le `Layout.rbr` de Bakin 1.6 ont des tailles non reconnues, d'où un avertissement ajouté (`rbpack.rejected_detectors`) ;
+  - suivi : `tasks/todo.md` (« Études REA »).
+- **Nettoyage (2026-10-26, accord de l'utilisateur)** :
+  - mis à la corbeille : `RAE-PLAN/essais/bakin-v07/B0` à `B6`, `essais/wolf-v3/V2`, `essais/wolf-v223/W2` et `~/bakin-dotnet`, soit environ 7,7 Gio réellement occupés une fois les copies partagées btrfs déduites ;
+  - la place ne sera libérée qu'une fois la corbeille vidée, ce que l'utilisateur fait lui-même ;
+  - gardés : `B7` (Lutris pointe dessus), `BW`, tous les journaux `B*-bakinplayer_log.txt`, et les variantes Wolf validées ;
+  - `bakin.fish B0…B3` ne trouvera plus ces variantes.
+- **Décision (2026-10-26)** : l'extraction et la réinjection Bakin attendent que Wolf soit terminé. Jeux Bakin 1.2, 1.6, 2.1 et 2.7 disponibles ; détail dans `tasks/todo.md` (« Études REA »).
+- **Prochaine action** : l'utilisateur corrige le préfixe et retire `BAKIN_VAO_LOG` dans Lutris. Ensuite, finir Wolf avant tout travail Bakin.
 
 ## En cours (2026-10-26, Claude) — R2b
 
