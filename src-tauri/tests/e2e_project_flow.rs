@@ -1160,6 +1160,51 @@ async fn wolf_export_rewraps_messages_when_text_fitting_is_on() {
         .is_err());
 }
 
+/// The export font size prompt of a Wolf project proposes the game's own
+/// font size from the text fitting settings (a fixed 18 enlarged every text by
+/// half on the Wolf 2.23 test game, plan WR, K5).
+#[tokio::test]
+async fn wolf_font_scan_reports_the_game_font_size() {
+    use hoshi2star_lib::commands::export::scan_font_status;
+    use hoshi2star_lib::commands::text_fit::set_text_fit;
+    use hoshi2star_lib::core::text_fit::TextFitSettings;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let game_root = tmp.path().join("game");
+    let map_path = game_root.join("Data").join("MapData").join("Map001.mps");
+    std::fs::create_dir_all(map_path.parent().unwrap()).unwrap();
+    std::fs::write(&map_path, wolf_v2_map("こんにちは、旅の人")).unwrap();
+    std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+    let db_file = tmp.path().join("h2s.db");
+    let app = mock_app(db_file.to_str().unwrap()).await;
+    let project = open_project(
+        game_root.to_str().unwrap().to_string(),
+        None,
+        None,
+        app.state(),
+    )
+    .await
+    .expect("a Wolf 2.x game opens")
+    .project;
+
+    let scan = scan_font_status(None, Some(project.id.clone()), app.state())
+        .await
+        .expect("scan");
+    assert_eq!((scan.engine.as_str(), scan.game_font_size), ("wolf", None));
+
+    let settings = TextFitSettings {
+        wolf_base_font_size: Some(12),
+        ..TextFitSettings::default_for("wolf")
+    };
+    set_text_fit(project.id.clone(), settings, app.state())
+        .await
+        .expect("settings");
+    let scan = scan_font_status(None, Some(project.id.clone()), app.state())
+        .await
+        .expect("scan");
+    assert_eq!(scan.game_font_size, Some(12));
+}
+
 /// DxLib name entry: `[u16 PackNum][u16 Parity][UPPER][original]`, both names
 /// NUL-padded to `PackNum * 4` bytes. Returns its offset in `table`.
 fn push_dx_name(table: &mut Vec<u8>, name: &str) -> u64 {

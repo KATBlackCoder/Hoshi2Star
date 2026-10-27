@@ -42,6 +42,8 @@ export interface FontScanResult {
   existingFontCount: number;
   totalTranslated: number;
   engine: string;
+  /** Wolf RPG: the game's default font size (`null`: unknown or MV/MZ). */
+  gameFontSize?: number | null;
 }
 
 /** A line of engine or plugin code that reads the game's language setting. */

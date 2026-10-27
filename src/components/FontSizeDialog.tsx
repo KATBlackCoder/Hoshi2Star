@@ -26,10 +26,17 @@ export function FontSizeDialog({
   onSkip,
 }: FontSizeDialogProps) {
   const { t } = useTranslation();
-  const [fontSize, setFontSize] = useState(18);
+  const wolf = scan.engine === "wolf";
+  const gameFontSize = scan.gameFontSize ?? null;
+  // Wolf: start from the game's own size (a fixed 18 enlarges every text and
+  // makes it overflow; 12 is the default of the calibrated 2.23 game). Empty
+  // when unknown: "Skip" keeps the game's size.
+  const [fontSize, setFontSize] = useState<number | null>(
+    wolf ? gameFontSize : 18,
+  );
   const [replaceExisting, setReplaceExisting] = useState(true);
 
-  const code = scan.engine === "wolf" ? "\\f[N]" : "\\FS[N]";
+  const code = wolf ? "\\f[N]" : "\\FS[N]";
 
   return (
     <AlertDialog open={open}>
@@ -53,8 +60,10 @@ export function FontSizeDialog({
             type="number"
             min={8}
             max={64}
-            value={fontSize}
-            onChange={(e) => setFontSize(Number(e.target.value))}
+            value={fontSize ?? ""}
+            onChange={(e) =>
+              setFontSize(e.target.value === "" ? null : Number(e.target.value))
+            }
             className="w-20 h-8 text-sm"
           />
         </div>
@@ -80,11 +89,25 @@ export function FontSizeDialog({
           </p>
         )}
 
+        {wolf && (
+          <p className="text-xs text-muted-foreground mt-1">
+            {gameFontSize === null
+              ? t("fontSizeDialog.hintWolfUnknown")
+              : t("fontSizeDialog.hintWolfGame", { size: gameFontSize })}
+          </p>
+        )}
+
         <AlertDialogFooter className="gap-2">
           <Button variant="ghost" size="sm" onClick={onSkip}>
             {t("fontSizeDialog.skip")}
           </Button>
-          <Button size="sm" onClick={() => onApply(fontSize, replaceExisting)}>
+          <Button
+            size="sm"
+            disabled={fontSize === null}
+            onClick={() => {
+              if (fontSize !== null) onApply(fontSize, replaceExisting);
+            }}
+          >
             {t("fontSizeDialog.apply")}
           </Button>
         </AlertDialogFooter>
