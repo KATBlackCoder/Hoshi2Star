@@ -1,8 +1,8 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-27 — Claude (DX : gate cloud vert, essais dans l'app et en jeu OK, PR ouverte).
-**Objectif utilisateur :** lot DX (export de debug dans les outils de diagnostic), PR à relire et fusionner ; EX abandonné (l'export exige une traduction complète) ; WR (retour à la ligne Wolf) reporté.
-**Statut :** DX validé (gate cloud vert sur `8459d4c`, essai en jeu Wolf 2.23 OK, export partiel confirmé), PR `feat/dx-debug-export` → `main` ouverte. RW **fusionné** le 2026-10-27 (PR #13, `3288534`) ; essai 3.658 non fait. WR : reporté.
+**Mis à jour :** 2026-10-27 — Claude (WR : code écrit sur `feat/wr-wolf-wrap`, worktree `../Hoshi2Star-wr`, non compilé).
+**Objectif utilisateur :** lot WR, retour à la ligne des messages Wolf à l'export. RW (PR #13) et DX (PR #15) fusionnés ; EX abandonné.
+**Statut :** WR-1 à WR-7 faits ; code et tests **non compilés** (pas de build local) ; gate cloud (WR-8) après accord pour pousser, puis essai en jeu (WR-9).
 
 ## Terminé (2026-10-27, Claude) — RW (Wolf), fusionné par la PR #13
 
@@ -53,7 +53,9 @@
   - la donnée en jeu (~276 px coupés à `\f[18]`) contredit le modèle simple (lignes d'origine de 320 à 336 px à 16 px) ⇒ calibrage en jeu obligatoire avant tout code (WR-1) ;
   - les réglages numériques de `Game.dat` ne sont pas décodés.
 - **WR-1 fait (2026-10-27)** : budget de 22 em et 4 lignes, avec ou sans visage ; taille par défaut `\f[12]` ; `\f[18]` = 1,5 fois (K5 expliqué). Détail : `tasks/todo.md`, « Résultats WR-1 ».
-- **Prochaine action** : WR-2 (taille par défaut lue dans `SysDatabase`, `基本フォントサイズ`), WR-3 (règle de budget), puis le code (WR-4 et suivants) dans un worktree `feat/wr-wolf-wrap` depuis `main`. K9, K10 et les résultats de WR-1 iront dans le premier commit.
+- **WR-2/WR-3 faits** : taille du jeu illisible dans les fichiers ⇒ champ manuel (12 pour 2.23) ; budget = p99 des lignes des cartes (22 em) et maximum de lignes (4), concordant avec WR-1.
+- **WR-4 à WR-7 écrits** (`feat/wr-wolf-wrap`) : `engines/wolf/layout/`, `commands/wolf_text_fit.rs`, migration `0013`, branchements export / QA / réglages, interface, tests. Écarts au plan listés dans `tasks/todo.md` (choix non signalés, police = seul fichier du dossier, mesure sans repli Shift-JIS).
+- **Prochaine action** : accord de l'utilisateur pour pousser `feat/wr-wolf-wrap` ⇒ gate cloud (WR-8) ; puis essai en jeu sur `APP` 2.23 avec mise en page activée et taille du jeu 12 (WR-9) ; puis PR.
 
 ## Abandonné (2026-10-27, Claude) — EX : export d'essai
 

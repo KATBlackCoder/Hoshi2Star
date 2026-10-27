@@ -99,7 +99,20 @@
   - choix qui sortent de l'écran.
 - `SysDatabase.project` déclare `基本フォントサイズ` : piste pour la taille par défaut (WR-2 ajusté).
 
+## WR-2 à WR-7 (2026-10-27, worktree `../Hoshi2Star-wr`, branche `feat/wr-wolf-wrap` depuis `main` @ `80b4fc5`)
+
+- WR-2 : la taille par défaut du jeu n'est stockée nulle part de façon lisible.
+  - `SysDatabase` n'a que le *nom* `基本フォントサイズ`, sans valeur.
+  - `CDataBase` « システム基本フォントサイズ » vaut 0, posée par l'initialisation à l'exécution.
+  - `Game.dat` contient 320 et 240, mais pas 12.
+  - ⇒ champ manuel.
+- WR-3 : sur les cartes 2.23, p99 = 22,0 em et 4 lignes au plus. C'est exactement la mesure en jeu.
+- WR-4 à WR-7 : code et tests écrits. Détail et écarts : `tasks/todo.md`, « Plan — WR ».
+- Formatage seulement : `rustfmt --check` OK sur les fichiers Rust touchés, `prettier --write` sur les fichiers
+  TS/JSON (binaire du dossier principal ; `node_modules` absent du worktree).
+- **Non compilé, aucun test exécuté** (règle : pas de build local). Relecture indépendante lancée avant commit.
+- Relecture indépendante (agent, lecture seule) : aucune erreur de compilation repérée, attentes de tests vérifiées à la main ; 5 constats, dont 3 corrigés et 2 gardés (détail dans `tasks/todo.md`, « Relecture indépendante »).
+
 ## Prochaine session
 
-- WR-2 : lire `基本フォントサイズ` dans `SysDatabase.dat`. WR-3 : règle de budget (p99 des lignes des cartes,
-  arrondi ; lignes max = max des cartes). Ensuite, le code dans un worktree `feat/wr-wolf-wrap` depuis `main`.
+- Pousser `feat/wr-wolf-wrap` (accord requis), gate cloud WR-8, puis essai en jeu WR-9 et PR.
