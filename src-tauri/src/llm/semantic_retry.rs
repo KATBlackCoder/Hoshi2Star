@@ -24,6 +24,7 @@ pub(crate) struct SemanticRetryRequest<'a> {
     /// is judged by the same placeholder rule as the first attempt.
     pub segment_kind: &'a str,
     pub context_json: Option<&'a str>,
+    pub json_key: Option<&'a str>,
     pub qa_neighbors: &'a QaNeighborContext,
 }
 
@@ -42,6 +43,7 @@ pub(crate) async fn retry<P: LlmProvider>(
         target_language: &request.translation_context.target_lang,
         segment_kind: request.segment_kind,
         context_json: request.context_json,
+        json_key: request.json_key,
         neighbor_sources: &request.qa_neighbors.sources,
         neighbor_targets: &request.qa_neighbors.targets,
     };

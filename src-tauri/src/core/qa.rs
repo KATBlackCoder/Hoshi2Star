@@ -189,6 +189,9 @@ pub struct QaSemanticContext<'a> {
     /// Persisted `segments.context_json`; selects `%n` template protection
     /// through [`TokEngine::for_segment`].
     pub context_json: Option<&'a str>,
+    /// Persisted `segments.json_key`; tells a Wolf RPG message, whose soft
+    /// line breaks are not placeholders, through [`TokEngine::for_segment`].
+    pub json_key: Option<&'a str>,
     pub neighbor_sources: &'a [String],
     pub neighbor_targets: &'a [String],
 }
@@ -355,11 +358,12 @@ pub fn check(
     legacy_terms: &[(String, String)],
     engine: &str,
 ) -> QaResult {
-    check_segment(source, target, legacy_terms, engine, "unknown", None)
+    check_segment(source, target, legacy_terms, engine, "unknown", None, None)
 }
 
-/// [`check`] for a persisted segment: `segment_kind`/`context_json` refine the
-/// placeholder syntax (`%n` format templates, see [`TokEngine::for_segment`]).
+/// [`check`] for a persisted segment: `segment_kind`/`context_json`/`json_key`
+/// refine the placeholder syntax (`%n` format templates, Wolf RPG messages,
+/// see [`TokEngine::for_segment`]).
 pub fn check_segment(
     source: &str,
     target: &str,
@@ -367,9 +371,10 @@ pub fn check_segment(
     engine: &str,
     segment_kind: &str,
     context_json: Option<&str>,
+    json_key: Option<&str>,
 ) -> QaResult {
     let terminology_rules = legacy_rules(source, legacy_terms);
-    let tok_engine = TokEngine::for_segment(engine, segment_kind, context_json);
+    let tok_engine = TokEngine::for_segment(engine, segment_kind, context_json, json_key);
     let mut result = check_with_rules(source, target, &terminology_rules, engine, tok_engine);
     for error in check_constraints(source, target, context_json) {
         result.add_error(error);
@@ -439,7 +444,12 @@ pub fn check_with_context(
     engine: &str,
     context: &QaSemanticContext<'_>,
 ) -> QaResult {
-    let tok_engine = TokEngine::for_segment(engine, context.segment_kind, context.context_json);
+    let tok_engine = TokEngine::for_segment(
+        engine,
+        context.segment_kind,
+        context.context_json,
+        context.json_key,
+    );
     let mut result = check_with_rules(source, target, terminology_rules, engine, tok_engine);
     result
         .errors
@@ -1219,6 +1229,7 @@ mod tests {
             target_language: "fr",
             segment_kind: kind,
             context_json: None,
+            json_key: None,
             neighbor_sources: neighbors,
             neighbor_targets: &[],
         }
@@ -1273,12 +1284,48 @@ mod tests {
         )));
 
         // Persisted-segment entry point used by the editor applies the same rule.
-        let edited = check_segment("%1の攻撃！", "Attack!", &[], "mv_mz", "system_term", None);
+        let edited = check_segment(
+            "%1の攻撃！",
+            "Attack!",
+            &[],
+            "mv_mz",
+            "system_term",
+            None,
+            None,
+        );
         assert!(matches!(
             edited.errors.as_slice(),
             [QaError::MissingFormatSpecifier { placeholder }] if placeholder == "%1"
         ));
         assert!(!edited.has_critical_errors());
+    }
+
+    #[test]
+    fn soft_line_breaks_of_a_wolf_message_are_not_placeholders() {
+        let source = "短い内容となりますが、作品全体の雰囲気等を\nつかむ一助にお役立ていただければ幸いです。";
+        let target = "This is a short piece, but we hope it helps.";
+        let missing_break = |json_key| {
+            check_segment(source, target, &[], "wolf", "unknown", None, json_key)
+                .errors
+                .iter()
+                .any(|e| matches!(e, QaError::MissingPlaceholder { placeholder } if placeholder == "\n"))
+        };
+        assert!(!missing_break(Some("MapData/Map001/events/0/pages/0/12")));
+        assert!(!missing_break(Some("CommonEvents/Intro/3/7")));
+        // Database fields and checks without a segment keep every break.
+        assert!(missing_break(Some("Database/DataBase/2/15/説明文")));
+        assert!(missing_break(None));
+        // A structural break stays mandatory in a message.
+        let label = check_segment(
+            "魚淫さん：\n俺君、本格的に",
+            "Gyoin: Kid, seriously",
+            &[],
+            "wolf",
+            "unknown",
+            None,
+            Some("MapData/Map001/events/0/pages/0/3"),
+        );
+        assert!(label.has_critical_errors());
     }
 
     #[test]
@@ -1301,6 +1348,7 @@ mod tests {
                 "mv_mz",
                 "plugin_message",
                 plain,
+                None,
             );
             assert!(
                 result
@@ -1318,7 +1366,15 @@ mod tests {
             "0x10",
             "1,000 gold",
         ] {
-            let result = check_segment("敵が逃げた！", fine, &[], "mv_mz", "plugin_message", plain);
+            let result = check_segment(
+                "敵が逃げた！",
+                fine,
+                &[],
+                "mv_mz",
+                "plugin_message",
+                plain,
+                None,
+            );
             assert!(
                 !result
                     .errors
@@ -1336,6 +1392,7 @@ mod tests {
             "mv_mz",
             "system_type",
             no_escapes,
+            None,
         );
         assert!(added.errors.iter().any(
             |e| matches!(e, QaError::ConstraintViolation { rule } if rule == "no_escape_codes")
@@ -1349,6 +1406,7 @@ mod tests {
             "mv_mz",
             "system_type",
             no_escapes,
+            None,
         );
         assert!(!kept
             .errors
@@ -1438,6 +1496,7 @@ mod tests {
                 target_language: "en",
                 segment_kind: "dialogue",
                 context_json: None,
+                json_key: None,
                 neighbor_sources: &[],
                 neighbor_targets: &translated_neighbors,
             },

@@ -18,6 +18,9 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+use crate::engines::wolf::layout::is_fitted_key;
+use crate::engines::wolf::line_breaks::{self, LinePlan};
+
 // ---------------------------------------------------------------------------
 // Regex patterns (compiled once at first use)
 // ---------------------------------------------------------------------------
@@ -82,6 +85,8 @@ static RE_MZONLY: LazyLock<Regex> = LazyLock::new(|| {
 /// - `MvMz`   — Patterns A + B + D(`[%n]`). Use for MV games and MZ dialogue.
 /// - `MzOnly` — Patterns C + A + B + D(`%n`). Use for MZ `System.json > terms` only.
 /// - `Wolf`   — Wolf RPG specific patterns (ruby, DB refs, sys vars, alignment).
+/// - `WolfMessage` — `Wolf` for a message (command 101): its soft line breaks
+///   are joined instead of tokenized (plan WR-E6, see [`line_breaks`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Engine {
     /// RPG Maker MV *or* MZ dialogue files — patterns A, B, D[%n]
@@ -90,6 +95,9 @@ pub enum Engine {
     MzOnly,
     /// Wolf RPG — ruby, DB refs, sys/self vars, alignment, display control
     Wolf,
+    /// Wolf RPG message — `Wolf` patterns; only structural line breaks are
+    /// tokens, soft ones are sent joined and broken again after the response
+    WolfMessage,
 }
 
 impl Engine {
@@ -112,21 +120,24 @@ impl Engine {
     /// survive translation. Those segments use [`Engine::MzOnly`], the only
     /// pattern set that tokenizes bare `%n`; its extra MZ-only codes never occur
     /// in MV text, so it is safe for both. Templates declare themselves via
-    /// `{"placeholderSyntax":"format"}` in `context_json`. Everything else keeps
+    /// `{"placeholderSyntax":"format"}` in `context_json`. A Wolf RPG message,
+    /// known by its `json_key` (map or common event, not a choice), uses
+    /// [`Engine::WolfMessage`]. Everything else keeps
     /// [`Engine::from_project_engine`].
     pub fn for_segment(
         project_engine: &str,
         segment_kind: &str,
         context_json: Option<&str>,
+        json_key: Option<&str>,
     ) -> Self {
-        let base = Self::from_project_engine(project_engine);
-        if base != Engine::MvMz {
-            return base;
-        }
-        if segment_kind == "system_term" || declares_format_template(context_json) {
-            Engine::MzOnly
-        } else {
+        match Self::from_project_engine(project_engine) {
+            Engine::Wolf if json_key.is_some_and(is_fitted_key) => Engine::WolfMessage,
             Engine::MvMz
+                if segment_kind == "system_term" || declares_format_template(context_json) =>
+            {
+                Engine::MzOnly
+            }
+            base => base,
         }
     }
 }
@@ -158,6 +169,22 @@ pub struct Tokenized {
     pub text: String,
     /// Map of token → original placeholder for later restoration.
     pub map: PlaceholderMap,
+    /// Source lines per block when soft line breaks were joined
+    /// ([`Engine::WolfMessage`]): the response is broken again on restore.
+    pub line_plan: Option<LinePlan>,
+}
+
+impl Tokenized {
+    /// [`Tokenizer::restore`], then, for a Wolf message whose soft line breaks
+    /// were joined, break each block again into its source's number of lines
+    /// (plan WR-E6).
+    pub fn restore(&self, response: &str) -> Result<String, TokenizerError> {
+        let restored = Tokenizer::restore(response, &self.map)?;
+        Ok(match &self.line_plan {
+            Some(plan) => line_breaks::rebreak(&restored, plan),
+            None => restored,
+        })
+    }
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -211,18 +238,28 @@ impl Tokenizer {
                     format!("{open}{}{close}", &caps[1])
                 })
                 .into_owned(),
-            Engine::Wolf => protected_edges,
+            Engine::Wolf | Engine::WolfMessage => protected_edges,
+        };
+
+        // A Wolf message's soft line breaks are sent joined (plan WR-E6).
+        let soft = match engine {
+            Engine::WolfMessage => line_breaks::soft_breaks(&pass1),
+            Engine::MvMz | Engine::MzOnly | Engine::Wolf => None,
         };
 
         // Pass 2 — engine placeholder patterns on the remaining text.
         let re = match engine {
             Engine::MvMz => &*RE_MVMZ,
             Engine::MzOnly => &*RE_MZONLY,
-            Engine::Wolf => &*crate::engines::wolf::placeholders::RE_WOLF,
+            Engine::Wolf | Engine::WolfMessage => &*crate::engines::wolf::placeholders::RE_WOLF,
         };
 
         let tokenized_text = re
             .replace_all(&pass1, |caps: &regex::Captures| {
+                let start = caps.get(0).map_or(usize::MAX, |found| found.start());
+                if let Some(join) = soft.as_ref().and_then(|soft| soft.join_at(start)) {
+                    return join.to_string();
+                }
                 let original = caps[0].to_string();
                 let token = format!("⟦ph_{counter}⟧");
                 counter += 1;
@@ -234,6 +271,7 @@ impl Tokenizer {
         Tokenized {
             text: tokenized_text,
             map,
+            line_plan: soft.map(|soft| soft.plan),
         }
     }
 
@@ -452,16 +490,93 @@ mod tests {
         ];
         for (engine, kind, context, expected) in cases {
             assert_eq!(
-                Engine::for_segment(engine, kind, *context),
+                Engine::for_segment(engine, kind, *context, None),
                 *expected,
                 "{engine}/{kind}/{context:?}"
             );
         }
         let tokenized = Tokenizer::tokenize(
             "%1は%2のダメージを受けた！",
-            Engine::for_segment("mv_mz", "system_term", None),
+            Engine::for_segment("mv_mz", "system_term", None, None),
         );
         assert_eq!(tokenized.map.len(), 2);
+    }
+
+    #[test]
+    fn for_segment_selects_the_wolf_message_syntax_by_key() {
+        let message = Some("MapData/Map001/events/0/pages/0/12");
+        let common = Some("CommonEvents/Intro/3/7");
+        let choice = Some("MapData/Map001/events/0/pages/0/12/choices/1");
+        let database = Some("Database/DataBase/0/1/name");
+        let for_wolf = |key| Engine::for_segment("wolf", "unknown", None, key);
+        assert_eq!(for_wolf(message), Engine::WolfMessage);
+        assert_eq!(for_wolf(common), Engine::WolfMessage);
+        assert_eq!(for_wolf(choice), Engine::Wolf);
+        assert_eq!(for_wolf(database), Engine::Wolf);
+        assert_eq!(for_wolf(None), Engine::Wolf);
+        assert_eq!(
+            Engine::for_segment("mv_mz", "dialogue", None, message),
+            Engine::MvMz
+        );
+    }
+
+    #[test]
+    fn wolf_message_joins_soft_line_breaks_and_breaks_the_response_again() {
+        let source = "@4\n釣りを行いたい場合は水場に面して\n「決定ボタン」を押す事で\\c[2]竿\\c[0]を振れるぞ！";
+        let tokenized = Tokenizer::tokenize(source, Engine::WolfMessage);
+        // Face prefix and colour codes are tokens; the soft break is not.
+        assert_eq!(tokenized.map.len(), 3);
+        assert!(!tokenized.map.values().any(|original| original == "\n"));
+        assert!(!tokenized.text.contains('\n'));
+        assert!(tokenized.text.contains("面して「決定"));
+        let response = tokenized
+            .text
+            .replacen(
+                "釣りを行いたい場合は水場に面して「決定ボタン」を押す事で",
+                "If you want to fish, face the water and press the Confirm button to swing your ",
+                1,
+            )
+            .replacen("を振れるぞ！", ".", 1)
+            .replace('竿', "rod");
+        let restored = tokenized.restore(&response).unwrap();
+        let lines: Vec<&str> = restored.split('\n').collect();
+        assert_eq!(lines.len(), 3, "{restored}");
+        assert_eq!(lines[0], "@4");
+        assert!(restored.contains("\\c[2]rod\\c[0]."));
+        assert!(lines
+            .iter()
+            .all(|line| line.chars().any(char::is_alphanumeric)));
+    }
+
+    #[test]
+    fn wolf_message_keeps_structural_line_breaks_mandatory() {
+        let source = "魚淫さん：\n俺君、本格的に行動に移す前に、\n確か…この道を進んだ";
+        let tokenized = Tokenizer::tokenize(source, Engine::WolfMessage);
+        assert_eq!(tokenized.map.len(), 1);
+        assert_eq!(tokenized.map.get("⟦ph_0⟧").unwrap(), "\n");
+        assert!(matches!(
+            tokenized.restore("Gyoin: Kid, before you get moving, if I remember right…"),
+            Err(TokenizerError::MissingPlaceholder { .. })
+        ));
+        let restored = tokenized
+            .restore("Gyoin:⟦ph_0⟧Kid, before you get moving, if I remember right…")
+            .unwrap();
+        assert_eq!(restored.split('\n').count(), 3, "{restored}");
+        assert!(restored.starts_with("Gyoin:\n"));
+    }
+
+    #[test]
+    fn plain_wolf_and_positioned_messages_keep_every_line_break() {
+        let plain = Tokenizer::tokenize("テキスト\nつぎの行", Engine::Wolf);
+        assert_eq!(plain.map.len(), 1);
+        assert!(plain.line_plan.is_none());
+        let positioned = Tokenizer::tokenize("<C>タイトル\n本文", Engine::WolfMessage);
+        assert_eq!(positioned.map.len(), 2);
+        assert!(positioned.line_plan.is_none());
+        assert_eq!(
+            positioned.restore(&positioned.text).unwrap(),
+            "<C>タイトル\n本文"
+        );
     }
 
     // 6. Texte sans placeholder → inchangé

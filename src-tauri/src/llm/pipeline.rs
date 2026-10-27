@@ -684,11 +684,13 @@ where
             .or_else(|| prompt_context.map(|value| value.segment_kind.as_str()))
             .unwrap_or("unknown");
         let context_json = bundle.context_json.as_deref();
+        let json_key = bundle.json_key.as_deref();
         let qa_context = qa::QaSemanticContext {
             source_language: &context.source_lang,
             target_language: &context.target_lang,
             segment_kind,
             context_json,
+            json_key,
             neighbor_sources: &qa_neighbors.sources,
             neighbor_targets: &qa_neighbors.targets,
         };
@@ -714,6 +716,7 @@ where
                         prompt_context,
                         segment_kind,
                         context_json,
+                        json_key,
                         qa_neighbors,
                     },
                     provider,
@@ -1472,6 +1475,66 @@ mod tests {
         assert_eq!(results[0].translated_text, "\\ETwo months later...");
         assert!(!results[0].needs_review);
         assert_eq!(provider.last_context().segment_contexts, vec![None]);
+    }
+
+    #[tokio::test]
+    async fn wolf_message_line_breaks_are_not_imposed_on_the_llm() {
+        // Plan WR-E6: the soft breaks of a Wolf message are sent joined; a
+        // response without them is accepted and broken again into the
+        // source's three lines (no « …the work ⏎. »).
+        let (db, _f) = test_db().await;
+        sqlx::query(
+            "INSERT INTO projects (id, name, engine, game_path) \
+             VALUES ('w-p', 'Wolf', 'wolf', '/tmp')",
+        )
+        .execute(&db)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO source_files (id, project_id, file_name, file_path, file_type) \
+             VALUES ('w-f', 'w-p', 'Map001.mps', '/tmp/Map001.mps', 'map')",
+        )
+        .execute(&db)
+        .await
+        .unwrap();
+        let source = "@4\n短い内容となりますが、\n作品全体の雰囲気等をつかむ一助に\nお役立ていただければ幸いです。";
+        sqlx::query(
+            "INSERT INTO segments (id, source_file_id, json_key, source_text) \
+             VALUES ('msg', 'w-f', 'MapData/Map001/events/0/pages/0/12', ?)",
+        )
+        .bind(source)
+        .execute(&db)
+        .await
+        .unwrap();
+        let english = "This is a short piece, but we hope it will be of some help in grasping \
+                       the overall atmosphere of the work.";
+        let provider = MockProvider::new(vec![Ok(vec![format!("⟦ph_0⟧{english}")])]);
+        let mut wolf_ctx = ctx();
+        wolf_ctx.engine = "wolf".to_string();
+
+        let results = run_inner(
+            vec![("msg".to_string(), source.to_string())],
+            &provider,
+            wolf_ctx,
+            &db,
+            None,
+            None,
+            None,
+            |_, _| {},
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(provider.calls(), 1, "accepted without a retry");
+        let target = &results[0].translated_text;
+        let body = target.strip_prefix("@4\n").expect("face prefix kept");
+        let lines: Vec<&str> = body.split('\n').collect();
+        assert_eq!(lines.len(), 3, "{target}");
+        assert!(lines
+            .iter()
+            .all(|line| line.chars().any(char::is_alphanumeric)));
+        assert_eq!(lines.join(" "), english);
+        assert!(!results[0].needs_review, "{:?}", results[0].qa_errors);
     }
 
     #[tokio::test]

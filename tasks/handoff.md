@@ -1,8 +1,15 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-27 — Claude (WR : code écrit sur `feat/wr-wolf-wrap`, worktree `../Hoshi2Star-wr`, non compilé).
-**Objectif utilisateur :** lot WR, retour à la ligne des messages Wolf à l'export. RW (PR #13) et DX (PR #15) fusionnés ; EX abandonné.
-**Statut :** WR-1 à WR-9 faits : gate final vert sur `4221f9e`, essai en jeu 2.23 OK ; PR ouverte.
+**Mis à jour :** 2026-10-27 — Claude (WR-E6 : code et tests écrits sur `feat/wr-e6-soft-breaks`, worktree `../Hoshi2Star-e6`, non compilés, commit local).
+**Objectif utilisateur :** lot WR-E6, le LLM n'a plus à replacer chaque `\n` d'un message Wolf. WR (PR #16) ouvert, non fusionné ; RW (PR #13) et DX (PR #15) fusionnés ; EX abandonné.
+**Statut :** WR-E6 : plan validé, E6-1 à E6-5 écrits et relus (non compilés), commit local non poussé ; gate cloud à faire. WR-1 à WR-9 faits : gate final vert sur `4221f9e`, essai en jeu 2.23 OK ; PR #16 ouverte.
+
+## En cours (2026-10-27, Claude) — WR-E6 : retours à la ligne Wolf côté LLM
+
+- Plan : `tasks/todo.md`, « Plan — WR-E6 », **validé le 2026-10-27** (recommandations). Journal : `docs/journal/2026-10-27-wr-e6-retours-llm-wolf.md`.
+- Branche `feat/wr-e6-soft-breaks` (worktree `../Hoshi2Star-e6`) **empilée** sur `origin/feat/wr-wolf-wrap` @ `090e445` (décision de l'utilisateur) : la PR #16 n'est pas fusionnée ; la PR E6 visera `main` après elle.
+- Fait : `engines/wolf/line_breaks.rs` (retours souples, recoupe), `Engine::WolfMessage` et `Tokenized::restore` (`llm/tokenizer.rs`), clé Wolf dans le contexte (`llm/context/wolf.rs`), QA avec `json_key`, 17 tests, `CHANGELOG.md`. Relecture indépendante faite, deux défauts corrigés. **Non compilé, non testé.**
+- **Prochaine action** : accord de l'utilisateur pour pousser `feat/wr-e6-soft-breaks`, puis gate cloud (fmt, clippy `--all-targets -D warnings`, `cargo test --locked`, typecheck, Vitest, lint). Ensuite E6-7 facultatif (retraduire les messages du projet `APP`).
 
 ## Terminé (2026-10-27, Claude) — RW (Wolf), fusionné par la PR #13
 

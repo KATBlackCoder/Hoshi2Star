@@ -123,6 +123,9 @@ async fn check_segment_live(
             context_json: segment_facts
                 .as_ref()
                 .and_then(|(_, context, ..)| context.as_deref()),
+            json_key: segment_facts
+                .as_ref()
+                .map(|(_, _, json_key, _)| json_key.as_str()),
             neighbor_sources: &[],
             neighbor_targets: &[],
         },

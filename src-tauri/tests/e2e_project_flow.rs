@@ -545,6 +545,7 @@ async fn mv_export_is_idempotent_after_unzipping_over_the_game() {
                 "mv_mz",
                 &segment.segment_kind,
                 segment.context_json.as_deref(),
+                None,
             );
             let placeholders =
                 hoshi2star_lib::llm::tokenizer::Tokenizer::tokenize(&segment.source_text, syntax)

@@ -23,6 +23,7 @@ fn semantic_check(
             target_language,
             segment_kind,
             context_json: None,
+            json_key: None,
             neighbor_sources: &[],
             neighbor_targets: &[],
         },

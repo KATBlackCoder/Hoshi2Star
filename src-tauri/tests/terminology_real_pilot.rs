@@ -475,6 +475,7 @@ async fn standgirl_ollama_translates_terms_and_reports_exact_prompt_tokens() {
                 target_language,
                 segment_kind: "database",
                 context_json: None,
+                json_key: None,
                 neighbor_sources: &[],
                 neighbor_targets: &[],
             },

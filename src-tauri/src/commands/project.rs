@@ -346,10 +346,20 @@ pub async fn update_segment(
     state: tauri::State<'_, AppState>,
 ) -> Result<Segment, String> {
     // Fetch source_text + project context for QA, TM and manifest refresh.
-    let (source_text, segment_kind, context_json, engine, project_id, source_lang, target_lang): (
+    let (
+        source_text,
+        segment_kind,
+        context_json,
+        json_key,
+        engine,
+        project_id,
+        source_lang,
+        target_lang,
+    ): (
         String,
         String,
         Option<String>,
+        String,
         String,
         String,
         String,
@@ -364,9 +374,10 @@ pub async fn update_segment(
             String,
             String,
             String,
+            String,
         ),
     >(
-        "SELECT s.source_text, s.segment_kind, s.context_json, p.engine, p.id, \
+        "SELECT s.source_text, s.segment_kind, s.context_json, s.json_key, p.engine, p.id, \
                 COALESCE(p.source_language, 'ja'), \
                 COALESCE(p.target_language, 'en') \
              FROM segments s \
@@ -392,6 +403,7 @@ pub async fn update_segment(
             &engine,
             &segment_kind,
             context_json.as_deref(),
+            Some(json_key.as_str()),
         );
         (
             target_text.as_str(),
