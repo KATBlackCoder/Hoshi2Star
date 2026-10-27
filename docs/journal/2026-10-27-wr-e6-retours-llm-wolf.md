@@ -2,7 +2,7 @@
 
 **Phase** : F5
 **Durée estimée** : 3h (plan + code)
-**Statut** : 🔄 En cours (code et tests écrits ; gate cloud vert ; essai réel E6-7 concluant ; PR à faire)
+**Statut** : 🔄 En cours (code et tests écrits ; gate cloud vert ; essai réel E6-7 concluant ; PR #18 fusionnée après #16)
 **Outil** : Claude
 **Branche et commit de départ** : `feat/wr-e6-soft-breaks` depuis `origin/feat/wr-wolf-wrap` @ `090e445` (PR #16 non fusionnée), worktree `../Hoshi2Star-e6`
 **Objectif / plan / story** : décision WR-E6 du plan WR (constat K6) ; plan `tasks/todo.md`, « Plan — WR-E6 »
@@ -54,7 +54,7 @@
 
 ## Prochaine session
 
-- PR vers `main` après fusion de #16. Essai en jeu de l'export des messages retraduits facultatif. Limites gardées : décoration de bord contenant un `\n` (cible laissée telle quelle) ; espaces de tête retirées d'un bloc recoupé.
+- PR #16 fusionnée (`e47a1e5`), puis PR #18 repointée vers `main` et fusionnée, le 2026-10-27, à la demande de l'utilisateur. Essai en jeu de l'export des messages retraduits facultatif. Limites gardées : décoration de bord contenant un `\n` (cible laissée telle quelle) ; espaces de tête retirées d'un bloc recoupé.
 
 ---
 *Journal partagé Codex / Claude — Hoshi2Star*
