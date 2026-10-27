@@ -2,7 +2,7 @@
 
 **Phase** : F5
 **Durée estimée** : 3h (plan + code)
-**Statut** : 🔄 En cours (plan validé ; code et tests écrits, non compilés ; gate cloud à faire)
+**Statut** : 🔄 En cours (code et tests écrits ; gate cloud vert ; essai réel E6-7 et PR à faire)
 **Outil** : Claude
 **Branche et commit de départ** : `feat/wr-e6-soft-breaks` depuis `origin/feat/wr-wolf-wrap` @ `090e445` (PR #16 non fusionnée), worktree `../Hoshi2Star-e6`
 **Objectif / plan / story** : décision WR-E6 du plan WR (constat K6) ; plan `tasks/todo.md`, « Plan — WR-E6 »
@@ -48,11 +48,12 @@
 ## Vérifications et limites
 
 - Aucun build, aucun test, aucun clippy en local (règle du poste local). Seul `rustfmt --check` a été lancé sur les fichiers touchés : conforme.
+- **Gate cloud vert** le 2026-10-27 sur `38033e9` (diffère de `f414e62` par `tasks/handoff.md` seulement) : fmt OK, typecheck OK, Vitest 153/153, clippy `--all-targets -D warnings` 0 avertissement, `cargo test --locked --no-fail-fast` **803 OK / 0 échec / 15 ignorés** (+17 par rapport aux 786 de `feat/wr-wolf-wrap`), lint 0 erreur (10 avertissements connus). Les 11 tests de `line_breaks`, les 4 du tokenizer, celui du pipeline et celui de la QA passent. Les 15 ignorés lisent de vrais jeux, absents en cloud.
 - Mesure E6-K7 faite sur un seul jeu (2.23) ; règles structurelles non mesurées sur 3.658 ni sur d'autres jeux.
 
 ## Prochaine session
 
-- Push avec l'accord de l'utilisateur, puis gate cloud (E6-6). Limites gardées : décoration de bord contenant un `\n` (cible laissée telle quelle) ; espaces de tête retirées d'un bloc recoupé.
+- E6-7 facultatif (retraduire les 27 messages du projet `APP`), puis PR vers `main` après fusion de #16. Limites gardées : décoration de bord contenant un `\n` (cible laissée telle quelle) ; espaces de tête retirées d'un bloc recoupé.
 
 ---
 *Journal partagé Codex / Claude — Hoshi2Star*

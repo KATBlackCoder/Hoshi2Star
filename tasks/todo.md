@@ -1188,8 +1188,12 @@ réutilise son module `engines/wolf/layout/`.
   - une décoration de bord protégée qui contient un `\n` (`-----\nあ\nい`) ajoute un bloc : la cible est laissée telle
     quelle, sans recoupe ;
   - `balance` retire les espaces en tête et en fin d'un bloc recoupé.
-- [ ] **E6-6. Gate cloud** après ton accord pour pousser : fmt, clippy `--all-targets -D warnings`,
+- [x] **E6-6. Gate cloud** après ton accord pour pousser : fmt, clippy `--all-targets -D warnings`,
   `cargo test --locked`, typecheck, Vitest, lint. Aucun build ni test local.
+  **Vert le 2026-10-27** sur `38033e9` (code identique à `f414e62`) : fmt OK, typecheck OK, Vitest 153/153,
+  clippy 0 avertissement, `cargo test --locked --no-fail-fast` **803 OK / 0 échec / 15 ignorés** (786 sur la branche
+  parente, +17 nouveaux), lint 0 erreur (10 avertissements connus). Les 17 tests E6 passent. Vrais jeux non couverts
+  (tests `#[ignore]`) : découpage vérifié en synthétique seulement.
 - [ ] **E6-7. Essai réel (facultatif, ton accord).** Retraduire les 27 messages du projet `APP`, puis comparer
   les cibles avant et après : aucun mot perdu, aucune ligne de ponctuation seule.
 
