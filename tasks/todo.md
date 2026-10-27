@@ -1194,8 +1194,9 @@ réutilise son module `engines/wolf/layout/`.
   clippy 0 avertissement, `cargo test --locked --no-fail-fast` **803 OK / 0 échec / 15 ignorés** (786 sur la branche
   parente, +17 nouveaux), lint 0 erreur (10 avertissements connus). Les 17 tests E6 passent. Vrais jeux non couverts
   (tests `#[ignore]`) : découpage vérifié en synthétique seulement.
-- [ ] **E6-7. Essai réel (facultatif, ton accord).** Retraduire les 27 messages du projet `APP`, puis comparer
+- [x] **E6-7. Essai réel (facultatif, ton accord).** Retraduire les 27 messages du projet `APP`, puis comparer
   les cibles avant et après : aucun mot perdu, aucune ligne de ponctuation seule.
+  **Fait le 2026-10-27** : 27/27 messages retraduits par le LLM (26 entrées de TM fautives supprimées d'abord, sauvegarde `backups/hoshi2star-avant-essai-e6-20261027-215036.db`). Avant : 9 lignes de ponctuation seule, 5 lignes finales vides, mots perdus (#94, #95, #96). Après : **0 ligne de ponctuation seule, 0 ligne vide, 27/27 au nombre de lignes de la source**, lignes équilibrées (écart ≤ 4 caractères en général), `※` gardé, aucun mot perdu à la lecture, 27/27 `translated` (aucun `needs_review`). Scores QA 70 à 100 : −10 par ligne au-delà de 40 colonnes (`LineTooLong`, avertissement) ; la largeur reste à la mise en page de l'export (WR). Hors E6 : coupe après un trait d'union (« H- ⏎ scenes », #98) ; noms instables d'un message à l'autre (Gyoin/Uo-in, Inmame/Andō : glossaire).
 
 **Critère de sortie.** Un message Wolf traduit par le LLM n'est plus rejeté pour un retour à la ligne souple. Sa
 cible a des retours bien placés, au plus autant de lignes que la source, et aucun texte perdu. MV/MZ et la base Wolf

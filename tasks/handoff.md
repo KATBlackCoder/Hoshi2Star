@@ -11,7 +11,8 @@
 - Fait : `engines/wolf/line_breaks.rs` (retours souples, recoupe), `Engine::WolfMessage` et `Tokenized::restore` (`llm/tokenizer.rs`), clé Wolf dans le contexte (`llm/context/wolf.rs`), QA avec `json_key`, 17 tests, `CHANGELOG.md`. Relecture indépendante faite, deux défauts corrigés.
 - **Poussé** le 2026-10-27 (accord de l'utilisateur) : `origin/feat/wr-e6-soft-breaks` @ `f414e62`. Gate cloud demandé dans une session cloud « Gate cloud WR-E6 », qui ne fait que rapporter (aucune note automatique à la fin : résultat à relever dans son transcript).
 - **Gate cloud vert** (2026-10-27) sur `38033e9`, code identique à `f414e62` : fmt, typecheck, Vitest 153/153, clippy `--all-targets -D warnings` 0, `cargo test --locked --no-fail-fast` **803 OK / 0 échec / 15 ignorés** (+17 = les tests E6), lint 0 erreur (10 avertissements connus). Vrais jeux non couverts (tests `#[ignore]`).
-- **Prochaine action** : E6-7 facultatif (retraduire les 27 messages du projet `APP` dans l'app, vérifier qu'aucun mot ne se perd), puis PR de `feat/wr-e6-soft-breaks` vers `main` après fusion de la PR #16.
+- **Essai réel E6-7 concluant** (2026-10-27, projet `APP`) : 27/27 messages retraduits par le LLM, 0 ligne de ponctuation seule (9 avant), 0 ligne vide (5 avant), nombre de lignes de la source respecté, aucun `needs_review`. 26 entrées de TM fautives supprimées avant l'essai (sauvegarde `backups/hoshi2star-avant-essai-e6-20261027-215036.db`). Détail : journal du jour.
+- **Prochaine action** : PR de `feat/wr-e6-soft-breaks` vers `main` après fusion de la PR #16. Suivis hors E6 : coupe après un trait d'union (« H- ⏎ scenes ») ; noms instables (glossaire).
 
 ## Terminé (2026-10-27, Claude) — RW (Wolf), fusionné par la PR #13
 

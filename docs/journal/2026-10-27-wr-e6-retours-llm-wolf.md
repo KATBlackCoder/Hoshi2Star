@@ -2,7 +2,7 @@
 
 **Phase** : F5
 **Durée estimée** : 3h (plan + code)
-**Statut** : 🔄 En cours (code et tests écrits ; gate cloud vert ; essai réel E6-7 et PR à faire)
+**Statut** : 🔄 En cours (code et tests écrits ; gate cloud vert ; essai réel E6-7 concluant ; PR à faire)
 **Outil** : Claude
 **Branche et commit de départ** : `feat/wr-e6-soft-breaks` depuis `origin/feat/wr-wolf-wrap` @ `090e445` (PR #16 non fusionnée), worktree `../Hoshi2Star-e6`
 **Objectif / plan / story** : décision WR-E6 du plan WR (constat K6) ; plan `tasks/todo.md`, « Plan — WR-E6 »
@@ -49,11 +49,12 @@
 
 - Aucun build, aucun test, aucun clippy en local (règle du poste local). Seul `rustfmt --check` a été lancé sur les fichiers touchés : conforme.
 - **Gate cloud vert** le 2026-10-27 sur `38033e9` (diffère de `f414e62` par `tasks/handoff.md` seulement) : fmt OK, typecheck OK, Vitest 153/153, clippy `--all-targets -D warnings` 0 avertissement, `cargo test --locked --no-fail-fast` **803 OK / 0 échec / 15 ignorés** (+17 par rapport aux 786 de `feat/wr-wolf-wrap`), lint 0 erreur (10 avertissements connus). Les 11 tests de `line_breaks`, les 4 du tokenizer, celui du pipeline et celui de la QA passent. Les 15 ignorés lisent de vrais jeux, absents en cloud.
+- **Essai réel E6-7** (projet `APP`, jeu 2.23, app lancée depuis le worktree) : 27/27 messages retraduits par le LLM (26 entrées de TM fautives supprimées d'abord, sauvegarde `backups/hoshi2star-avant-essai-e6-20261027-215036.db`). Avant : 9 lignes de ponctuation seule, 5 lignes finales vides, mots perdus (#94, #95, #96). Après : **0 ligne de ponctuation seule, 0 ligne vide, 27/27 au nombre de lignes de la source**, lignes équilibrées (écart ≤ 4 caractères en général), `※` gardé, aucun mot perdu à la lecture, 27/27 `translated` (aucun `needs_review`). Scores QA 70 à 100 : −10 par ligne au-delà de 40 colonnes (`LineTooLong`, avertissement) ; la largeur reste à la mise en page de l'export (WR). Hors E6 : coupe après un trait d'union (« H- ⏎ scenes », #98) ; noms instables d'un message à l'autre (Gyoin/Uo-in, Inmame/Andō : glossaire).
 - Mesure E6-K7 faite sur un seul jeu (2.23) ; règles structurelles non mesurées sur 3.658 ni sur d'autres jeux.
 
 ## Prochaine session
 
-- E6-7 facultatif (retraduire les 27 messages du projet `APP`), puis PR vers `main` après fusion de #16. Limites gardées : décoration de bord contenant un `\n` (cible laissée telle quelle) ; espaces de tête retirées d'un bloc recoupé.
+- PR vers `main` après fusion de #16. Essai en jeu de l'export des messages retraduits facultatif. Limites gardées : décoration de bord contenant un `\n` (cible laissée telle quelle) ; espaces de tête retirées d'un bloc recoupé.
 
 ---
 *Journal partagé Codex / Claude — Hoshi2Star*
