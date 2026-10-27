@@ -1,6 +1,11 @@
 //! Tauri commands for exporting project data (game files, QA report, TM).
 
-use std::{collections::HashMap, path::Path, path::PathBuf, sync::LazyLock};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    path::PathBuf,
+    sync::LazyLock,
+};
 
 use regex::Regex;
 use serde::Serialize;
@@ -276,13 +281,6 @@ pub async fn export_project(
     set_locale: Option<bool>,
     state: tauri::State<'_, AppState>,
 ) -> Result<String, String> {
-    let (game_path, engine, target_language): (String, String, String) =
-        sqlx::query_as("SELECT game_path, engine, target_language FROM projects WHERE id = ?")
-            .bind(&project_id)
-            .fetch_one(&state.db)
-            .await
-            .map_err(|e| e.to_string())?;
-
     let (qa_summary, _) = report::audit_project(&state.db, &project_id)
         .await
         .map_err(|error| error.to_string())?;
@@ -293,6 +291,146 @@ pub async fn export_project(
             qa_summary.critical_count
         ));
     }
+    write_export(
+        &state,
+        &project_id,
+        ExportOptions {
+            scope: ExportScope::Release,
+            font_size,
+            replace_existing,
+            set_locale,
+            zip_name: RELEASE_ZIP_NAME,
+            zip_comment: None,
+        },
+    )
+    .await
+}
+
+/// Outcome of [`export_debug_project`], counted in segments.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DebugExport {
+    pub zip_path: String,
+    /// Translations written to the archive.
+    pub exported: i64,
+    /// Segments without a translation, left as in the original game.
+    pub untranslated: i64,
+    /// Translations with a critical QA error, left as in the original game.
+    pub skipped_critical: i64,
+}
+
+/// Developer tool (diagnostics settings): write `hoshi2star-debug.zip` with
+/// the translations ready so far, to test them in game before the project is
+/// complete. Untranslated segments and translations with a critical QA error
+/// stay as in the original; the integrity gate and the game-update check are
+/// those of [`export_project`]. No font size, no language switch.
+#[tauri::command]
+pub async fn export_debug_project(
+    project_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<DebugExport, String> {
+    report::audit_project(&state.db, &project_id)
+        .await
+        .map_err(|error| error.to_string())?;
+    let (exported, untranslated, skipped_critical): (i64, i64, i64) = sqlx::query_as(&format!(
+        "SELECT \
+            COALESCE(SUM({exported}), 0), \
+            COALESCE(SUM(target_text = ''), 0), \
+            COALESCE(SUM(target_text != '' AND NOT ({exported})), 0) \
+         FROM segments WHERE source_file_id IN \
+            (SELECT id FROM source_files WHERE project_id = ?)",
+        exported = ExportScope::Debug.exported_segment()
+    ))
+    .bind(&project_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| e.to_string())?;
+    if exported == 0 {
+        return Err(
+            "Debug export: no translation without a critical QA error to export yet.".to_string(),
+        );
+    }
+    let comment = format!(
+        "Hoshi2Star DEBUG export, not for distribution ({exported}/{} segments translated)",
+        exported + untranslated + skipped_critical
+    );
+    let zip_path = write_export(
+        &state,
+        &project_id,
+        ExportOptions {
+            scope: ExportScope::Debug,
+            font_size: None,
+            replace_existing: false,
+            set_locale: None,
+            zip_name: DEBUG_ZIP_NAME,
+            zip_comment: Some(&comment),
+        },
+    )
+    .await?;
+    Ok(DebugExport {
+        zip_path,
+        exported,
+        untranslated,
+        skipped_critical,
+    })
+}
+
+/// Archive written by [`export_project`], the one users distribute.
+const RELEASE_ZIP_NAME: &str = "hoshi2star.zip";
+/// Archive written by [`export_debug_project`], for testing in game only.
+const DEBUG_ZIP_NAME: &str = "hoshi2star-debug.zip";
+
+/// Which segments an export delivers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExportScope {
+    /// Every translated segment; the caller has refused critical QA errors.
+    Release,
+    /// Developer tool: translated segments without a critical QA error. After
+    /// the audit, a translated segment is `needs_review` exactly when it has
+    /// one, so those stay as in the original game.
+    Debug,
+}
+
+impl ExportScope {
+    /// SQL condition on `segments` columns selecting the exported targets.
+    fn exported_segment(self) -> &'static str {
+        match self {
+            ExportScope::Release => "target_text != ''",
+            ExportScope::Debug => "target_text != '' AND status != 'needs_review'",
+        }
+    }
+}
+
+struct ExportOptions<'a> {
+    scope: ExportScope,
+    font_size: Option<u32>,
+    replace_existing: bool,
+    set_locale: Option<bool>,
+    zip_name: &'a str,
+    zip_comment: Option<&'a str>,
+}
+
+/// Build every exported file, run the integrity gate and write the archive
+/// in the game root. Returns the absolute path of the written zip file.
+async fn write_export(
+    state: &AppState,
+    project_id: &str,
+    options: ExportOptions<'_>,
+) -> Result<String, String> {
+    let ExportOptions {
+        scope,
+        font_size,
+        replace_existing,
+        set_locale,
+        zip_name,
+        zip_comment,
+    } = options;
+    let (game_path, engine, target_language): (String, String, String) =
+        sqlx::query_as("SELECT game_path, engine, target_language FROM projects WHERE id = ?")
+            .bind(project_id)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e| e.to_string())?;
 
     let game_dir = Path::new(&game_path);
 
@@ -300,7 +438,7 @@ pub async fn export_project(
         "SELECT id, project_id, file_name, file_path, file_type, translation_secs \
          FROM source_files WHERE project_id = ?",
     )
-    .bind(&project_id)
+    .bind(project_id)
     .fetch_all(&state.db)
     .await
     .map_err(|e| e.to_string())?;
@@ -311,7 +449,7 @@ pub async fn export_project(
     // game folder (which may already hold a previous export, or a game update
     // the snapshot then follows).
     let mut snapshot = if engine == "mv_mz" {
-        Some(originals::ensure_fresh_mv_mz_snapshot(&state.db, &state.data_dir, &project_id).await?)
+        Some(originals::ensure_fresh_mv_mz_snapshot(&state.db, &state.data_dir, project_id).await?)
     } else {
         None
     };
@@ -340,13 +478,13 @@ pub async fn export_project(
         .any(|f| matches!(classify_file_type(&f.file_type), FileClass::Wolf));
     if has_wolf {
         let (wolf_entries, wolf_issues) = collect_wolf_zip_entries(
-            &project_id,
             &files,
             game_dir,
             font_size,
             replace_existing,
             &engine,
             &state.db,
+            scope,
         )
         .await?;
         entries.extend(wolf_entries);
@@ -354,27 +492,29 @@ pub async fn export_project(
     } else {
         // Skill types renamed inside battle-command note tags (linked category).
         let renames = if engine == "mv_mz" {
-            linked_skill_type_renames(&state.db, &project_id).await?
+            linked_skill_type_renames(&state.db, project_id, scope).await?
         } else {
             HashMap::new()
         };
         // Text fitting (MZ): laid-out dialogue and descriptions replace their
         // rows; every other row is exported as before.
         let fitted = if engine == "mv_mz" {
-            fitted_lines(&state, &project_id, font_size, replace_existing).await?
+            fitted_lines(state, project_id, font_size, replace_existing, scope).await?
         } else {
             HashMap::new()
         };
         let mut has_label_edits = false;
+        let rows_sql = format!(
+            "SELECT json_key, target_text, text_category IS NULL, source_text FROM segments \
+             WHERE source_file_id = ? AND {}",
+            scope.exported_segment()
+        );
         for file in &files {
-            let rows: Vec<(String, String, bool, String)> = sqlx::query_as(
-                "SELECT json_key, target_text, text_category IS NULL, source_text FROM segments \
-                 WHERE source_file_id = ? AND target_text != ''",
-            )
-            .bind(&file.id)
-            .fetch_all(&state.db)
-            .await
-            .map_err(|e| e.to_string())?;
+            let rows: Vec<(String, String, bool, String)> = sqlx::query_as(&rows_sql)
+                .bind(&file.id)
+                .fetch_all(&state.db)
+                .await
+                .map_err(|e| e.to_string())?;
 
             let note_file = engine == "mv_mz" && NOTE_FILE_TYPES.contains(&file.file_type.as_str());
             let locale_here = locale_edit
@@ -426,7 +566,7 @@ pub async fn export_project(
                 }
                 FileClass::PluginsJs => {
                     let raw = read_original_json(snapshot.as_ref(), &rel, file)?;
-                    let rows = plugin_rows(&state.db, &file.id).await?;
+                    let rows = plugin_rows(&state.db, &file.id, scope).await?;
                     let (output, planned) = build_plugins_js(&raw, &rows)?;
                     integrity_issues.extend(integrity::verify_plugins_edit(
                         &rel, &raw, &output, &planned,
@@ -505,8 +645,8 @@ pub async fn export_project(
         .iter()
         .map(|(rel, bytes)| (rel.clone(), sha256_hex(bytes)))
         .collect();
-    let zip_path = game_dir.join("hoshi2star.zip");
-    write_zip(&zip_path, entries)?;
+    let zip_path = game_dir.join(zip_name);
+    write_zip(&zip_path, entries, zip_comment)?;
     // Users unzip the archive over the game: those files are ours, not an update.
     if let Some(store) = snapshot.as_mut() {
         originals::remember_written(store, &written);
@@ -741,12 +881,14 @@ type FittedLines = HashMap<String, HashMap<String, Option<String>>>;
 /// Fit the project's dialogue / descriptions when text fitting is enabled.
 /// The export's font size (if any) is the dialogue size, emitted once per
 /// page; with `replace_existing`, a font code an older export stored at the
-/// start of a line is dropped, as for unfitted rows.
+/// start of a line is dropped, as for unfitted rows. A target the export's
+/// `scope` leaves out is laid out as untranslated.
 async fn fitted_lines(
     state: &AppState,
     project_id: &str,
     font_size: Option<u32>,
     replace_existing: bool,
+    scope: ExportScope,
 ) -> Result<FittedLines, String> {
     let mut settings = text_fit::load_settings(&state.db, project_id)
         .await
@@ -770,7 +912,25 @@ async fn fitted_lines(
     else {
         return Ok(HashMap::new());
     };
-    let targets = project_targets(&state.db, project_id).await?;
+    let mut targets = project_targets(&state.db, project_id).await?;
+    if scope != ExportScope::Release {
+        let left_out: HashSet<String> = sqlx::query_scalar::<_, String>(&format!(
+            "SELECT s.id FROM segments s JOIN source_files sf ON sf.id = s.source_file_id \
+             WHERE sf.project_id = ? AND s.target_text != '' AND NOT ({})",
+            scope.exported_segment()
+        ))
+        .bind(project_id)
+        .fetch_all(&state.db)
+        .await
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .collect();
+        for target in targets.values_mut().flat_map(HashMap::values_mut) {
+            if left_out.contains(&target.segment_id) {
+                target.text.clear();
+            }
+        }
+    }
     let overrides = text_fit::load_overrides(&state.db, project_id)
         .await
         .map_err(|e| e.to_string())?;
@@ -854,13 +1014,15 @@ const NOTE_FILE_TYPES: &[&str] = &[
 async fn linked_skill_type_renames(
     db: &sqlx::SqlitePool,
     project_id: &str,
+    scope: ExportScope,
 ) -> Result<HashMap<String, String>, String> {
-    let rows: Vec<(String, String)> = sqlx::query_as(
+    let rows: Vec<(String, String)> = sqlx::query_as(&format!(
         "SELECT s.source_text, s.target_text FROM segments s \
          JOIN source_files sf ON sf.id = s.source_file_id \
          WHERE sf.project_id = ? AND s.text_category = 'system.skill_types' \
-           AND s.target_text != '' AND s.context_json LIKE '%keke_skill_type%'",
-    )
+           AND {} AND s.context_json LIKE '%keke_skill_type%'",
+        scope.exported_segment()
+    ))
     .bind(project_id)
     .fetch_all(db)
     .await
@@ -935,11 +1097,13 @@ fn keke_resolution_issues(
 async fn plugin_rows(
     db: &sqlx::SqlitePool,
     file_id: &str,
+    scope: ExportScope,
 ) -> Result<Vec<(String, String, String, Option<String>)>, String> {
-    sqlx::query_as(
+    sqlx::query_as(&format!(
         "SELECT json_key, target_text, source_text, context_json FROM segments \
-         WHERE source_file_id = ? AND target_text != ''",
-    )
+         WHERE source_file_id = ? AND {}",
+        scope.exported_segment()
+    ))
     .bind(file_id)
     .fetch_all(db)
     .await
@@ -1004,32 +1168,33 @@ fn read_original_json(
 
 /// Collect Wolf zip entries in memory without writing to disk.
 async fn collect_wolf_zip_entries(
-    _project_id: &str,
     files: &[SourceFile],
     game_dir: &Path,
     font_size: Option<u32>,
     replace_existing: bool,
     engine: &str,
     db: &sqlx::SqlitePool,
+    scope: ExportScope,
 ) -> Result<(Vec<(String, Vec<u8>)>, Vec<integrity::IntegrityIssue>), String> {
     let version = guess_wolf_version_from_structure(game_dir);
     if let Some(warning) = crate::engines::wolf::encoding::path_warning(game_dir, &version) {
         log::warn!("[h2s] {warning}");
     }
     let mut translations_by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
+    let segs_sql = format!(
+        "SELECT json_key, target_text FROM segments WHERE source_file_id = ? AND {}",
+        scope.exported_segment()
+    );
 
     for file in files {
         if !matches!(classify_file_type(&file.file_type), FileClass::Wolf) {
             continue;
         }
-        let segs: Vec<(String, String)> = sqlx::query_as::<_, (String, String)>(
-            "SELECT json_key, target_text FROM segments \
-             WHERE source_file_id = ? AND target_text != ''",
-        )
-        .bind(&file.id)
-        .fetch_all(db)
-        .await
-        .map_err(|e| e.to_string())?;
+        let segs: Vec<(String, String)> = sqlx::query_as::<_, (String, String)>(&segs_sql)
+            .bind(&file.id)
+            .fetch_all(db)
+            .await
+            .map_err(|e| e.to_string())?;
 
         for (key, mut text) in segs {
             if let Some(n) = font_size {
@@ -1063,9 +1228,16 @@ async fn collect_wolf_zip_entries(
 }
 
 /// Write a zip archive at `path` containing the given `(relative_path, bytes)` entries.
-fn write_zip(path: &Path, entries: Vec<(String, Vec<u8>)>) -> Result<(), String> {
+fn write_zip(
+    path: &Path,
+    entries: Vec<(String, Vec<u8>)>,
+    comment: Option<&str>,
+) -> Result<(), String> {
     let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipWriter::new(file);
+    if let Some(comment) = comment {
+        zip.set_comment(comment);
+    }
     for (rel_path, bytes) in entries {
         // A rebuilt Wolf archive is already compressed and can weigh gigabytes:
         // stored as is (plan RW, decision D1).
@@ -1194,7 +1366,7 @@ pub async fn debug_inject_file(
     // Linked edits span several files (System.json + every note referencing
     // a skill type): writing one file alone would break battle commands.
     if engine == "mv_mz"
-        && !linked_skill_type_renames(&state.db, &file.project_id)
+        && !linked_skill_type_renames(&state.db, &file.project_id, ExportScope::Release)
             .await?
             .is_empty()
     {
@@ -1222,7 +1394,14 @@ pub async fn debug_inject_file(
         .map(|(key, target, _, source)| (key, target, source))
         .collect();
     let fitted = if engine == "mv_mz" {
-        fitted_lines(&state, &file.project_id, font_size, replace_existing).await?
+        fitted_lines(
+            &state,
+            &file.project_id,
+            font_size,
+            replace_existing,
+            ExportScope::Release,
+        )
+        .await?
     } else {
         HashMap::new()
     };
@@ -1335,7 +1514,7 @@ pub async fn debug_inject_file(
             )
             .await?;
             let raw = read_original_json(Some(&snapshot), &rel, &file)?;
-            let rows = plugin_rows(&state.db, &file.id).await?;
+            let rows = plugin_rows(&state.db, &file.id, ExportScope::Release).await?;
             let (output, planned) = build_plugins_js(&raw, &rows)?;
             let issues = integrity::verify_plugins_edit(&rel, &raw, &output, &planned);
             if !issues.is_empty() {

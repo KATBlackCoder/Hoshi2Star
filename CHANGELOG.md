@@ -6,6 +6,12 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 ## [Unreleased]
 
 ### Added
+- Add a debug export for testing in game before a project is complete (developer tool; MV/MZ and Wolf RPG). With "Show diagnostic tools" ticked in the settings, a toolbar button writes `hoshi2star-debug.zip` with the translations ready so far:
+  - untranslated segments and translations with a critical QA error stay as in the original game;
+  - the integrity gate and the game-update check are those of the normal export;
+  - no font size and no language switch.
+
+  The archive carries a "DEBUG, not for distribution" comment and never replaces `hoshi2star.zip`. The normal export is unchanged: it still requires every segment to be translated and refuses critical QA errors.
 - Add optional text categories for RPG Maker MV/MZ: player-visible text outside the standard `data/*.json` extraction can now be translated without breaking the game. Covered: System lists (`skillTypes`, `equipTypes`, `elements`, `weaponTypes`, `armorTypes`), map display names, `js/plugins.js` display parameters, MZ plugin-command display arguments (e.g. BattleLogOutput battle-log lines), NUUN_EnemyBook built-in labels (filled into their empty parameters) and Keke_VariableActorCommand battle-command labels in note tags. A new "Text coverage" dialog lists every category with where it appears, its exact consequences, its constraints, samples and locations. Each category is in one of four states:
   - **verified**: pre-ticked in the dialog, enabled only when you apply;
   - **linked**: opt-in, and you confirm its consequences first;

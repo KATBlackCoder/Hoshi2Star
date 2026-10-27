@@ -78,6 +78,17 @@ export interface ExportPreflight {
   wolf?: WolfExportPreflight | null;
 }
 
+/** Outcome of `export_debug_project` (developer tool), counted in segments. */
+export interface DebugExport {
+  zipPath: string;
+  /** Translations written to `hoshi2star-debug.zip`. */
+  exported: number;
+  /** Segments without a translation, left as in the original game. */
+  untranslated: number;
+  /** Translations with a critical QA error, left as in the original game. */
+  skippedCritical: number;
+}
+
 export interface ProjectStats {
   fileCount: number;
   totalSegments: number;

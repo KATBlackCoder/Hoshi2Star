@@ -442,6 +442,39 @@ async fn export_lays_out_dialogue_and_descriptions_only_when_enabled() {
     assert_eq!(zip_entries(&export(&opened, None).await), zip_entries(&zip));
 }
 
+/// Debug export (plan DX): a line it leaves out (critical QA error) makes its
+/// message "not fully translated", so the message is not laid out: the other
+/// line is exported as translated and the left-out one stays as in the game.
+#[tokio::test]
+async fn debug_export_does_not_lay_out_a_message_with_a_left_out_line() {
+    let opened = opened().await;
+    set_text_fit(opened.project_id.clone(), enabled(), opened.app.state())
+        .await
+        .unwrap();
+    // Copying the source is a critical QA error.
+    let second = segment_id(&opened, "二行目。").await;
+    sqlx::query("UPDATE segments SET target_text = '二行目。' WHERE id = ?")
+        .bind(second)
+        .execute(&opened.app.state::<AppState>().db)
+        .await
+        .unwrap();
+
+    let result = hoshi2star_lib::commands::export::export_debug_project(
+        opened.project_id.clone(),
+        opened.app.state(),
+    )
+    .await
+    .expect("debug export");
+    assert_eq!(result.skipped_critical, 1);
+
+    let map = zip_json(&result.zip_path, "data/Map001.json");
+    assert_eq!(line(&map, 1), translation("長い台詞の一行目。"));
+    assert_eq!(line(&map, 2), "二行目。");
+    // The other messages are still laid out (B continues on a second page).
+    let b: Vec<String> = (4..=7).map(|i| line(&map, i)).collect();
+    assert_eq!(b.join("\n").matches('\u{000C}').count(), 1);
+}
+
 #[tokio::test]
 async fn export_font_size_is_emitted_once_per_page_for_fitted_dialogue() {
     let opened = opened().await;

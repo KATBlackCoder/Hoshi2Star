@@ -1,8 +1,8 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-27 — Claude (RW fusionné, PR #13 ; plans EX et WR et notes Bakin rangés par la PR de suivi `docs/plans-ex-wr-bakin`).
-**Objectif utilisateur :** prochain lot EX (export d'essai des seuls segments traduits), plan validé, prêt pour l'étape 0 ; WR (retour à la ligne Wolf) reporté.
-**Statut :** RW **fusionné** le 2026-10-27 (PR #13, `3288534`) : gate cloud vert sur `1661ab5` (760 Rust OK), tests réels `--ignored` OK, essai en jeu de l'export de l'app OK sur Wolf 2.23 ; essai 3.658 non fait. EX : voir sa section ; WR : reporté.
+**Mis à jour :** 2026-10-27 — Claude (DX : gate cloud vert, essais dans l'app et en jeu OK, PR ouverte).
+**Objectif utilisateur :** lot DX (export de debug dans les outils de diagnostic), PR à relire et fusionner ; EX abandonné (l'export exige une traduction complète) ; WR (retour à la ligne Wolf) reporté.
+**Statut :** DX validé (gate cloud vert sur `8459d4c`, essai en jeu Wolf 2.23 OK, export partiel confirmé), PR `feat/dx-debug-export` → `main` ouverte. RW **fusionné** le 2026-10-27 (PR #13, `3288534`) ; essai 3.658 non fait. WR : reporté.
 
 ## Terminé (2026-10-27, Claude) — RW (Wolf), fusionné par la PR #13
 
@@ -49,15 +49,32 @@
   - les réglages numériques de `Game.dat` ne sont pas décodés.
 - **Prochaine action, à la reprise** : relancer WCAL (`RAE-PLAN/essais/wolf-v223/WCAL.FICHE.md`) et capturer les écrans B à M ; lire les captures (largeurs, lignes, taille par défaut, police réelle) ; puis WR-2 (`Game.dat`) et WR-3 (règle de budget). Le code attend la fusion de RW.
 
-## En cours (2026-10-27, Claude) — EX : export d'essai (plan seulement)
+## Abandonné (2026-10-27, Claude) — EX : export d'essai
 
-- Plan : `tasks/todo.md`, « Plan — EX ». **Validé le 2026-10-27** avec les recommandations (D1 = a, D2 = a, D3 oui,
-  D4 oui, D5 noter, D6 = a). Aucun code, rien commité.
-- Constat : le backend n'exporte déjà que les cibles non vides, et la QA ne lit que celles-ci. Le refus « non traduit »
-  est uniquement dans le frontend (`useAppHandlers.ts:66`, version RW).
-- Bloquant : RW (`feat/rw-wolf`) n'est ni fusionné ni en PR (revérifié le 2026-10-27 : `origin/feat/rw-wolf` = `1661ab5`,
-  la branche locale `9d28ae2` a des commits non poussés) ; l'implémentation part de `main` après sa fusion.
-- **Prochaine action** : fusion de RW par l'utilisateur, ordre convenu avec le lot « retour à la ligne Wolf », puis étape 0 du plan EX.
+- Plan validé puis **abandonné par l'utilisateur** après la fusion de RW. L'export exige toujours une traduction complète : c'est la règle produit.
+- Remplacement envisagé : un bouton de debug qui extrait ou injecte pour tester en jeu. Pistes dans `tasks/todo.md`, « Plan — EX », section « Abandon ».
+- Aucun code ni branche créés.
+- **Remplacé par DX** : plan dans `tasks/todo.md`, « Plan — DX ». **Validé le 2026-10-27** (défauts DX-1 à DX-3). Implémentation en cours sur `feat/dx-debug-export` (depuis `main` @ `2d9ecd7`).
+- **Étapes 1 à 6 faites le 2026-10-27** (code, tests Rust `src-tauri/tests/export_debug.rs`, tests Vitest, CHANGELOG,
+  journal `docs/journal/2026-10-27-dx-export-debug.md`). **Rien de commité, aucun build ni test lancé** (seulement
+  `rustfmt --check` et prettier).
+- **Commit `8459d4c`** (`--no-verify`, accord de l'utilisateur) poussé sur `origin/feat/dx-debug-export` le 2026-10-27.
+- **Gate cloud vert sur `8459d4c`** (2026-10-27, compte rendu collé par l'utilisateur) : fmt OK, typecheck OK,
+  Vitest **152/152**, lint 0 erreur (10 avertissements connus), clippy `--locked --all-targets -D warnings` 0,
+  `cargo test --locked --no-fail-fast` **766 OK / 0 échec / 14 ignorés** (vrai dictionnaire lindera) ;
+  `tests/export_debug.rs` 5/5, `tests/text_fit.rs` 11/11. Aucune correction, rien poussé de plus.
+- **Essai dans l'app OK** (2026-10-27, journal `docs/journal/2026-10-27-dx-essai-app.md`) :
+  - réglage, bouton et boîte conformes ;
+  - nouveau projet `DX` (copie intacte de `W0`), 31/3202 traduits ;
+  - zip = `Data.wolf` seul ; seule la carte titre change (31 textes traduits, 1 laissé en japonais exprès).
+  Base sauvegardée avant : `backups/hoshi2star-avant-essai-dx-20261027-141825.db`.
+- **Essai en jeu OK** (utilisateur, `DX-JEU`, 2026-10-27) : menu titre, remerciements, difficulté et première
+  réplique de Gyoin en anglais. La ligne de Gyoin laissée exprès en japonais
+  s'affiche en japonais : export partiel confirmé. Débordements connus (WR).
+- Suivi commité et poussé, **PR ouverte** le 2026-10-27 (`feat/dx-debug-export` → `main`, accord de l'utilisateur ;
+  `gh pr view feat/dx-debug-export`).
+- **Prochaine action** : relecture et fusion de la PR par l'utilisateur. Ensuite : WR (reprise WCAL), essai 3.658
+  facultatif avec l'export de debug.
 
 ## En cours (2026-10-26, Claude) — Bakin sous Linux (étude locale, hors produit)
 

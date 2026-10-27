@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { openProjectErrorKey, wolfReadErrorDetail } from "@/lib/projectError";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  Bug,
   Clock,
   Download,
   FolderOpen,
@@ -146,6 +147,8 @@ interface AppToolbarProps {
   onTranslateAll: () => void;
   onExportAll: () => void;
   onOpenPilot: () => void;
+  /** Developer tool: export the translations ready so far, for a test in game. */
+  onDebugExport: () => void;
   isExporting: boolean;
 }
 
@@ -155,6 +158,7 @@ export function AppToolbar({
   onTranslateAll,
   onExportAll,
   onOpenPilot,
+  onDebugExport,
   isExporting,
 }: AppToolbarProps) {
   const { t } = useTranslation();
@@ -340,6 +344,23 @@ export function AppToolbar({
           {t("pilot.toolbar")}
         </Button>
       )}
+
+      {developerTools &&
+        activeProjectId &&
+        (activeProject?.engine === "mv_mz" ||
+          activeProject?.engine === "wolf") && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1.5 text-xs"
+            title={t("debugExport.toolbarHint")}
+            onClick={onDebugExport}
+            disabled={isTranslating || isPilotRunning || isExporting}
+          >
+            <Bug className="h-3.5 w-3.5" />
+            {t("debugExport.toolbar")}
+          </Button>
+        )}
 
       {activeProjectId && (
         <>

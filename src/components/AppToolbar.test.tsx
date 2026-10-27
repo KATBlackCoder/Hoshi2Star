@@ -45,6 +45,7 @@ describe("AppToolbar developer tools", () => {
         onTranslateAll={vi.fn()}
         onExportAll={vi.fn()}
         onOpenPilot={vi.fn()}
+        onDebugExport={vi.fn()}
         isExporting={false}
       />,
     );
@@ -62,5 +63,55 @@ describe("AppToolbar developer tools", () => {
     expect(
       screen.getByRole("button", { name: i18n.t("pilot.toolbar") }),
     ).toBeInTheDocument();
+  });
+});
+
+function renderToolbar(onDebugExport = vi.fn()) {
+  render(
+    <AppToolbar
+      onOpenAbout={vi.fn()}
+      onTranslate={vi.fn()}
+      onTranslateAll={vi.fn()}
+      onExportAll={vi.fn()}
+      onOpenPilot={vi.fn()}
+      onDebugExport={onDebugExport}
+      isExporting={false}
+    />,
+  );
+  return onDebugExport;
+}
+
+const debugButton = () =>
+  screen.queryByRole("button", { name: i18n.t("debugExport.toolbar") });
+
+describe("AppToolbar debug export", () => {
+  it("stays hidden until diagnostics are enabled", () => {
+    renderToolbar();
+    expect(debugButton()).not.toBeInTheDocument();
+  });
+
+  it.each(["mv_mz", "wolf"])(
+    "is offered for %s projects with diagnostics enabled",
+    (engine) => {
+      useProjectStore.setState({ projects: [{ ...PROJECT, engine }] });
+      useSettingsStore.setState({
+        settings: { ...DEFAULT_SETTINGS, developerTools: true },
+      });
+      const onDebugExport = renderToolbar();
+
+      const button = debugButton();
+      expect(button).toBeInTheDocument();
+      act(() => button?.click());
+      expect(onDebugExport).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("is not offered for other engines", () => {
+    useProjectStore.setState({ projects: [{ ...PROJECT, engine: "vx_ace" }] });
+    useSettingsStore.setState({
+      settings: { ...DEFAULT_SETTINGS, developerTools: true },
+    });
+    renderToolbar();
+    expect(debugButton()).not.toBeInTheDocument();
   });
 });

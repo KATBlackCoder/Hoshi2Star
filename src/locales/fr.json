@@ -403,7 +403,8 @@
       "description": "Fonctions techniques destinées à vérifier les modèles, les prompts et les intégrations. Elles ne font pas partie du parcours normal de traduction.",
       "enable": "Afficher les outils de diagnostic",
       "enableDescription": "Ajoute les actions expérimentales uniquement lorsqu’un projet compatible est ouvert. Cette préférence est désactivée par défaut.",
-      "pilotExplanation": "Le Pilote A/B apparaîtra dans la barre d’outils pour les projets RPG Maker MV/MZ. Il compare les traductions avec et sans contexte sans modifier le jeu ni la base personnelle."
+      "pilotExplanation": "Le Pilote A/B apparaîtra dans la barre d’outils pour les projets RPG Maker MV/MZ. Il compare les traductions avec et sans contexte sans modifier le jeu ni la base personnelle.",
+      "debugExportExplanation": "L’export de debug apparaîtra dans la barre d’outils pour les projets RPG Maker MV/MZ et Wolf RPG. Il crée hoshi2star-debug.zip avec les traductions déjà prêtes, pour les essayer en jeu avant la fin ; l’export normal reste réservé aux projets entièrement traduits."
     },
     "language": {
       "section": "Langue"
@@ -775,5 +776,19 @@
     "close": "Fermer",
     "apply": "Appliquer",
     "untouchedCategories": "Catégories laissées telles quelles, car le jeu ne les propose plus en l'état (plugin modifié, désactivé ou illisible) ou les bloque : {{categories}}. Leurs traductions ne sont pas touchées ; vérifiez-les dans la couverture du texte."
+  },
+  "debugExport": {
+    "toolbar": "Export de debug",
+    "toolbarHint": "Outil de diagnostic : exporte les traductions déjà prêtes dans hoshi2star-debug.zip pour les essayer en jeu",
+    "title": "Export de debug",
+    "description": "Crée hoshi2star-debug.zip à la racine du jeu avec les traductions déjà prêtes, pour les essayer en jeu.",
+    "untouched": "Les segments non traduits et les traductions en erreur QA critique restent tels quels, en version d’origine.",
+    "copyOnly": "Décompressez-le sur une copie du jeu, pas sur le jeu lui-même.",
+    "notForRelease": "Ce zip sert aux essais : ne le distribuez pas. L’export normal reste réservé aux projets entièrement traduits.",
+    "wolfNote": "Wolf RPG : Hoshi2Star ne garde pas de copie d’origine du jeu. Décompressé sur le vrai jeu, ce zip deviendrait la base des exports suivants.",
+    "cancel": "Annuler",
+    "confirm": "Créer le zip de debug",
+    "success": "Export de debug créé",
+    "successDesc": "{{path}} — {{exported}} traduits exportés, {{untranslated}} non traduits et {{skipped}} en erreur critique laissés d’origine."
   }
 }
