@@ -1,8 +1,8 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-27 — Claude (RW fusionné, PR #13 ; plans EX et WR et notes Bakin rangés par la PR de suivi `docs/plans-ex-wr-bakin`).
-**Objectif utilisateur :** lot DX (export de debug dans les outils de diagnostic), plan à valider ; EX abandonné (l'export exige une traduction complète) ; WR (retour à la ligne Wolf) reporté.
-**Statut :** RW **fusionné** le 2026-10-27 (PR #13, `3288534`) : gate cloud vert sur `1661ab5` (760 Rust OK), tests réels `--ignored` OK, essai en jeu de l'export de l'app OK sur Wolf 2.23 ; essai 3.658 non fait. EX : voir sa section ; WR : reporté.
+**Mis à jour :** 2026-10-27 — Claude (DX : gate cloud vert, essais dans l'app et en jeu OK, PR ouverte).
+**Objectif utilisateur :** lot DX (export de debug dans les outils de diagnostic), PR à relire et fusionner ; EX abandonné (l'export exige une traduction complète) ; WR (retour à la ligne Wolf) reporté.
+**Statut :** DX validé (gate cloud vert sur `8459d4c`, essai en jeu Wolf 2.23 OK, export partiel confirmé), PR `feat/dx-debug-export` → `main` ouverte. RW **fusionné** le 2026-10-27 (PR #13, `3288534`) ; essai 3.658 non fait. WR : reporté.
 
 ## Terminé (2026-10-27, Claude) — RW (Wolf), fusionné par la PR #13
 
@@ -58,8 +58,23 @@
 - **Étapes 1 à 6 faites le 2026-10-27** (code, tests Rust `src-tauri/tests/export_debug.rs`, tests Vitest, CHANGELOG,
   journal `docs/journal/2026-10-27-dx-export-debug.md`). **Rien de commité, aucun build ni test lancé** (seulement
   `rustfmt --check` et prettier).
-- **Prochaine action** : accord de l'utilisateur pour le commit (le hook pre-commit lance clippy : demander avant
-  `--no-verify`) et le push, puis gate cloud complet (étape 7), PR, essai en jeu avec accord (étape 8).
+- **Commit `8459d4c`** (`--no-verify`, accord de l'utilisateur) poussé sur `origin/feat/dx-debug-export` le 2026-10-27.
+- **Gate cloud vert sur `8459d4c`** (2026-10-27, compte rendu collé par l'utilisateur) : fmt OK, typecheck OK,
+  Vitest **152/152**, lint 0 erreur (10 avertissements connus), clippy `--locked --all-targets -D warnings` 0,
+  `cargo test --locked --no-fail-fast` **766 OK / 0 échec / 14 ignorés** (vrai dictionnaire lindera) ;
+  `tests/export_debug.rs` 5/5, `tests/text_fit.rs` 11/11. Aucune correction, rien poussé de plus.
+- **Essai dans l'app OK** (2026-10-27, journal `docs/journal/2026-10-27-dx-essai-app.md`) :
+  - réglage, bouton et boîte conformes ;
+  - nouveau projet `DX` (copie intacte de `W0`), 31/3202 traduits ;
+  - zip = `Data.wolf` seul ; seule la carte titre change (31 textes traduits, 1 laissé en japonais exprès).
+  Base sauvegardée avant : `backups/hoshi2star-avant-essai-dx-20261027-141825.db`.
+- **Essai en jeu OK** (utilisateur, `DX-JEU`, 2026-10-27) : menu titre, remerciements, difficulté et première
+  réplique de Gyoin en anglais. La ligne de Gyoin laissée exprès en japonais
+  s'affiche en japonais : export partiel confirmé. Débordements connus (WR).
+- Suivi commité et poussé, **PR ouverte** le 2026-10-27 (`feat/dx-debug-export` → `main`, accord de l'utilisateur ;
+  `gh pr view feat/dx-debug-export`).
+- **Prochaine action** : relecture et fusion de la PR par l'utilisateur. Ensuite : WR (reprise WCAL), essai 3.658
+  facultatif avec l'export de debug.
 
 ## En cours (2026-10-26, Claude) — Bakin sous Linux (étude locale, hors produit)
 
