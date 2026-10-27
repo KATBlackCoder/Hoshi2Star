@@ -113,6 +113,18 @@
 - **Non compilé, aucun test exécuté** (règle : pas de build local). Relecture indépendante lancée avant commit.
 - Relecture indépendante (agent, lecture seule) : aucune erreur de compilation repérée, attentes de tests vérifiées à la main ; 5 constats, dont 3 corrigés et 2 gardés (détail dans `tasks/todo.md`, « Relecture indépendante »).
 
+## Gate cloud WR-8 (2026-10-27, sur `95e7a76`)
+
+- Résultats :
+  - fmt, typecheck, clippy `--all-targets -D warnings` (0 avertissement) : OK ;
+  - Vitest 153/153 ;
+  - lint : 0 erreur, 10 avertissements, tous sur `main` ;
+  - `cargo test --locked --no-fail-fast` : 785 OK / 1 échec / 15 ignorés.
+- Tous les tests WR sont verts, y compris l'e2e et le cas Vitest Wolf.
+- Correction : symptôme = `fresh_schema_and_repeated_startup_are_idempotent` attend les migrations `1..=12`, et la
+  base en a 13. Cause confirmée : la liste est figée dans le test. Solution : `1..=13`. Preuve attendue : la relance
+  du gate. Leçon ajoutée.
+
 ## Prochaine session
 
-- Pousser `feat/wr-wolf-wrap` (accord requis), gate cloud WR-8, puis essai en jeu WR-9 et PR.
+- Pousser la correction (accord requis) et relancer `cargo test` en cloud ; puis essai en jeu WR-9 et PR.

@@ -55,7 +55,9 @@
 - **WR-1 fait (2026-10-27)** : budget de 22 em et 4 lignes, avec ou sans visage ; taille par défaut `\f[12]` ; `\f[18]` = 1,5 fois (K5 expliqué). Détail : `tasks/todo.md`, « Résultats WR-1 ».
 - **WR-2/WR-3 faits** : taille du jeu illisible dans les fichiers ⇒ champ manuel (12 pour 2.23) ; budget = p99 des lignes des cartes (22 em) et maximum de lignes (4), concordant avec WR-1.
 - **WR-4 à WR-7 écrits** (`feat/wr-wolf-wrap`) : `engines/wolf/layout/`, `commands/wolf_text_fit.rs`, migration `0013`, branchements export / QA / réglages, interface, tests. Écarts au plan listés dans `tasks/todo.md` (choix non signalés, police = seul fichier du dossier, mesure sans repli Shift-JIS).
-- **Prochaine action** : accord de l'utilisateur pour pousser `feat/wr-wolf-wrap` ⇒ gate cloud (WR-8) ; puis essai en jeu sur `APP` 2.23 avec mise en page activée et taille du jeu 12 (WR-9) ; puis PR.
+- **Poussé** le 2026-10-27 (accord de l'utilisateur) : `origin/feat/wr-wolf-wrap` @ `95e7a76`. Gate cloud (WR-8) demandé dans une session cloud « Gate cloud WR », qui ne fait que rapporter : résultat à relever dans son transcript.
+- **Gate cloud du 2026-10-27 sur `95e7a76`** : tout est vert sauf 1 test, 785 OK / 1 échec / 15 ignorés ; Vitest 153 ; clippy 0. L'échec vient de la liste des migrations figée à `1..=12` (`tests/terminology_migration.rs:205`), passée à `1..=13`, commitée et pas encore poussée.
+- **Prochaine action** : avec accord, pousser la correction et relancer `cargo test` en cloud ; puis essai en jeu sur `APP` 2.23, avec la mise en page activée et la taille du jeu à 12 (WR-9) ; puis PR.
 
 ## Abandonné (2026-10-27, Claude) — EX : export d'essai
 

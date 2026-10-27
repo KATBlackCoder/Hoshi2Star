@@ -1000,6 +1000,15 @@ les cibles en base ne changent pas, comme pour le text fitting MZ.
     contre 4 mesurées en jeu.
 - [ ] **WR-8. Gate cloud** après ton accord pour pousser : fmt, clippy `--all-targets -D warnings`,
   `cargo test --locked`, typecheck, Vitest, lint. Aucun build ni test local.
+  - **Gate du 2026-10-27 sur `95e7a76`** (session cloud, vrai dictionnaire lindera) :
+    - fmt OK ; typecheck OK ; Vitest **153/153** (145 sur `main`, dont le cas Wolf) ;
+    - clippy `--all-targets -D warnings` : 0 avertissement ;
+    - lint : 0 erreur, 10 avertissements, tous sur `main` ;
+    - `cargo test --locked --no-fail-fast` : **785 OK / 1 échec / 15 ignorés**.
+  - Tests WR : `layout::text` 4/4, `layout::fit` 12/12, `layout` 2/2 (+ `wolf_real_budget` ignoré),
+    `core::text_fit` 4/4, e2e `wolf_export_rewraps_messages_when_text_fitting_is_on` OK.
+  - Seul échec : `fresh_schema_and_repeated_startup_are_idempotent` (`tests/terminology_migration.rs:205`), qui fige
+    la liste des migrations à `1..=12`. Passé à `1..=13` ; la correction n'a pas encore tourné au gate.
 - [ ] **WR-9. Essai en jeu** (ton accord) : le projet `APP` 2.23 réexporté. Attendu : le message de remerciement
   et les répliques de Gyoin dans le cadre, sans ligne « . » isolée.
 
