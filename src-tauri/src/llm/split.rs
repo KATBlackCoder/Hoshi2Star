@@ -19,7 +19,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use crate::llm::provider::{LlmError, LlmProvider, TranslationContext};
-use crate::llm::tokenizer::{Tokenized, Tokenizer};
+use crate::llm::tokenizer::Tokenized;
 use serde::Serialize;
 use sqlx::SqlitePool;
 
@@ -175,7 +175,7 @@ where
             let mut restore_ok = true;
             let mut restored = Vec::with_capacity(llm_out.len());
             for (resp, &local_idx) in llm_out.iter().zip(indices.iter()) {
-                match Tokenizer::restore(resp, &tokenized[local_idx].map) {
+                match tokenized[local_idx].restore(resp) {
                     Ok(r) => restored.push(r),
                     Err(_) => {
                         restore_ok = false;

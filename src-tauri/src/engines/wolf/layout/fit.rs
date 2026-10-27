@@ -119,7 +119,7 @@ pub fn measure_budget<'a>(
 }
 
 /// A speaker label alone on its line (`魚淫さん：`, `Gyoin:`).
-fn is_label(line: &str) -> bool {
+pub(crate) fn is_label(line: &str) -> bool {
     let line = line.trim();
     !line.is_empty()
         && line.chars().count() <= LABEL_MAX_CHARS

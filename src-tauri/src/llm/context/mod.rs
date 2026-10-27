@@ -4,6 +4,7 @@
 //! missing adapter returns no context instead of guessing from another engine.
 
 mod mv_mz;
+mod wolf;
 
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
@@ -68,6 +69,9 @@ pub struct SegmentContextBundle {
     /// placeholder syntax and QA must not depend on whether neighbours are sent.
     pub segment_kind: Option<String>,
     pub context_json: Option<String>,
+    /// Persisted `segments.json_key`, read for Wolf RPG only: it tells a
+    /// message from a choice or a database field (plan WR-E6).
+    pub json_key: Option<String>,
 }
 
 impl SegmentContextBundle {
@@ -78,6 +82,7 @@ impl SegmentContextBundle {
             project_engine,
             self.segment_kind.as_deref().unwrap_or("unknown"),
             self.context_json.as_deref(),
+            self.json_key.as_deref(),
         )
     }
 }
@@ -105,6 +110,7 @@ pub async fn build_context_bundles(
 ) -> Result<Vec<SegmentContextBundle>, sqlx::Error> {
     match engine {
         "mv_mz" => mv_mz::build(db, segment_ids).await,
+        "wolf" => wolf::build(db, segment_ids).await,
         _ => Ok(vec![SegmentContextBundle::default(); segment_ids.len()]),
     }
 }

@@ -1,8 +1,20 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-27 — Claude (WR : code écrit sur `feat/wr-wolf-wrap`, worktree `../Hoshi2Star-wr`, non compilé).
-**Objectif utilisateur :** lot WR, retour à la ligne des messages Wolf à l'export. RW (PR #13) et DX (PR #15) fusionnés ; EX abandonné.
-**Statut :** WR-1 à WR-9 faits : gate final vert sur `4221f9e`, essai en jeu 2.23 OK ; PR ouverte.
+**Mis à jour :** 2026-10-27 — Claude (WR-E6 : code et tests écrits sur `feat/wr-e6-soft-breaks`, worktree `../Hoshi2Star-e6`, gate cloud vert, essai réel concluant, PR #18 fusionnée).
+**Objectif utilisateur :** lot WR-E6, le LLM n'a plus à replacer chaque `\n` d'un message Wolf. WR (PR #16), WR-E6 (PR #18), RW (PR #13) et DX (PR #15) fusionnés ; EX abandonné.
+**Statut :** WR-E6 livré : PR #18 fusionnée après #16 (2026-10-27). WR-1 à WR-9 faits : gate final vert sur `4221f9e`, essai en jeu 2.23 OK ; PR #16 fusionnée.
+
+## En cours (2026-10-27, Claude) — WR-E6 : retours à la ligne Wolf côté LLM
+
+- Plan : `tasks/todo.md`, « Plan — WR-E6 », **validé le 2026-10-27** (recommandations). Journal : `docs/journal/2026-10-27-wr-e6-retours-llm-wolf.md`.
+- Branche `feat/wr-e6-soft-breaks` (worktree `../Hoshi2Star-e6`) **empilée** sur `origin/feat/wr-wolf-wrap` @ `090e445` (décision de l'utilisateur) : la PR #16 n'est pas fusionnée ; la PR E6 visera `main` après elle.
+- Fait : `engines/wolf/line_breaks.rs` (retours souples, recoupe), `Engine::WolfMessage` et `Tokenized::restore` (`llm/tokenizer.rs`), clé Wolf dans le contexte (`llm/context/wolf.rs`), QA avec `json_key`, 17 tests, `CHANGELOG.md`. Relecture indépendante faite, deux défauts corrigés.
+- **Poussé** le 2026-10-27 (accord de l'utilisateur) : `origin/feat/wr-e6-soft-breaks` @ `f414e62`. Gate cloud demandé dans une session cloud « Gate cloud WR-E6 », qui ne fait que rapporter (aucune note automatique à la fin : résultat à relever dans son transcript).
+- **Gate cloud vert** (2026-10-27) sur `38033e9`, code identique à `f414e62` : fmt, typecheck, Vitest 153/153, clippy `--all-targets -D warnings` 0, `cargo test --locked --no-fail-fast` **803 OK / 0 échec / 15 ignorés** (+17 = les tests E6), lint 0 erreur (10 avertissements connus). Vrais jeux non couverts (tests `#[ignore]`).
+- **Essai réel E6-7 concluant** (2026-10-27, projet `APP`) : 27/27 messages retraduits par le LLM, 0 ligne de ponctuation seule (9 avant), 0 ligne vide (5 avant), nombre de lignes de la source respecté, aucun `needs_review`. 26 entrées de TM fautives supprimées avant l'essai (sauvegarde `backups/hoshi2star-avant-essai-e6-20261027-215036.db`). Détail : journal du jour.
+- **PR #18 ouverte** (2026-10-27, accord de l'utilisateur), empilée sur `feat/wr-wolf-wrap` (#16).
+- **Fusionné** le 2026-10-27 à la demande de l'utilisateur : #16 (`e47a1e5`), puis #18 repointée vers `main` et fusionnée.
+- **Prochaine action** : mettre le dossier principal à jour sur `main` (`git pull`) ; l'utilisateur retire les projets d'essai (APP, DX) de l'app. Suivis hors E6 : coupe après un trait d'union (« H- ⏎ scenes ») ; noms instables (glossaire). Suivis hors E6 : coupe après un trait d'union (« H- ⏎ scenes ») ; noms instables (glossaire).
 
 ## Terminé (2026-10-27, Claude) — RW (Wolf), fusionné par la PR #13
 

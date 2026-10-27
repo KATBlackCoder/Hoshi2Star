@@ -29,7 +29,7 @@ impl EngineTerminologyAdapter for MvMzTerminologyAdapter {
 
     fn text_for_morphology(&self, segment: &EngineSegmentContext<'_>) -> String {
         let tokenizer_engine =
-            TokenizerEngine::for_segment("mv_mz", segment.segment_kind, segment.context_json);
+            TokenizerEngine::for_segment("mv_mz", segment.segment_kind, segment.context_json, None);
         let tokenized = Tokenizer::tokenize(segment.source_text, tokenizer_engine);
         tokenized
             .map

@@ -53,6 +53,7 @@ pub(super) async fn build(
                 qa_neighbors: QaNeighborContext::default(),
                 segment_kind: Some(row.center_kind),
                 context_json: row.center_context_json,
+                json_key: None,
             }
         });
 

@@ -159,6 +159,7 @@ async fn evaluate_project(
             target_language: &row.target_language,
             segment_kind: &row.segment_kind,
             context_json: row.context_json.as_deref(),
+            json_key: Some(row.json_key.as_str()),
             neighbor_sources: &qa_neighbors.sources,
             neighbor_targets: &qa_neighbors.targets,
         };

@@ -1053,6 +1053,157 @@ WolfX (polices 3.658 illisibles) ; indentation pendante japonaise après `※` (
 
 **Effort estimé.** M à L, selon WR-1/WR-2 : 1 à 2 jours, gate compris, plus l'essai en jeu.
 
+## Plan — WR-E6 : ne plus imposer au LLM les retours à la ligne des messages Wolf (2026-10-27, Claude) — PLAN VALIDÉ le 2026-10-27 (E6-E1 à E6-E6 = recommandations) ; E6-1 à E6-5 écrits, non compilés
+
+**But.** Décision WR-E6 (plan WR, constat K6) : le LLM n'a plus à replacer chaque `\n` d'un message Wolf. Lot séparé
+de WR, côté pipeline LLM ; l'export n'est pas modifié. Branche `feat/wr-e6-soft-breaks`, worktree `../Hoshi2Star-e6`,
+partie de `origin/feat/wr-wolf-wrap` (`090e445`) : la PR #16 n'est **pas fusionnée** (vérifié le 2026-10-27) et ce lot
+réutilise son module `engines/wolf/layout/`.
+
+### Constats (lus le 2026-10-27 sur `090e445`, sans build)
+
+- **E6-K1. Transport.** Le prompt envoie des unités JSON, mais la réponse portable est en lignes `[N] texte`
+  (`llm/provider.rs::parse_numbered_response`, découpe par `lines()`). Un `\n` brut ne peut donc pas revenir du
+  modèle : un retour est soit un jeton, soit absent.
+- **E6-K2. Pourquoi le modèle les jette en fin de phrase.** `prompts/translate/default.toml` : « every ⟦ph_N⟧ token
+  MUST appear… If natural placement is impossible, keep the token at the end ». `Tokenizer::validate` rejette un
+  jeton manquant ou en double (`MissingPlaceholder`) ; `split.rs:178` relance puis coupe le lot. D'où « …the work ⏎. ».
+- **E6-K3. Un seul point de restauration.** Toutes les réponses LLM, relance sémantique comprise
+  (`semantic_retry` passe par `llm_translate_with_split`), sont restaurées dans `llm/split.rs:178`.
+  `Tokenized` n'est construit que dans `tokenizer.rs`.
+- **E6-K4. QA.** `qa::check_with_rules` tokenise la source et exige chaque original dans la cible : un `\n` source
+  absent de la cible donne `MissingPlaceholder`, **critique** (`is_critical`) ⇒ relance sémantique puis
+  `needs_review`. Il n'y a pas de contrôle du nombre de lignes ; `LineTooLong` (−10, non critique) mesure les
+  4 premières lignes contre 40 demi-chasses pour Wolf (`LineWidthConfig::wolf_default`). Appels : pipeline
+  (`check_with_context`), relance sémantique, `commands/qa.rs`, `commands/project.rs:388` (édition),
+  `core/report.rs`, `commands/pilot.rs` (MV/MZ).
+- **E6-K5. Message ou base de données ?** Les segments Wolf sont tous `segment_kind = "unknown"`, sans
+  `context_json`. Seule la clé les distingue (`is_fitted_key` : `MapData/…` ou `CommonEvents/…`, hors
+  `/choices/`). Pour Wolf, `build_context_bundles` rend un contexte vide (`SegmentContextBundle::default()`).
+- **E6-K6. Éditeur.** Le frontend affiche les cibles en `whitespace-pre-wrap` et n'attend aucun nombre de `\n`
+  (`PH_RE_WOLF` exclut le retour à la ligne). MV/MZ : un segment par ligne 401, `\n` seulement dans les champs
+  multi-lignes (descriptions, profils), structurels ⇒ **MV/MZ hors lot, inchangé**.
+- **E6-K7. Mesure sur le jeu 2.23** (projet DX de ta base, copie en lecture seule, Python ; 3 202 segments) :
+  - messages : **1 455 retours** hors préfixe `@N\n`, aucun message à codes de position ;
+  - retours « structurels » candidats : ligne vide 0 ; ligne 0 « nom : » 3 (`魚淫さん：`, `？？？：`) ;
+    ligne suivante commençant par `※` 3 ;
+  - **faux amis**, à laisser souples :
+    - ligne suivante indentée par `　` : 26. C'est la suite d'une parenthèse `（…` ;
+    - ligne suivante commençant par `「` : 23. Ce sont des citations dans la phrase
+      (`…おかあさ～ん` ⏎ `「新しくできた水族館」に…`) ;
+    - après `」` : 6, phrase qui continue ;
+  - base de données : 21 retours, en **`\r\n`** (20 sur 21), dans des descriptions « 2 lignes max ». Les messages
+    n'ont jamais de `\r`.
+  - ⇒ Avec la règle E6-E2, environ **6 retours sur 1 455 restent obligatoires**.
+- **E6-K8. Outils réutilisables** (PR #16) : `wolf::layout::text::{tokenize, split_face_prefix}`,
+  `fit::is_label`, et `mv_mz::layout::wrap::{pieces, wrap(…, Some(n))}`. Ce dernier donne la coupe la plus
+  équilibrée en **exactement n lignes** (codes jamais coupés, UAX #14, CJK compris).
+
+### Décisions à prendre (recommandation en premier)
+
+- **E6-E1. Traitement d'un retour souple.**
+  - (a) Recommandé : **envoyé comme une jonction**, puis recoupé après la réponse (E6-E4). Jonction vide entre deux
+    caractères pleine chasse (cas japonais courant), une espace sinon. Le modèle reçoit une phrase continue ; il n'a
+    plus de jeton à caser.
+  - (b) Jeton facultatif (`validate` l'ignore). Rejeté : le prompt pousse toujours à garder les jetons, en fin de
+    phrase au besoin. Les parasites resteraient dans la cible enregistrée ; seul le rejet disparaîtrait.
+  - (c) Tout joindre sans recouper. Rejeté : avec la mise en page d'export désactivée (défaut Wolf), chaque message
+    sortirait sur une seule ligne, et `LineTooLong` sur presque tous.
+- **E6-E2. Retours structurels**, décidés sur la **source seule** (avant l'appel, seule la source existe), envoyés
+  comme aujourd'hui en jetons obligatoires :
+  - le préfixe `@N\n` (jeton existant, inchangé) ;
+  - toute ligne vide (les deux retours qui l'entourent) ;
+  - le retour après une ligne 0 « nom : » (`is_label` de WR) ;
+  - le retour avant une ligne qui commence par `※`, `・` ou un marqueur de liste (`●○■□◆◇★☆` et chiffres cerclés
+    `①…⑳`) ;
+  - message avec codes de position ou d'alignement (`\ax`, `\ay`, `\mx`, `\my`, `\space`, `\-`, `<L>`, `<C>`, `<R>`) :
+    **tous** ses retours restent obligatoires. C'est le comportement actuel.
+  - Pas structurels : l'indentation `　`, une ligne qui commence par `「`, la fin `」` (E6-K7).
+- **E6-E3. Périmètre.**
+  - (a) Recommandé : **messages 101** des cartes et de `CommonEvent.dat` (`is_fitted_key`) seulement. Les choix
+    n'ont pas de retour. La base de données garde le comportement actuel : retours en `\r\n`, 21 cas sur le jeu, pas
+    de mise en page d'export.
+  - (b) Toute la base Wolf aussi. À éviter dans ce lot : il faudrait gérer `\r\n` et les champs de liste.
+  - Sélection par la **clé**, transmise jusqu'au choix du jeu de jetons et au contrôle qualité. Les projets
+    existants sont couverts sans migration. Alternative rejetée : un nouveau `segment_kind`, qui demanderait une
+    migration, un remplissage des projets existants, et il changerait des comportements liés à `"dialogue"`.
+- **E6-E4. Recoupe après la réponse.**
+  - (a) Recommandé : chaque bloc (texte entre deux retours structurels) est recoupé en **autant de lignes que dans
+    la source**, de la façon la plus équilibrée (`wrap(…, Some(n))`, largeurs estimées : pleine chasse 1 em,
+    demi-chasse ½ em). Si c'est impossible (texte trop court), on essaie n − 1 lignes, et ainsi de suite.
+    - On ne dépasse jamais le nombre de lignes d'origine : la fenêtre le tenait.
+    - Aucune donnée du jeu n'est nécessaire.
+    - La largeur reste l'affaire de la mise en page d'export (WR), qui rejoint et recoupe de toute façon.
+  - (b) Recouper sur la largeur mesurée par WR quand le projet a la mise en page Wolf active. Plus tard, si (a)
+    ne suffit pas sans mise en page.
+  - Recoupe seulement sur les réponses du LLM. TM, édition manuelle et cibles déjà en base ne changent pas.
+- **E6-E5. Cibles déjà traduites.** (a) Recommandé : pas de reprise automatique. Tu retraduis si tu veux ;
+  l'export WR nettoie de toute façon. (b) Commande de recoupe en masse : hors lot.
+- **E6-E6. Prompt.** Inchangé : avec (a), il n'y a plus de jeton de retour souple à placer.
+
+### Étapes (si E1 à E5 = a)
+
+- [x] **E6-0.** Plan validé le 2026-10-27 (recommandations). Base : **empilé sur `feat/wr-wolf-wrap`** sans attendre la
+  fusion de #16 (décision de l'utilisateur) ; la PR visera `main` une fois #16 fusionnée.
+- [x] **E6-1. `engines/wolf/line_breaks.rs`** (nouveau ; écrit le 2026-10-27, **non compilé**).
+  - `LinePlan` : nombre de lignes source de chaque bloc.
+  - `soft_breaks(source) -> (HashSet<usize>, LinePlan)` : décalages des `\n` souples dans le texte (règles E6-E2) ;
+    rien de souple si le message est positionné.
+  - `joiner(prev, next) -> &str` : `""` entre pleine chasse, `" "` sinon.
+  - `rebreak(target, &LinePlan) -> String` : préfixe `@N\n` gardé, blocs recoupés selon E6-E4. Si le nombre de blocs
+    ne correspond pas (réponse JSON d'Ollama contenant un `\n` brut), la cible est laissée telle quelle.
+- [x] **E6-2. Tokenizer** (`llm/tokenizer.rs` ; écrit, **non compilé**).
+  - Nouveau `Engine::WolfMessage`, même motif `RE_WOLF`. Dans la fermeture de `replace_all`, un `\n` dont le
+    décalage est souple renvoie la jonction au lieu d'un jeton. Le préfixe `@N\n` reste un jeton, car il est trouvé
+    avant le motif `\n`. `Engine::Wolf` ne change pas (base de données, `filter::needs_translation`).
+  - `Tokenized.line_plan: Option<LinePlan>` et `Tokenized::restore(&self, response)` : `Tokenizer::restore`, puis
+    `rebreak`.
+  - `Engine::for_segment(engine, kind, context_json, json_key: Option<&str>)` : `WolfMessage` si le projet est Wolf et
+    que la clé est un message. Les 8 appels sont mis à jour (`None` pour MV/MZ).
+- [x] **E6-3. Pipeline** (écrit, **non compilé** ; nouveau `llm/context/wolf.rs`).
+  - `build_context_bundles` : branche `"wolf"` qui lit `json_key` par segment (`SegmentContextBundle.json_key`).
+  - `bundle.tokenizer` transmet la clé ; `split.rs` restaure par `tokenized[i].restore(resp)`.
+- [x] **E6-4. Contrôle qualité** (écrit, **non compilé**).
+  - `QaSemanticContext.json_key` et paramètre `json_key` de `check_segment`, pour que la QA choisisse le même jeu
+    de jetons que le pipeline. Sinon tout message multi-lignes serait `needs_review` (E6-K4).
+  - Appels : pipeline, relance sémantique, `commands/qa.rs`, `commands/project.rs:388` (avec `s.json_key` dans la
+    requête), `core/report.rs`, et les tests qui construisent la structure (9 littéraux).
+- [x] **E6-5. Tests** (écrits le 2026-10-27, **non exécutés** ; vérifiés au gate). Fixtures tirées des vrais cas K6 :
+  - `line_breaks` : règles structurelles (ligne vide, nom, `※`, positionné) ; faux amis (`　`, `「`) laissés souples ;
+    jonction ; recoupe en n lignes, repli sur moins, préfixe `@N`, cible CJK, nombre de blocs différent ;
+  - tokenizer : `WolfMessage` sans jeton pour un retour souple, avec jeton pour un retour structurel ; `Wolf`
+    inchangé (`test_wolf_multiline` doit passer tel quel) ;
+  - QA : un retour souple absent n'est pas `MissingPlaceholder` pour une clé de message ; il l'est toujours pour
+    une clé de base de données ;
+  - pipeline (fournisseur simulé) : message Wolf de 3 lignes, réponse sans retour ⇒ acceptée du premier coup
+    (aucune relance), cible enregistrée sur 3 lignes, sans ligne « . » isolée.
+  - Recherche par valeur avant d'écrire (leçons du 2026-10-26) : tests qui utilisent `"\n"` avec `Engine::Wolf`,
+    `MissingPlaceholder`, le test de relance de `pipeline.rs` (~ligne 1481), les littéraux `QaSemanticContext`.
+- [x] **Relecture indépendante** (2026-10-27, agent, lecture seule, sans compilation) : aucune erreur de compilation
+  ni d'avertissement clippy probable ; toutes les attentes de test retracées à la main. Corrigé :
+  - nom, note et jonction lus sur le **texte visible** (codes retirés) : `\c[2]魚淫さん：\c[0]` est un nom,
+    `\c[2]※…` une note, et `…う\c[0]` ⏎ `\c[2]え…` se joint sans espace ;
+  - un `\f[n]` au milieu d'un bloc ne déséquilibre plus la coupe (taille neutralisée pour la mesure).
+  Gardés, notés :
+  - une décoration de bord protégée qui contient un `\n` (`-----\nあ\nい`) ajoute un bloc : la cible est laissée telle
+    quelle, sans recoupe ;
+  - `balance` retire les espaces en tête et en fin d'un bloc recoupé.
+- [x] **E6-6. Gate cloud** après ton accord pour pousser : fmt, clippy `--all-targets -D warnings`,
+  `cargo test --locked`, typecheck, Vitest, lint. Aucun build ni test local.
+  **Vert le 2026-10-27** sur `38033e9` (code identique à `f414e62`) : fmt OK, typecheck OK, Vitest 153/153,
+  clippy 0 avertissement, `cargo test --locked --no-fail-fast` **803 OK / 0 échec / 15 ignorés** (786 sur la branche
+  parente, +17 nouveaux), lint 0 erreur (10 avertissements connus). Les 17 tests E6 passent. Vrais jeux non couverts
+  (tests `#[ignore]`) : découpage vérifié en synthétique seulement.
+- [x] **E6-7. Essai réel (facultatif, ton accord).** Retraduire les 27 messages du projet `APP`, puis comparer
+  les cibles avant et après : aucun mot perdu, aucune ligne de ponctuation seule.
+  **Fait le 2026-10-27** : 27/27 messages retraduits par le LLM (26 entrées de TM fautives supprimées d'abord, sauvegarde `backups/hoshi2star-avant-essai-e6-20261027-215036.db`). Avant : 9 lignes de ponctuation seule, 5 lignes finales vides, mots perdus (#94, #95, #96). Après : **0 ligne de ponctuation seule, 0 ligne vide, 27/27 au nombre de lignes de la source**, lignes équilibrées (écart ≤ 4 caractères en général), `※` gardé, aucun mot perdu à la lecture, 27/27 `translated` (aucun `needs_review`). Scores QA 70 à 100 : −10 par ligne au-delà de 40 colonnes (`LineTooLong`, avertissement) ; la largeur reste à la mise en page de l'export (WR). Hors E6 : coupe après un trait d'union (« H- ⏎ scenes », #98) ; noms instables d'un message à l'autre (Gyoin/Uo-in, Inmame/Andō : glossaire).
+
+**Critère de sortie.** Un message Wolf traduit par le LLM n'est plus rejeté pour un retour à la ligne souple. Sa
+cible a des retours bien placés, au plus autant de lignes que la source, et aucun texte perdu. MV/MZ et la base Wolf
+sont inchangés. Gate cloud vert.
+
+**Effort estimé.** M : environ 1 jour, gate compris.
+
 ## Études REA d'applications tierces (2026-10-25)
 
 Dossier local `RAE-PLAN/` (ignoré par Git) : règles, index et modèle dans `RAE-PLAN/README.md`.

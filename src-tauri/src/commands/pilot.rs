@@ -497,6 +497,7 @@ fn build_variant(
         "mv_mz",
         &segment.segment_kind,
         None,
+        None,
     );
     let mut quality_flags = Vec::new();
     if result.translated_text.trim().is_empty() {

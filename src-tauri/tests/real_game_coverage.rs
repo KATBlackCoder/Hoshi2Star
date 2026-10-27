@@ -376,7 +376,7 @@ async fn real_game_scan_enable_translate_export() {
     .unwrap();
     let mut transaction = db.begin().await.unwrap();
     for (id, source, kind, context) in &rows {
-        let syntax = TokEngine::for_segment("mv_mz", kind, context.as_deref());
+        let syntax = TokEngine::for_segment("mv_mz", kind, context.as_deref(), None);
         let mut placeholders = Tokenizer::tokenize(source, syntax)
             .map
             .into_values()
