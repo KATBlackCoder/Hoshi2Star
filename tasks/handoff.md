@@ -62,8 +62,9 @@
 - **WR-9 OK en jeu (2026-10-27)** : tous les messages dans le cadre, portraits conservés, aucune ligne isolée (captures `RAE-PLAN/essais/wolf-v223/WR9-captures/`). Corrigés pendant l'essai : listes de la boîte illisibles en thème sombre ; remarques Wolf en anglais.
 - **Gate final vert sur `4221f9e`** (2026-10-27) : fmt, typecheck, Vitest 153, clippy 0, `cargo test` 786 OK / 0 échec / 15 ignorés, lint 0 erreur ; CHANGELOG ajouté.
 - PR #16 (`feat/wr-wolf-wrap` → `main`) ouverte ; relecture et fusion par l'utilisateur.
-- **Suivi écrit (2026-10-27)** : le 18 par défaut de la fenêtre de taille de police à l'export (Wolf) ; branche `fix/wolf-export-font-default`, worktree `../Hoshi2Star-font`, empilée sur `feat/wr-wolf-wrap` ; non compilé.
-- **Prochaine action** : avec l'accord de l'utilisateur, pousser `fix/wolf-export-font-default` et lancer le gate cloud ; ouvrir sa PR vers `main` une fois la PR #16 fusionnée, sinon vers `feat/wr-wolf-wrap`.
+- **Suivi écrit (2026-10-27)** : le 18 par défaut de la fenêtre de taille de police à l'export (Wolf) ; branche `fix/wolf-export-font-default`, worktree `../Hoshi2Star-font`, empilée sur `feat/wr-wolf-wrap` ; gate vert.
+- `fix/wolf-export-font-default` poussé ; **gate cloud vert sur `61dc603`** (Vitest 156, `cargo test` 787 OK / 0 échec, clippy 0).
+- **Prochaine action** : PR de `fix/wolf-export-font-default`, avec accord : vers `main` après la fusion de la PR #16, ou vers `feat/wr-wolf-wrap` en attendant.
 
 ## Abandonné (2026-10-27, Claude) — EX : export d'essai
 

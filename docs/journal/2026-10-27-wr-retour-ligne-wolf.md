@@ -155,7 +155,9 @@
   `../Hoshi2Star-font`.
 - `FontSizeDialog` partait toujours de 18. Pour Wolf, il propose maintenant la taille du jeu des réglages de
   mise en page (champ vide si elle est inconnue). Détail dans `tasks/todo.md`, « Suivi WR ».
-- Formatage vérifié (`rustfmt --check`, `prettier`). Non compilé, aucun test exécuté.
+- Formatage vérifié (`rustfmt --check`, `prettier`).
+- Poussé avec accord ; gate cloud vert sur `61dc603` : Vitest 156, clippy 0, `cargo test` 787 OK / 0 échec / 15 ignorés,
+  lint 0 erreur (les 10 avertissements de `main`).
 
 ## Prochaine session
 

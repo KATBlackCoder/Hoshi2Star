@@ -1050,7 +1050,11 @@ les cibles en base ne changent pas, comme pour le text fitting MZ.
     grisé jusqu'à une saisie, avec une ligne d'aide qui rappelle que « Ignorer » garde la taille du jeu ;
   - MV/MZ inchangé (18) ;
   - tests : Vitest `FontSizeDialog.test.tsx` (3 cas) et e2e `wolf_font_scan_reports_the_game_font_size`.
-  **Non compilé** : gate cloud à faire.
+  - **Gate cloud vert sur `61dc603`** (poussé avec l'accord de l'utilisateur) :
+    - fmt, typecheck OK ; Vitest **156/156**, dont les 3 cas de `FontSizeDialog` ;
+    - clippy `--all-targets -D warnings` : 0 avertissement ;
+    - `cargo test` **787 OK / 0 échec / 15 ignorés**, dont `wolf_font_scan_reports_the_game_font_size` ;
+    - lint : 0 erreur, et les 10 mêmes avertissements que `main`.
 
 **Critère de sortie.** Sur 2.23, aucun message 101 traduit ne sort du cadre en jeu, sauf ceux que le rapport
 signale. Les codes, `@N` et l'intégrité RW-6 sont intacts. Le gate cloud est vert.
