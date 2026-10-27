@@ -139,6 +139,15 @@
 - Relecture hors jeu de `Data.wolf` : 27 messages recomposés, 3 lignes au plus, ligne la plus large 21,77 em.
 - En jeu : **OK**. Captures dans `RAE-PLAN/essais/wolf-v223/WR9-captures/`.
 
+## Gate final et PR (2026-10-27)
+
+- Gate final sur `4221f9e` (session cloud) :
+  - fmt, typecheck et clippy (0 avertissement) OK ;
+  - Vitest 153/153 ;
+  - `cargo test` 786 OK / 0 échec / 15 ignorés ;
+  - lint : 0 erreur, et 10 avertissements, tous hérités de `main`.
+- CHANGELOG mis à jour (Added). PR ouverte avec l'accord de l'utilisateur.
+
 ## Prochaine session
 
-- Pousser les corrections de l'essai, repasser le gate, puis PR (accord requis).
+- Relecture et fusion de la PR par l'utilisateur. Suivi : défaut 18 de la fenêtre de taille de police à l'export (Wolf).

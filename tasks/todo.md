@@ -673,7 +673,7 @@ Il faut :
 
 **Effort estimé.** M (environ une journée), gate cloud compris.
 
-## Plan — WR : retour à la ligne des textes Wolf à l'export (2026-10-27, Claude) — PLAN VALIDÉ le 2026-10-27 (WR-E0 à WR-E6 = recommandations) ; repris le 2026-10-27, WR-1 à WR-7 faits (code non compilé), gate cloud à faire
+## Plan — WR : retour à la ligne des textes Wolf à l'export (2026-10-27, Claude) — PLAN VALIDÉ le 2026-10-27 (WR-E0 à WR-E6 = recommandations) ; repris le 2026-10-27 ; WR-1 à WR-9 faits, gate final vert sur `4221f9e`, PR ouverte
 
 **But.** Wolf ne coupe pas les lignes. Constaté en jeu le 2026-10-27 (Wolf 2.23, essai RW-9) : une traduction
 plus longue que l'original sort du cadre (« Thank you for downloading th… »), et des choix débordent.
@@ -1012,6 +1012,11 @@ les cibles en base ne changent pas, comme pour le text fitting MZ.
   - **Relance sur `f02e174`** (session cloud, vrai dictionnaire lindera) : fmt OK ;
     `cargo test --locked --no-fail-fast` **786 OK / 0 échec / 15 ignorés** ; test des migrations OK. Le reste du gate
     est inchangé depuis `95e7a76` (seul un test a changé) : **gate vert**.
+  - **Gate final sur `4221f9e`** (après les corrections de l'essai WR-9, session cloud, vrai dictionnaire lindera) :
+    - fmt OK ; typecheck OK ; Vitest **153/153** ;
+    - clippy `--all-targets -D warnings` : 0 avertissement ;
+    - `cargo test` **786 OK / 0 échec / 15 ignorés** ;
+    - lint : 0 erreur, 10 avertissements, tous sur des lignes venues de `main` (`git blame`).
 - [x] **WR-9. Essai en jeu** (ton accord) : le projet `APP` 2.23 réexporté. Attendu : le message de remerciement
   et les répliques de Gyoin dans le cadre, sans ligne « . » isolée.
   - 2026-10-27 :

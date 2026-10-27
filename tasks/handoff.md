@@ -2,7 +2,7 @@
 
 **Mis à jour :** 2026-10-27 — Claude (WR : code écrit sur `feat/wr-wolf-wrap`, worktree `../Hoshi2Star-wr`, non compilé).
 **Objectif utilisateur :** lot WR, retour à la ligne des messages Wolf à l'export. RW (PR #13) et DX (PR #15) fusionnés ; EX abandonné.
-**Statut :** WR-1 à WR-9 faits : gate cloud vert sur `f02e174`, essai en jeu 2.23 OK. Les corrections d'interface faites pendant l'essai ne sont pas poussées ; il reste à pousser et à repasser le gate, puis à ouvrir la PR (accord requis).
+**Statut :** WR-1 à WR-9 faits : gate final vert sur `4221f9e`, essai en jeu 2.23 OK ; PR ouverte.
 
 ## Terminé (2026-10-27, Claude) — RW (Wolf), fusionné par la PR #13
 
@@ -60,7 +60,8 @@
 - **Gate vert** sur `f02e174` (poussé avec accord) : `cargo test` 786 OK / 0 échec / 15 ignorés, fmt OK ; le reste est inchangé depuis `95e7a76`.
 - WR-9 préparé (2026-10-27) : `pnpm i` dans le worktree ; base sauvegardée (`~/.local/share/com.blackat.hoshi2star/backups/hoshi2star-avant-essai-wr9-20261027-181808.db`, intégrité OK, 3 234 segments). Le lancement depuis le worktree applique la migration 0013 à la vraie base ; l'app de `main` l'accepte ensuite comme base plus récente. Mesure sur `APP` (une seule carte) : 22 em, mais 3 lignes ⇒ fixer 4 lignes à la main.
 - **WR-9 OK en jeu (2026-10-27)** : tous les messages dans le cadre, portraits conservés, aucune ligne isolée (captures `RAE-PLAN/essais/wolf-v223/WR9-captures/`). Corrigés pendant l'essai : listes de la boîte illisibles en thème sombre ; remarques Wolf en anglais.
-- **Prochaine action** (accord requis) : pousser les corrections de l'essai, relancer le gate (typecheck, Vitest, clippy, `cargo test`), puis ouvrir la PR `feat/wr-wolf-wrap` → `main`.
+- **Gate final vert sur `4221f9e`** (2026-10-27) : fmt, typecheck, Vitest 153, clippy 0, `cargo test` 786 OK / 0 échec / 15 ignorés, lint 0 erreur ; CHANGELOG ajouté.
+- **Prochaine action** : PR `feat/wr-wolf-wrap` → `main` ouverte avec l'accord de l'utilisateur ; reste sa relecture et sa fusion. Suivi hors lot : défaut 18 de la fenêtre de taille de police à l'export (`tasks/todo.md`, « Suivi WR »).
 
 ## Abandonné (2026-10-27, Claude) — EX : export d'essai
 
