@@ -1,10 +1,10 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-27 — Claude (lot RW : RW-1 à RW-8 vérifiés ; reste RW-9 ; worktree `../Hoshi2Star-rw`, branche `feat/rw-wolf`).
-**Objectif utilisateur :** lot RW, extraction et réinjection Wolf v2/v3 dans l'app (livraison par archive reconstruite).
-**Statut :** R2 fusionné (PR #12, `2331c75`). RW : plan validé le 2026-10-26 ; RW-1 à RW-8 vérifiés (gate cloud vert sur `1661ab5`) ; reste RW-9 (essais réels) puis PR.
+**Mis à jour :** 2026-10-27 — Claude (RW fusionné, PR #13 ; plans EX et WR et notes Bakin rangés par la PR de suivi `docs/plans-ex-wr-bakin`).
+**Objectif utilisateur :** prochain lot EX (export d'essai des seuls segments traduits), plan validé, prêt pour l'étape 0 ; WR (retour à la ligne Wolf) reporté.
+**Statut :** RW **fusionné** le 2026-10-27 (PR #13, `3288534`) : gate cloud vert sur `1661ab5` (760 Rust OK), tests réels `--ignored` OK, essai en jeu de l'export de l'app OK sur Wolf 2.23 ; essai 3.658 non fait. EX : voir sa section ; WR : reporté.
 
-## En cours (2026-10-26, Claude) — RW (Wolf)
+## Terminé (2026-10-27, Claude) — RW (Wolf), fusionné par la PR #13
 
 - Plan validé : `tasks/todo.md`, « Plan détaillé — RW ». Branche `feat/rw-wolf` dans le worktree `../Hoshi2Star-rw` (depuis `origin/main` @ `2331c75`). Commits locaux ; push seulement avec accord (gate cloud).
 - Base : étude REA RuneTranslate + prototypes Python validés **en jeu** sur Wolf 2.23 et 3.658 (preuves locales hors Git : `RAE-PLAN/wolf/`, `RAE-PLAN/essais/RESULTATS.md`). Constat clé : **l'archive `.wolf` passe avant les fichiers libres** (v2 et v3) ; l'archive reconstruite est acceptée par le jeu.
