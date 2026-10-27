@@ -475,6 +475,88 @@ impl MapV3 {
     }
 }
 
+/// Test-only builder for synthetic maps, reachable from any test in the crate
+/// (extractor / injector), like `CommonEventsV3::synthetic_messages`.
+#[cfg(test)]
+impl MapV3 {
+    /// One event with one page holding a `CID_MESSAGE` per `messages` entry,
+    /// then one `CID_CHOICES` with `choices` (omitted when empty). 1x1 map,
+    /// 3 layers; `version` selects the container (`< 0x65` = stored in clear)
+    /// and the v3.5 trailer (`>= 0x67`).
+    pub(crate) fn synthetic_messages(
+        version: u32,
+        is_utf8: bool,
+        messages: &[&str],
+        choices: &[&str],
+    ) -> Self {
+        use super::command::{CID_CHOICES, CID_MESSAGE};
+
+        let v35 = version >= VERSION_V35;
+        let command = |cid: u32, strings: Vec<String>| Command {
+            cid,
+            args: Vec::new(),
+            indent: 0,
+            string_args: strings,
+            move_data: None,
+            v35_unknown: if v35 { vec![0xAB] } else { Vec::new() },
+        };
+        let mut commands: Vec<Command> = messages
+            .iter()
+            .map(|m| command(CID_MESSAGE, vec![(*m).to_owned()]))
+            .collect();
+        if !choices.is_empty() {
+            commands.push(command(
+                CID_CHOICES,
+                choices.iter().map(|c| (*c).to_owned()).collect(),
+            ));
+        }
+
+        let page = PageV3 {
+            unknown1: 0,
+            graphic_name: String::new(),
+            graphic_direction: 0,
+            graphic_frame: 0,
+            graphic_opacity: 0,
+            graphic_render_mode: 0,
+            conditions: vec![0u8; CONDITIONS_LEN],
+            movement: vec![0u8; MOVEMENT_LEN],
+            flags: 0,
+            route_flags: 0,
+            route: Vec::new(),
+            commands,
+            features: 0,
+            shadow_graphic_num: 0,
+            collision_width: 0,
+            collision_height: 0,
+            page_transfer: None,
+        };
+
+        let mut magic = [0u8; 20];
+        magic[10..15].copy_from_slice(b"WOLFM");
+        magic[16] = if is_utf8 { 0x55 } else { 0x00 };
+        let layer_cnt = 3;
+        MapV3 {
+            magic,
+            version,
+            unknown2: 0,
+            unknown3: "map".to_owned(),
+            tileset_id: 1,
+            width: 1,
+            height: 1,
+            unknown4: 0,
+            layer_cnt,
+            tiles: Some(vec![0u8; (layer_cnt * 4) as usize]),
+            events: vec![EventV3 {
+                id: 0,
+                name: "EV001".to_owned(),
+                x: 0,
+                y: 0,
+                pages: vec![page],
+            }],
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

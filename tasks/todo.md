@@ -37,7 +37,7 @@ Les cases sportsfan30 (A–D) ci-dessous restent la liste détaillée de R4, R8,
 - [ ] **R9 — Navigation recherche** (S) : lot C sportsfan30.
 - [ ] **R10 — Couverture MV/MZ** (à évaluer) : commandes 320/324/325, text fitting MV (lot D sportsfan30), `plugins.js` sur jeu réel.
 - [x] **RW0 — Retirer `wolfrpg-map-parser`** — fait, gate cloud vert, fusionné le 2026-10-25 (PR #11, `252bcff`).
-- [ ] **RW — Wolf** : après la session 2 bis et l'étude REA ; nouvelle lecture des cartes et événements communs v2 ; points non vérifiés sur jeu réel.
+- [~] **RW — Wolf** : plan détaillé validé le 2026-10-26 (« Plan détaillé — RW », plus bas) ; branche `feat/rw-wolf` (worktree `../Hoshi2Star-rw`).
 - [ ] Plus tard : S-C1, S-C2, S-C3, S-E3, S-E4, S-X6, S-X8 ; mineurs S-L6–L8, S-U5, S-U6, S-E10, S-E12. Non fait : S-E9 (VX Ace désactivé), S-D3.
 
 ### Plan détaillé — R1 : panne du fournisseur, arrêt propre et une seule notification (2026-10-25, Claude) — IMPLÉMENTÉ sur `fix/r1-provider-outage` (étapes 1–10, essai réel compris) ; PR #10 ouverte ; gate cloud du 2026-10-25 sur `98236f1` (R1 + `main` avec RW0) : fmt OK, typecheck OK, Vitest 133 OK (35 fichiers), clippy `--locked -D warnings` OK, `cargo test --locked` 695 OK / 0 échec / 12 ignorés, lint 0 erreur (10 avertissements, les mêmes que sur `main`) ; tests R1 ciblés et tests RW0 tous verts
@@ -2134,3 +2134,157 @@ Quand on ajoutera FR : créer `translate/fr.toml` + bras `"fr"` dans le `match`.
       message UI quand `PossibleWolfX` est détecté (ROADMAP F5)
 - [ ] Recrutement beta testeurs (Discord fan-trad / F95zone) — ROADMAP F3
 - [ ] Diff-aware merge (`core/diff.rs`) — ROADMAP F4
+
+### Plan détaillé — RW : extraction et réinjection Wolf v2/v3 (2026-10-26, Claude) — PLAN VALIDÉ
+
+**Date :** 2026-10-26 — Claude. **Statut :** PLAN VALIDÉ le 2026-10-26 (D1 = a, D2 = a, D3, D4 oui, D5 = a, D6 oui). Preuves locales (hors Git) : `RAE-PLAN/wolf/`, `RAE-PLAN/essais/RESULTATS.md`.
+
+#### Base de preuves
+
+- Prototypes Python validés hors jeu **et en jeu** (`RAE-PLAN/wolf/_outils/`, résultats dans `RAE-PLAN/essais/RESULTATS.md`) :
+  - **Wolf 2.23** : archive DXA v6, aller-retour identique octet par octet ; 19/19 cartes et `CommonEvent.dat` v2 réécrits à l'identique ; archive reconstruite **acceptée en jeu** (W3) ;
+  - **Wolf 3.658** : archive DXA v8 (chiffrement 314) ; 71/71 fichiers v3 réécrits à l'identique ; archive reconstruite, table non compressée, **acceptée en jeu** (V3, en français et en anglais).
+- **Ordre de chargement vérifié en jeu (v2 et v3) : l'archive passe avant les fichiers libres** (W1, V1). L'export actuel de Hoshi2Star (fichiers traduits libres dans un zip) est donc **sans effet** sur un jeu livré en archive.
+- Défauts de notre Rust actuel, tous vérifiés par lecture :
+  1. signature v6 chiffrée refusée (`decrypt/legacy_xor.rs:195-204`, `:518-520`) ;
+  2. LZ refusé en v6 (`:573-576`) ;
+  3. chaîne-clé « v3.14 » absente (`:967-968`), le jeu étant pris pour du WolfX ;
+  4. cartes v2 et v3 non compressées refusées (`extractor.rs:508-513`) ;
+  5. version détectée « v2 » à partir de la page de codes 932 (`detector.rs:282-285`) ;
+  6. échecs d'archive ignorés en silence (`extractor.rs:215-217`) ;
+  7. lecture de la source dans `Data/` avant l'archive (`extractor.rs:337-365`, `738-750`), alors que le jeu lit l'archive en premier ;
+  8. aucun contrôle après écriture Wolf ;
+  9. `unknown1` des `.dat` toujours écrit à 0 (`injector.rs:285-295`).
+
+#### Comportement visé (utilisateur)
+
+- **Ouverture :** un jeu Wolf v2 ou v3 livré en archive, ou en `Data/` libre, s'ouvre et ses textes sont extraits. Une archive illisible (nouveau chiffrement 3.31+, WolfX, Pro, clé inconnue) donne **un message clair**, jamais un projet vide en silence.
+- **Export :** le zip contient **l'archive reconstruite** sous le même nom (`Data.wolf`, ou `Data/*.wolf` selon le jeu) avec les fichiers traduits ; on l'extrait par-dessus le jeu, et le jeu s'affiche traduit. Si le jeu est en fichiers libres, le zip contient les fichiers libres traduits, comme aujourd'hui.
+- **Contrôles :** chaque fichier produit est relu ; toute différence hors des textes prévus refuse l'export, avec la liste des écarts (même règle que la porte d'intégrité MV/MZ).
+
+#### Décisions à valider
+
+- **D1. Format de livraison.**
+  - (a) **recommandé** : zip avec l'archive reconstruite. Simple et dans la continuité de l'export actuel ; le zip peut peser de 200 Mo à 2 Go (archive déjà compressée, stockée sans recompression) ;
+  - (b) dossier « copie complète du jeu » traduit, à côté du jeu.
+- **D2. Nouveau chiffrement 3.31+, WolfX et Pro.**
+  - (a) **recommandé** : refus à l'ouverture, avec un message qui explique le déchiffrement préalable par UberWolf ;
+  - (b) lecture native (lourd ; licence DxLib à vérifier).
+- **D3. Accents.**
+  - v2 (Shift-JIS) : **remplacer les lettres accentuées par leur lettre de base** à l'export (é → e), avec le compte des lignes touchées dans le rapport. **Recommandé.** Aujourd'hui l'export échoue au premier accent.
+  - v3 (UTF-8) : écrire les accents tels quels. Le rapport avertit que les polices du jeu peuvent ne pas les avoir (vu sur le jeu 3.658). Une option « replier les accents » par projet viendra plus tard.
+- **D4. Archive reconstruite :** fichiers modifiés stockés **non compressés** ; v6 : alignement d'origine conservé ; v8 : fichiers modifiés ajoutés en fin de données, table écrite non compressée (drapeau DxLib « pas de compression d'en-tête »). C'est exactement ce qui a été validé en jeu. **Recommandé : oui.**
+- **D5. Tests sur vrais jeux :** les jeux ne vont jamais dans Git.
+  - (a) **recommandé** : tests sur fichiers synthétiques dans le gate cloud ;
+  - plus des tests `#[ignore]` pointés par une variable d'environnement (`H2S_WOLF_GAMES=…`), que tu lances toi-même en local avec peu de cœurs (`cargo test -j 2 -- --ignored wolf_real`), quand tu le décides.
+- **D6. Où travailler :** **worktree séparé** `../Hoshi2Star-rw`, branche `feat/rw-wolf` depuis `main`. Le dépôt principal et les worktrees Codex ne sont pas touchés. Commits locaux ; push seulement avec ton accord, pour le gate cloud. **Recommandé : oui.**
+
+#### Étapes
+
+Chaque étape : code, tests unitaires sur fichiers synthétiques, journal. Pas de build local ; gate en cloud après push autorisé.
+
+**RW-1 — Lecture des archives** (`engines/wolf/decrypt/legacy_xor.rs`), effort M. — **[x] code et tests (`5d90131`) ; gate cloud vert sur `cc7efc7` (724 Rust OK). Vraies archives : à vérifier en RW-9.** Fait en plus : noms et chemins réels v6 (table de noms DxLib + arbre des dossiers, comme v8).
+- v6 : chercher la clé sur l'en-tête chiffré dès l'octet 0, puis contrôler `DX` + version **après** déchiffrement ; garder la voie actuelle pour les en-têtes en clair.
+- v6 : décompression LZ des fichiers compressés (réutiliser `lz_decode` de v8).
+- v8 : lire la version de chiffrement (16 bits hauts de `Flags`) ; choisir la chaîne-clé publique selon cette version (« v2.225 », « v3.00 », « v3.14 ») plutôt qu'au hasard ; version ≥ 331 et hors Pro ⇒ nouvelle erreur `UnsupportedWolfCrypt { crypt_version }` ; 0x64/0xC8 et ≥ 1000 ⇒ WolfX/Pro (erreur existante).
+- Constantes de format (chaînes-clés) avec attribution (UberWolf, MIT).
+- Tests : archives synthétiques v6 (signature chiffrée, LZ) et v8 (« v3.14 ») fabriquées dans les tests à partir de l'écrivain RW-3 ou d'octets construits à la main.
+
+**RW-2 — Détection de version** (`engines/detector.rs`), effort S. — **[x] gate cloud vert sur `151e9f2` (727 Rust OK).** Ordre retenu : magic de la base libre, magic de la base dans l'archive, version de chiffrement v8 (repli), défaut v2 : le contenu fait foi, la version de chiffrement ne dit que l'éditeur qui a empaqueté.
+- Ne plus déduire la version de la page de codes de l'archive.
+- Utiliser, dans l'ordre : la version de chiffrement v8, l'octet UTF-8 (`0x55`) des signatures de cartes et de `.dat`, l'en-tête de `SysDatabase.dat`.
+
+**RW-3 — Écrivain d'archive** (nouveau `engines/wolf/decrypt/writer.rs`), effort M.
+- `rebuild_v6(archive, remplacements)` et `rebuild_v8(archive, remplacements)`, selon les prototypes `dxa6.py` et `dxa8.py`.
+- Tests : reconstruction sans changement identique octet par octet (v6) ; relecture conforme de tous les fichiers (v6, v8) ; fichier remplacé relu identique.
+- **Plan détaillé RW-3 (2026-10-26, Claude) — [x] gate cloud vert sur `dc006ab` (741 Rust OK) ; test réel non exécuté :**
+  - [x] `legacy_xor.rs` : `read_layout(data) -> DxaLayout` (version, table déchiffrée tronquée à sa taille, adresses, chiffrement, entrées : chemin complet, décalage de l'entrée dans la table des fichiers, adresse et tailles des données, clé par fichier v8), réutilisant les fonctions de lecture existantes. `extract_all` n'est pas réécrit (pas de refactor hors périmètre).
+  - [x] `writer.rs` : `rebuild_archive(archive, remplacements {chemin → octets clairs}, sortie: &mut dyn Write) -> RebuildReport`, erreurs `WriterError` (`thiserror`) : chemin inconnu, disposition non prise en charge (v5, clé v2.255 stockée dans l'archive), lecture, écriture.
+    - v6 (`dxa6.py`, validé en jeu, W3) : données réécrites dans l'ordre physique d'origine ; fichier inchangé = octets chiffrés d'origine + bourrage d'origine s'il fait l'alignement 4, sinon zéros ; fichier remplacé = non compressé, XOR à la position « taille », `PressDataSize = -1` ; table recopiée avec adresses et tailles à jour, chiffrée depuis 0 ; en-tête rechiffré dans son mode d'origine (signature chiffrée ou en clair) avec la nouvelle adresse de table ; octets avant les données et après la table recopiés.
+    - v8 (`dxa8.py`, validé en jeu, V3) : archive recopiée jusqu'à la table ; fichiers remplacés ajoutés à la fin des données (alignement 8), non compressés, XOR clé du fichier à la position « taille », Huffman et LZ à -1 ; table écrite non compressée chiffrée avec la clé globale ; en-tête : adresse de table, drapeau `DXA_FLAG_NO_HEAD_PRESS`.
+  - [x] Tests : sans remplacement, v6 identique octet par octet (signature chiffrée et en clair) et v8 identique (table déjà non compressée) ; remplacement d'un fichier LZ en sous-dossier (v6) et d'un fichier v8 « v3.14 » puis relecture par `extract_all` (fichier remplacé = nouveau contenu, autres inchangés) ; chemin inconnu refusé ; archive 3.31+ refusée. Constructeur de test v6 aligné sur 4 comme DxLib.
+  - [x] Test réel `#[ignore]` `wolf_real_archive_rebuild` : `H2S_WOLF_ARCHIVES` = liste de fichiers `.wolf` séparés par `:` ; reconstruction sans remplacement (v6 : identique octet par octet ; v8 : tous les fichiers relus identiques), puis avec un fichier remplacé. Mémoire : quatre à cinq fois la taille de l'archive (commencer par le `Data.wolf` 2.23 de 204 Mo).
+  - [x] Ajout après revue : `find_v8_key` exige une table vraisemblable (racine sans parent, nombre d'entrées raisonnable, contrôle de `dxa8.py`) ; sans lui, une table non compressée (archive reconstruite) se « déchiffre » avec n'importe quelle clé et la version de chiffrement seule choisissait la clé. Tests : clé « v3.14 » annoncée en chiffrement 0 relue juste (lecture et reconstruction).
+
+**RW-4 — Cartes et événements communs non compressés** (`engines/wolf/v3_format/`), effort M.
+- Accepter les cartes de version < 0x65 (v2 Shift-JIS, ou v3 0x64 UTF-8) et `CommonEvent.dat` hors 0x93/0xCC : même modèle plat, sans LZ4 ni bloc v3.5 (`wolf_v2.py` / `wolf_v3.py`).
+- Retirer les refus `UnsupportedWolfFormat` correspondants (`extractor.rs`, `injector.rs`).
+- Tests : aller-retour octet par octet sur fichiers synthétiques v2 et 0x64 ; injection d'un 101 et d'un 102 puis relecture.
+- **Plan détaillé RW-4 (2026-10-26, Claude) — [x] gate cloud vert (734 Rust OK, correctif e2e vérifié sur copie) ; test réel `--ignored` non exécuté :**
+  - Mesure préalable sur vrais fichiers (lecture seule, script local hors Git) : 2.23 = 18 cartes 0x64 + `CommonEvent.dat` 0x8F, Shift-JIS, 257 751 chaînes ; 3.658 = cartes 0x64 / 0x65 / 0x67 + `CommonEvent.dat` 0xCC, UTF-8, 123 165 chaînes. **0** échec de décodage strict, **0** différence au ré-encodage, **0** chaîne sans NUL final, **0** octet que `encoding_rs` refuserait. Commande 201 : toujours terminateur 0x01 (370 + 14 en v2, 1 139 en v3). ⇒ le modèle `String` actuel suffit ; pas de règle « 201 à terminateur 0 » (celle du prototype v2 est inutile).
+  - [x] Conteneur choisi d'après la version : carte LZ4 si version ≥ 0x65 (bloc v3.5 si ≥ 0x67), sinon fichier en clair ; `CommonEvent.dat` LZ4 si version 0x93 / 0xCC, sinon en clair. Nouveaux `unpack_map` / `pack_map` (`compression.rs`) et `unpack` / `pack` (`common_events.rs`) : détecteurs explicites du format en clair (signature, drapeau 0x00 / 0x55, plage de version) ; recompression seulement si la source était compressée ; tout autre contenu ⇒ erreur.
+  - [x] Extracteur et injecteur : passer par ces fonctions ; supprimer `UnsupportedWolfFormat` et `WOLF_V2_UNSUPPORTED`.
+  - [x] Garder le refus groupé (« jamais de projet ouvert sans ses dialogues ») : tout échec de lecture d'une carte ou de `CommonEvent.dat` alimente `reject_unreadable` ⇒ nouvelle erreur `UnreadableWolfFiles` (marqueur `wolf_unreadable_files`). Changement assumé : un échec v3 n'est plus ignoré en silence.
+  - [x] Tests à retourner : extracteur `test_v2_map_is_rejected_explicitly`, `test_extract_all_wolf_refuses_a_v2_game`, `test_reject_unsupported_lists_at_most_three_files`, `test_v2_common_events_are_rejected_explicitly`, `test_real_honoka_is_refused` ; injecteur `test_inject_v2_map_is_refused`, `test_inject_v2_common_events_is_refused`, `test_export_of_a_v2_map_fails_explicitly`.
+  - [x] Nouveaux tests synthétiques : carte v2 (Shift-JIS 0x64) et carte UTF-8 0x64 avec un 101 et un 102 : extraction, aller-retour identique sans traduction, injection puis relecture, sortie non compressée ; `CommonEvent.dat` 0x8F idem ; contenu inconnu ⇒ refus groupé.
+  - [x] Test réel `#[ignore]` `wolf_real_round_trip` (D5) : `H2S_WOLF_GAMES` = dossier dont chaque sous-dossier contient `MapData/` et `BasicData/` ; pour chaque carte et `CommonEvent.dat` : `dump(parse(unpack(x))) == unpack(x)` et, en clair, `pack(...) == x` octet par octet.
+  - [ ] Interface (RW-8) : la branche `WOLF_V2_UNSUPPORTED` de `src/lib/projectError.ts` devient morte ; la retirer et traduire `wolf_unreadable_files`.
+
+**RW-5 — Source et livraison** (`extractor.rs`, `commands/export.rs::collect_wolf_zip_entries`), effort M.
+- Lecture de la source : l'archive d'abord quand elle existe (comme le jeu), les fichiers libres ensuite.
+- Nouveau `WolfDeliveryPlan` : pour chaque archive qui contient au moins un fichier traduit ⇒ archive reconstruite (RW-3) dans le zip, au même chemin ; fichiers sans archive ⇒ fichiers libres.
+- Les échecs d'archive remontent en erreur visible, plus de `continue` silencieux.
+- **Plan détaillé RW-5 (2026-10-26, Claude) — [x] gate cloud vert sur `610cd33` (755 Rust OK) :**
+  - [x] `engines/wolf/sources.rs` : `WolfSources::load(game_dir)`, chargé une fois par opération, indexé par chemin logique relatif à `Data/` (`MapData/Map001.mps`, `BasicData/DataBase.dat|.project`, `BasicData/CommonEvent.dat`), avec l'origine de chaque fichier (`Loose` ou `Archive { archive, path }`).
+    - Archives lues, comme le jeu, avant les fichiers libres : `Data.wolf` à la racine (préfixe vide), `Data/MapData.wolf` (préfixe `MapData/`), `Data/BasicData.wolf` (préfixe `BasicData/`) ; noms comparés sans tenir compte de la casse. Seuls les fichiers utiles sont déchiffrés (`extract_matching` : enfants directs de `MapData/` en `.mps`, de `BasicData/` en `.dat`/`.project`) ; les copies imbriquées (« données d'exemple ») sont ignorées, ce qui règle la note RW-1 sur `basic_data_entry_name`. Les autres archives (`Picture.wolf`…) ne sont pas lues.
+    - Fichiers libres `Data/MapData/*.mps`, `Data/BasicData/*.dat|.project` : seulement pour ce qu'aucune archive ne fournit.
+    - Archive présente mais illisible (3.31+, WolfX, clé inconnue) ⇒ erreur visible `UnreadableWolfArchive { archive, raison }` à l'ouverture et à l'export, avec la consigne : déchiffrer par UberWolf puis retirer les `.wolf` du dossier du jeu. Plus de `continue` silencieux.
+    - Ajout après revue : une archive qui contient des `.mps` que le filtre ne place pas sous `MapData/` (archive v5 sans dossiers, archive séparée à la disposition non vérifiée sur un vrai jeu) ⇒ refus visible qui cite quelques chemins, jamais un projet ouvert sans ses cartes. Messages `UnsupportedWolfCrypt` / `PossibleWolfX` complétés : retirer les `.wolf` du dossier après déchiffrement (changement de comportement à signaler : un `.wolf` illisible laissé à côté d'un `Data/` déchiffré refuse désormais le projet).
+  - [x] Extraction (`extract_all_wolf`, `extract_wolf_project`) et injection (`inject_all_to_memory`) passent par `WolfSources` ; anciens chargeurs (`load_mps_files`, `load_dat_files`, `load_common_event_bytes`, `load_mps_for_stem`, `load_dat_for_stem`, `extract_files_from_archives`, `extract_dat_pairs_from_archives`, `basic_data_entry_name`) retirés s'ils n'ont plus d'usage.
+  - [x] Livraison : fichier traduit venu d'une archive ⇒ remplacement dans cette archive ; chaque archive touchée est reconstruite (`rebuild_archive`, RW-3) et livrée au même chemin dans le zip (`Data.wolf`, `Data/MapData.wolf`…) ; fichier venu de `Data/` ⇒ fichier libre comme aujourd'hui. Entrées `.wolf` stockées sans recompression dans le zip (D1).
+  - [x] Contrôle de l'archive reconstruite (reporté de RW-6) : `integrity::verify_archive_rebuild` sans tout décoder : mêmes chemins ; fichiers inchangés = mêmes octets stockés (v6 : tranche d'origine ; v8 : mêmes champs d'entrée et préfixe recopié identique hors en-tête) ; fichiers remplacés relus par `extract_matching` = octets prévus. Les fichiers internes (carte, base) restent vérifiés par RW-6 avant reconstruction.
+  - Hors périmètre, noté : `debug_inject_file` (commande de débogage, écrit en `Data/`) reste en fichiers libres ; mémoire de l'export par archive = environ deux fois la taille de l'archive (lecture + reconstruction en mémoire), écriture en flux à prévoir si besoin.
+  - [x] Tests : priorité archive > fichier libre ; fichier libre utilisé quand l'archive ne l'a pas ; copies imbriquées ignorées ; archive illisible ⇒ erreur à l'ouverture ; export d'un jeu en archive (v6 et v8 synthétiques) ⇒ zip avec l'archive reconstruite, relue par `extract_all` avec la traduction ; contrôle d'archive : reconstruction acceptée, fichier inchangé altéré et fichier remplacé erroné refusés ; e2e : ouverture et export d'un jeu Wolf livré en `Data.wolf` v8 **sans clé, construit à la main** (drapeaux `0x1 | 0x2`, aucun chiffrement : les constructeurs `test_archives` sont `cfg(test)` de la bibliothèque, invisibles des tests d'intégration) ; la livraison v6 reste testée au niveau bibliothèque. Mémoire : libérer l'archive d'origine dès la reconstruction vérifiée ; écriture en flux dans le zip si l'essai RW-9 sur le jeu de 2,1 Go peine.
+
+**RW-6 — Contrôles après écriture** (nouveau `engines/wolf/integrity.rs`), effort S–M.
+- Reparser chaque `.mps`, `CommonEvent.dat` et `.dat` produit ; vérifier que seules les chaînes prévues ont changé ; relire l'archive reconstruite (liste des fichiers, contenu des fichiers non modifiés, fichiers traduits).
+- Écart ⇒ `IntegrityIssue` et export refusé (dialogue existant).
+- Corriger au passage `unknown1` des `.dat` (valeur d'origine conservée).
+- **Plan détaillé RW-6 (2026-10-26, Claude) — [x] gate cloud vert sur `d216d57` (748 Rust OK) ; archive reconstruite vérifiée en RW-5 :**
+  - [x] Type d'écart : réutiliser `engines::mv_mz::integrity::IntegrityIssue` (variantes génériques ; `pointer` = clé Wolf) et `summarize`, pour que l'export refuse avec le même message.
+  - [x] Principe (indépendant de l'injecteur) : relire l'original O **réellement lu par l'injecteur** et la sortie N ; (1) structure : O et N avec tous les textes vidés doivent être égaux (`StructureChanged`) ; (2) textes, clé par clé : clé prévue ⇒ N = traduction (`PlannedValueMissing`) ; clé non prévue ⇒ N = O (`UnplannedChange`) ; clé prévue absente de O ⇒ `PlannedValueMissing` ; illisible ⇒ `Unparseable`.
+    - cartes (`MapV3`, 101/102, clés `MapData/{carte}/events/…`) et `CommonEvent.dat` (`CommonEventsV3`, clés `CommonEvents/{nom}/…`) ; le conteneur suit la version, comparée par la structure ;
+    - `.dat` : `DatFile` (types, champs, entiers, `unknown1`), clés `Database/{base}/{type}/{entrée}/{champ}` (premier champ texte de ce nom, comme l'injecteur) ; en-tête (11 octets) identique.
+  - **Pas de contrôle « source changée » pour Wolf** : il n'y a pas de copie d'origine des fichiers Wolf ; après un export décompressé sur le jeu, l'original lu contient déjà la traduction et ce contrôle refuserait tout ré-export. Garde « jeu mis à jour » Wolf = lot séparé (équivalent R2, copie d'origine).
+  - [x] Vérification dans la boucle d'`inject_all_to_memory` (mêmes octets que l'injection, aucun rechargement d'archive) ; la fonction renvoie aussi les écarts ; `collect_wolf_zip_entries` les remonte, `export_project` les ajoute à `integrity_issues` ⇒ export refusé, rien n'est écrit.
+  - [x] `.dat` : `DatType` garde `unknown1` et sa chaîne optionnelle (`STRING_INDICATOR`), réécrits tels quels (fin du `0` codé en dur) ; `PartialEq` dérivé sur les types de `dat_parser`.
+  - [x] Vérification de l'archive reconstruite : **déplacée en RW-5** (`verify_archive_rebuild`, `e43ab1f`).
+  - [x] Tests : carte (v2 en clair et v3 LZ4) et `CommonEvent.dat` : sortie de l'injecteur acceptée, y compris sur un original déjà traduit ; texte non prévu modifié, structure modifiée, traduction manquante, sortie illisible refusés ; `.dat` idem + `unknown1` à `STRING_INDICATOR` conservé ; e2e : jeu v2, export, export décompressé sur le jeu, ré-export accepté (`wolf_v2_export_can_be_repeated_over_its_own_output`). Le refus `UnplannedChange` n'est pas reproductible en e2e sans bogue d'injecteur : couvert par les tests unitaires de `integrity.rs`.
+
+**RW-7 — Encodage et chemins** (`engines/wolf/encoding.rs`), effort S.
+- D3 : repli des accents en v2, avec le compte des lignes touchées.
+- Avertissement si le chemin du jeu ou de l'export contient un caractère hors Shift-JIS : un jeu v2 n'y démarre pas, constaté en jeu.
+- **Plan détaillé RW-7 (2026-10-26, Claude) — [x] gate cloud vert sur `1661ab5` (760 Rust OK, Vitest 145) :**
+  - [x] `encoding::fold_for_shift_jis(texte) -> Cow<str>` : inchangé si tout s'encode ; sinon chaque caractère hors Shift-JIS devient sa lettre de base (décomposition canonique, marques combinantes retirées : é → e, Ç → C), `œ/Œ/æ/Æ/ß` → `oe/OE/ae/AE/ss`, `« » „` → `"`, `‚` → `'`, espaces insécables → espace, `– —` → `-` ; tout autre caractère reste et l'encodeur le refuse comme aujourd'hui (erreur explicite, pas de `?` silencieux).
+  - [x] Injecteur : pour un fichier Shift-JIS (drapeau de la carte, de `CommonEvent.dat`, magic du `.dat`), chaque traduction est repliée avant d'être posée ; `InjectionResult::folded_count` compte les textes repliés ; UTF-8 inchangé (D3 : accents écrits tels quels en v3).
+  - [x] Intégrité : la valeur attendue d'une clé prévue est la traduction repliée quand le fichier est Shift-JIS.
+  - [x] Export : `inject_all_to_memory` renvoie une structure (entrées, écarts, textes repliés) ; le compte est journalisé, son affichage dans le rapport d'export relève de RW-8.
+  - [x] Chemin (corrigé en cours de route : le dossier réel contient `〜` U+301C, que l'encodeur WHATWG d'`encoding_rs` accepte, mais que l'aller-retour cp932 de Windows change en U+FF5E ; le contrôle vise donc aussi ces caractères) : `encoding::is_shift_jis(texte)` ; `wolf_path_warning(game_dir, version)` renvoie un avertissement pour un jeu Shift-JIS (v2) dont le chemin contient un caractère hors Shift-JIS (le jeu n'y démarre pas, constaté en jeu) ; journalisé à l'ouverture et à l'export ; affichage en RW-8.
+  - [x] Tests : repli (accents français, ligatures, guillemets, espaces insécables, japonais et `…` inchangés, emoji laissé) ; injection v2 d'une traduction accentuée ⇒ texte replié, compté, relu ; v3 UTF-8 ⇒ accents conservés ; intégrité acceptée pour un texte replié ; `.dat` Shift-JIS replié ; avertissement de chemin (v2 + « 〜 » ⇒ avertissement ; v3 ou chemin ASCII ⇒ aucun).
+
+**RW-8 — Interface**, effort S.
+- Messages fr/en pour les nouvelles erreurs.
+- Lignes du rapport d'export : archive reconstruite, accents repliés, avertissement de police v3.
+- **Plan détaillé RW-8 (2026-10-27, Claude) — [x] gate cloud vert sur `1661ab5` (760 Rust OK, Vitest 145) :**
+  - Choix : `export_project` garde son retour (chemin du zip ; 29 appels dans les tests) ; les lignes du rapport sont annoncées **avant** l'export par `preflight_export`, que la boîte de confirmation appelle déjà.
+  - [x] `ExportPreflight.wolf` (`WolfExportPreflight`, projets Wolf) : `archives` (archives que le jeu lit d'abord et que l'export reconstruit : `Data.wolf`, `Data/MapData.wolf`, `Data/BasicData.wolf`, sans les lire), `shiftJis` (version détectée), `accentedTexts` (traductions que le repli modifie), `pathWarning` (RW-7). Coût : aucun déchiffrement d'archive.
+  - [x] Boîte de confirmation d'export : lignes Wolf — archive reconstruite à décompresser par-dessus le jeu ; v2 : N textes écrits sans accents ; v3 : N textes accentués, vérifier la police en jeu ; avertissement de chemin.
+  - [x] Erreurs : `projectError.ts` remplace la branche morte `WOLF_V2_UNSUPPORTED` par `wolf_unreadable_archive` et `wolf_unreadable_files` (ouverture et export), détail du backend en description du toast ; clés fr/en ajoutées, clés `wolfV2Unsupported` retirées ; « Moteur non détecté » cite Wolf RPG 2.x et 3.x.
+  - [x] Tests : Vitest `projectError` (nouvelles clés, détail, deux langues) ; e2e Rust `preflight_export` sur un jeu v2 avec traduction accentuée (Shift-JIS, compte, sans archive) et sur un jeu `Data.wolf` (archive annoncée).
+
+- Hors périmètre RW, noté le 2026-10-27 : `src/components/editor/ProjectList.tsx` n'est pas au format Prettier (écart déjà présent sur `main` @ `2331c75`, environ 250 lignes, JSX de la page d'accueil) ; `pnpm lint` ne lance pas Prettier. À corriger dans un commit à part (`prettier --write` sur ce fichier), et envisager d'ajouter `prettier --check` au gate.
+
+**RW-9 — Vérification**, effort S.
+- Gate cloud.
+- Tests réels `--ignored` (D5).
+- **Essai en jeu de l'export produit par l'app** sur les jeux 2.23 et 3.658, avec la même fiche que les prototypes.
+
+**Ordre :** RW-1, RW-2, RW-4, RW-3, RW-6, RW-5, RW-7, RW-8, RW-9. Effort total : L.
+
+#### Hors périmètre
+
+- Textes en image (menu titre du jeu 3.658).
+- Polices de remplacement pour les accents en v3.
+- Lecture native du nouveau chiffrement 3.31+.
+- Commandes Wolf autres que 101/102 (122, 150…).
+- Bakin.

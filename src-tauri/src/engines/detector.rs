@@ -205,19 +205,38 @@ pub fn find_wolf_data_dir(game_dir: &Path) -> Option<std::path::PathBuf> {
     candidates.into_iter().find(|p| p.is_dir())
 }
 
-/// Detect the Wolf RPG version by reading the CodePage field from the first `.wolf` archive.
+/// Detect the Wolf RPG version (text encoding) from the game's own data.
 ///
-/// Tries plaintext headers first (e.g. Honoka), then cycles through known XOR keys.
-/// Falls back to sniffing a loose `.dat`'s own magic byte (games distributed
-/// unpacked, with no `.wolf`/`Data.wolf` to read a CodePage from), and only
-/// then to the hardcoded v2.0 (Shift-JIS) default.
+/// The archive CodePage is NOT a signal: it only describes the file names, and a
+/// Wolf 3.658 game (UTF-8 data) ships a `Data.wolf` with CodePage 932 (plan RW,
+/// verified 2026-10-26). In order:
+/// 1. the magic of a loose `BasicData` database (`SysDatabase.dat`), cheap to read;
+/// 2. the magic of the same database inside the `.wolf` archive that holds it;
+/// 3. the crypt version of a DXA v8 archive (3.x editors), readable even when the
+///    archive itself is not (3.31+ new crypt, WolfX, Pro);
+/// 4. the v2.0 (Shift-JIS) default.
 pub fn guess_wolf_version_from_structure(game_dir: &Path) -> WolfVersion {
-    try_detect_wolf_version_from_dxa(game_dir)
-        .or_else(|| guess_wolf_version_from_loose_dat(game_dir))
+    guess_wolf_version_from_loose_dat(game_dir)
+        .or_else(|| guess_wolf_version_from_archive(game_dir))
         .unwrap_or(WolfVersion { major: 2, minor: 0 })
 }
 
-/// Fallback for games with no `.wolf` archive to sniff: read the always-present
+/// Version declared by a Wolf database (`SysDatabase.dat`, `DataBase.dat`,
+/// `CDataBase.dat`): byte 5 of its 9-byte magic, `0x00` Shift-JIS / `0x55` UTF-8.
+fn wolf_version_from_database(bytes: &[u8]) -> Option<WolfVersion> {
+    use crate::engines::wolf::dat_parser::{DB_MAGIC_SJIS, DB_MAGIC_UTF8};
+
+    let magic = bytes.get(1..10)?;
+    if magic == DB_MAGIC_UTF8 {
+        Some(WolfVersion { major: 3, minor: 0 })
+    } else if magic == DB_MAGIC_SJIS {
+        Some(WolfVersion { major: 2, minor: 0 })
+    } else {
+        None
+    }
+}
+
+/// Step 1 (unpacked games, or a `Data/` decrypted next to its archive): read the
 /// `BasicData/SysDatabase.dat`'s own 9-byte magic (byte 5 = `0x00` Shift-JIS /
 /// `0x55` UTF-8 — the same signal [`super::wolf::dat_parser::parse_database`]
 /// uses per-file). Without this, an unpacked v3.x/UTF-8 project silently fell
@@ -227,20 +246,50 @@ pub fn guess_wolf_version_from_structure(game_dir: &Path) -> WolfVersion {
 /// under a `DB_MAGIC_UTF8` header) — a mismatch the Wolf RPG Editor runtime
 /// cannot recover from.
 fn guess_wolf_version_from_loose_dat(game_dir: &Path) -> Option<WolfVersion> {
-    use crate::engines::wolf::dat_parser::{DB_MAGIC_SJIS, DB_MAGIC_UTF8};
-
     let data_dir = find_wolf_data_dir(game_dir)?;
     let bytes = std::fs::read(data_dir.join("BasicData").join("SysDatabase.dat")).ok()?;
-    if bytes.len() < 10 {
-        return None;
-    }
-    if bytes[1..10] == DB_MAGIC_UTF8 {
-        Some(WolfVersion { major: 3, minor: 0 })
-    } else if bytes[1..10] == DB_MAGIC_SJIS {
-        Some(WolfVersion { major: 2, minor: 0 })
-    } else {
-        None
-    }
+    wolf_version_from_database(&bytes)
+}
+
+/// `true` for the archive path of a Wolf database whose magic carries the encoding.
+fn is_wolf_database_path(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path).to_ascii_lowercase();
+    matches!(
+        name.as_str(),
+        "sysdatabase.dat" | "database.dat" | "cdatabase.dat"
+    )
+}
+
+/// The archive that holds `BasicData`: `Data/BasicData.wolf` in the split layout,
+/// else the single `Data.wolf`, else the first `Data/*.wolf`.
+fn find_basic_data_archive(game_dir: &Path) -> Option<std::path::PathBuf> {
+    find_wolf_data_dir(game_dir)
+        .map(|data_dir| data_dir.join("BasicData.wolf"))
+        .filter(|path| path.is_file())
+        .or_else(|| find_first_wolf_file(game_dir))
+}
+
+/// Steps 2 and 3 of [`guess_wolf_version_from_structure`]: only the database
+/// entries are decrypted, the rest of the archive is just listed.
+fn guess_wolf_version_from_archive(game_dir: &Path) -> Option<WolfVersion> {
+    use crate::engines::wolf::decrypt::legacy_xor::{extract_matching, v8_crypt_version};
+
+    let data = std::fs::read(find_basic_data_archive(game_dir)?).ok()?;
+    let from_database = extract_matching(&data, &is_wolf_database_path)
+        .ok()
+        .and_then(|archive| {
+            archive
+                .files
+                .iter()
+                .find_map(|file| wolf_version_from_database(&file.data))
+        });
+    // Crypt versions 300+ (and the ChaCha modes 0x64 / 0xC8) only come from 3.x
+    // editors; 0 is the 2.2x key.
+    from_database.or_else(|| {
+        v8_crypt_version(&data)
+            .filter(|&crypt| crypt >= 300 || matches!(crypt, 0x64 | 0xC8))
+            .map(|_| WolfVersion { major: 3, minor: 0 })
+    })
 }
 
 fn find_first_wolf_file(game_dir: &Path) -> Option<std::path::PathBuf> {
@@ -259,42 +308,6 @@ fn find_first_wolf_file(game_dir: &Path) -> Option<std::path::PathBuf> {
             None
         }
     })
-}
-
-fn try_detect_wolf_version_from_dxa(game_dir: &Path) -> Option<WolfVersion> {
-    use crate::engines::wolf::decrypt::legacy_xor::{
-        code_page_to_wolf_version, read_header, read_signature, WOLF_KEYS,
-    };
-
-    let path = find_first_wolf_file(game_dir)?;
-    let data = std::fs::read(&path).ok()?;
-
-    // Check signature; v5 has no CodePage field — fall through to default v2.
-    let version = read_signature(&data).ok()?;
-    if version < 6 {
-        return None;
-    }
-
-    if data.len() < 0x2C {
-        return None;
-    }
-
-    // Step A: try reading code_page directly (plaintext header, e.g. Honoka)
-    let cp_raw = u32::from_le_bytes([data[0x28], data[0x29], data[0x2A], data[0x2B]]);
-    if matches!(cp_raw, 0 | 932 | 65001) {
-        return Some(code_page_to_wolf_version(cp_raw));
-    }
-
-    // Step B: try each known XOR key
-    for &(_, key) in WOLF_KEYS {
-        if let Ok((_, _, _, _, _, Some(cp))) = read_header(&data, &key) {
-            if matches!(cp, 0 | 932 | 65001) {
-                return Some(code_page_to_wolf_version(cp));
-            }
-        }
-    }
-
-    None
 }
 
 /// Returns `true` if the directory looks like a Wolf RPG game root.
@@ -646,6 +659,159 @@ mod tests {
         assert_eq!(
             guess_wolf_version_from_structure(dir.path()),
             WolfVersion { major: 2, minor: 0 }
+        );
+    }
+
+    // --- RW-2: version from the game's data, never from the archive CodePage ---
+
+    fn database_bytes(magic: &[u8; 9]) -> Vec<u8> {
+        let mut bytes = vec![0x00]; // indicator = unencrypted
+        bytes.extend_from_slice(magic);
+        bytes.push(0xC1);
+        bytes
+    }
+
+    /// Wolf 2.23-style `Data.wolf`: header encrypted from offset 0 with a key outside
+    /// the known table, CodePage 932 (it only describes the file names).
+    fn v6_archive(
+        files: &[crate::engines::wolf::decrypt::legacy_xor::test_archives::DxFile],
+    ) -> Vec<u8> {
+        use crate::engines::wolf::decrypt::legacy_xor::test_archives::make_v6_dx_archive;
+        let key = [
+            0xC7u8, 0x05, 0xCA, 0x7D, 0x8D, 0xE3, 0xDE, 0xF1, 0xD9, 0x0C, 0x85, 0xF4,
+        ];
+        make_v6_dx_archive(&key, files, 932, true).bytes
+    }
+
+    fn v8_key_string(name: &str) -> &'static [u8] {
+        use crate::engines::wolf::decrypt::legacy_xor::WOLF_V8_KEY_STRINGS;
+        WOLF_V8_KEY_STRINGS
+            .iter()
+            .find(|(n, _, _)| *n == name)
+            .map(|&(_, _, k)| k)
+            .unwrap()
+    }
+
+    fn game_with_root_archive(archive: &[u8]) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Data.wolf"), archive).unwrap();
+        dir
+    }
+
+    /// Regression (Wolf 3.658): UTF-8 data in an archive whose CodePage says 932
+    /// was classified v2.
+    #[test]
+    fn test_guess_wolf_version_archive_utf8_database_with_code_page_932() {
+        use crate::engines::wolf::dat_parser::DB_MAGIC_UTF8;
+        use crate::engines::wolf::decrypt::legacy_xor::test_archives::DxFile;
+
+        let db = database_bytes(&DB_MAGIC_UTF8);
+        let files = [
+            DxFile {
+                dir: Some("BasicData"),
+                name: "SysDatabase.dat",
+                content: &db,
+                compress: false,
+            },
+            DxFile {
+                dir: None,
+                name: "Game.dat",
+                content: b"game",
+                compress: false,
+            },
+        ];
+        let game = game_with_root_archive(&v6_archive(&files));
+        assert_eq!(
+            guess_wolf_version_from_structure(game.path()),
+            WolfVersion { major: 3, minor: 0 }
+        );
+    }
+
+    #[test]
+    fn test_guess_wolf_version_archive_sjis_database_with_encrypted_signature() {
+        use crate::engines::wolf::dat_parser::DB_MAGIC_SJIS;
+        use crate::engines::wolf::decrypt::legacy_xor::test_archives::DxFile;
+
+        let db = database_bytes(&DB_MAGIC_SJIS);
+        let files = [DxFile {
+            dir: Some("BasicData"),
+            name: "DataBase.dat",
+            content: &db,
+            compress: true,
+        }];
+        let game = game_with_root_archive(&v6_archive(&files));
+        assert_eq!(
+            guess_wolf_version_from_structure(game.path()),
+            WolfVersion { major: 2, minor: 0 }
+        );
+    }
+
+    /// Split layout: `Data/BasicData.wolf` holds the databases at its root and is
+    /// read in preference to the other archives.
+    #[test]
+    fn test_guess_wolf_version_prefers_basic_data_archive() {
+        use crate::engines::wolf::dat_parser::{DB_MAGIC_SJIS, DB_MAGIC_UTF8};
+        use crate::engines::wolf::decrypt::legacy_xor::test_archives::DxFile;
+
+        let utf8 = database_bytes(&DB_MAGIC_UTF8);
+        let sjis = database_bytes(&DB_MAGIC_SJIS);
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("Data");
+        std::fs::create_dir_all(&data).unwrap();
+        let basic = [DxFile {
+            dir: None,
+            name: "SysDatabase.dat",
+            content: &utf8,
+            compress: false,
+        }];
+        let other = [DxFile {
+            dir: None,
+            name: "SysDatabase.dat",
+            content: &sjis,
+            compress: false,
+        }];
+        std::fs::write(data.join("BasicData.wolf"), v6_archive(&basic)).unwrap();
+        std::fs::write(data.join("AnotherData.wolf"), v6_archive(&other)).unwrap();
+        assert_eq!(
+            guess_wolf_version_from_structure(dir.path()),
+            WolfVersion { major: 3, minor: 0 }
+        );
+    }
+
+    #[test]
+    fn test_guess_wolf_version_v8_crypt_version_without_database() {
+        use crate::engines::wolf::decrypt::legacy_xor::test_archives::{
+            make_v8_dx_archive, DxFile,
+        };
+
+        let files = [DxFile {
+            dir: None,
+            name: "Game.dat",
+            content: b"game",
+            compress: false,
+        }];
+        let v3 = game_with_root_archive(&make_v8_dx_archive(v8_key_string("v3.14"), 314, &files));
+        assert_eq!(
+            guess_wolf_version_from_structure(v3.path()),
+            WolfVersion { major: 3, minor: 0 }
+        );
+        let v2 = game_with_root_archive(&make_v8_dx_archive(v8_key_string("v2.225"), 0, &files));
+        assert_eq!(
+            guess_wolf_version_from_structure(v2.path()),
+            WolfVersion { major: 2, minor: 0 }
+        );
+    }
+
+    /// A 3.31+ archive cannot be read, but its plaintext crypt version still says v3.
+    #[test]
+    fn test_guess_wolf_version_unreadable_new_crypt_archive_is_v3() {
+        let mut header = vec![0u8; 64];
+        header[0..4].copy_from_slice(&[b'D', b'X', 8, 0]);
+        header[44..48].copy_from_slice(&(350u32 << 16).to_le_bytes());
+        let game = game_with_root_archive(&header);
+        assert_eq!(
+            guess_wolf_version_from_structure(game.path()),
+            WolfVersion { major: 3, minor: 0 }
         );
     }
 

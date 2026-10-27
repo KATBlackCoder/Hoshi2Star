@@ -54,7 +54,52 @@ const TERMINATOR_MIN: u8 = 0x89;
 /// 1-byte leading `0x00`, the 9-byte `MAGIC` (with index 5 being `0x00` or
 /// `0x55`), and a `version` byte of `0x93` or `0xCC`.
 pub(crate) fn is_lz4_v3(bytes: &[u8]) -> bool {
-    bytes.len() >= HEADER_SIZE + 8
+    bytes.len() >= HEADER_SIZE + 8 && has_header(bytes) && V35_VERSIONS.contains(&bytes[10])
+}
+
+/// Returns `true` if `bytes` looks like a `CommonEvent.dat` stored in clear
+/// (v2.x, e.g. version `0x8F`): same header as [`is_lz4_v3`] with any other
+/// `version`. The file itself is then what [`CommonEventsV3::parse`] expects.
+pub(crate) fn is_plain(bytes: &[u8]) -> bool {
+    bytes.len() >= HEADER_SIZE + 4 && has_header(bytes) && !V35_VERSIONS.contains(&bytes[10])
+}
+
+/// On-disk `CommonEvent.dat` bytes → `header[0..11] ++ payload` for
+/// [`CommonEventsV3::parse`], whatever the container (LZ4 for `0x93`/`0xCC`).
+pub(crate) fn unpack(bytes: &[u8]) -> Result<Vec<u8>, V3FormatError> {
+    if is_lz4_v3(bytes) {
+        decompress(bytes)
+    } else if is_plain(bytes) {
+        Ok(bytes.to_vec())
+    } else {
+        let mut expected = vec![LEADING_BYTE];
+        expected.extend_from_slice(&MAGIC);
+        Err(V3FormatError::InvalidMagic {
+            offset: 0,
+            expected,
+            found: bytes[..bytes.len().min(1 + MAGIC.len())].to_vec(),
+            context: "CommonEvent.dat (neither LZ4 v3.5 nor clear layout)",
+        })
+    }
+}
+
+/// Inverse of [`unpack`] for a [`CommonEventsV3::dump`] result: recompressed only
+/// for the v3.5 versions, so a file stored in clear is written back in clear.
+pub(crate) fn pack(dumped: Vec<u8>) -> Result<Vec<u8>, V3FormatError> {
+    match dumped.get(10) {
+        Some(version) if V35_VERSIONS.contains(version) => recompress(&dumped),
+        Some(_) => Ok(dumped),
+        None => Err(V3FormatError::UnexpectedEof {
+            offset: 10,
+            needed: 1,
+            available: dumped.len().saturating_sub(10),
+        }),
+    }
+}
+
+/// Leading byte, magic (any UTF-8 / Shift-JIS flag) and room for the version.
+fn has_header(bytes: &[u8]) -> bool {
+    bytes.len() >= HEADER_SIZE
         && bytes[0] == LEADING_BYTE
         && bytes[1] == MAGIC[0]
         && bytes[2] == MAGIC[1]
@@ -65,7 +110,6 @@ pub(crate) fn is_lz4_v3(bytes: &[u8]) -> bool {
         && bytes[7] == MAGIC[6]
         && bytes[8] == MAGIC[7]
         && bytes[9] == MAGIC[8]
-        && V35_VERSIONS.contains(&bytes[10])
 }
 
 /// Decompresses a v3.5 `CommonEvent.dat` into `header[0..11] ++ payload`,
@@ -476,11 +520,49 @@ impl CommonEventsV3 {
             terminator: 0x89,
         }
     }
+
+    /// [`synthetic_messages`](Self::synthetic_messages) as a v2.x file stored in
+    /// clear: Shift-JIS flag, version `0x8F` (Wolf 2.23), no v3.5 trailer.
+    pub(crate) fn synthetic_messages_v2(events: &[(&str, &str)]) -> Self {
+        let mut common_events = Self::synthetic_messages(events);
+        common_events.magic[UTF8_MAGIC_INDEX] = 0x00;
+        common_events.version = 0x8F;
+        for event in &mut common_events.events {
+            for command in &mut event.commands {
+                command.v35_unknown.clear();
+            }
+        }
+        common_events
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_clear_and_lz4_containers_round_trip() {
+        let v2 = CommonEventsV3::synthetic_messages_v2(&[("Ev001", "こんにちは")]);
+        let dumped = v2.dump().unwrap();
+        assert!(is_plain(&dumped) && !is_lz4_v3(&dumped));
+        assert_eq!(unpack(&dumped).unwrap(), dumped);
+        assert_eq!(pack(dumped.clone()).unwrap(), dumped);
+        assert_eq!(CommonEventsV3::parse(&dumped).unwrap(), v2);
+
+        let v35 = CommonEventsV3::synthetic_messages(&[("Ev001", "こんにちは")]);
+        let dumped = v35.dump().unwrap();
+        let packed = pack(dumped.clone()).unwrap();
+        assert!(is_lz4_v3(&packed) && !is_plain(&packed));
+        assert_eq!(unpack(&packed).unwrap(), dumped);
+    }
+
+    #[test]
+    fn test_unpack_rejects_unknown_content() {
+        assert!(matches!(
+            unpack(b"definitely not a CommonEvent.dat file"),
+            Err(V3FormatError::InvalidMagic { .. })
+        ));
+    }
 
     fn empty_event() -> CommonEventV3 {
         CommonEventV3 {

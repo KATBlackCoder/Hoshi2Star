@@ -1,23 +1,27 @@
 // Wolf RPG binary injector — F4-04 implementation.
 //
-// Injection strategy (F4): Option A — write decrypted .mps/.dat directly to
-// Data/MapData/ and Data/BasicData/.  Wolf RPG reads Data/ with priority over
-// .wolf archives, so no re-encryption is required.  Option B (DXA re-pack) is
-// deferred to F5.
+// Delivery (plan RW, RW-5): the game reads its .wolf archives before loose
+// Data/ files (verified in game, Wolf 2.23 and 3.658). A file read from an
+// archive is delivered inside that archive, rebuilt (decrypt::writer); a file
+// read from Data/ is delivered as a loose file.
 //
-// .mps / CommonEvent.dat injection: v3.x (LZ4) only, via the in-house
-//   `v3_format` AST. The v2.x layout is refused with
-//   `InjectorError::UnsupportedWolfFormat` since `wolfrpg-map-parser` was
-//   removed (2026-10-25); a replacement parser is planned (lot RW).
+// .mps / CommonEvent.dat injection: in-house `v3_format` AST, for the v3.x
+//   LZ4 layout and the layout stored in clear (v2.x, v3.x `0x64` maps); the
+//   file is written back in the container it was read from (plan RW, RW-4).
 //
 // .dat injection: parse_database() → modify string_values → serialize_dat().
 
-use super::dat_parser::{self, DatFile, DatType, STRING_INDICATOR_PUB};
+use super::dat_parser::{self, DatFile, DatType};
 use super::dat_parser::{DAT_TYPE_SEPARATOR, DB_MAGIC_SJIS, DB_MAGIC_UTF8};
+use super::decrypt::writer::{rebuild_archive, WriterError};
 use super::encoding;
+use super::integrity;
+use super::sources::{display_path, Origin, SourceFile, SourcesError, WolfSources};
 use super::v3_format::{self, V3FormatError};
 use crate::engines::detector::WolfVersion;
-use std::collections::HashMap;
+use crate::engines::mv_mz::integrity::IntegrityIssue;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------
@@ -38,13 +42,11 @@ pub enum InjectorError {
     MissingProject(String),
     #[error("v3.x map format error: {0}")]
     V3Format(#[from] V3FormatError),
-    /// v2.x maps / common events can no longer be rewritten; same marker as
-    /// the extractor so the frontend shows one dedicated message.
-    #[error(
-        "{marker}: Wolf RPG v2 maps and common events are not supported yet ({0})",
-        marker = super::extractor::WOLF_V2_UNSUPPORTED
-    )]
-    UnsupportedWolfFormat(String),
+    /// An archive the game reads cannot be read (plan RW, RW-5).
+    #[error(transparent)]
+    Sources(#[from] SourcesError),
+    #[error("archive rebuild error: {0}")]
+    Archive(#[from] WriterError),
 }
 
 // ---------------------------------------------------------------------------
@@ -61,6 +63,21 @@ pub struct WolfTranslation {
 pub struct InjectionResult {
     pub file_path: PathBuf,
     pub updated_count: usize,
+    /// Translations folded to fit a Shift-JIS file (plan RW, decision D3).
+    pub folded_count: usize,
+}
+
+/// `text` as a file of this encoding can hold it: folded for Shift-JIS
+/// (plan RW, decision D3: é → e…), as is for UTF-8. Counts the texts folded.
+fn text_for_file<'a>(text: &'a str, is_utf8: bool, folded: &mut usize) -> Cow<'a, str> {
+    if is_utf8 {
+        return Cow::Borrowed(text);
+    }
+    let fitted = encoding::fold_for_shift_jis(text);
+    if fitted != text {
+        *folded += 1;
+    }
+    fitted
 }
 
 /// Bucket for all `CommonEvents/*` segment keys.
@@ -117,10 +134,9 @@ fn encode_for_wolf(text: &str, is_utf8: bool) -> Result<Vec<u8>, InjectorError> 
 // Step 2 — inject_map (.mps, v3.x only)
 // ---------------------------------------------------------------------------
 
-/// Inject translations into a Wolf RPG `.mps` map file (v3.x LZ4 layout).
-///
-/// A v2.x map returns [`InjectorError::UnsupportedWolfFormat`]: nothing is
-/// written rather than a partially patched file.
+/// Inject translations into a Wolf RPG `.mps` map file (v3.x LZ4 layout or
+/// layout stored in clear). A map that cannot be read returns an error: nothing
+/// is written rather than a partially patched file.
 ///
 /// `map_name` must match the stem used in the segment keys (e.g. `"Map001"`).
 pub fn inject_map(
@@ -134,37 +150,35 @@ pub fn inject_map(
         .map(|t| (t.key.as_str(), t.text.as_str()))
         .collect();
 
-    if v3_format::compression::is_lz4_v3(bytes) {
-        let mut updated = 0usize;
-        let patched = inject_map_v3(map_name, bytes, &translation_map, &mut updated)?;
-        return Ok((
-            patched,
-            InjectionResult {
-                file_path: PathBuf::from(format!("{map_name}.mps")),
-                updated_count: updated,
-            },
-        ));
-    }
-
-    Err(InjectorError::UnsupportedWolfFormat(format!(
-        "{map_name}.mps"
-    )))
+    let (mut updated, mut folded) = (0usize, 0usize);
+    let patched = inject_map_v3(map_name, bytes, &translation_map, &mut updated, &mut folded)?;
+    Ok((
+        patched,
+        InjectionResult {
+            file_path: PathBuf::from(format!("{map_name}.mps")),
+            updated_count: updated,
+            folded_count: folded,
+        },
+    ))
 }
 
-/// Inject translations into a v3.x (LZ4-compressed) `.mps` map using the
-/// in-house [`v3_format`] parser: parse to AST, replace `string_args` for
-/// `ShowMessage`/`ShowChoice` commands by key, dump, recompress.
+/// Inject translations into a `.mps` map using the in-house [`v3_format`]
+/// parser: unpack, parse to AST, replace `string_args` for
+/// `ShowMessage`/`ShowChoice` commands by key, dump, pack back into the
+/// original container.
 ///
-/// Same `key` format as [`super::extractor::extract_map_segments`]'s v3 path:
+/// Same `key` format as [`super::extractor::extract_map_segments`]:
 /// `MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}[/choices/{choice_idx}]`.
 fn inject_map_v3(
     map_name: &str,
     bytes: &[u8],
     translations: &HashMap<&str, &str>,
     updated: &mut usize,
+    folded: &mut usize,
 ) -> Result<Vec<u8>, InjectorError> {
-    let decompressed = v3_format::compression::decompress_v3(bytes)?;
+    let decompressed = v3_format::compression::unpack_map(bytes)?;
     let mut map = v3_format::map::MapV3::parse(&decompressed)?;
+    let is_utf8 = map.is_utf8();
 
     for (event_idx, event) in map.events.iter_mut().enumerate() {
         for (page_idx, page) in event.pages.iter_mut().enumerate() {
@@ -179,9 +193,10 @@ fn inject_map_v3(
                                 "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}"
                             );
                             if let Some(&t) = translations.get(key.as_str()) {
+                                let t = text_for_file(t, is_utf8, folded);
                                 if t != text.as_str() {
                                     *updated += 1;
-                                    *text = t.to_owned();
+                                    *text = t.into_owned();
                                 }
                             }
                         }
@@ -195,9 +210,10 @@ fn inject_map_v3(
                                 "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}/choices/{choice_idx}"
                             );
                             if let Some(&t) = translations.get(key.as_str()) {
+                                let t = text_for_file(t, is_utf8, folded);
                                 if t != choice.as_str() {
                                     *updated += 1;
-                                    *choice = t.to_owned();
+                                    *choice = t.into_owned();
                                 }
                             }
                         }
@@ -209,7 +225,7 @@ fn inject_map_v3(
     }
 
     let dumped = map.dump()?;
-    Ok(v3_format::compression::recompress_v3(&dumped)?)
+    Ok(v3_format::compression::pack_map(dumped)?)
 }
 
 // ---------------------------------------------------------------------------
@@ -282,16 +298,14 @@ fn serialize_dat_type(
 ) -> Result<(), InjectorError> {
     buf.extend_from_slice(&DAT_TYPE_SEPARATOR);
 
-    // unknown1: preserved as 0 for all synthetic and common real files.
-    // Files with STRING_INDICATOR (0x0001_D4C0) would need special handling
-    // but are not present in the test fixtures for F4-04.
-    let unknown1: u32 = 0;
-    buf.extend_from_slice(&unknown1.to_le_bytes());
+    // unknown1 and its optional string (STRING_INDICATOR) as read.
+    buf.extend_from_slice(&dat_type.unknown1.to_le_bytes());
 
     buf.extend_from_slice(&(dat_type.fields.len() as u32).to_le_bytes());
 
-    if unknown1 == STRING_INDICATOR_PUB {
-        write_wolf_string(buf, &[]);
+    if let Some(text) = &dat_type.unknown1_string {
+        let encoded = encode_for_wolf(text, is_utf8)?;
+        write_wolf_string(buf, &encoded);
     }
 
     for field in &dat_type.fields {
@@ -345,8 +359,9 @@ pub fn inject_dat(
 ) -> Result<(Vec<u8>, InjectionResult), InjectorError> {
     let mut db = dat_parser::parse_database(project_bytes, dat_bytes)
         .map_err(|e| InjectorError::DatParse(e.to_string()))?;
+    let is_utf8 = db.is_utf8;
 
-    let mut updated = 0usize;
+    let (mut updated, mut folded) = (0usize, 0usize);
 
     for t in translations {
         // Key: "Database/{db_name}/{type_idx}/{entry_idx}/{field_name}"
@@ -398,7 +413,7 @@ pub fn inject_dat(
             .get_mut(str_slot)
             .ok_or_else(|| InjectorError::KeyNotFound(t.key.clone()))?;
 
-        *slot = t.text.clone();
+        *slot = text_for_file(&t.text, is_utf8, &mut folded).into_owned();
         updated += 1;
     }
 
@@ -409,6 +424,7 @@ pub fn inject_dat(
         InjectionResult {
             file_path: PathBuf::new(),
             updated_count: updated,
+            folded_count: folded,
         },
     ))
 }
@@ -419,9 +435,9 @@ pub fn inject_dat(
 
 /// Inject translations into a Wolf RPG `CommonEvent.dat` file.
 ///
-/// Symmetric to [`inject_map`]: v3.5 (Inko, LZ4-compressed) parses to the
-/// in-house [`v3_format`] AST, replaces `string_args` by key, then dumps and
-/// recompresses. A v2.x file returns [`InjectorError::UnsupportedWolfFormat`].
+/// Symmetric to [`inject_map`]: the file (v3.5 LZ4, or stored in clear) parses
+/// to the in-house [`v3_format`] AST, `string_args` are replaced by key, then
+/// it is dumped and packed back into its original container.
 ///
 /// Keys match [`super::extractor::extract_common_events`]:
 /// `CommonEvents/{event_name}/{event_idx}/{cmd_idx}[/choices/{choice_idx}]`
@@ -431,38 +447,36 @@ pub fn inject_common_events(
     translations: &[WolfTranslation],
     _version: &WolfVersion,
 ) -> Result<(Vec<u8>, InjectionResult), InjectorError> {
-    if !v3_format::common_events::is_lz4_v3(bytes) {
-        return Err(InjectorError::UnsupportedWolfFormat(
-            "CommonEvent.dat".to_string(),
-        ));
-    }
     let translation_map: HashMap<&str, &str> = translations
         .iter()
         .map(|t| (t.key.as_str(), t.text.as_str()))
         .collect();
 
-    let mut updated = 0usize;
-    let patched = inject_common_events_v3(bytes, &translation_map, &mut updated)?;
+    let (mut updated, mut folded) = (0usize, 0usize);
+    let patched = inject_common_events_v3(bytes, &translation_map, &mut updated, &mut folded)?;
 
     Ok((
         patched,
         InjectionResult {
             file_path: PathBuf::from("CommonEvent.dat"),
             updated_count: updated,
+            folded_count: folded,
         },
     ))
 }
 
-/// Inject translations into a v3.5 (LZ4-compressed) `CommonEvent.dat` using the
-/// in-house [`v3_format`] parser — mirrors [`inject_map_v3`] with the flat
+/// Inject translations into a `CommonEvent.dat` using the in-house
+/// [`v3_format`] parser — mirrors [`inject_map_v3`] with the flat
 /// common-event command list.
 fn inject_common_events_v3(
     bytes: &[u8],
     translations: &HashMap<&str, &str>,
     updated: &mut usize,
+    folded: &mut usize,
 ) -> Result<Vec<u8>, InjectorError> {
-    let decompressed = v3_format::common_events::decompress(bytes)?;
+    let decompressed = v3_format::common_events::unpack(bytes)?;
     let mut common_events = v3_format::common_events::CommonEventsV3::parse(&decompressed)?;
+    let is_utf8 = common_events.is_utf8();
 
     for (event_idx, event) in common_events.events.iter_mut().enumerate() {
         let event_name = event.name.clone();
@@ -475,9 +489,10 @@ fn inject_common_events_v3(
                         }
                         let key = format!("CommonEvents/{event_name}/{event_idx}/{cmd_idx}");
                         if let Some(&t) = translations.get(key.as_str()) {
+                            let t = text_for_file(t, is_utf8, folded);
                             if t != text.as_str() {
                                 *updated += 1;
-                                *text = t.to_owned();
+                                *text = t.into_owned();
                             }
                         }
                     }
@@ -491,9 +506,10 @@ fn inject_common_events_v3(
                             "CommonEvents/{event_name}/{event_idx}/{cmd_idx}/choices/{choice_idx}"
                         );
                         if let Some(&t) = translations.get(key.as_str()) {
+                            let t = text_for_file(t, is_utf8, folded);
                             if t != choice.as_str() {
                                 *updated += 1;
-                                *choice = t.to_owned();
+                                *choice = t.into_owned();
                             }
                         }
                     }
@@ -504,30 +520,66 @@ fn inject_common_events_v3(
     }
 
     let dumped = common_events.dump()?;
-    Ok(v3_format::common_events::recompress(&dumped)?)
+    Ok(v3_format::common_events::pack(dumped)?)
 }
 
 // ---------------------------------------------------------------------------
 // Step 5 — inject_all (Option A export)
 // ---------------------------------------------------------------------------
 
-/// Inject all translations into a Wolf RPG game directory (Option A: decrypted).
+/// Output of [`inject_all_to_memory`].
+pub struct WolfExport {
+    /// `(relative zip path, bytes)` pairs.
+    pub entries: Vec<(String, Vec<u8>)>,
+    /// Integrity issues: the export must not be written unless this is empty.
+    pub issues: Vec<IntegrityIssue>,
+    /// Translations folded to fit Shift-JIS files (plan RW, decision D3).
+    pub folded_texts: usize,
+}
+
+/// Translated files of an archive, by path inside it.
+type ArchiveReplacements = BTreeMap<String, Vec<u8>>;
+
+/// Route a produced file to where the game will read it: a loose file under
+/// `Data/`, or a replacement inside the archive it came from.
+fn deliver(
+    file: &SourceFile,
+    bytes: Vec<u8>,
+    entries: &mut Vec<(String, Vec<u8>)>,
+    by_archive: &mut BTreeMap<PathBuf, ArchiveReplacements>,
+) {
+    match &file.origin {
+        Origin::Loose => entries.push((format!("Data/{}", file.logical), bytes)),
+        Origin::Archive { archive, path } => {
+            by_archive
+                .entry(archive.clone())
+                .or_default()
+                .insert(path.clone(), bytes);
+        }
+    }
+}
+
+/// Inject translations and return `(relative_zip_path, bytes)` pairs — no disk
+/// write. Used by the zip export path.
 ///
-/// Writes patched `.mps` / `.dat` files to `Data/MapData/` and
-/// `Data/BasicData/`.  Wolf RPG reads `Data/` with priority over `.wolf`
-/// archives — no re-encryption needed (Option B deferred to F5).
+/// Files are read where the game reads them ([`WolfSources`]: archives first).
+/// A translated file that comes from an archive is delivered inside that
+/// archive, rebuilt ([`rebuild_archive`], plan RW, RW-5) under its own path
+/// (`Data.wolf`, `Data/MapData.wolf`…); a loose file stays a loose file.
 ///
-/// Keys in `translations_by_file`:
-///   `"MapData/{stem}"`   → translations for that `.mps`
-///   `"Database/{stem}"`  → translations for that `.dat` pair
-/// Inject translations and return `(relative_zip_path, bytes)` pairs — no disk I/O.
-/// Used by the zip export path.
+/// Every produced file is checked against the very bytes it was derived from,
+/// and every rebuilt archive against the original ([`super::integrity`]): the
+/// returned issues must be empty for the export to be written.
 pub async fn inject_all_to_memory(
     game_dir: &Path,
     translations_by_file: &HashMap<String, Vec<WolfTranslation>>,
     version: &WolfVersion,
-) -> Result<Vec<(String, Vec<u8>)>, InjectorError> {
+) -> Result<WolfExport, InjectorError> {
+    let sources = WolfSources::load(game_dir)?;
     let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut issues: Vec<IntegrityIssue> = Vec::new();
+    let mut folded_texts = 0usize;
+    let mut by_archive: BTreeMap<PathBuf, ArchiveReplacements> = BTreeMap::new();
 
     for (file_key, translations) in translations_by_file {
         let parts: Vec<&str> = file_key.splitn(2, '/').collect();
@@ -535,39 +587,101 @@ pub async fn inject_all_to_memory(
             continue;
         }
         let stem = parts[1];
+        let planned: HashMap<String, String> = translations
+            .iter()
+            .map(|t| (t.key.clone(), t.text.clone()))
+            .collect();
 
         match parts[0] {
             "MapData" => {
-                let Some(bytes) = super::extractor::load_mps_for_stem(game_dir, stem) else {
+                let Some(map) = sources.get(&format!("MapData/{stem}.mps")) else {
                     continue;
                 };
-                let (new_bytes, _) = inject_map(stem, &bytes, translations, version)?;
-                entries.push((format!("Data/MapData/{stem}.mps"), new_bytes));
+                let (new_bytes, result) = inject_map(stem, &map.bytes, translations, version)?;
+                folded_texts += result.folded_count;
+                let label = format!("Data/{}", map.logical);
+                issues.extend(integrity::verify_map_edit(
+                    &label, stem, &map.bytes, &new_bytes, &planned,
+                ));
+                deliver(map, new_bytes, &mut entries, &mut by_archive);
             }
             "Database" => {
-                let Some((project_bytes, dat_bytes)) =
-                    super::extractor::load_dat_for_stem(game_dir, stem)
-                else {
+                let (Some(project), Some(dat)) = (
+                    sources.get(&format!("BasicData/{stem}.project")),
+                    sources.get(&format!("BasicData/{stem}.dat")),
+                ) else {
                     return Err(InjectorError::MissingProject(stem.to_string()));
                 };
-                let (new_bytes, _) = inject_dat(&project_bytes, &dat_bytes, translations, version)?;
-                entries.push((format!("Data/BasicData/{stem}.dat"), new_bytes));
+                let (new_bytes, result) =
+                    inject_dat(&project.bytes, &dat.bytes, translations, version)?;
+                folded_texts += result.folded_count;
+                let label = format!("Data/{}", dat.logical);
+                issues.extend(integrity::verify_dat_edit(
+                    &label,
+                    stem,
+                    &project.bytes,
+                    &dat.bytes,
+                    &new_bytes,
+                    &planned,
+                ));
+                deliver(dat, new_bytes, &mut entries, &mut by_archive);
             }
             "CommonEvents" => {
                 // All CommonEvents/* keys share the single CommonEvent.dat.
-                let Some(bytes) = super::extractor::load_common_event_bytes(game_dir) else {
+                let Some(common_events) = sources.common_events() else {
                     continue;
                 };
-                let (new_bytes, _) = inject_common_events(&bytes, translations, version)?;
-                entries.push(("Data/BasicData/CommonEvent.dat".to_string(), new_bytes));
+                let (new_bytes, result) =
+                    inject_common_events(&common_events.bytes, translations, version)?;
+                folded_texts += result.folded_count;
+                let label = format!("Data/{}", common_events.logical);
+                issues.extend(integrity::verify_common_events_edit(
+                    &label,
+                    &common_events.bytes,
+                    &new_bytes,
+                    &planned,
+                ));
+                deliver(common_events, new_bytes, &mut entries, &mut by_archive);
             }
             _ => {}
         }
     }
+    drop(sources);
 
-    Ok(entries)
+    for (archive, replacements) in by_archive {
+        let original = std::fs::read(game_dir.join(&archive))?;
+        // Sized once: the archive can weigh gigabytes.
+        let added: usize = replacements.values().map(Vec::len).sum();
+        let mut rebuilt = Vec::with_capacity(original.len() + added + 4096);
+        rebuild_archive(&original, &replacements, &mut rebuilt)?;
+        let name = display_path(&archive);
+        issues.extend(integrity::verify_archive_rebuild(
+            &name,
+            &original,
+            &rebuilt,
+            &replacements,
+        ));
+        drop(original);
+        entries.push((name, rebuilt));
+    }
+
+    Ok(WolfExport {
+        entries,
+        issues,
+        folded_texts,
+    })
 }
 
+/// Inject all translations into a Wolf RPG game directory as loose files
+/// (`Data/MapData/`, `Data/BasicData/`), read where the game reads them.
+///
+/// Used by the debug single-file command only: the game reads its `.wolf`
+/// archives before loose files, so for a game shipped as archives the zip
+/// export ([`inject_all_to_memory`]) is the one that takes effect.
+///
+/// Keys in `translations_by_file`:
+///   `"MapData/{stem}"`   → translations for that `.mps`
+///   `"Database/{stem}"`  → translations for that `.dat` pair
 pub async fn inject_all(
     game_dir: &Path,
     translations_by_file: &HashMap<String, Vec<WolfTranslation>>,
@@ -579,6 +693,7 @@ pub async fn inject_all(
     std::fs::create_dir_all(&map_dir)?;
     std::fs::create_dir_all(&db_dir)?;
 
+    let sources = WolfSources::load(game_dir)?;
     let mut results = Vec::new();
 
     for (file_key, translations) in translations_by_file {
@@ -590,25 +705,26 @@ pub async fn inject_all(
 
         match parts[0] {
             "MapData" => {
-                // Load source bytes: Data/MapData/ first, then .wolf archives.
-                let Some(bytes) = super::extractor::load_mps_for_stem(game_dir, stem) else {
+                // Source bytes as the game reads them: archives first.
+                let Some(map) = sources.get(&format!("MapData/{stem}.mps")) else {
                     continue;
                 };
-                let (new_bytes, mut result) = inject_map(stem, &bytes, translations, version)?;
+                let (new_bytes, mut result) = inject_map(stem, &map.bytes, translations, version)?;
                 let out = map_dir.join(format!("{stem}.mps"));
                 result.file_path = out.clone();
                 std::fs::write(&out, &new_bytes)?;
                 results.push(result);
             }
             "Database" => {
-                // Load source bytes: Data/BasicData/ first, then .wolf archives.
-                let Some((project_bytes, dat_bytes)) =
-                    super::extractor::load_dat_for_stem(game_dir, stem)
-                else {
+                // Source bytes as the game reads them: archives first.
+                let (Some(project), Some(dat)) = (
+                    sources.get(&format!("BasicData/{stem}.project")),
+                    sources.get(&format!("BasicData/{stem}.dat")),
+                ) else {
                     return Err(InjectorError::MissingProject(stem.to_string()));
                 };
                 let (new_bytes, mut result) =
-                    inject_dat(&project_bytes, &dat_bytes, translations, version)?;
+                    inject_dat(&project.bytes, &dat.bytes, translations, version)?;
                 let out = db_dir.join(format!("{stem}.dat"));
                 result.file_path = out.clone();
                 // Write only .dat — .project is never modified.
@@ -617,10 +733,11 @@ pub async fn inject_all(
             }
             "CommonEvents" => {
                 // All CommonEvents/* keys share the single CommonEvent.dat.
-                let Some(bytes) = super::extractor::load_common_event_bytes(game_dir) else {
+                let Some(common_events) = sources.common_events() else {
                     continue;
                 };
-                let (new_bytes, mut result) = inject_common_events(&bytes, translations, version)?;
+                let (new_bytes, mut result) =
+                    inject_common_events(&common_events.bytes, translations, version)?;
                 let out = db_dir.join("CommonEvent.dat");
                 result.file_path = out.clone();
                 std::fs::write(&out, &new_bytes)?;
@@ -661,23 +778,14 @@ mod tests {
         out
     }
 
-    /// Header of a v2.x `.mps` (WOLFM signature, no LZ4 wrapper): enough for
-    /// the format check, which must refuse it.
-    fn v2_mps_stub() -> Vec<u8> {
-        let mut b =
-            b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x57\x4F\x4C\x46\x4D\x00\x00\x00\x00\x00"
-                .to_vec();
-        b.extend_from_slice(&[0x00; 25]);
-        b.push(0x66);
-        b
-    }
+    /// Japanese texts the extractor's translatable filter keeps.
+    const MESSAGE: &str = "こんにちは、旅の人";
+    const CHOICES: [&str; 2] = ["はい、行きます", "いいえ、残ります"];
 
-    /// Header of a v2.x `CommonEvent.dat` (version byte `0x8F`, no LZ4) with
-    /// zero events.
-    fn v2_common_events_stub() -> Vec<u8> {
-        let mut b = b"\x00\x57\x00\x00\x4F\x4C\x00\x46\x43\x00\x8F".to_vec();
-        b.extend_from_slice(&0u32.to_le_bytes());
-        b
+    /// On-disk bytes of a synthetic map, in the container its `version` selects.
+    fn synthetic_map_bytes(version: u32, is_utf8: bool) -> Vec<u8> {
+        let map = v3_format::map::MapV3::synthetic_messages(version, is_utf8, &[MESSAGE], &CHOICES);
+        v3_format::compression::pack_map(map.dump().unwrap()).unwrap()
     }
 
     // -----------------------------------------------------------------------
@@ -691,6 +799,53 @@ mod tests {
             matches!(result, Err(InjectorError::Encoding(_))),
             "accented chars must fail for Wolf v2 (Shift-JIS)"
         );
+    }
+
+    /// Plan RW, decision D3: a Shift-JIS (v2) file gets its accents folded and
+    /// counted; a UTF-8 file keeps them.
+    #[test]
+    fn test_accents_are_folded_for_shift_jis_files_only() {
+        use crate::engines::wolf::extractor::extract_map_segments;
+
+        let accented = "Élève, déjà là « oui »";
+        let translations = vec![WolfTranslation {
+            key: "MapData/Map001/events/0/pages/0/0".to_string(),
+            text: accented.to_string(),
+        }];
+
+        let (sjis, result) = inject_map(
+            "Map001",
+            &synthetic_map_bytes(0x64, false),
+            &translations,
+            &v2(),
+        )
+        .unwrap();
+        assert_eq!(result.folded_count, 1);
+        let segs = extract_map_segments("Map001", &sjis, &v2()).unwrap();
+        assert_eq!(segs[0].source_text, "Eleve, deja la \" oui \"");
+
+        let (utf8, result) = inject_map(
+            "Map001",
+            &synthetic_map_bytes(0x67, true),
+            &translations,
+            &v3(),
+        )
+        .unwrap();
+        assert_eq!(result.folded_count, 0);
+        let segs = extract_map_segments("Map001", &utf8, &v3()).unwrap();
+        assert_eq!(segs[0].source_text, accented);
+
+        // Shift-JIS database: folded too.
+        let project = make_minimal_project_pub("Type", "name", "entry");
+        let dat = make_minimal_dat_pub("こんにちは");
+        let translations = vec![WolfTranslation {
+            key: "Database/DataBase/0/0/name".to_string(),
+            text: "Héros".to_string(),
+        }];
+        let (new_dat, result) = inject_dat(&project, &dat, &translations, &v2()).unwrap();
+        assert_eq!(result.folded_count, 1);
+        let parsed = dat_parser::parse_database(&project, &new_dat).unwrap();
+        assert_eq!(parsed.types[0].entries[0].string_values[0], "Heros");
     }
 
     #[test]
@@ -707,44 +862,72 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Step 2 — inject_map: v2.x is refused, nothing is written
+    // Step 2 — maps / common events stored in clear (v2.x, v3.x 0x64): RW-4
     // -----------------------------------------------------------------------
 
+    /// Without translations a map is written back byte for byte; with one, it
+    /// stays in its container and only the translated string changes.
     #[test]
-    fn test_inject_v2_map_is_refused() {
-        let translations = vec![WolfTranslation {
-            key: "MapData/Map001/events/0/pages/0/0".to_string(),
-            text: "Hello".to_string(),
-        }];
-        match inject_map("Map001", &v2_mps_stub(), &translations, &v2()) {
-            Err(InjectorError::UnsupportedWolfFormat(file)) => assert_eq!(file, "Map001.mps"),
-            Err(other) => panic!("expected UnsupportedWolfFormat, got {other}"),
-            Ok(_) => panic!("a v2 map must not be rewritten"),
+    fn test_inject_map_keeps_its_container() {
+        for (version, is_utf8) in [(0x64, false), (0x64, true), (0x67, true)] {
+            let bytes = synthetic_map_bytes(version, is_utf8);
+            let (unchanged, result) = inject_map("Map001", &bytes, &[], &v2()).unwrap();
+            assert_eq!(result.updated_count, 0);
+            if version < 0x65 {
+                assert_eq!(unchanged, bytes, "version {version:#x}");
+            }
+
+            let translations = vec![
+                WolfTranslation {
+                    key: "MapData/Map001/events/0/pages/0/0".to_string(),
+                    text: "Hello, traveller".to_string(),
+                },
+                WolfTranslation {
+                    key: "MapData/Map001/events/0/pages/0/1/choices/1".to_string(),
+                    text: "No, I stay".to_string(),
+                },
+            ];
+            let (patched, result) = inject_map("Map001", &bytes, &translations, &v2()).unwrap();
+            assert_eq!(result.updated_count, 2);
+            assert_eq!(
+                v3_format::compression::is_plain_map(&patched),
+                version < 0x65,
+                "version {version:#x}"
+            );
+            let segs =
+                crate::engines::wolf::extractor::extract_map_segments("Map001", &patched, &v2())
+                    .unwrap();
+            let texts: Vec<&str> = segs.iter().map(|s| s.source_text.as_str()).collect();
+            assert_eq!(texts, ["Hello, traveller", CHOICES[0], "No, I stay"]);
         }
     }
 
     #[test]
-    fn test_inject_v2_common_events_is_refused() {
-        match inject_common_events(&v2_common_events_stub(), &[], &v2()) {
-            Err(InjectorError::UnsupportedWolfFormat(file)) => {
-                assert_eq!(file, "CommonEvent.dat");
-            }
-            Err(other) => panic!("expected UnsupportedWolfFormat, got {other}"),
-            Ok(_) => panic!("a v2 CommonEvent.dat must not be rewritten"),
-        }
-        let message = InjectorError::UnsupportedWolfFormat("CommonEvent.dat".into()).to_string();
-        assert!(
-            message.starts_with(crate::engines::wolf::extractor::WOLF_V2_UNSUPPORTED),
-            "{message}"
-        );
+    fn test_inject_common_events_stored_in_clear() {
+        let common_events =
+            v3_format::common_events::CommonEventsV3::synthetic_messages_v2(&[("Ev001", MESSAGE)]);
+        let bytes = common_events.dump().unwrap();
+
+        let (unchanged, _) = inject_common_events(&bytes, &[], &v2()).unwrap();
+        assert_eq!(unchanged, bytes);
+
+        let translations = vec![WolfTranslation {
+            key: "CommonEvents/Ev001/0/0".to_string(),
+            text: "Hello, traveller".to_string(),
+        }];
+        let (patched, result) = inject_common_events(&bytes, &translations, &v2()).unwrap();
+        assert_eq!(result.updated_count, 1);
+        assert!(v3_format::common_events::is_plain(&patched));
+        let segs = crate::engines::wolf::extractor::extract_common_events(&patched, &v2()).unwrap();
+        assert_eq!(segs[0].source_text, "Hello, traveller");
     }
 
     #[tokio::test]
-    async fn test_export_of_a_v2_map_fails_explicitly() {
+    async fn test_export_of_a_v2_map_writes_it_in_clear() {
         let tmp = tempfile::tempdir().unwrap();
         let map_dir = tmp.path().join("Data").join("MapData");
         std::fs::create_dir_all(&map_dir).unwrap();
-        std::fs::write(map_dir.join("Map001.mps"), v2_mps_stub()).unwrap();
+        std::fs::write(map_dir.join("Map001.mps"), synthetic_map_bytes(0x64, false)).unwrap();
         let mut by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
         by_file.insert(
             "MapData/Map001".to_string(),
@@ -754,11 +937,100 @@ mod tests {
             }],
         );
 
-        let result = inject_all_to_memory(tmp.path(), &by_file, &v2()).await;
-        assert!(
-            matches!(result, Err(InjectorError::UnsupportedWolfFormat(_))),
-            "export must stop with the dedicated error"
-        );
+        let WolfExport {
+            entries, issues, ..
+        } = inject_all_to_memory(tmp.path(), &by_file, &v2())
+            .await
+            .unwrap();
+        assert!(issues.is_empty(), "{issues:?}");
+        let (path, bytes) = entries
+            .iter()
+            .find(|(path, _)| path == "Data/MapData/Map001.mps")
+            .unwrap();
+        assert_eq!(path, "Data/MapData/Map001.mps");
+        assert!(v3_format::compression::is_plain_map(bytes));
+    }
+
+    /// A map read from `Data.wolf` is delivered inside that archive, rebuilt;
+    /// the archive copy wins over a stale loose copy (plan RW, RW-5).
+    #[tokio::test]
+    async fn test_export_of_an_archived_map_rebuilds_the_archive() {
+        use crate::engines::wolf::decrypt::legacy_xor::test_archives::{
+            make_v6_dx_archive, make_v8_dx_archive, DxFile,
+        };
+        use crate::engines::wolf::decrypt::legacy_xor::{
+            extract_all, WOLF_KEYS, WOLF_V8_KEY_STRINGS,
+        };
+
+        let map = synthetic_map_bytes(0x64, false);
+        let files = [
+            DxFile {
+                dir: Some("MapData"),
+                name: "Map001.mps",
+                content: &map,
+                compress: false,
+            },
+            DxFile {
+                dir: None,
+                name: "Game.dat",
+                content: b"game settings",
+                compress: false,
+            },
+        ];
+        let v6_key = WOLF_KEYS.iter().find(|(n, _)| *n == "v2.20").unwrap().1;
+        let v8_key = WOLF_V8_KEY_STRINGS
+            .iter()
+            .find(|(n, _, _)| *n == "v3.14")
+            .unwrap()
+            .2;
+        let archives = [
+            make_v6_dx_archive(&v6_key, &files, 932, true).bytes,
+            make_v8_dx_archive(v8_key, 314, &files),
+        ];
+
+        for archive in archives {
+            let tmp = tempfile::tempdir().unwrap();
+            std::fs::write(tmp.path().join("Data.wolf"), &archive).unwrap();
+            let loose = tmp.path().join("Data").join("MapData");
+            std::fs::create_dir_all(&loose).unwrap();
+            std::fs::write(loose.join("Map001.mps"), b"stale loose copy").unwrap();
+
+            // Archive stems are lowercase in segment keys.
+            let mut by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
+            by_file.insert(
+                "MapData/map001".to_string(),
+                vec![WolfTranslation {
+                    key: "MapData/map001/events/0/pages/0/0".to_string(),
+                    text: "Hello, traveller".to_string(),
+                }],
+            );
+
+            let WolfExport {
+                entries, issues, ..
+            } = inject_all_to_memory(tmp.path(), &by_file, &v2())
+                .await
+                .unwrap();
+            assert!(issues.is_empty(), "{issues:?}");
+            let names: Vec<&str> = entries.iter().map(|(name, _)| name.as_str()).collect();
+            assert_eq!(names, ["Data.wolf"]);
+
+            let rebuilt = extract_all(&entries[0].1).unwrap();
+            let map = rebuilt
+                .files
+                .iter()
+                .find(|f| f.path == "/MapData/Map001.mps")
+                .unwrap();
+            let segs =
+                crate::engines::wolf::extractor::extract_map_segments("map001", &map.data, &v2())
+                    .unwrap();
+            assert_eq!(segs[0].source_text, "Hello, traveller");
+            let game = rebuilt
+                .files
+                .iter()
+                .find(|f| f.path == "/Game.dat")
+                .unwrap();
+            assert_eq!(game.data, b"game settings");
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -987,6 +1259,8 @@ mod tests {
         assert_eq!(project_on_disk, project, ".project must never be modified");
     }
 
+    /// An archive the game reads but Hoshi2Star cannot (RW-5) refuses the
+    /// injection, and the `.wolf` file is left untouched on disk.
     #[tokio::test]
     async fn test_inject_all_does_not_overwrite_wolf() {
         let tmp = tempfile::tempdir().unwrap();
@@ -998,7 +1272,18 @@ mod tests {
         std::fs::write(&wolf_path, b"fake wolf archive").unwrap();
 
         let by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
-        let _ = inject_all(game_dir, &by_file, &v2()).await.unwrap();
+        let err = match inject_all(game_dir, &by_file, &v2()).await {
+            Ok(_) => panic!("an unreadable archive must refuse the injection"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(
+                err,
+                InjectorError::Sources(SourcesError::UnreadableArchive { ref archive, .. })
+                    if archive == "Data/MapData.wolf"
+            ),
+            "expected UnreadableArchive, got {err:?}"
+        );
 
         let content = std::fs::read(&wolf_path).unwrap();
         assert_eq!(content, b"fake wolf archive", ".wolf must not be modified");
@@ -1099,9 +1384,12 @@ mod tests {
             });
         }
 
-        let entries = inject_all_to_memory(&game_dir, &by_file, &v3())
+        let WolfExport {
+            entries, issues, ..
+        } = inject_all_to_memory(&game_dir, &by_file, &v3())
             .await
             .unwrap();
+        assert!(issues.is_empty(), "{issues:?}");
 
         // Exactly one physical CommonEvent.dat entry, and BOTH translations
         // must survive into it.

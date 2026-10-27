@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { openProjectErrorKey } from "@/lib/projectError";
+import { openProjectErrorKey, wolfReadErrorDetail } from "@/lib/projectError";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Clock,
@@ -191,7 +191,9 @@ export function AppToolbar({
     try {
       await openProject(selected as string);
     } catch (err) {
-      toast.error(t(openProjectErrorKey(err)));
+      toast.error(t(openProjectErrorKey(err)), {
+        description: wolfReadErrorDetail(err),
+      });
     } finally {
       setIsOpening(false);
     }

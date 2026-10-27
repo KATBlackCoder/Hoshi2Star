@@ -339,7 +339,7 @@ pub async fn export_project(
         .iter()
         .any(|f| matches!(classify_file_type(&f.file_type), FileClass::Wolf));
     if has_wolf {
-        let wolf_entries = collect_wolf_zip_entries(
+        let (wolf_entries, wolf_issues) = collect_wolf_zip_entries(
             &project_id,
             &files,
             game_dir,
@@ -350,6 +350,7 @@ pub async fn export_project(
         )
         .await?;
         entries.extend(wolf_entries);
+        integrity_issues.extend(wolf_issues);
     } else {
         // Skill types renamed inside battle-command note tags (linked category).
         let renames = if engine == "mv_mz" {
@@ -534,6 +535,54 @@ pub struct ExportPreflight {
     /// `None` when the game has no language setting (MV < 1.6, other engines)
     /// or it already matches the target language.
     pub locale: Option<LocaleOption>,
+    /// What a Wolf RPG export will do (plan RW, RW-8); `None` for other engines.
+    pub wolf: Option<WolfExportPreflight>,
+}
+
+/// Notes shown before a Wolf RPG export, computed without reading any archive.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WolfExportPreflight {
+    /// Archives the game reads first; the export delivers them rebuilt when they
+    /// hold a translated file (`Data.wolf`, `Data/MapData.wolf`…).
+    pub archives: Vec<String>,
+    /// The game's text files are Shift-JIS (Wolf 2.x): accents are folded.
+    pub shift_jis: bool,
+    /// Translations holding characters Shift-JIS cannot encode: folded (é → e)
+    /// for a Shift-JIS game, written as is otherwise (the fonts may lack them).
+    pub accented_texts: usize,
+    /// The game folder path a Wolf 2.x game cannot start from.
+    pub path_warning: Option<String>,
+}
+
+async fn wolf_preflight(
+    db: &sqlx::SqlitePool,
+    project_id: &str,
+    game_path: &str,
+) -> Result<WolfExportPreflight, String> {
+    use crate::engines::wolf::{encoding, sources};
+
+    let game_dir = Path::new(game_path);
+    let version = guess_wolf_version_from_structure(game_dir);
+    let targets: Vec<String> = sqlx::query_scalar(
+        "SELECT s.target_text FROM segments s \
+         JOIN source_files f ON f.id = s.source_file_id \
+         WHERE f.project_id = ? AND s.target_text != ''",
+    )
+    .bind(project_id)
+    .fetch_all(db)
+    .await
+    .map_err(|e| e.to_string())?;
+    let accented_texts = targets
+        .iter()
+        .filter(|text| !encoding::is_shift_jis(text))
+        .count();
+    Ok(WolfExportPreflight {
+        archives: sources::archive_paths(game_dir),
+        shift_jis: !version.is_utf8(),
+        accented_texts,
+        path_warning: encoding::path_warning(game_dir, &version),
+    })
 }
 
 /// Options offered before an export, with their consequences for this game.
@@ -548,8 +597,18 @@ pub async fn preflight_export(
             .fetch_one(&state.db)
             .await
             .map_err(|e| e.to_string())?;
+    if engine == "wolf" {
+        let wolf = wolf_preflight(&state.db, &project_id, &game_path).await?;
+        return Ok(ExportPreflight {
+            locale: None,
+            wolf: Some(wolf),
+        });
+    }
     if engine != "mv_mz" {
-        return Ok(ExportPreflight { locale: None });
+        return Ok(ExportPreflight {
+            locale: None,
+            wolf: None,
+        });
     }
     let store =
         originals::ensure_fresh_mv_mz_snapshot(&state.db, &state.data_dir, &project_id).await?;
@@ -566,7 +625,7 @@ pub async fn preflight_export(
         tokio::task::spawn_blocking(move || locale_option(&store, &files, &game_path, &target))
             .await
             .map_err(|e| e.to_string())??;
-    Ok(ExportPreflight { locale })
+    Ok(ExportPreflight { locale, wolf: None })
 }
 
 /// System.json `locale` in the pristine snapshot (`None`: no such setting).
@@ -952,8 +1011,11 @@ async fn collect_wolf_zip_entries(
     replace_existing: bool,
     engine: &str,
     db: &sqlx::SqlitePool,
-) -> Result<Vec<(String, Vec<u8>)>, String> {
+) -> Result<(Vec<(String, Vec<u8>)>, Vec<integrity::IntegrityIssue>), String> {
     let version = guess_wolf_version_from_structure(game_dir);
+    if let Some(warning) = crate::engines::wolf::encoding::path_warning(game_dir, &version) {
+        log::warn!("[h2s] {warning}");
+    }
     let mut translations_by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
 
     for file in files {
@@ -983,21 +1045,38 @@ async fn collect_wolf_zip_entries(
     }
 
     if translations_by_file.is_empty() {
-        return Ok(vec![]);
+        return Ok((vec![], vec![]));
     }
 
-    wolf_to_memory(game_dir, &translations_by_file, &version)
+    // Each produced file is checked against the bytes it was derived from
+    // (plan RW, RW-6); the issues join the export's integrity gate.
+    let export = wolf_to_memory(game_dir, &translations_by_file, &version)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    if export.folded_texts > 0 {
+        log::info!(
+            "[h2s] Wolf export: {} translation(s) folded to fit Shift-JIS (é → e…)",
+            export.folded_texts
+        );
+    }
+    Ok((export.entries, export.issues))
 }
 
 /// Write a zip archive at `path` containing the given `(relative_path, bytes)` entries.
 fn write_zip(path: &Path, entries: Vec<(String, Vec<u8>)>) -> Result<(), String> {
     let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipWriter::new(file);
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
     for (rel_path, bytes) in entries {
+        // A rebuilt Wolf archive is already compressed and can weigh gigabytes:
+        // stored as is (plan RW, decision D1).
+        let method = if rel_path.to_ascii_lowercase().ends_with(".wolf") {
+            zip::CompressionMethod::Stored
+        } else {
+            zip::CompressionMethod::Deflated
+        };
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(method)
+            .large_file(bytes.len() as u64 >= u64::from(u32::MAX));
         zip.start_file(&rel_path, options)
             .map_err(|e| e.to_string())?;
         zip.write_all(&bytes).map_err(|e| e.to_string())?;
