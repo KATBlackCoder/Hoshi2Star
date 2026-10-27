@@ -1,8 +1,8 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-27 — Claude (DX : gate cloud vert, essais dans l'app et en jeu OK, PR ouverte).
-**Objectif utilisateur :** lot DX (export de debug dans les outils de diagnostic), PR à relire et fusionner ; EX abandonné (l'export exige une traduction complète) ; WR (retour à la ligne Wolf) reporté.
-**Statut :** DX validé (gate cloud vert sur `8459d4c`, essai en jeu Wolf 2.23 OK, export partiel confirmé), PR `feat/dx-debug-export` → `main` ouverte. RW **fusionné** le 2026-10-27 (PR #13, `3288534`) ; essai 3.658 non fait. WR : reporté.
+**Mis à jour :** 2026-10-27 — Claude (WR : code écrit sur `feat/wr-wolf-wrap`, worktree `../Hoshi2Star-wr`, non compilé).
+**Objectif utilisateur :** lot WR, retour à la ligne des messages Wolf à l'export. RW (PR #13) et DX (PR #15) fusionnés ; EX abandonné.
+**Statut :** WR-1 à WR-9 faits : gate final vert sur `4221f9e`, essai en jeu 2.23 OK ; PR ouverte.
 
 ## Terminé (2026-10-27, Claude) — RW (Wolf), fusionné par la PR #13
 
@@ -34,20 +34,34 @@
 - **PR ouverte** le 2026-10-27 : https://github.com/KATBlackCoder/Hoshi2Star/pull/13 (`feat/rw-wolf` → `main`, accord de l'utilisateur).
 - **Prochaine action exacte** : relecture et fusion de la PR #13 par l'utilisateur ; essai en jeu 3.658 facultatif. Après fusion : les sessions « Export d'essai » (plan EX validé) et « Retour à la ligne Wolf » partent de `main` ; leurs plans sont non commités dans le dossier principal, à mettre sur leurs branches avant de mettre `main` à jour. (tests réels `--ignored` chez l'utilisateur, essai en jeu de l'export de l'app), puis PR. Pas de build local ; gate en cloud après push autorisé. Suites hors RW : garde « jeu mis à jour » Wolf (copie d'origine, équivalent R2) ; écriture en flux de l'archive dans le zip si l'export du jeu de 2,1 Go peine.
 
-## Reporté (2026-10-27, Claude) — WR : retour à la ligne Wolf à l'export (plan seulement)
+## En cours (2026-10-27, Claude) — WR : retour à la ligne Wolf à l'export
 
-- **Reporté par décision de l'utilisateur le 2026-10-27**, pendant WR-1. Il reprendra plus tard, dans une autre session.
-- Capture A faite (choix collés à droite hors écran ; `\f` sans effet sur un choix) ; écrans B à M non capturés.
+- **Repris le 2026-10-27** (décision de l'utilisateur, « ok on va essayer »), avec la méthode du budget en em (K9).
+  RW (PR #13) et DX (PR #15, `80b4fc5`) sont fusionnés. Branche prévue : `feat/wr-wolf-wrap` depuis `main`, dans un
+  worktree, pour ne pas changer la branche du dossier partagé. Le constat K9, non commité dans le dossier principal,
+  ira dans le premier commit WR.
+- K10 ajouté : largeurs d'origine en em sur tout le jeu. Les lignes avec visage vont jusqu'à 25 em, contre 22 sans visage.
+- WR-1 réduit à 6 captures (B, C, D, I, K, L) dans la WCAL existante ; détail dans `tasks/todo.md`.
+- Ancien report du même jour : capture A faite (choix collés à droite hors écran ; `\f` sans effet sur un choix).
 
 - Plan : `tasks/todo.md`, « Plan — WR ». **Validé le 2026-10-27** (WR-E0 à WR-E6 = recommandations). Aucun code applicatif, rien commité.
 - WR-1 : variante `RAE-PLAN/essais/wolf-v223/WCAL` construite et relue hors jeu (outil `RAE-PLAN/wolf/_outils/build_wolf_wcal.py`) ; fiche `WCAL.FICHE.md`, captures attendues dans `WCAL-captures/` (`capture.fish <lettre>`).
 - Journal : `docs/journal/2026-10-27-wr-retour-ligne-wolf.md`.
-- Prérequis : RW n'est pas fusionné et n'a pas de PR. Ordre à convenir avec EX (`collect_wolf_zip_entries`).
+- Prérequis levé : RW et DX sont fusionnés. EX est abandonné. Point d'accroche : `collect_wolf_zip_entries` (après `apply_font_prefix`, avant `wolf_to_memory`), pour les portées `Release` et `Debug`.
 - Constats clés :
   - les `\n` parasites viennent du tokenizer, qui impose au LLM chaque `\n` comme jeton ;
   - la donnée en jeu (~276 px coupés à `\f[18]`) contredit le modèle simple (lignes d'origine de 320 à 336 px à 16 px) ⇒ calibrage en jeu obligatoire avant tout code (WR-1) ;
   - les réglages numériques de `Game.dat` ne sont pas décodés.
-- **Prochaine action, à la reprise** : relancer WCAL (`RAE-PLAN/essais/wolf-v223/WCAL.FICHE.md`) et capturer les écrans B à M ; lire les captures (largeurs, lignes, taille par défaut, police réelle) ; puis WR-2 (`Game.dat`) et WR-3 (règle de budget). Le code attend la fusion de RW.
+- **WR-1 fait (2026-10-27)** : budget de 22 em et 4 lignes, avec ou sans visage ; taille par défaut `\f[12]` ; `\f[18]` = 1,5 fois (K5 expliqué). Détail : `tasks/todo.md`, « Résultats WR-1 ».
+- **WR-2/WR-3 faits** : taille du jeu illisible dans les fichiers ⇒ champ manuel (12 pour 2.23) ; budget = p99 des lignes des cartes (22 em) et maximum de lignes (4), concordant avec WR-1.
+- **WR-4 à WR-7 écrits** (`feat/wr-wolf-wrap`) : `engines/wolf/layout/`, `commands/wolf_text_fit.rs`, migration `0013`, branchements export / QA / réglages, interface, tests. Écarts au plan listés dans `tasks/todo.md` (choix non signalés, police = seul fichier du dossier, mesure sans repli Shift-JIS).
+- **Poussé** le 2026-10-27 (accord de l'utilisateur) : `origin/feat/wr-wolf-wrap` @ `95e7a76`. Gate cloud (WR-8) demandé dans une session cloud « Gate cloud WR », qui ne fait que rapporter : résultat à relever dans son transcript.
+- **Gate cloud du 2026-10-27 sur `95e7a76`** : tout est vert sauf 1 test, 785 OK / 1 échec / 15 ignorés ; Vitest 153 ; clippy 0. L'échec vient de la liste des migrations figée à `1..=12` (`tests/terminology_migration.rs:205`), passée à `1..=13`, commitée et pas encore poussée.
+- **Gate vert** sur `f02e174` (poussé avec accord) : `cargo test` 786 OK / 0 échec / 15 ignorés, fmt OK ; le reste est inchangé depuis `95e7a76`.
+- WR-9 préparé (2026-10-27) : `pnpm i` dans le worktree ; base sauvegardée (`~/.local/share/com.blackat.hoshi2star/backups/hoshi2star-avant-essai-wr9-20261027-181808.db`, intégrité OK, 3 234 segments). Le lancement depuis le worktree applique la migration 0013 à la vraie base ; l'app de `main` l'accepte ensuite comme base plus récente. Mesure sur `APP` (une seule carte) : 22 em, mais 3 lignes ⇒ fixer 4 lignes à la main.
+- **WR-9 OK en jeu (2026-10-27)** : tous les messages dans le cadre, portraits conservés, aucune ligne isolée (captures `RAE-PLAN/essais/wolf-v223/WR9-captures/`). Corrigés pendant l'essai : listes de la boîte illisibles en thème sombre ; remarques Wolf en anglais.
+- **Gate final vert sur `4221f9e`** (2026-10-27) : fmt, typecheck, Vitest 153, clippy 0, `cargo test` 786 OK / 0 échec / 15 ignorés, lint 0 erreur ; CHANGELOG ajouté.
+- **Prochaine action** : PR `feat/wr-wolf-wrap` → `main` ouverte avec l'accord de l'utilisateur ; reste sa relecture et sa fusion. Suivi hors lot : défaut 18 de la fenêtre de taille de police à l'export (`tasks/todo.md`, « Suivi WR »).
 
 ## Abandonné (2026-10-27, Claude) — EX : export d'essai
 

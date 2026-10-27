@@ -6,6 +6,13 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 ## [Unreleased]
 
 ### Added
+- Add text fitting for Wolf RPG messages (off by default, toolbar "Text fitting"). Wolf RPG never wraps text, so long translations ran off the message window. At export, map and common-event messages are now laid out to the window. Your translations in the editor are never rewritten. How it works:
+  - The window is measured on the game's own original map messages, in its own font file: line width in em and lines per window. You can set either by hand. On the Wolf 2.23 test game the measure (22 em, 4 lines) matches the window seen in game.
+  - Stray line breaks are removed, such as the ones an AI translation leaves before a final "." or "!". The face prefix (`@N`), a speaker label line, blank lines and indented lines are kept. Each message is then rewrapped evenly, and codes are never split.
+  - A message with too many lines is shrunk with a leading `\f[n]` when you give the game's font size (12 on the test game), down to a chosen minimum. Otherwise it is left as is and reported.
+  - Texts with positioning or alignment codes are left as translated. A message holding a font size code, such as the export font size, is also left as translated when the game's font size is not set.
+  - Choices and database texts are not laid out.
+  - The fitted text goes through the Wolf export integrity check. QA no longer flags the line width of fitted messages.
 - Add a debug export for testing in game before a project is complete (developer tool; MV/MZ and Wolf RPG). With "Show diagnostic tools" ticked in the settings, a toolbar button writes `hoshi2star-debug.zip` with the translations ready so far:
   - untranslated segments and translations with a critical QA error stay as in the original game;
   - the integrity gate and the game-update check are those of the normal export;

@@ -135,6 +135,11 @@ async fn check_segment_live(
             if is_fitted_segment(file_name, key, kind, dialogue, descriptions) {
                 result.drop_line_width();
             }
+        } else if resolved_engine == "wolf" {
+            let (dialogue, _) = text_fit::enabled_kinds(db, pid).await;
+            if dialogue && crate::engines::wolf::layout::is_fitted_key(key) {
+                result.drop_line_width();
+            }
         }
     }
     result

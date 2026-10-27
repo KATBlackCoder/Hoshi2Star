@@ -83,6 +83,71 @@
     à comparer avec `W0`.
 - Le lot est **reporté** par décision de l'utilisateur. Écrans B à M non capturés.
 
+## Reprise et WR-1 terminé (2026-10-27)
+
+- Reprise demandée par l'utilisateur après la fusion de RW (PR #13) et de DX (PR #15, `main` @ `80b4fc5`).
+  Constat K9 apporté par la session parente (budget en em) ; K10 ajouté (largeurs d'origine en em sur tout le jeu).
+- WR-1 réduit à 6 écrans ; l'utilisateur a tout capturé (A à L). Résultats détaillés dans `tasks/todo.md`,
+  « Résultats WR-1 » :
+  - taille par défaut `\f[12]` ;
+  - `\f[18]` = 1,5 fois, ce qui explique K5 ;
+  - fenêtre de ~22 em (22,3 em jusqu'au cadre), même largeur avec visage ;
+  - 4 lignes par fenêtre ;
+  - texte non coupé au cadre ;
+  - ligne d'origine de 25 em qui déborde (défaut du jeu) ;
+  - icône de 20 px ;
+  - choix qui sortent de l'écran.
+- `SysDatabase.project` déclare `基本フォントサイズ` : piste pour la taille par défaut (WR-2 ajusté).
+
+## WR-2 à WR-7 (2026-10-27, worktree `../Hoshi2Star-wr`, branche `feat/wr-wolf-wrap` depuis `main` @ `80b4fc5`)
+
+- WR-2 : la taille par défaut du jeu n'est stockée nulle part de façon lisible.
+  - `SysDatabase` n'a que le *nom* `基本フォントサイズ`, sans valeur.
+  - `CDataBase` « システム基本フォントサイズ » vaut 0, posée par l'initialisation à l'exécution.
+  - `Game.dat` contient 320 et 240, mais pas 12.
+  - ⇒ champ manuel.
+- WR-3 : sur les cartes 2.23, p99 = 22,0 em et 4 lignes au plus. C'est exactement la mesure en jeu.
+- WR-4 à WR-7 : code et tests écrits. Détail et écarts : `tasks/todo.md`, « Plan — WR ».
+- Formatage seulement : `rustfmt --check` OK sur les fichiers Rust touchés, `prettier --write` sur les fichiers
+  TS/JSON (binaire du dossier principal ; `node_modules` absent du worktree).
+- **Non compilé, aucun test exécuté** (règle : pas de build local). Relecture indépendante lancée avant commit.
+- Relecture indépendante (agent, lecture seule) : aucune erreur de compilation repérée, attentes de tests vérifiées à la main ; 5 constats, dont 3 corrigés et 2 gardés (détail dans `tasks/todo.md`, « Relecture indépendante »).
+
+## Gate cloud WR-8 (2026-10-27, sur `95e7a76`)
+
+- Résultats :
+  - fmt, typecheck, clippy `--all-targets -D warnings` (0 avertissement) : OK ;
+  - Vitest 153/153 ;
+  - lint : 0 erreur, 10 avertissements, tous sur `main` ;
+  - `cargo test --locked --no-fail-fast` : 785 OK / 1 échec / 15 ignorés.
+- Tous les tests WR sont verts, y compris l'e2e et le cas Vitest Wolf.
+- Correction : symptôme = `fresh_schema_and_repeated_startup_are_idempotent` attend les migrations `1..=12`, et la
+  base en a 13. Cause confirmée : la liste est figée dans le test. Solution : `1..=13`. Preuve attendue : la relance
+  du gate. Leçon ajoutée.
+
+- Relance sur `f02e174` (session cloud) : fmt OK, `cargo test` **786 OK / 0 échec / 15 ignorés**. **Gate vert.**
+
+## WR-9 : essai en jeu (2026-10-27)
+
+- La base a été sauvegardée (`backups/hoshi2star-avant-essai-wr9-20261027-181808.db`). L'app a été lancée depuis
+  le worktree, avec `CARGO_TARGET_DIR` sur la cible du worktree RW (compilation en 40 s) ; migration 13 appliquée.
+- Écarts relevés par l'utilisateur dans la boîte de dialogue, corrigés :
+  - listes déroulantes illisibles en thème sombre (défaut ancien, partagé avec MZ) ;
+  - remarques Wolf en anglais, sous un titre MZ.
+- Projet `APP` : messages ajustés, taille du jeu 12, 4 lignes. Export avec « Ignorer » à la question de taille de
+  police, puis décompression sur `APP`.
+- Relecture hors jeu de `Data.wolf` : 27 messages recomposés, 3 lignes au plus, ligne la plus large 21,77 em.
+- En jeu : **OK**. Captures dans `RAE-PLAN/essais/wolf-v223/WR9-captures/`.
+
+## Gate final et PR (2026-10-27)
+
+- Gate final sur `4221f9e` (session cloud) :
+  - fmt, typecheck et clippy (0 avertissement) OK ;
+  - Vitest 153/153 ;
+  - `cargo test` 786 OK / 0 échec / 15 ignorés ;
+  - lint : 0 erreur, et 10 avertissements, tous hérités de `main`.
+- CHANGELOG mis à jour (Added). PR ouverte avec l'accord de l'utilisateur.
+
 ## Prochaine session
 
-- Relancer WCAL et capturer les écrans B à M, puis lire les captures `RAE-PLAN/essais/wolf-v223/WCAL-captures/` et consigner les mesures dans le plan (WR-1), puis WR-2 et WR-3.
+- Relecture et fusion de la PR par l'utilisateur. Suivi : défaut 18 de la fenêtre de taille de police à l'export (Wolf).

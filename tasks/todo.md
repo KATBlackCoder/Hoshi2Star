@@ -673,7 +673,7 @@ Il faut :
 
 **Effort estimé.** M (environ une journée), gate cloud compris.
 
-## Plan — WR : retour à la ligne des textes Wolf à l'export (2026-10-27, Claude) — PLAN VALIDÉ le 2026-10-27 (WR-E0 à WR-E6 = recommandations) ; **REPORTÉ le 2026-10-27 (décision utilisateur)** pendant WR-1, aucun code applicatif
+## Plan — WR : retour à la ligne des textes Wolf à l'export (2026-10-27, Claude) — PLAN VALIDÉ le 2026-10-27 (WR-E0 à WR-E6 = recommandations) ; repris le 2026-10-27 ; WR-1 à WR-9 faits, gate final vert sur `4221f9e`, PR ouverte
 
 **But.** Wolf ne coupe pas les lignes. Constaté en jeu le 2026-10-27 (Wolf 2.23, essai RW-9) : une traduction
 plus longue que l'original sort du cadre (« Thank you for downloading th… »), et des choix débordent.
@@ -737,6 +737,33 @@ les cibles en base ne changent pas, comme pour le text fitting MZ.
   - `text_fit::enabled_kinds`, `set_text_fit` (via `support`), `qa.rs:133` (`drop_line_width`) et `report.rs:116`
     ne s'appliquent qu'à `mv_mz`.
   - Dernière migration : `0012`.
+- **K9. Point de calibrage tiré de l'essai DX** (2026-10-27, captures de l'utilisateur, zip de debug **sans** `\f`) :
+  - méthode : largeurs mesurées avec `fontTools` sur `mplus-2c-medium.ttf`, avancées divisées par `unitsPerEm` ;
+  - texte visible avant le bord de l'écran (~595 px de capture), sur trois messages :
+    - « ※Thank you for downloading the trial version of » : 23,45 em ;
+    - « You can select the difficulty level for the fishing » : 23,64 em ;
+    - « The difficulty level can be changed anytime by ir » : 23,32 em ;
+  - les trois donnent **25,2 à 25,5 px/em** : le jeu dessine bien avec les métriques de la police livrée, sans
+    substitution visible sous Wine. Cela lève en partie K5, dont la mesure était faite avec `\f[18]` ;
+  - les lignes japonaises d'origine de la carte titre mesurent **22 em au plus**.
+  - ⇒ **Budget mesuré en em** : la taille de police s'annule. Le budget d'un jeu vaut la largeur de ses lignes d'origine
+    dans sa propre police, par type de fenêtre ; aucune mesure de fenêtre en pixels n'est nécessaire. Ici :
+    ~22 em sûrs ; débordement constaté au-delà de ~23 em.
+  - Reste à vérifier avec WCAL : fenêtre avec visage, choix, effet d'un `\f[n]`, police chiffrée (WolfX, estimation).
+  - Capture A (WCAL) recoupe K9 : 16,0 px par chiffre de 0,63 em, soit **25,4 px/em**.
+- **K10. Largeur des lignes d'origine en em, dans la vraie police, sur tout le jeu 2.23** (2026-10-27, fontTools ;
+  codes retirés ; textes à `\ax`/`\ay`/`\mx`/`\my`/`<C>`/`<R>` exclus) :
+  - sans visage, cartes : 409 lignes, p99 21 em, **max 22 em** ⇒ conforme à K9 ;
+  - sans visage, `CommonEvent.dat` : max 32,9 em ; 29 lignes au-delà de 23 em. Ce sont surtout les messages
+    d'erreur du 基本システム (événement 143), qui débordent sans doute aussi en japonais ;
+  - avec visage, cartes : p99 22 em, **max 25 em** ; 4 lignes au-delà de 23 em, dont la ligne de 25 em reprise dans
+    l'écran L de WCAL ;
+  - avec visage, `CommonEvent.dat` : p99 24 em, max 28 em.
+  - ⇒ Deux conséquences :
+    - le budget (WR-3) doit être une statistique robuste par type, et non le maximum : il faut écarter les messages
+      système, qui débordent probablement eux-mêmes ;
+    - **les lignes avec visage dépassent celles sans visage** : la fenêtre avec visage n'est peut-être pas plus
+      étroite. C'est le point clé à vérifier en jeu.
 
 ### Décisions à prendre (recommandation en premier)
 
@@ -845,55 +872,178 @@ les cibles en base ne changent pas, comme pour le text fitting MZ.
       - le pas est de 16,0 px par chiffre, identique avec `\f[12]` : `\f` n'agit pas sur un choix ;
       - le 3e choix, laissé d'origine, n'est plus visible. Non vérifié sur `W0` ;
       - indice, à confirmer par l'écran B : taille de police des choix de 24 à 26 px.
-    - **Reprise** : relancer WCAL (commande dans la fiche), choisir le 1er choix, capturer les écrans B à M,
-      puis lire les captures. B seul donne déjà la taille par défaut, l'espacement et la police réelle.
-- [ ] **WR-2. Décodage de `Game.dat`** (lecture seule, Python).
-  - Comparer `m_unknown1` d'au moins 3 jeux 2.x de `RAE-PLAN/` (extraits avec `dxa6.py`) et de 3.658 (`dxa8.py`),
-    à la lumière de WR-1.
-  - Si la taille par défaut et l'espacement sont identifiés : lecteur `engines/wolf/game_dat.rs`.
-    Sinon : champ manuel « taille de police du jeu », vide par défaut, avec les limites de R2 tant qu'il est vide
-    (pas de préfixe, pas de réduction).
-- [ ] **WR-3. Règle de budget** (E1). Comparer le p99 des lignes d'origine (vraie police) aux largeurs de WR-1,
-  puis fixer le facteur et la marge. Résultat consigné ici, avec les chiffres.
-- [ ] **WR-4. Rust, mise en page** : `engines/wolf/layout/{mod,text,fit}.rs`.
-  - Réutilise `mv_mz::layout::{font, wrap, text::Token}` sans les refactorer.
-  - `measure_game(sources, font) -> WolfBudget` : budgets par type, lignes max, police résolue.
-  - Police : nom lu dans `Game.dat`, puis fichier `.ttf`/`.otf` du dossier du jeu dont le nom de famille correspond
-    (table `name`) ; sinon `Estimated`.
-  - `fit_message(text, budget, settings) -> (String, WolfFitOutcome)`.
-- [ ] **WR-5. Branchement dans l'export.**
-  - Dans `collect_wolf_zip_entries`, après `apply_font_prefix` et avant `wolf_to_memory` : messages 101 seulement
-    (clés sans `/choices/`, hors `Database/`).
-  - Le contrôle RW-6 relit donc exactement le texte ajusté.
-  - Compte rendu : ajustés, réduits, laissés trop longs (clés), non ajustés (codes de position), choix trop larges.
-  - Il est journalisé et renvoyé par `WolfExport`.
-  - `preflight_export` annonce que la mise en page est active.
-- [ ] **WR-6. Réglages et contrôle qualité.**
-  - Lever le verrou `mv_mz` dans `support`, `enabled_kinds`, `qa.rs:133` (ne plus signaler la largeur des lignes
-    des messages Wolf ajustés) et `report.rs:116`.
-  - Migration `0013` (E4) ; refus de `NewPage` pour Wolf.
-  - `TextFitDialog` : variante Wolf (champs utiles, budgets mesurés affichés, réglage manuel) ; textes fr/en.
-  - L'aperçu MZ (`TextFitPreviewPanel`) est hors v1.
-- [ ] **WR-7. Tests.**
-  - Unitaires Rust, avec les TTF synthétiques de `font.rs` :
-    - `@N\n` gardé ;
-    - « nom : » gardé ;
-    - lignes vides et indentation gardées ;
-    - `\n` parasites (cas réels de K6) ;
-    - codes jamais coupés ;
-    - ruby compté par sa base ;
-    - repli Shift-JIS mesuré, sortie non repliée ;
-    - `\f[m]` qui remplace le préfixe sans s'empiler ;
-    - texte à codes de position intact ;
-    - cible CJK sans espaces.
-  - Intégration : `open_project` sur un faux jeu Wolf, puis `export_project`. Le message long sort recoupé et
-    l'intégrité RW-6 passe ; l'export sans mise en page reste octet pour octet identique à aujourd'hui.
-  - Réel `#[ignore]` (`H2S_WOLF_GAMES`) : sur 2.23, chaque ligne ajustée tient dans son budget.
+    - **Reprise WR, ajustée par K9/K10 (2026-10-27)** : la largeur sans visage est connue. WCAL n'est pas
+      reconstruite : on capture **6 écrans**, et on fait défiler les autres sans les capturer.
+      - **B** : bord intérieur de la fenêtre sans visage, en em. La règle est lue contre le cadre, pas contre
+        le bord de l'écran (K9 mesurait au bord de l'écran).
+      - **C** : `\f[18]` ⇒ correspondance entre `\f[n]` et px/em. Nécessaire pour combiner le budget au préfixe
+        d'export et pour la réduction R5.
+      - **D** et **K** : capacité en lignes et comportement de la fenêtre (6 lignes), sans puis avec visage.
+      - **I** : bord de la fenêtre avec visage, en em, par la règle.
+      - **L** : la ligne d'origine de 25 em avec visage tient-elle ? (K10).
+      - Écrans non capturés : E (icônes, rares en dialogue), F et J (redondants avec C), G (lignes système hors
+        budget), H (les choix centrés s'agrandissent, vu en W2), M (redondant avec C).
+      - Police WolfX (3.658) : pas de variante maintenant. `Metrics::Estimated` reste une limite signalée.
+  - [x] **Résultats WR-1 (2026-10-27).** L'utilisateur a capturé A à L ; les captures sont dans `WCAL-captures/`
+    (`A-2`, `B`, `C`, `D`, `E`, `F`, `GH`, `I`, `J`, `K`, `L`). Mesures en Python (PIL) :
+    - **Rendu.** La fenêtre de 640 × 480 est le jeu natif en 320 × 240 agrandi 2 fois. Les mots 320 et 240 sont dans
+      `Game.dat`, données après les chaînes.
+      - Avances arrondies au pixel, à la taille par défaut : chiffre 16 px, `M` 21 px, pleine chasse 26 px,
+        soit **25,4 à 26 px/em**.
+      - C'est la vraie police : le rapport `M` / `i` est conforme, sans police de repli.
+    - **Taille par défaut = `\f[12]`** : F (`\f[12]`) est identique à B au pixel près.
+      - **`\f[18]`** (C, J) : 25 px par chiffre, 39 px en pleine chasse, soit environ 39 px/em = **1,5 fois**.
+      - La taille est donc proportionnelle à n, environ 2,17 px/em par unité de n (rendu agrandi 2 fois compris).
+      - ⇒ **K5 expliqué** : l'export RW-9 en `\f[18]` agrandissait le texte de 50 %.
+    - **Fenêtre de message.** Cadre de x = 21 à 614, texte dès x = 41 (marge de 20 px), soit 573 px jusqu'au cadre
+      (≈ 22,3 em) et environ 553 px avec une marge symétrique à droite (≈ 21,5 em).
+      - Le texte n'est **pas coupé au cadre** : il continue jusqu'au bord de l'écran.
+    - **Avec visage (`@N`), même largeur** (cadre de 27 à 619, texte dès 47). Dans ce jeu, le portrait est un buste
+      derrière la fenêtre et le nom est dans un onglet au-dessus : aucun rétrécissement.
+    - **4 lignes par fenêtre**, avec ou sans visage (D, K). La 5e est dessinée sous le cadre et coupée par l'écran ;
+      la fenêtre ne grandit pas.
+    - **L** : la ligne d'origine de 25 em (avec visage) **déborde** jusqu'au bord de l'écran, « ね。 » coupés. C'est un
+      défaut du jeu d'origine : le budget ne peut pas être le maximum.
+    - **Icône `\i[n]`** : 20 px à la taille par défaut (≈ 0,78 em).
+    - **Choix.**
+      - Centrés (H, 60 chiffres) : la fenêtre grandit et sort de l'écran des deux côtés.
+      - `<R>` du titre (A) : débordement à droite.
+      - Effet de `\f` sur un choix : **non tranché**, car `\f[12]` vaut la taille par défaut.
+      - Le 3e choix du titre est invisible avec de longs choix, vu deux fois.
+    - ⇒ **Budget de ce jeu : 22 em, 4 lignes**, avec ou sans visage. Il concorde avec K9 (débordement au-delà de
+      ~23 em) et avec K10 (lignes d'origine des cartes : max 22 em sans visage, p99 22 em avec visage).
+- [x] **WR-2. Taille par défaut du jeu** (2026-10-27) : **non lisible dans les fichiers ⇒ champ manuel** (R2).
+  - `基本フォントサイズ` n'est qu'un *nom* de variable système (type 6 `システム変数名` de `SysDatabase`, sans valeur).
+  - `CDataBase` type 18 `基本ｼｽﾃﾑ用変数` : « システム基本フォントサイズ » vaut 0, avec la note « valeur posée par
+    l'initialisation automatique du système » : la valeur n'existe qu'à l'exécution.
+  - `Game.dat` (format WolfTL relu en Python) : les mots 320 et 240 (résolution) sont présents, mais aucun 12.
+    `m_unknown1` reste non décodé.
+  - Conséquence (R2) : la taille du jeu est un champ du projet, vide par défaut. Sans elle, pas de réduction, et
+    un texte qui contient `\f[n]` (dont le préfixe d'export) est laissé tel quel et signalé.
+    **Pour le jeu 2.23 : 12** (WR-1).
+  - Scripts de lecture (hors Git) : `sysdb.py`, `cdb.py` dans le dossier de travail de la session.
+- [x] **WR-3. Règle de budget** (2026-10-27).
+  - Mesure sur les messages des cartes (`MapData/`, sans les choix, sans `CommonEvent.dat`, K10) dans la police du jeu :
+    - largeur = p99 des largeurs de lignes en em ;
+    - lignes = le maximum de lignes d'un message ;
+    - textes à codes de position ou à `\f` exclus ;
+    - au moins 20 lignes, sinon pas de mesure et réglage manuel ;
+    - **pas de marge**.
+  - 2.23 (fontTools) : p95 21,0, **p99 22,0**, p99,5 23,0, max 25,0 em ; nombre de lignes : 561 × 1, 769 × 2, 80 × 3,
+    **1 × 4**. ⇒ **22 em, 4 lignes**, soit exactement la mesure en jeu (cadre à 22,3 em).
+  - Un seul budget pour tous les messages, avec ou sans visage : le visage ne rétrécit pas la fenêtre de ce jeu (WR-1).
+    Pour un jeu où il la rétrécirait, il reste le réglage manuel. Un budget par type sera ajouté si un jeu le demande.
+- [x] **WR-4. Rust, mise en page** (2026-10-27, **non compilé**) : `engines/wolf/layout/`.
+  - `text.rs` : jetons Wolf vers les `Token` MZ (R1).
+    - `\i` : échantillon d'un caractère pleine chasse ;
+    - `\s`, `\sysS`, bases de données, `\cself[5-9]` : 6 caractères pleine chasse ;
+    - nombres : « 0000 » ;
+    - le ruby est mesuré par sa base ;
+    - codes de position et alignements : texte marqué « positionné ».
+  - `fit.rs` :
+    - `measure_budget` (WR-3) ;
+    - `fit_message` : R3 (nettoyage), R4 (`wrap::pieces`/`wrap`), R5 (réduction par `\f[m]` en tête, qui remplace
+      un `\f` de tête), sortie « encore trop long » recoupée.
+  - `mod.rs` : `is_fitted_key`, `is_budget_key`, `find_game_font`. La police est le **seul** `.ttf`/`.otf` du
+    dossier du jeu ; sinon les largeurs sont estimées. **Écart** : pas de lecture du nom de police dans `Game.dat`.
+  - **Écart R2** : la largeur est mesurée sur le texte **non replié** Shift-JIS. Les écarts de largeur du repli
+    (é/e, «/") sont négligeables, et le compte `folded_texts` de l'injecteur reste exact.
+- [x] **WR-5. Branchement dans l'export** (2026-10-27, **non compilé**).
+  - `WolfExportFit` (`commands/wolf_text_fit.rs`) est chargé dans `write_export` quand `enabled_dialogue` est actif.
+  - Il est appliqué dans `collect_wolf_zip_entries` après `apply_font_prefix`, avant `wolf_to_memory`, pour les
+    portées Release et Debug. RW-6 relit le texte ajusté.
+  - Résumé et clés « trop long / non ajusté » journalisés. Le résumé chiffré est aussi dans la boîte d'export, via le
+    `scan_text_fit` déjà appelé quand la mise en page est active.
+  - **Écarts** : pas de champ dans `WolfExport` ni dans `preflight_export` ; **les choix ne sont pas signalés**
+    (R6 reporté : aucune règle fiable de largeur pour les choix, WR-1). La boîte de dialogue le dit.
+- [x] **WR-6. Réglages et contrôle qualité** (2026-10-27, **non compilé**).
+  - Migration `0013` : `wolf_width_em`, `wolf_max_lines`, `wolf_base_font_size` dans `project_text_fit`.
+  - `TextFitSettings` :
+    - les mêmes champs (`serde(default)`) ;
+    - `default_for("wolf")` : réduire, minimum 8 ;
+    - `validate_wolf` : refus de `new_page` et des descriptions.
+  - Commandes :
+    - `get_text_fit` : branche Wolf, avec `wolf: WolfFitInfo` et des notes ;
+    - `scan_text_fit` : comptes par message ;
+    - `set_text_fit` : valide pour Wolf.
+  - `enabled_kinds` ouvert à Wolf, sans descriptions. QA (`qa.rs`, `report.rs`) : la largeur de ligne n'est plus
+    signalée pour les messages Wolf ajustés.
+  - Interface :
+    - bouton « Mise en page » aussi pour Wolf ;
+    - `TextFitDialog` en variante Wolf : pas de descriptions ni de nouvelle page ; taille du jeu, largeur et lignes
+      (vides = mesurées) ; fenêtre mesurée affichée ;
+    - textes fr/en.
+- [x] **WR-7. Tests écrits** (2026-10-27, **non exécutés**).
+  - Unitaires Rust :
+    - `layout/text.rs` : 4 tests ;
+    - `layout/fit.rs` : 12 tests (budget p99 et police synthétique, parasites K6, préfixe de visage, nom, lignes
+      vides, indentation, Keep, CJK, espace français, codes insécables, ruby, positionné, `\f` sans taille, réduction) ;
+    - `layout/mod.rs` : 2 tests + `wolf_real_budget` `#[ignore]` (`H2S_WOLF_FIT_MAPS`, `H2S_WOLF_FIT_FONT` : attend
+      21 à 22,5 em et 4 lignes sur 2.23) ;
+    - `core/text_fit.rs` : réglages Wolf.
+  - Intégration : `wolf_export_rewraps_messages_when_text_fitting_is_on` (e2e). Les tests Wolf existants couvrent
+    l'export sans mise en page.
   - Vitest : variante Wolf de `TextFitDialog`.
-- [ ] **WR-8. Gate cloud** après ton accord pour pousser : fmt, clippy `--all-targets -D warnings`,
+  - Écart : le test du repli Shift-JIS est sans objet (voir WR-4).
+- [x] **Relecture indépendante** (2026-10-27, agent, lecture seule, sans compilation) : aucune erreur de
+  compilation ni de clippy repérée ; chaque attente de test retracée à la main et jugée juste. Corrigé :
+  - `set_text_fit` refuse d'activer la mise en page Wolf si la fenêtre est inconnue. Sinon le contrôle qualité
+    masquerait la largeur des lignes alors que l'export ne mettrait rien en page ;
+  - colonnes Wolf ajoutées à `REQUIRED_COLUMNS` (`db/pool.rs`) ;
+  - analyse dans `spawn_blocking`, comme pour MZ ;
+  - largeur mesurée arrondie à 0,1 em à l'affichage ;
+  - « Ouvrir » ne bascule pas sur l'aperçu, qui ne lit que MZ.
+  Gardés, notés :
+  - le contrôle qualité masque aussi la largeur des messages que l'export laissera « non ajustés » (codes de
+    position, `\f` sans taille du jeu) ;
+  - `max_lines` reste le maximum des cartes : sur 2.23, un seul message de 4 lignes, et un centile donnerait 3,
+    contre 4 mesurées en jeu.
+- [x] **WR-8. Gate cloud** après ton accord pour pousser : fmt, clippy `--all-targets -D warnings`,
   `cargo test --locked`, typecheck, Vitest, lint. Aucun build ni test local.
-- [ ] **WR-9. Essai en jeu** (ton accord) : le projet `APP` 2.23 réexporté. Attendu : le message de remerciement
+  - **Gate du 2026-10-27 sur `95e7a76`** (session cloud, vrai dictionnaire lindera) :
+    - fmt OK ; typecheck OK ; Vitest **153/153** (145 sur `main`, dont le cas Wolf) ;
+    - clippy `--all-targets -D warnings` : 0 avertissement ;
+    - lint : 0 erreur, 10 avertissements, tous sur `main` ;
+    - `cargo test --locked --no-fail-fast` : **785 OK / 1 échec / 15 ignorés**.
+  - Tests WR : `layout::text` 4/4, `layout::fit` 12/12, `layout` 2/2 (+ `wolf_real_budget` ignoré),
+    `core::text_fit` 4/4, e2e `wolf_export_rewraps_messages_when_text_fitting_is_on` OK.
+  - Seul échec : `fresh_schema_and_repeated_startup_are_idempotent` (`tests/terminology_migration.rs:205`), qui fige
+    la liste des migrations à `1..=12`. Passé à `1..=13` (`f02e174`).
+  - **Relance sur `f02e174`** (session cloud, vrai dictionnaire lindera) : fmt OK ;
+    `cargo test --locked --no-fail-fast` **786 OK / 0 échec / 15 ignorés** ; test des migrations OK. Le reste du gate
+    est inchangé depuis `95e7a76` (seul un test a changé) : **gate vert**.
+  - **Gate final sur `4221f9e`** (après les corrections de l'essai WR-9, session cloud, vrai dictionnaire lindera) :
+    - fmt OK ; typecheck OK ; Vitest **153/153** ;
+    - clippy `--all-targets -D warnings` : 0 avertissement ;
+    - `cargo test` **786 OK / 0 échec / 15 ignorés** ;
+    - lint : 0 erreur, 10 avertissements, tous sur des lignes venues de `main` (`git blame`).
+- [x] **WR-9. Essai en jeu** (ton accord) : le projet `APP` 2.23 réexporté. Attendu : le message de remerciement
   et les répliques de Gyoin dans le cadre, sans ligne « . » isolée.
+  - 2026-10-27 :
+    - **Boîte Mise en page.** L'app a été lancée depuis le worktree, ce qui a appliqué la migration 13. Écarts vus,
+      corrigés dans l'interface (fichier de la boîte et textes fr/en) :
+      - listes déroulantes illisibles en thème sombre ; défaut déjà présent dans la version MZ ;
+      - remarques Wolf en anglais, sous le titre MZ des plugins.
+    - **Réglages enregistrés :** messages ajustés, réduire, minimum 8, 4 lignes, taille du jeu 12, largeur mesurée
+      (22 em).
+    - **Export.** La fenêtre « Appliquer une taille de police » propose `\f[18]` : réponse « Ignorer ». Le défaut 18
+      est un piège pour Wolf (K5) : amélioration à prévoir.
+    - **Vérifié hors jeu** (archive `APP/Data.wolf` relue avec `dxa6.py` et `wolf_v2.py`) :
+      - les 27 messages sont recomposés, sans ligne « . » ni « ! » isolée ;
+      - `@2`/`@4` sont conservés ;
+      - 3 lignes au plus ;
+      - ligne la plus large : 21,77 em, pour un budget de 22.
+      Les choix ne sont pas modifiés (prévu).
+    - **En jeu : OK** (10 captures dans `RAE-PLAN/essais/wolf-v223/WR9-captures/`, hors Git) :
+      - remerciements, avertissements et difficulté sur 3 lignes, dans le cadre ;
+      - répliques de Gyoin avec cartouche « ??? » et buste, donc `@2` reconnu ;
+      - la ligne la plus large (« …I haven't seen in a while, ») tient avant le bord ;
+      - aucun « . » isolé ;
+      - les choix du menu titre et de la difficulté tiennent (textes courts).
+    - Suite de l'essai : les remarques Wolf ne sont plus envoyées par le backend (texte anglais) ; la boîte de
+      dialogue les écrit en fr/en d'après les réglages en cours.
+- [ ] **Suivi WR (hors lot)** : la fenêtre d'export « Appliquer une taille de police » propose `\f[18]` par défaut.
+  Pour Wolf, c'est 1,5 fois la taille du jeu 2.23 (K5). Proposer la taille du jeu quand elle est connue, ou aucune taille.
 
 **Critère de sortie.** Sur 2.23, aucun message 101 traduit ne sort du cadre en jeu, sauf ceux que le rapport
 signale. Les codes, `@N` et l'intégrité RW-6 sont intacts. Le gate cloud est vert.

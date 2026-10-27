@@ -16,6 +16,7 @@ use crate::{
     commands::{
         coverage::enabled_plugin_sources,
         text_fit::{environment as fit_environment, fit_file, project_targets, Support},
+        wolf_text_fit::WolfExportFit,
     },
     core::{originals, report, text_fit, tm},
     domain::types::SourceFile,
@@ -477,6 +478,8 @@ async fn write_export(
         .iter()
         .any(|f| matches!(classify_file_type(&f.file_type), FileClass::Wolf));
     if has_wolf {
+        // Text fitting of Wolf messages (plan WR), when the project enables it.
+        let wolf_fit = WolfExportFit::load(&state.db, &state.game_fonts, project_id).await?;
         let (wolf_entries, wolf_issues) = collect_wolf_zip_entries(
             &files,
             game_dir,
@@ -485,6 +488,7 @@ async fn write_export(
             &engine,
             &state.db,
             scope,
+            wolf_fit,
         )
         .await?;
         entries.extend(wolf_entries);
@@ -1166,7 +1170,9 @@ fn read_original_json(
     String::from_utf8(bytes).map_err(|e| format!("read {}: {e}", file.file_name))
 }
 
-/// Collect Wolf zip entries in memory without writing to disk.
+/// Collect Wolf zip entries in memory without writing to disk. Messages are
+/// laid out by `fit` (after the font prefix) when text fitting is on.
+#[allow(clippy::too_many_arguments)]
 async fn collect_wolf_zip_entries(
     files: &[SourceFile],
     game_dir: &Path,
@@ -1175,6 +1181,7 @@ async fn collect_wolf_zip_entries(
     engine: &str,
     db: &sqlx::SqlitePool,
     scope: ExportScope,
+    mut fit: Option<WolfExportFit>,
 ) -> Result<(Vec<(String, Vec<u8>)>, Vec<integrity::IntegrityIssue>), String> {
     let version = guess_wolf_version_from_structure(game_dir);
     if let Some(warning) = crate::engines::wolf::encoding::path_warning(game_dir, &version) {
@@ -1182,7 +1189,8 @@ async fn collect_wolf_zip_entries(
     }
     let mut translations_by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
     let segs_sql = format!(
-        "SELECT json_key, target_text FROM segments WHERE source_file_id = ? AND {}",
+        "SELECT json_key, target_text, source_text FROM segments \
+         WHERE source_file_id = ? AND {}",
         scope.exported_segment()
     );
 
@@ -1190,15 +1198,18 @@ async fn collect_wolf_zip_entries(
         if !matches!(classify_file_type(&file.file_type), FileClass::Wolf) {
             continue;
         }
-        let segs: Vec<(String, String)> = sqlx::query_as::<_, (String, String)>(&segs_sql)
+        let segs: Vec<(String, String, String)> = sqlx::query_as(&segs_sql)
             .bind(&file.id)
             .fetch_all(db)
             .await
             .map_err(|e| e.to_string())?;
 
-        for (key, mut text) in segs {
+        for (key, mut text, source) in segs {
             if let Some(n) = font_size {
                 text = apply_font_prefix(&text, n, replace_existing, engine);
+            }
+            if let Some(fit) = fit.as_mut() {
+                text = fit.apply(&key, text, &source);
             }
             if let Some(file_key) = injection_bucket(&key) {
                 translations_by_file
@@ -1209,6 +1220,9 @@ async fn collect_wolf_zip_entries(
         }
     }
 
+    if let Some(fit) = &fit {
+        fit.log_summary();
+    }
     if translations_by_file.is_empty() {
         return Ok((vec![], vec![]));
     }

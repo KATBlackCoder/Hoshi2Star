@@ -14,3 +14,4 @@ pub mod search;
 pub mod terminology;
 pub mod text_fit;
 pub mod translate;
+pub mod wolf_text_fit;

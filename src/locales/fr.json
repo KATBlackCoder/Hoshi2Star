@@ -710,6 +710,23 @@
     "cancel": "Annuler",
     "saved": "Réglages de mise en page enregistrés",
     "exportSummary": "Mise en page : {{rewrapped}} recomposés, {{newPage}} sur une nouvelle page, {{shrunk}} réduits, {{tooLong}} encore trop longs.",
+    "wolf": {
+      "enableDialogue": "Ajuster les messages",
+      "enableDialogueHint": "Messages des cartes et des événements communs. Les choix et les textes de la base de données ne sont pas mis en page : Wolf RPG ne les coupe jamais.",
+      "overflowShrink": "Réduire la police, sinon laisser et signaler",
+      "baseFontSize": "Taille de police du jeu (unités \\f[n])",
+      "baseFontSizeHint": "Nécessaire pour réduire, et pour ajuster quand une taille de police est choisie à l'export. Vide : inconnue.",
+      "widthEm": "Largeur d'une ligne (em)",
+      "maxLines": "Lignes par fenêtre",
+      "measuredHint": "Vide : mesuré sur les messages d'origine du jeu.",
+      "window": "Fenêtre de message : {{width}} em par ligne, {{lines}} lignes, mesurées sur les messages d'origine des cartes.",
+      "notMeasured": "Fenêtre de message : trop peu de messages d'origine sur les cartes pour la mesurer. Indique la largeur d'une ligne et le nombre de lignes par fenêtre.",
+      "fontMeasured": "Police : {{file}}, largeurs mesurées dans le fichier de police du jeu.",
+      "notes": "À savoir",
+      "noBaseFontSize": "La taille de police du jeu n'est pas indiquée : les messages sont ajustés à la taille du jeu, sans réduction, et une taille de police choisie à l'export désactive la mise en page.",
+      "choicesNote": "Les choix et les textes de la base de données ne sont pas mis en page : Wolf RPG ne les coupe jamais ; vérifie les choix longs en jeu.",
+      "dialogueCounts": "Messages : {{total}} — {{fits}} tiennent tels quels, {{rewrapped}} recomposés, {{shrunk}} réduits, {{tooLong}} encore trop longs, {{skipped}} non ajustés."
+    },
     "outcome": {
       "fits": "Tient tel quel",
       "rewrapped": "Recomposé",

@@ -191,6 +191,9 @@ async fn validate_patch_schema(pool: &SqlitePool) -> Result<(), sqlx::Error> {
                 "overflow",
                 "min_font_size",
                 "dialogue_font_size",
+                "wolf_width_em",
+                "wolf_max_lines",
+                "wolf_base_font_size",
             ],
         ),
         (

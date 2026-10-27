@@ -1,6 +1,7 @@
 //! Text fitting commands (RPG Maker MZ): settings, scan, preview, per-text
 //! choices and the game font. The export applies the same fitting through
-//! [`environment`] and [`fit_file`].
+//! [`environment`] and [`fit_file`]. Wolf RPG messages (plan WR) share the
+//! settings, the dialog and the scan, through [`super::wolf_text_fit`].
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -10,6 +11,7 @@ use serde_json::Value;
 use sqlx::SqlitePool;
 
 use crate::commands::coverage::enabled_plugin_sources;
+use crate::commands::wolf_text_fit::{self, WolfFitInfo};
 use crate::core::originals;
 use crate::core::text_fit::{self, TextFitSettings};
 use crate::domain::types::SourceFile;
@@ -310,6 +312,16 @@ pub struct TextFitView {
     pub font: Option<FontInfo>,
     pub warnings: Vec<LayoutWarning>,
     pub notes: Vec<String>,
+    /// Wolf RPG: the measured message window (`None` for MZ).
+    pub wolf: Option<WolfFitInfo>,
+}
+
+async fn project_engine(db: &SqlitePool, project_id: &str) -> Result<String, String> {
+    sqlx::query_scalar("SELECT engine FROM projects WHERE id = ?")
+        .bind(project_id)
+        .fetch_one(db)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 async fn support(state: &AppState, project_id: &str) -> Result<Support, String> {
@@ -329,6 +341,25 @@ pub async fn get_text_fit(
     project_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<TextFitView, String> {
+    if project_engine(&state.db, &project_id).await? == "wolf" {
+        let settings = text_fit::load_settings_for_engine(&state.db, &project_id, "wolf")
+            .await
+            .map_err(|e| e.to_string())?;
+        let env =
+            wolf_text_fit::wolf_environment(&state.db, &state.game_fonts, &project_id, &settings)
+                .await?;
+        return Ok(TextFitView {
+            supported: true,
+            reason: None,
+            settings,
+            geometry: None,
+            font: Some(env.font),
+            warnings: Vec::new(),
+            // Wolf notes depend on the draft settings: written by the dialog.
+            notes: Vec::new(),
+            wolf: Some(env.info),
+        });
+    }
     let settings = text_fit::load_settings(&state.db, &project_id)
         .await
         .map_err(|e| e.to_string())?;
@@ -341,6 +372,7 @@ pub async fn get_text_fit(
             font: Some(env.font.clone()),
             warnings: env.plugins.warnings.clone(),
             notes: env.plugins.notes.clone(),
+            wolf: None,
         },
         Support::Unsupported(reason) => TextFitView {
             supported: false,
@@ -350,6 +382,7 @@ pub async fn get_text_fit(
             font: None,
             warnings: Vec::new(),
             notes: Vec::new(),
+            wolf: None,
         },
     })
 }
@@ -367,7 +400,7 @@ pub struct FitCounts {
 }
 
 impl FitCounts {
-    fn add(&mut self, outcome: &FitOutcome) {
+    pub(crate) fn add(&mut self, outcome: &FitOutcome) {
         self.total += 1;
         match outcome {
             FitOutcome::Fits => self.fits += 1,
@@ -421,6 +454,21 @@ pub async fn scan_text_fit(
     settings: Option<TextFitSettings>,
     state: tauri::State<'_, AppState>,
 ) -> Result<FitScan, String> {
+    if project_engine(&state.db, &project_id).await? == "wolf" {
+        let settings = match settings {
+            Some(settings) => {
+                settings.validate()?;
+                settings
+            }
+            None => text_fit::load_settings_for_engine(&state.db, &project_id, "wolf")
+                .await
+                .map_err(|e| e.to_string())?,
+        };
+        let env =
+            wolf_text_fit::wolf_environment(&state.db, &state.game_fonts, &project_id, &settings)
+                .await?;
+        return wolf_text_fit::scan(&state.db, &project_id, env, &settings).await;
+    }
     let settings = match settings {
         Some(settings) => {
             settings.validate()?;
@@ -529,6 +577,28 @@ pub async fn set_text_fit(
     state: tauri::State<'_, AppState>,
 ) -> Result<TextFitSettings, String> {
     settings.validate()?;
+    if project_engine(&state.db, &project_id).await? == "wolf" {
+        settings.validate_wolf()?;
+        // Never on where export cannot fit (see below): the window must be known.
+        if settings.enabled_dialogue {
+            let env = wolf_text_fit::wolf_environment(
+                &state.db,
+                &state.game_fonts,
+                &project_id,
+                &settings,
+            )
+            .await?;
+            if env.info.budget.is_none() {
+                return Err("The message window is unknown: set the line width and the \
+                            lines per window."
+                    .into());
+            }
+        }
+        text_fit::save_settings(&state.db, &project_id, &settings)
+            .await
+            .map_err(|e| e.to_string())?;
+        return Ok(settings);
+    }
     // Never on where export cannot fit: QA would hide "line too long" for
     // text that is then exported unfitted.
     if settings.enabled() {

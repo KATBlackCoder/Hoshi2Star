@@ -156,6 +156,76 @@ describe("TextFitDialog", () => {
     expect(useTextFitStore.getState().open).toBe(false);
   });
 
+  it("shows the measured Wolf window and saves a width override", async () => {
+    const wolfSettings: TextFitSettings = {
+      ...SETTINGS,
+      overflow: "shrink",
+      minFontSize: 8,
+      wolfWidthEm: null,
+      wolfMaxLines: null,
+      wolfBaseFontSize: null,
+    };
+    const wolfView: TextFitView = {
+      supported: true,
+      reason: null,
+      settings: wolfSettings,
+      geometry: null,
+      font: { file: "mplus-2c-medium.ttf", loaded: true, error: null },
+      warnings: [],
+      notes: [],
+      wolf: {
+        measured: { widthEm: 22, maxLines: 4 },
+        budget: { widthEm: 22, maxLines: 4 },
+        baseFontSize: null,
+      },
+    };
+    const calls: Array<{ cmd: string; args: unknown }> = [];
+    mockIPC((cmd, args) => {
+      calls.push({ cmd, args });
+      switch (cmd) {
+        case "get_text_fit":
+          return wolfView;
+        case "scan_text_fit":
+          return { ...SCAN, rows: [], missingChars: [] };
+        case "set_text_fit":
+          return (args as { settings: TextFitSettings }).settings;
+        default:
+          return null;
+      }
+    });
+    await act(() => openTextFitDialog("p1"));
+    render(<TextFitDialog projectId="p1" />);
+
+    expect(
+      screen.getByText(i18n.t("textFit.wolf.window", { width: 22, lines: 4 })),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(i18n.t("textFit.enableDescriptions")),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: i18n.t("textFit.overflowNewPage") }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        i18n.t("textFit.wolf.dialogueCounts", { ...SCAN.dialogue }),
+      ),
+    ).toBeInTheDocument();
+
+    await userEvent.type(
+      screen.getByLabelText(i18n.t("textFit.wolf.widthEm")),
+      "21",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: i18n.t("textFit.save") }),
+    );
+
+    const saved = calls.find((call) => call.cmd === "set_text_fit");
+    expect(saved?.args).toEqual({
+      projectId: "p1",
+      settings: { ...wolfSettings, wolfWidthEm: 21 },
+    });
+  });
+
   it("explains when the game is not supported", async () => {
     mockIPC((cmd) =>
       cmd === "get_text_fit"
