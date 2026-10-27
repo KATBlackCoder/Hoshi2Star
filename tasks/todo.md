@@ -1871,6 +1871,12 @@ Chaque étape : code, tests unitaires sur fichiers synthétiques, journal. Pas d
 **RW-8 — Interface**, effort S.
 - Messages fr/en pour les nouvelles erreurs.
 - Lignes du rapport d'export : archive reconstruite, accents repliés, avertissement de police v3.
+- **Plan détaillé RW-8 (2026-10-27, Claude) — [~] en cours :**
+  - Choix : `export_project` garde son retour (chemin du zip ; 29 appels dans les tests) ; les lignes du rapport sont annoncées **avant** l'export par `preflight_export`, que la boîte de confirmation appelle déjà.
+  - [ ] `ExportPreflight.wolf` (`WolfExportPreflight`, projets Wolf) : `archives` (archives que le jeu lit d'abord et que l'export reconstruit : `Data.wolf`, `Data/MapData.wolf`, `Data/BasicData.wolf`, sans les lire), `shiftJis` (version détectée), `accentedTexts` (traductions que le repli modifie), `pathWarning` (RW-7). Coût : aucun déchiffrement d'archive.
+  - [ ] Boîte de confirmation d'export : lignes Wolf — archive reconstruite à décompresser par-dessus le jeu ; v2 : N textes écrits sans accents ; v3 : N textes accentués, vérifier la police en jeu ; avertissement de chemin.
+  - [ ] Erreurs : `projectError.ts` remplace la branche morte `WOLF_V2_UNSUPPORTED` par `wolf_unreadable_archive` et `wolf_unreadable_files` (ouverture et export), détail du backend en description du toast ; clés fr/en ajoutées, clés `wolfV2Unsupported` retirées ; « Moteur non détecté » cite Wolf RPG 2.x et 3.x.
+  - [ ] Tests : Vitest `projectError` (nouvelles clés, détail, deux langues) ; e2e Rust `preflight_export` sur un jeu v2 avec traduction accentuée (Shift-JIS, compte, sans archive) et sur un jeu `Data.wolf` (archive annoncée).
 
 **RW-9 — Vérification**, effort S.
 - Gate cloud.
