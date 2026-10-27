@@ -128,6 +128,15 @@ export function TextFitDialog({ projectId }: TextFitDialogProps) {
   const measuredWidth = wolf?.measured
     ? Number(wolf.measured.widthEm.toFixed(1))
     : null;
+  /** Wolf notes follow the draft (the game's font size may be filled in). */
+  const notes = wolf
+    ? [
+        ...(draft?.wolfBaseFontSize == null
+          ? [t("textFit.wolf.noBaseFontSize")]
+          : []),
+        t("textFit.wolf.choicesNote"),
+      ]
+    : (view?.notes ?? []);
 
   const openRow = (fileId: string, segmentId: string | null) => {
     setActiveFile(fileId);
@@ -213,7 +222,7 @@ export function TextFitDialog({ projectId }: TextFitDialogProps) {
                     {t("textFit.lineBreaks")}
                   </span>
                   <select
-                    className="h-9 w-full rounded-lg border bg-background px-2"
+                    className="h-9 w-full rounded-lg border bg-background px-2 text-foreground dark:[color-scheme:dark]"
                     value={draft.lineBreaks}
                     onChange={(e) =>
                       update({ lineBreaks: e.target.value as LineBreaks })
@@ -230,7 +239,7 @@ export function TextFitDialog({ projectId }: TextFitDialogProps) {
                     {t("textFit.overflow")}
                   </span>
                   <select
-                    className="h-9 w-full rounded-lg border bg-background px-2"
+                    className="h-9 w-full rounded-lg border bg-background px-2 text-foreground dark:[color-scheme:dark]"
                     value={draft.overflow}
                     onChange={(e) =>
                       update({ overflow: e.target.value as FitOverflow })
@@ -413,7 +422,7 @@ export function TextFitDialog({ projectId }: TextFitDialogProps) {
               )}
 
               {(view.warnings.length > 0 ||
-                view.notes.length > 0 ||
+                notes.length > 0 ||
                 (scan?.missingChars.length ?? 0) > 0) && (
                 <section className="space-y-2 text-xs">
                   {view.warnings.length > 0 && (
@@ -434,11 +443,13 @@ export function TextFitDialog({ projectId }: TextFitDialogProps) {
                       </ul>
                     </div>
                   )}
-                  {view.notes.length > 0 && (
+                  {notes.length > 0 && (
                     <div className="rounded-lg border p-3">
-                      <p className="font-medium">{t("textFit.notes")}</p>
+                      <p className="font-medium">
+                        {t(wolf ? "textFit.wolf.notes" : "textFit.notes")}
+                      </p>
                       <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                        {view.notes.map((note) => (
+                        {notes.map((note) => (
                           <li key={note}>{note}</li>
                         ))}
                       </ul>

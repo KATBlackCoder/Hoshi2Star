@@ -722,6 +722,9 @@
       "window": "Fenêtre de message : {{width}} em par ligne, {{lines}} lignes, mesurées sur les messages d'origine des cartes.",
       "notMeasured": "Fenêtre de message : trop peu de messages d'origine sur les cartes pour la mesurer. Indique la largeur d'une ligne et le nombre de lignes par fenêtre.",
       "fontMeasured": "Police : {{file}}, largeurs mesurées dans le fichier de police du jeu.",
+      "notes": "À savoir",
+      "noBaseFontSize": "La taille de police du jeu n'est pas indiquée : les messages sont ajustés à la taille du jeu, sans réduction, et une taille de police choisie à l'export désactive la mise en page.",
+      "choicesNote": "Les choix et les textes de la base de données ne sont pas mis en page : Wolf RPG ne les coupe jamais ; vérifie les choix longs en jeu.",
       "dialogueCounts": "Messages : {{total}} — {{fits}} tiennent tels quels, {{rewrapped}} recomposés, {{shrunk}} réduits, {{tooLong}} encore trop longs, {{skipped}} non ajustés."
     },
     "outcome": {

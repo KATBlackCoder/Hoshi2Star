@@ -167,31 +167,6 @@ pub async fn wolf_environment(
     })
 }
 
-/// Notes for the dialog: what the measurement could not establish.
-pub fn notes(env: &WolfFitEnvironment) -> Vec<String> {
-    let mut notes = Vec::new();
-    if env.info.measured.is_none() {
-        notes.push(
-            "Too few original map messages to measure the message window: \
-             set the line width and the lines per window."
-                .to_string(),
-        );
-    }
-    if env.info.base_font_size.is_none() {
-        notes.push(
-            "The game's font size is not set: messages are fitted at the game's own size, \
-             without shrinking, and a font size chosen at export turns fitting off."
-                .to_string(),
-        );
-    }
-    notes.push(
-        "Choices and database texts are not laid out: Wolf RPG never wraps them, \
-         check long choices in game."
-            .to_string(),
-    );
-    notes
-}
-
 /// `(segment id, key, source, target, file id, file name)`.
 type ScanRow = (String, String, String, String, String, String);
 

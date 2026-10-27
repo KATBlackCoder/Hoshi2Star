@@ -722,6 +722,9 @@
       "window": "Message window: {{width}} em per line, {{lines}} lines, measured on the game's original map messages.",
       "notMeasured": "Message window: too few original map messages to measure it. Set the line width and the lines per window.",
       "fontMeasured": "Font: {{file}}, widths measured from the game's font file.",
+      "notes": "Good to know",
+      "noBaseFontSize": "The game's font size is not set: messages are fitted at the game's own size, without shrinking, and a font size chosen at export turns fitting off.",
+      "choicesNote": "Choices and database texts are not laid out: Wolf RPG never wraps them; check long choices in game.",
       "dialogueCounts": "Messages: {{total}} — {{fits}} fit as translated, {{rewrapped}} rewrapped, {{shrunk}} shrunk, {{tooLong}} still too long, {{skipped}} not fitted."
     },
     "outcome": {

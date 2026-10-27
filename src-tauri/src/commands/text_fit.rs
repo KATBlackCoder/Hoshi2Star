@@ -353,9 +353,10 @@ pub async fn get_text_fit(
             reason: None,
             settings,
             geometry: None,
-            font: Some(env.font.clone()),
+            font: Some(env.font),
             warnings: Vec::new(),
-            notes: wolf_text_fit::notes(&env),
+            // Wolf notes depend on the draft settings: written by the dialog.
+            notes: Vec::new(),
             wolf: Some(env.info),
         });
     }
