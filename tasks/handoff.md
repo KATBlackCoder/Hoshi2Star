@@ -1,16 +1,17 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-28 — Claude (Wolf : WR, WR-E6 et le correctif de taille de police fusionnés ; ménage des worktrees, branches et copies d'essai).
+**Mis à jour :** 2026-10-28 — Claude (Wolf livré ; libellés de terminologie traduits fusionnés (PR #20) ; ménage terminé).
 **Objectif utilisateur :** chantier Wolf livré : RW (PR #13), DX (PR #15), WR (PR #16), correctif de taille de police à l'export (PR #17) et WR-E6 (PR #18) fusionnés ; EX abandonné.
-**Statut :** `main` @ `1ff3352`, aucune PR ouverte. Vérifié en jeu sur 2.23 ; essai en jeu de l'export de l'app sur 3.658 non fait.
+**Statut :** `main` @ `c1afdf5`, aucune PR ouverte, aucune autre branche (locale ou distante), aucun worktree en plus du dossier principal. Vérifié en jeu sur 2.23 ; essai en jeu de l'export de l'app sur 3.658 non fait.
 
-## En attente (2026-10-28, Claude) — libellés de terminologie traduits
+## Terminé (2026-10-28, Claude) — libellés de terminologie traduits, PR #20 fusionnée
 
 - Travail Codex non commité récupéré du worktree `~/.codex/worktrees/6fab` (branche `codex/hoshiyomi-redesign`, déjà dans `main`) et posé tel quel sur `fix/terminology-i18n-labels` depuis `main` @ `333633a` (accord de l'utilisateur). Worktree et branche Codex retirés ensuite.
 - Contenu : libellés des filtres et fenêtres de terminologie (catégorie grammaticale, type sémantique) passés en clés i18n fr/en au lieu du français écrit en dur ; `TerminologySelect.tsx`, `terminologyOptions.ts`.
 - **Gate cloud vert** sur `988c5cb` (typecheck, Vitest 156/156, lint 0 erreur / 10 avertissements connus, Prettier OK). Puis, à la demande de l'utilisateur : `SEMANTIC_TYPE_LABELS` simplifié et `TermTranslateDialog` traduit (clés `terminology.translateDialog.*`), +1 test ; gate refait vert (Vitest 157/157). Commité sur `claude/bold-edison-m1w6yn`, au-dessus de `988c5cb`. Journal : `docs/journal/2026-10-28-terminologie-i18n.md`.
 - À signaler dans la PR : le type sémantique devient une liste fermée (éditeur et filtre), plus de saisie libre.
-- **Prochaine action** : avancer `fix/terminology-i18n-labels` sur `claude/bold-edison-m1w6yn` (ou PR depuis celle-ci), relecture, PR vers `main`.
+- `fix/terminology-i18n-labels` avancée sur `1c9ab2f`, **PR #20 fusionnée** (`c1afdf5`, 2026-10-28, accord de l'utilisateur) ; branches `fix/terminology-i18n-labels` et `claude/bold-edison-m1w6yn` supprimées.
+- Non vérifié dans l'app (page Terminologie en anglais). Reste hors lot : deux `aria-label` français en dur (`ScanProgress.tsx:43`, `TerminologyTable.tsx:244`) ; écart Prettier déjà présent dans `TermTranslateDialog.test.tsx`.
 
 ## En cours (2026-10-27, Claude) — WR-E6 : retours à la ligne Wolf côté LLM
 
