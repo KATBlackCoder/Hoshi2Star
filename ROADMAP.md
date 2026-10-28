@@ -1,7 +1,11 @@
 # Hoshi2Star — ROADMAP
 
-> Tâches **à venir uniquement**. Pour l'historique des phases complètes, voir `git log`.
-> Format : `[ ]` à faire · `[~]` en cours · `[-]` abandonné/reporté
+> Tâches à venir, puis ce qui a été livré depuis la dernière mise à jour. Détail : `git log`, `docs/journal/`.
+> Format : `[ ]` à faire · `[~]` en cours · `[x]` fait · `[-]` abandonné/reporté
+>
+> Mis à jour le 2026-10-28 à partir du code. Orientation : **usage personnel**
+> (`docs/superpowers/plans/2026-08-25-hoshi2star-lean-multilingual-providers.md`) : monétisation, formules
+> payantes, bêta publique, métriques commerciales, collaboration Git et passe de ton sont retirées.
 
 ---
 
@@ -12,178 +16,138 @@
 | **F0** | Setup & fondations | [~] Quasi-complet |
 | **F1** | Parsers MV/MZ + UI skeleton | ✅ Complet |
 | **F2** | LLM pipeline + TM + MVP | ✅ Complet |
-| **F3** | Polissage + Glossaire + TM fuzzy + beta privée | [~] En cours |
-| **F4** | Wolf RPG + diff-aware + lancement public | [~] En cours |
-| **F5** | Wolf v3/WolfX + Bakin + consolidation | [~] En cours |
+| **F3** | Polissage + terminologie + TM fuzzy + QA | ✅ Complet (bêta retirée) |
+| **F4** | Wolf RPG + mise à jour de jeu + langues + fournisseurs | [~] En cours |
+| **F5** | WolfX + Bakin + consolidation | [~] En cours |
 
 ## Moteurs
 
 | Moteur | Statut | Priorité |
 |--------|--------|---------|
 | RPG Maker MV/MZ | ✅ Supporté | — |
-| Wolf RPG v1/v2/v3 | ✅ Supporté | — |
-| RPG Maker VX Ace | ⏸ Code prêt, désactivé | Post-consolidation |
-| RPG Developer Bakin | 🔜 F5 | Basse |
+| Wolf RPG v2/v3 | ✅ Supporté : archives DXA v6/v8 (lues et reconstruites) ou `Data/` déchiffré | — |
+| Wolf RPG 1.x, 3.31+, WolfX | ⚠ Refusés à l'ouverture (archive DXA v5, nouveau chiffrement, WolfX) : passer par UberWolf | — |
+| RPG Maker VX Ace | ⏸ Code prêt, désactivé (détection commentée) | Post-consolidation |
+| RPG Developer Bakin | 🔜 Étude faite, pas de code | Basse |
 | Autres (Ren'Py, Kirikiri) | 🔜 Backlog | Si demande |
 
 ---
 
 ## F0 — Setup restant
 
-- [ ] Skills installés : `shadcn`, `tdd`, `vercel-react-best-practices`, `webapp-testing`
-- [ ] `.vscode/settings.json` : rust-analyzer linkedProjects, check.command clippy, formatOnSave
-- [ ] `.vscode/launch.json` : config debug Rust LLDB + pnpm dev pre-task
+- [~] Skills installés : `shadcn` fait ; `tdd`, `vercel-react-best-practices`, `webapp-testing` absents
+- [ ] `.vscode/settings.json` : rust-analyzer linkedProjects, check.command clippy, formatOnSave (local, ignoré par Git)
+- [ ] `.vscode/launch.json` : config debug Rust LLDB + pnpm dev pre-task (local, ignoré par Git)
 
 ---
 
-## F3 — Beta privée
+## F4 — Wolf, mise à jour de jeu, langues, fournisseurs
 
-**Critère de sortie : 20–30 beta testeurs actifs, feedback collecté.**
+### Mise à jour de jeu (resync)
 
-- [ ] Recrutement 20–30 testeurs via Discord fan-trad / F95zone
-- [ ] Feedback form intégré à l'app (event `h2s://feedback/submit`)
-- [ ] Suivi des bugs critiques (GitHub Issues via `to-issues` skill)
+> Fait autrement que prévu : pas de colonnes `segment_key`/`source_hash` ni de `core/diff.rs`.
+> Les segments restent identifiés par leur `json_key` ; `engines/mv_mz/resync.rs` réaligne les
+> pointeurs (LCS par liste de commandes) sur l'instantané d'origine du jeu.
 
----
+- [x] Instantané d'origine des fichiers du jeu et garde d'intégrité à l'export (`core/originals.rs`,
+      `engines/mv_mz/integrity.rs`, `ExportIntegrityDialog.tsx`)
+- [x] Commande `resync_project(project_id, apply)` avec aperçu puis application (`commands/resync.rs`)
+- [x] Dialogue de résumé avant application : déplacés · ajoutés · disparus · sources changées · orphelins
+      (`ResyncDialog.tsx`)
+- [x] Traductions perdues conservées : table `orphaned_segments` (migration 0012) + TM
+- [ ] Source changée ⇒ segment `needs_review` avec l'ancienne traduction en référence (aujourd'hui : nouvelle
+      ligne non traduite, ancienne traduction en orphelin)
+- [ ] Vue de comparaison ancienne/nouvelle source
+- [ ] Filtre « segments modifiés par la mise à jour » dans `SegmentGrid`
+- [ ] Lecture et restauration des orphelins dans l'interface
+- [ ] Resync Wolf (MV/MZ seulement ; garde « jeu mis à jour » Wolf = lot séparé, copie d'origine)
 
-## F4 — Lancement public
+### Langues
 
-**Critère de sortie : Lancement payant, diff-aware merge disponible.**
+- [x] Paire de langues par projet (`projects.source_language`/`target_language`, migration 0006), choisie à la
+      création ; langue cible par défaut dans les réglages (`LanguageSettings.tsx`)
+- [x] `lang_pair` dynamique dans la TM et la terminologie (`llm/pipeline.rs`, migration 0009)
+- [ ] Prompts par langue cible : `src-tauri/prompts/translate/{fr,es,de}.toml` ; `translate_for` renvoie
+      toujours `default.toml` (`llm/prompts.rs`)
+- [ ] Prompts de terminologie par langue (`terminology_for`, même limite)
+- [ ] Changer la paire de langues d'un projet existant (aucune commande aujourd'hui)
+- [ ] Repli incohérent de la langue cible : `"fr"` dans `commands/translate.rs:143` contre `'en'` en SQL
 
-### Core Layer — Project Sync (mise à jour de jeu)
+### Fournisseurs LLM
 
-> Permet de continuer un projet existant après la mise à jour du jeu source,
-> sans perdre les traductions déjà validées.
-
-**Principe** : `segment_key` (identifiant stable) + `source_hash` (SHA-256).
-Au re-import, comparaison par clé puis par hash :
-
-| Cas | Action |
-|-----|--------|
-| Même clé + même hash | Conserver traduction + statut inchangés |
-| Même clé + hash différent | `NeedsReview`, garder ancienne trad comme référence |
-| Nouvelle clé | Créer segment `Untranslated` |
-| Clé disparue | Archiver (soft-delete — TM garde la traduction) |
-
-- [ ] `src-tauri/migrations/XXXX_segment_key.sql` — colonnes `segment_key TEXT` et `source_hash TEXT`
-- [ ] `src-tauri/src/core/diff.rs` — `diff_projects(old, new) -> DiffReport { unchanged, modified, added, removed }`
-- [ ] Clés stables par moteur : `engines/mv_mz/segment_key.rs`, `engines/wolf/segment_key.rs`
-- [ ] Command `sync_project_version(project_id, new_game_path)` — re-extrait + merge intelligent
-- [ ] UI : dialog pré-sync avec résumé `X inchangés · Y modifiés · Z nouveaux · W supprimés`
-- [ ] UI : badge `NeedsReview` (⚠) sur segments modifiés + vue diff source old/new side-by-side
-- [ ] UI : filtre "Afficher uniquement les segments modifiés" dans SegmentGrid
-
-### LLM Layer — Langues cibles additionnelles
-
-> Prérequis : externalisation des prompts LLM vers TOML (dossier `prompts/translate/` +
-> `prompts/glossary/`) — terrain préparé dès F3 : `{{target_lang}}` paramétrable,
-> `translate_for(lang)` route vers le bon `.toml`, `lang_code_to_name()` disponible.
-
-- [ ] Settings UI : sélecteur langue cible (FR / EN / ES / DE / …) persisté dans le store Zustand
-- [ ] `commands/translate.rs` : recevoir `target_lang` depuis le frontend (plus de hardcode `"en"`)
-- [ ] `lang_pair` dynamique (`ja-fr`, `ja-es`, …) propagé dans TM + glossaire
-- [ ] `prompts/translate/fr.toml` — règles typographiques FR + register (tutoiement/vouvoiement)
-- [ ] `prompts/translate/es.toml` — castillan vs latam + vosotros/ustedes
-- [ ] `prompts/translate/de.toml` — majuscules noms communs + Sie/du
-- [ ] `prompts/glossary/fr.toml`, `es.toml`, `de.toml` — instructions extraction adaptées si nécessaire
-
-### LLM Layer — Passe tone (optionnel par projet)
-
-- [ ] Config par projet : registre (familier / formel / médiéval / contemporain)
-- [ ] Passe 3 activable/désactivable dans les settings projet
-
-### LLM Layer — Provider OpenAI-compatible (LM Studio, cloud) — différé, sur demande
-
-> Demande communauté (feedback Anime-Sharing, 2026-07-03) : baisser la barrière d'entrée
-> pour les non-devs (LM Studio = UI graphique, pas de config) et permettre le cloud sans GPU.
-> **Décision design** : 2 protocoles seulement côté Rust (Ollama natif + OpenAI-compat) ;
-> les services (LM Studio, OpenAI, DeepSeek, Grok, OpenRouter…) ne sont que des **préréglages
-> de données côté front** (URL préremplie, clé requise ou non). Jamais un provider Rust par service.
-> Local reste la cible principale ; alternative actuelle sans GPU : Ollama sur RunPod (l'URL est déjà configurable).
-
-- [ ] `OpenAiCompatProvider` implémentant le trait `LlmProvider` — `POST {base}/chat/completions`, health via `GET {base}/models`, header `Authorization: Bearer` si clé
-- [ ] `ProviderConfig` : champs `kind: ollama | openai_compat` + `api_key: Option<String>`
-- [ ] Factory `Provider::from_config()` (dispatch enum, cohérent ADR-006) remplaçant les 3 instanciations en dur (`commands/translate.rs:69`, `:202`, `commands/glossary.rs:163`)
-- [ ] Message d'erreur health check paramétré par le nom du provider (plus de "Ollama inaccessible" en dur)
-- [ ] Settings UI : select de préréglages (Ollama / LM Studio / DeepSeek / OpenRouter / Personnalisé…) piloté par une table `PRESETS` front ; champ clé API masqué, toujours optionnel côté validation (401 → message "clé manquante/invalide")
-- [ ] Select de modèles unifié : `/api/tags` (Ollama) ou `/v1/models` (OpenAI-compat), repli saisie libre si listing indisponible
-- [ ] Ne lister que les services testés ; garder "Personnalisé" comme soupape ; exclure les non-compatibles (Anthropic, DeepL = chantiers séparés)
-- [ ] v1 sans tracking des coûts ; optionnel : logger le champ `usage` (tokens) pour stats futures — table de prix = backlog lointain
-- [ ] Clé API : stockage store Tauri v1 (documenter le plaintext) ; migration `keyring`/Stronghold si demandé
-
-### Monétisation
-
-- [ ] Intégration système de licence (Polar.sh ou LemonSqueezy — one-shot 29 $ + 9 $/6 mois)
-- [ ] Free tier : MV/MZ uniquement, 1 projet actif, Ollama local, sans TM cross-projet
-- [ ] Indie tier (29 $ one-shot) : tous moteurs dispo, TM cross-projet, QA complet, 6 mois updates
-- [ ] Lancement public avec prix intro 19 $ pendant 30 jours
+- [x] Un seul protocole OpenAI-compatible (`OpenAiCompatibleProvider`, `llm/provider.rs`) : `/v1/chat/completions`,
+      `/v1/models`, `Authorization: Bearer` ; Ollama passe par son `/v1`
+- [x] Préréglages côté front (`PROVIDER_PRESETS` : Ollama, LM Studio, Hugging Face, OpenAI, personnalisé),
+      clé masquée, saisie libre du modèle si la liste est vide
+- [x] Clé API gardée en mémoire seulement, jamais écrite sur disque
+- [x] Message d'erreur générique (URL + erreur) ; arrêt propre sur panne du fournisseur et annulation (R1)
+- [ ] Retirer les clés i18n mortes `llmModal.urlLabel`/`llmModal.modelError` et le texte « Ollama » restant
+      dans `llmRun.stopHint`
 
 ---
 
-## F5 — Wolf v3/WolfX + Bakin + consolidation
-
-**Critère de sortie : Couverture moteurs complète, 500 utilisateurs cible.**
+## F5 — WolfX, Bakin, consolidation
 
 ### Wolf RPG v3 / WolfX
 
-- [ ] Documentation workflow WolfX (pré-étape UberWolf) dans `docs/engines.md`
-      + message de guidage visible côté UI quand `PossibleWolfX` est détecté
+- [~] Guidage WolfX : texte d'erreur « utiliser UberWolf » côté Rust (`PossibleWolfX`) ; message d'interface
+      encore générique (`wolfUnreadableArchive`) ; documentation à écrire
+- [ ] Essai en jeu de l'export de l'app sur Wolf 3.658
+- [ ] Coupe de ligne après un trait d'union (« H- ⏎ scenes ») dans la recoupe des messages
 
 ### Engine Layer — RPG Developer Bakin
 
-- [ ] Évaluer adoption DLC Localization Toolkit (SmileBoom) — si > 200 jeux traduits : go
+- [x] Étude préalable (handoff 2026-10-26, `RAE-PLAN/bakin/`) : livraison en archive reconstruite préférée
+- [ ] Évaluer adoption DLC Localization Toolkit (SmileBoom)
 - [ ] `src-tauri/src/engines/bakin/extractor.rs` — via DLC string-table export OU reverse BakinUnpack
 - [ ] `src-tauri/src/engines/bakin/injector.rs`
 - [ ] Tests Bakin
 
-### Langues sources additionnelles (add-ons)
+### Langues sources additionnelles
 
-> Distinct des langues **cibles** (FR/ES/DE) — voir F4. Ici : autres langues *sources* (≠ japonais).
-
-- [ ] Support Korean source (DLsite Korea) — pack "Korean Source" 9 $
-- [ ] Support Chinese source (Wolf RPG CN) — pack "Chinese Source" 9 $
-- [ ] Détection automatique langue source dans `detector.rs`
-
-### Collaboration (Git sync)
-
-- [ ] `src-tauri/src/sync/git.rs` — wrapper `git2` crate pour sync projet de traduction
-- [ ] Merge de projets `.h2s` entre 2–3 traducteurs
-- [ ] Résolution de conflits segment par segment dans l'UI
+- [~] Coréen et chinois sélectionnables comme langue source ; découpage terminologique japonais/anglais/français
+      seulement ; Wolf en Shift-JIS ou UTF-8 (pas de GBK ni CP949)
+- [ ] Détection automatique de la langue source dans `detector.rs`
 
 ### Consolidation
 
-- [ ] ADRs mis à jour pour toutes les décisions prises en F3/F4/F5
-- [ ] `docs/engines.md` complet pour tous les moteurs supportés
-- [ ] `CONTEXT.md` mis à jour avec les nouveaux patterns
+- [ ] ADR-008 (usage personnel, fournisseur unique) et ADR pour les décisions F4/F5 : terminologie, resync et
+      orphelins, reconstruction d'archive Wolf, décision WolfX, export d'essai (dernier ADR : ADR-007)
+- [ ] `docs/engines.md` : aujourd'hui seulement `docs/engines/` MV/MZ ; Wolf à documenter
+- [ ] `CONTEXT.md` à jour (terminologie, resync, mise en page, `WolfSources`)
+- [ ] `docs/architecture.md` : retirer la monétisation et le support natif WolfX annoncés
 
 ---
 
 ## Performance — optimisations conditionnelles (sur signal, pas prématuré)
 
-> **Phase 9 du plan de remédiation audit** (`docs/audit-remediation-plan-2026-07-01.md`),
-> reportée ici comme **possibilité** : suffisant à l'échelle actuelle. À déclencher
-> uniquement sur un **point chaud mesuré** (ex. ouverture lente d'un gros jeu, save
-> lent, lookup TM), jamais à l'aveugle. Risque faible. Phases 1→8 de la remédiation
-> sont terminées et mergées.
+> **Phase 9 du plan de remédiation audit** (`docs/audit-remediation-plan-2026-07-01.md`). À déclencher
+> uniquement sur un **point chaud mesuré**, jamais à l'aveugle.
 
-- [ ] `llm/pipeline.rs` `persist_batch_results` — `UPDATE` ligne par ligne → une seule
-      transaction / `UPDATE` groupé
-- [ ] `llm/pipeline.rs` `translate_batch` — `tm::lookup_exact` par segment →
-      `WHERE source_hash IN (...)` en une requête
-- [ ] Extraction (`open_project`) — INSERT segments un par un → `INSERT` multi-valeurs
-      (réduit le temps d'ouverture sur gros jeux ; les helpers `insert_segment` de la
-      Phase 8 centralisent déjà le point d'insertion)
-- [ ] **NE PAS** optimiser `core/tm.rs` `lookup_fuzzy` (scan O(n)) avant d'atteindre
-      l'échelle documentée (~5k entrées → index trigram, déjà au backlog F5)
-- [x] ~~`update_segment` : sous-requête corrélée 5×COUNT à chaque save~~ — **déjà fait**
-      en Phase 6 (`manifest::refresh_stats`, point unique de recalcul des stats)
+- [x] `llm/pipeline.rs` `persist_batch_results` — une seule transaction (un `UPDATE` par ligne à l'intérieur)
+- [x] `llm/pipeline.rs` `translate_batch` — `tm::lookup_exact_many` : `WHERE source_hash IN (...)` en une requête
+- [x] Extraction — `insert_segments` en `INSERT` multi-valeurs par paquets de 90 (`commands/project.rs`)
+- [ ] **NE PAS** optimiser `core/tm.rs` `lookup_fuzzy` (scan O(n)) avant ~5k entrées (index trigram au backlog)
+- [x] `update_segment` : recalcul des stats unique (`manifest::refresh_stats`, Phase 6)
 
 ---
 
-## Métriques de validation produit
+## Livré depuis juillet 2026 (absent de l'ancienne roadmap)
 
-| Milestone | Signal go/pivot |
-|-----------|----------------|
-| Lancement F4 | 50 payants en 3 mois → continuer ; sinon pivoter vers SaaS Bakin uniquement |
-| Fin F5 | 200 payants cumulés → revenu d'appoint validé |
-| 12 mois | 500 payants = ~2 400–6 000 $/mois récurrent selon mix tiers |
+- [x] **Terminologie** (remplace le glossaire) : `core/terminology/`, `src/features/terminology/`, libellés fr/en
+- [x] **QA et nouvel essai sémantique** : `core/qa.rs`, `llm/semantic_retry.rs`, rapport HTML `core/report.rs`
+- [x] **Pilote A/B MV/MZ** sur base jetable : `commands/pilot.rs`, `PilotComparisonWorkspace.tsx`
+- [x] **Packs d'échange `.h2s`** (export, import avec aperçu, politiques de fusion, sauvegarde automatique) :
+      `core/h2s_pack.rs`, `commands/pack.rs`
+- [x] **Export d'essai** pour tester en jeu avant la fin : `export_debug_project`
+- [x] **Mise en page MV/MZ** (ajustement et retour à la ligne) : `engines/mv_mz/layout/`, `TextFitDialog.tsx`
+- [x] **Mise en page Wolf** et retours à la ligne souples côté LLM : `engines/wolf/layout/`,
+      `engines/wolf/line_breaks.rs`, taille de police du jeu proposée à l'export
+- [x] **Textes optionnels MV/MZ** (plugins.js, Keke, note tags) : `commands/coverage.rs`
+- [x] **Bascule de langue du jeu à l'export** : `engines/mv_mz/locale.rs`
+- [x] **Archives Wolf DXA v6/v8** lues et reconstruites, archive avant fichiers libres : `engines/wolf/sources.rs`,
+      `engines/wolf/decrypt/writer.rs` ; formats v3 (`engines/wolf/v3_format/`)
+- [x] **Contexte de scène et d'orateur** dans les prompts (`llm/context/`) et découpage adaptatif des lots
+      (`llm/split.rs`)
+- [x] **Recherche globale** : `commands/search.rs`, `GlobalSearchResults.tsx`
+- [x] **Mise à jour automatique** : `tauri_plugin_updater`, ADR-007
