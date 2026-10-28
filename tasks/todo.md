@@ -1,6 +1,6 @@
 # Tasks — Hoshi2Star
 
-## Plan — UW : Wolf lu depuis le `Data/` déchiffré par UberWolf (2026-10-28, Claude) — À VALIDER, aucun code
+## Plan — UW : Wolf lu depuis le `Data/` déchiffré par UberWolf (2026-10-28, Claude) — PLAN VALIDÉ le 2026-10-28 (UW-D1 à UW-D8 = recommandations) ; implémentation confiée à une session cloud
 
 **Objectif.** Une seule façon d'ouvrir un jeu Wolf, quelle que soit sa version (2.x, 3.x, 3.31+, Pro,
 WolfX) : l'utilisateur déchiffre le jeu avec UberWolf, l'app lit et exporte les fichiers libres de
@@ -59,7 +59,7 @@ WolfX) : l'utilisateur déchiffre le jeu avec UberWolf, l'app lit et exporte les
 
 **Étapes.** Branche depuis `main` (worktree), pas de build local, gate cloud après accord de push.
 
-- [ ] **UW-0.** Validation de UW-D1 à UW-D8 par l'utilisateur.
+- [x] **UW-0.** UW-D1 à UW-D8 validées telles que recommandées (utilisateur, 2026-10-28) : UW-D5 reporté.
 - [ ] **UW-1 — Détection** (`engines/detector.rs`) : lanceurs `Game.exe` / `GamePro.exe` / `Game.ini`
       (UW-D3) ; encodage par n'importe quelle base (UW-D4) ; `guess_wolf_version_from_structure` rend une
       erreur au lieu de v2 ; appelants à adapter : `commands/project.rs:936`, `commands/export.rs:724`,
