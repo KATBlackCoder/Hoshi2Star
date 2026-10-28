@@ -74,14 +74,29 @@ WolfX) : l'utilisateur déchiffre le jeu avec UberWolf, l'app lit et exporte les
       Tests e2e Wolf (`e2e_project_flow.rs`, `export_debug.rs`) : fixture `write_wolf_v2_basic_data`
       (`SysDatabase.dat` Shift-JIS + `DataBase.project`). Gate vert : fmt, typecheck, Vitest 157/157, lint,
       clippy `--all-targets -D warnings`, cargo test 804 OK / 0 échec / 15 ignorés.
-- [ ] **UW-2 — Sources** (`engines/wolf/sources.rs`) : `WolfSources::load` lit seulement `Data/MapData` et
+- [x] **UW-2 — Sources** (`engines/wolf/sources.rs`) : `WolfSources::load` lit seulement `Data/MapData` et
       `Data/BasicData` ; archive de texte présente ⇒ erreur avec un marqueur stable
       `wolf_archive_present` (UW-D2) ; `Origin` et `display_path` retirés s'ils n'ont plus d'usage ;
       marqueur `wolf_unreadable_archive` retiré. Tests de `sources.rs:262-390` réécrits sans `test_archives`.
-- [ ] **UW-3 — Export** (`engines/wolf/injector.rs`, `integrity.rs`) : `inject_all_to_memory` livre seulement
+- [x] **UW-3 — Export** (`engines/wolf/injector.rs`, `integrity.rs`) : `inject_all_to_memory` livre seulement
       des fichiers libres `Data/...` ; retrait de `by_archive`, de l'appel à `rebuild_archive` et de
       `verify_archive_rebuild` (`pub` dans le module `pub(crate)` `integrity` : code mort sinon) et de ses
       tests. `inject_all` (export de debug) inchangé hors commentaire.
+      **UW-2 et UW-3 faits le 2026-10-28 (Claude, cloud), un seul commit** : retirer `Origin` des sources
+      retire aussi la livraison en archive de l'injecteur (sinon variante jamais construite, Clippy rouge).
+      `WolfSources::load` lit `Data/MapData` et `Data/BasicData` seuls, refuse `Data.wolf`,
+      `Data/MapData.wolf`, `Data/BasicData.wolf` (toute casse) avec `wolf_archive_present`
+      (`WOLF_ARCHIVE_PRESENT`) ; `text_archives` remplace `archive_paths` (la note d'export l'utilise
+      jusqu'à UW-5) ; `stem()` garde la casse du disque. Injecteur : `deliver`, `by_archive`,
+      `InjectorError::Archive` et l'appel à `rebuild_archive` retirés ; `verify_archive_rebuild` et ses
+      tests retirés d'`integrity.rs` ; `write_zip` ne range plus les `.wolf` en « stored » (plus jamais
+      livrés). Tests remplacés : sources (fichiers libres, refus des 3 archives, autres `.wolf` ignorés),
+      injecteur (`test_export_delivers_loose_data_files_only`, `test_export_with_a_text_archive_is_refused`,
+      `test_inject_all_does_not_overwrite_wolf` → `ArchivePresent`), extracteur réel Honoka `(.wolf)` → refus,
+      e2e (`wolf_game_with_a_text_archive_is_refused_at_open`, `wolf_pro_game_is_exported_as_loose_files`,
+      partie « archivée » de la note d'export retirée). Restent pour UW-R : variante publique
+      `ExtractorError::Decryptor` (référence `decrypt/`). Gate vert : fmt, typecheck, Vitest 157/157, lint,
+      clippy, cargo test 806 OK / 0 échec / 15 ignorés.
 - [ ] **UW-4 — Filtre des chemins** (`extractor.rs:330`). Règle : un texte est un chemin si **chaque ligne**
       (après retrait du `\r` et des espaces de fin) est vide, un nombre, ou un chemin seul, **et** qu'au moins
       une ligne est un chemin seul. Chemin seul : finit par une extension connue, sans espace (normal ou

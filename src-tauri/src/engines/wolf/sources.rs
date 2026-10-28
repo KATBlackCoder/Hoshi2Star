@@ -1,54 +1,39 @@
-//! Where a Wolf RPG game reads its translatable files from (plan RW, RW-5).
+//! Where a Wolf RPG game's translatable files are read from (plan UW).
 //!
-//! The engine reads its `.wolf` archives before any loose file of `Data/`
-//! (verified in game on Wolf 2.23 and 3.658), so the archive copy of a file wins
-//! and a loose file is used only for what no archive holds. [`WolfSources`] is
-//! loaded once per operation and indexes the maps (`MapData/*.mps`) and the
-//! `BasicData/` databases and common events by their path relative to `Data/`,
-//! with the origin of each file — what the export needs to deliver a
-//! translated file where the game will read it.
+//! The game is decrypted with UberWolf first: Hoshi2Star reads and exports
+//! only the loose files of `Data/`, never a `.wolf` archive. [`WolfSources`]
+//! is loaded once per operation and indexes the maps (`MapData/*.mps`) and the
+//! `BasicData/` databases and common events by their path relative to `Data/`.
+//! Only the direct children of `MapData/` and `BasicData/` are read: nested
+//! copies (sample data shipped by some games) are ignored.
 //!
-//! Archives read: `Data.wolf` at the game root (paths relative to `Data/`),
-//! `Data/MapData.wolf` and `Data/BasicData.wolf` (paths relative to those
-//! folders). Only the direct children of `MapData/` and `BasicData/` are
-//! decrypted: nested copies (sample data shipped inside some archives) are
-//! ignored. An archive that cannot be read, or that holds maps none of which
-//! sits under `MapData/`, refuses the operation: a project never opens
-//! without its dialogue.
+//! The game reads its `.wolf` archives before any loose file of `Data/`
+//! (verified in game on Wolf 2.23 and 3.658): while `Data.wolf`,
+//! `Data/MapData.wolf` or `Data/BasicData.wolf` is present, a translation
+//! written to `Data/` would be ignored, so the operation is refused
+//! (decision UW-D2). The other archives (pictures, sounds) hold no text and are
+//! ignored.
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use super::decrypt::legacy_xor::extract_matching;
 use crate::engines::detector::find_wolf_data_dir;
 
-/// Stable marker at the start of [`SourcesError`] messages about archives,
-/// matched by the frontend.
-pub const WOLF_UNREADABLE_ARCHIVE: &str = "wolf_unreadable_archive";
+/// Stable marker at the start of [`SourcesError::ArchivePresent`], matched by
+/// the frontend.
+pub const WOLF_ARCHIVE_PRESENT: &str = "wolf_archive_present";
 
 #[derive(Debug, thiserror::Error)]
 pub enum SourcesError {
-    #[error("{marker}: {archive} cannot be read: {reason}", marker = WOLF_UNREADABLE_ARCHIVE)]
-    UnreadableArchive { archive: String, reason: String },
     #[error(
-        "{marker}: {archive} holds maps outside MapData/ that Hoshi2Star cannot place ({paths})",
-        marker = WOLF_UNREADABLE_ARCHIVE
+        "{marker}: {archives} still in the game folder: the game would read it instead of \
+         the translated Data/ files. Decrypt the game with UberWolf, then move the .wolf \
+         archives holding text out of the game folder",
+        marker = WOLF_ARCHIVE_PRESENT
     )]
-    UnplacedMaps { archive: String, paths: String },
+    ArchivePresent { archives: String },
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
-}
-
-/// Where a file comes from.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Origin {
-    /// `Data/{logical path}` on disk.
-    Loose,
-    /// Inside an archive: the archive's path relative to the game folder
-    /// (`Data.wolf`, `Data/MapData.wolf`) and the file's path inside it
-    /// (`/MapData/Map001.mps`).
-    Archive { archive: PathBuf, path: String },
 }
 
 #[derive(Debug, Clone)]
@@ -56,19 +41,14 @@ pub(crate) struct SourceFile {
     /// Path relative to `Data/`, e.g. `MapData/Map001.mps`.
     pub logical: String,
     pub bytes: Vec<u8>,
-    pub origin: Origin,
 }
 
 impl SourceFile {
-    /// File stem used in segment keys. Lowercase for an archive file, as the
-    /// previous loaders did, so the keys of existing projects do not change.
+    /// File stem used in segment keys, as named on disk.
     pub(crate) fn stem(&self) -> String {
         let name = self.logical.rsplit('/').next().unwrap_or(&self.logical);
         let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
-        match self.origin {
-            Origin::Loose => stem.to_string(),
-            Origin::Archive { .. } => stem.to_lowercase(),
-        }
+        stem.to_string()
     }
 }
 
@@ -100,126 +80,60 @@ fn find_case_insensitive(dir: &Path, name: &str) -> Option<PathBuf> {
     })
 }
 
-/// Archives that may hold maps or databases: `(absolute path, path relative to
-/// the game folder, prefix of their inner paths relative to Data/)`.
-fn candidate_archives(game_dir: &Path) -> Vec<(PathBuf, PathBuf, &'static str)> {
+/// The archives holding text the game would read before `Data/`, relative to
+/// the game folder with `/` separators: `Data.wolf`, `Data/MapData.wolf`,
+/// `Data/BasicData.wolf` (any case). Found without reading them.
+pub(crate) fn text_archives(game_dir: &Path) -> Vec<String> {
     let mut archives = Vec::new();
     if let Some(path) = find_case_insensitive(game_dir, "Data.wolf") {
-        let relative = PathBuf::from(path.file_name().unwrap_or_default());
-        archives.push((path, relative, ""));
+        archives.push(file_name(&path));
     }
     if let Some(data_dir) = find_wolf_data_dir(game_dir) {
-        let data_name = PathBuf::from(data_dir.file_name().unwrap_or_default());
-        for (name, prefix) in [
-            ("MapData.wolf", "MapData/"),
-            ("BasicData.wolf", "BasicData/"),
-        ] {
+        for name in ["MapData.wolf", "BasicData.wolf"] {
             if let Some(path) = find_case_insensitive(&data_dir, name) {
-                let relative = data_name.join(path.file_name().unwrap_or_default());
-                archives.push((path, relative, prefix));
+                archives.push(format!("{}/{}", file_name(&data_dir), file_name(&path)));
             }
         }
     }
     archives
 }
 
-/// Archives the game reads first and an export rebuilds when they hold a
-/// translated file (relative paths, `/` separators), found without reading them.
-pub(crate) fn archive_paths(game_dir: &Path) -> Vec<String> {
-    candidate_archives(game_dir)
-        .iter()
-        .map(|(_, relative, _)| display_path(relative))
-        .collect()
-}
-
-/// `archive` relative path with `/` separators (zip entry name, messages).
-pub(crate) fn display_path(path: &Path) -> String {
-    path.components()
-        .map(|component| component.as_os_str().to_string_lossy())
-        .collect::<Vec<_>>()
-        .join("/")
+fn file_name(path: &Path) -> String {
+    path.file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned()
 }
 
 impl WolfSources {
+    /// Read the maps, databases and common events of `Data/`; refused while
+    /// an archive holding text is present ([`text_archives`]).
     pub(crate) fn load(game_dir: &Path) -> Result<Self, SourcesError> {
+        let archives = text_archives(game_dir);
+        if !archives.is_empty() {
+            return Err(SourcesError::ArchivePresent {
+                archives: archives.join(", "),
+            });
+        }
+
         let mut sources = Self::default();
-
-        for (absolute, relative, prefix) in candidate_archives(game_dir) {
-            let archive_name = display_path(&relative);
-            let data = std::fs::read(&absolute)?;
-            let unplaced = RefCell::new(Vec::new());
-            let wanted = |inner: &str| {
-                let logical = format!("{prefix}{}", inner.trim_start_matches('/'));
-                let keep = is_wanted(&logical);
-                if !keep && logical.to_ascii_lowercase().ends_with(".mps") {
-                    unplaced.borrow_mut().push(inner.to_string());
-                }
-                keep
+        let Some(data_dir) = find_wolf_data_dir(game_dir) else {
+            return Ok(sources);
+        };
+        for folder in ["MapData", "BasicData"] {
+            let Ok(entries) = std::fs::read_dir(data_dir.join(folder)) else {
+                continue;
             };
-            let archive =
-                extract_matching(&data, &wanted).map_err(|e| SourcesError::UnreadableArchive {
-                    archive: archive_name.clone(),
-                    reason: e.to_string(),
-                })?;
-            drop(data);
-
-            let unplaced = unplaced.into_inner();
-            let placed_maps = archive
-                .files
-                .iter()
-                .any(|file| file.path.to_ascii_lowercase().ends_with(".mps"));
-            if !placed_maps && !unplaced.is_empty() {
-                return Err(SourcesError::UnplacedMaps {
-                    archive: archive_name,
-                    paths: unplaced
-                        .iter()
-                        .take(3)
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                });
-            }
-
-            for file in archive.files {
-                let logical = format!("{prefix}{}", file.path.trim_start_matches('/'));
-                sources
-                    .files
-                    .entry(logical.to_ascii_lowercase())
-                    .or_insert(SourceFile {
-                        logical,
-                        bytes: file.data,
-                        origin: Origin::Archive {
-                            archive: relative.clone(),
-                            path: file.path,
-                        },
-                    });
-            }
-        }
-
-        if let Some(data_dir) = find_wolf_data_dir(game_dir) {
-            for folder in ["MapData", "BasicData"] {
-                let Ok(entries) = std::fs::read_dir(data_dir.join(folder)) else {
+            for entry in entries.flatten() {
+                let logical = format!("{folder}/{}", entry.file_name().to_string_lossy());
+                let key = logical.to_ascii_lowercase();
+                if !is_wanted(&logical) || sources.files.contains_key(&key) {
                     continue;
-                };
-                for entry in entries.flatten() {
-                    let logical = format!("{folder}/{}", entry.file_name().to_string_lossy());
-                    let key = logical.to_ascii_lowercase();
-                    if !is_wanted(&logical) || sources.files.contains_key(&key) {
-                        continue;
-                    }
-                    let bytes = std::fs::read(entry.path())?;
-                    sources.files.insert(
-                        key,
-                        SourceFile {
-                            logical,
-                            bytes,
-                            origin: Origin::Loose,
-                        },
-                    );
                 }
+                let bytes = std::fs::read(entry.path())?;
+                sources.files.insert(key, SourceFile { logical, bytes });
             }
         }
-
         Ok(sources)
     }
 
@@ -259,136 +173,114 @@ impl WolfSources {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engines::wolf::decrypt::legacy_xor::test_archives::{make_v6_dx_archive, DxFile};
-    use crate::engines::wolf::decrypt::legacy_xor::WOLF_KEYS;
-
-    fn key() -> [u8; 12] {
-        WOLF_KEYS
-            .iter()
-            .find(|(name, _)| *name == "v2.20")
-            .map(|(_, key)| *key)
-            .unwrap()
-    }
-
-    fn archive(files: &[DxFile]) -> Vec<u8> {
-        make_v6_dx_archive(&key(), files, 932, true).bytes
-    }
-
-    fn file<'a>(dir: Option<&'a str>, name: &'a str, content: &'a [u8]) -> DxFile<'a> {
-        DxFile {
-            dir,
-            name,
-            content,
-            compress: false,
-        }
-    }
 
     fn write(path: &Path, bytes: &[u8]) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, bytes).unwrap();
     }
 
-    #[test]
-    fn test_archive_wins_over_loose_file_and_loose_fills_the_rest() {
+    /// A decrypted game: `Data/MapData/` and `Data/BasicData/`.
+    fn decrypted_game() -> tempfile::TempDir {
         let game = tempfile::tempdir().unwrap();
         let data = game.path().join("Data");
+        write(&data.join("MapData").join("Map001.mps"), b"map 1");
+        write(&data.join("MapData").join("TitleMap.mps"), b"title");
+        write(&data.join("MapData").join("notes.txt"), b"not a map");
         write(
-            &game.path().join("Data.wolf"),
-            &archive(&[file(Some("MapData"), "Map001.mps", b"from archive")]),
+            &data.join("MapData").join("Old").join("Map009.mps"),
+            b"nested",
         );
-        write(&data.join("MapData").join("Map001.mps"), b"loose copy");
-        write(&data.join("MapData").join("Map002.mps"), b"loose only");
-
-        let sources = WolfSources::load(game.path()).unwrap();
-        let map1 = sources.get("MapData/Map001.mps").unwrap();
-        assert_eq!(map1.bytes, b"from archive");
-        assert_eq!(
-            map1.origin,
-            Origin::Archive {
-                archive: PathBuf::from("Data.wolf"),
-                path: "/MapData/Map001.mps".into(),
-            }
-        );
-        assert_eq!(map1.stem(), "map001", "archive stems stay lowercase");
-        let map2 = sources.get("mapdata/map002.mps").unwrap();
-        assert_eq!(map2.bytes, b"loose only");
-        assert_eq!(map2.origin, Origin::Loose);
-        assert_eq!(map2.stem(), "Map002");
-        assert_eq!(sources.maps().count(), 2);
+        let basic_data = data.join("BasicData");
+        write(&basic_data.join("DataBase.project"), b"project");
+        write(&basic_data.join("DataBase.dat"), b"dat");
+        write(&basic_data.join("CDataBase.project"), b"orphan project");
+        write(&basic_data.join("SysDataBaseBasic.project"), b"project");
+        write(&basic_data.join("SysDataBaseBasic.dat"), b"dat");
+        write(&basic_data.join("CommonEvent.dat"), b"events");
+        game
     }
 
     #[test]
-    fn test_split_archives_and_database_pairs() {
-        let game = tempfile::tempdir().unwrap();
-        let data = game.path().join("Data");
-        write(
-            &data.join("MapData.wolf"),
-            &archive(&[file(None, "Map001.mps", b"map")]),
-        );
-        write(
-            &data.join("BasicData.wolf"),
-            &archive(&[
-                file(None, "DataBase.project", b"project"),
-                file(None, "DataBase.dat", b"dat"),
-                file(None, "SysDataBaseBasic.project", b"project"),
-                file(None, "SysDataBaseBasic.dat", b"dat"),
-                file(None, "CommonEvent.dat", b"events"),
-            ]),
-        );
-        write(&data.join("Picture.wolf"), b"never read");
-
+    fn test_loose_files_are_read_from_data() {
+        let game = decrypted_game();
         let sources = WolfSources::load(game.path()).unwrap();
-        let map = sources.maps().next().unwrap();
-        assert_eq!(map.logical, "MapData/Map001.mps");
+
+        let maps: Vec<_> = sources.maps().map(|map| map.logical.as_str()).collect();
+        assert_eq!(maps, ["MapData/Map001.mps", "MapData/TitleMap.mps"]);
+        let map = sources.get("mapdata/map001.mps").unwrap();
+        assert_eq!(map.bytes, b"map 1");
+        assert_eq!(map.stem(), "Map001", "stems keep their case");
         assert_eq!(
-            map.origin,
-            Origin::Archive {
-                archive: PathBuf::from("Data").join("MapData.wolf"),
-                path: "/Map001.mps".into(),
-            }
+            sources.get("MapData/TitleMap.mps").unwrap().stem(),
+            "TitleMap"
         );
+
         let databases = sources.databases();
-        assert_eq!(databases.len(), 1);
+        assert_eq!(
+            databases.len(),
+            1,
+            "orphans and SysDataBaseBasic are skipped"
+        );
         assert_eq!(databases[0].0.bytes, b"project");
         assert_eq!(databases[0].1.bytes, b"dat");
-        assert_eq!(databases[0].1.stem(), "database");
+        assert_eq!(databases[0].1.stem(), "DataBase");
         assert_eq!(sources.common_events().unwrap().bytes, b"events");
     }
 
     #[test]
-    fn test_archive_with_maps_outside_mapdata_is_refused() {
+    fn test_game_without_data_has_no_files() {
         let game = tempfile::tempdir().unwrap();
-        write(
-            &game.path().join("Data.wolf"),
-            &archive(&[file(Some("Sample"), "Map001.mps", b"map")]),
-        );
-        match WolfSources::load(game.path()) {
-            Err(error @ SourcesError::UnplacedMaps { .. }) => {
-                let message = error.to_string();
-                assert!(message.starts_with(WOLF_UNREADABLE_ARCHIVE), "{message}");
-                assert!(message.contains("/Sample/Map001.mps"), "{message}");
+        let sources = WolfSources::load(game.path()).unwrap();
+        assert_eq!(sources.maps().count(), 0);
+        assert!(sources.databases().is_empty());
+        assert!(sources.common_events().is_none());
+    }
+
+    /// Decision UW-D2: an archive holding text refuses the operation, whatever
+    /// its case, even next to a decrypted `Data/`.
+    #[test]
+    fn test_text_archive_is_refused() {
+        for (archive, shown) in [
+            ("Data.wolf", "Data.wolf"),
+            ("data.WOLF", "data.WOLF"),
+            ("Data/MapData.wolf", "Data/MapData.wolf"),
+            ("Data/BasicData.wolf", "Data/BasicData.wolf"),
+        ] {
+            let game = decrypted_game();
+            write(&game.path().join(archive), b"never read");
+            match WolfSources::load(game.path()) {
+                Err(error @ SourcesError::ArchivePresent { .. }) => {
+                    let message = error.to_string();
+                    assert!(message.starts_with(WOLF_ARCHIVE_PRESENT), "{message}");
+                    assert!(message.contains(shown), "{message}");
+                    assert!(message.contains("UberWolf"), "{message}");
+                }
+                other => panic!("{archive}: expected ArchivePresent, got {other:?}"),
             }
-            other => panic!("expected UnplacedMaps, got {other:?}"),
         }
     }
 
     #[test]
-    fn test_unreadable_archive_is_refused() {
-        let game = tempfile::tempdir().unwrap();
-        let mut header = vec![0u8; 64];
-        header[0..4].copy_from_slice(&[b'D', b'X', 8, 0]);
-        header[44..48].copy_from_slice(&(350u32 << 16).to_le_bytes());
-        write(&game.path().join("Data.wolf"), &header);
-        write(
-            &game.path().join("Data").join("MapData").join("Map001.mps"),
-            b"decrypted next to the archive",
+    fn test_every_text_archive_is_listed() {
+        let game = decrypted_game();
+        write(&game.path().join("Data.wolf"), b"");
+        write(&game.path().join("Data").join("MapData.wolf"), b"");
+        write(&game.path().join("Data").join("BasicData.wolf"), b"");
+        assert_eq!(
+            text_archives(game.path()),
+            ["Data.wolf", "Data/MapData.wolf", "Data/BasicData.wolf"]
         );
-        match WolfSources::load(game.path()) {
-            Err(SourcesError::UnreadableArchive { archive, reason }) => {
-                assert_eq!(archive, "Data.wolf");
-                assert!(reason.contains("350"), "{reason}");
-            }
-            other => panic!("expected UnreadableArchive, got {other:?}"),
-        }
+    }
+
+    /// Archives of pictures or sounds hold no text: ignored.
+    #[test]
+    fn test_other_archives_are_ignored() {
+        let game = decrypted_game();
+        let data = game.path().join("Data");
+        write(&data.join("Picture.wolf"), b"never read");
+        write(&data.join("BGM.wolf"), b"never read");
+        assert!(text_archives(game.path()).is_empty());
+        let sources = WolfSources::load(game.path()).unwrap();
+        assert_eq!(sources.maps().count(), 2);
     }
 }

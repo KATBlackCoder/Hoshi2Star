@@ -12,10 +12,9 @@
 //! previous translation. A game-update guard needs that copy (separate lot).
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use super::dat_parser::{self, DatFile};
-use super::decrypt::legacy_xor::{extract_matching, read_layout, DxaEntry, DxaLayout};
 use super::encoding;
 use super::v3_format::command::{Command, CID_CHOICES, CID_MESSAGE};
 use super::v3_format::common_events::{self, CommonEventsV3};
@@ -245,96 +244,6 @@ pub fn verify_dat_edit(
     compare_texts(file, is_utf8, &before_texts, &after_texts, planned)
 }
 
-/// Stored (still encrypted) bytes of `entry` in a v6 archive.
-fn stored_bytes<'a>(archive: &'a [u8], layout: &DxaLayout, entry: &DxaEntry) -> Option<&'a [u8]> {
-    let start = usize::try_from(layout.base_offset.checked_add(entry.data_offset)?).ok()?;
-    let end = start.checked_add(usize::try_from(entry.stored_size).ok()?)?;
-    archive.get(start..end)
-}
-
-/// Data address, sizes and Huffman size of a v8 entry, as stored in the TOC.
-fn entry_fields<'a>(layout: &'a DxaLayout, entry: &DxaEntry) -> Option<&'a [u8]> {
-    let at = usize::try_from(layout.file_table.checked_add(entry.entry_offset)?).ok()?;
-    layout.toc.get(at + 0x28..at + 0x48)
-}
-
-/// Verify a rebuilt archive (plan RW, RW-5) without decoding every file: the
-/// same files in the same order; every file not in `replacements` keeps its
-/// stored bytes (v6: same encrypted slice; v8: same entry fields, and the data
-/// copied before the original TOC is unchanged); every replaced file reads back
-/// as planned. The files inside (maps, databases) were checked before the
-/// rebuild by the other `verify_*` functions.
-pub fn verify_archive_rebuild(
-    file: &str,
-    original: &[u8],
-    rebuilt: &[u8],
-    replacements: &BTreeMap<String, Vec<u8>>,
-) -> Vec<IntegrityIssue> {
-    let (before, after) = match (read_layout(original), read_layout(rebuilt)) {
-        (Ok(before), Ok(after)) => (before, after),
-        (Err(e), _) | (_, Err(e)) => return unparseable(file, e),
-    };
-    let paths = |layout: &DxaLayout| -> Vec<String> {
-        layout
-            .entries
-            .iter()
-            .map(|entry| entry.path.clone())
-            .collect()
-    };
-    if before.version != after.version || paths(&before) != paths(&after) {
-        return structure_changed(file, "the archive's file list changed");
-    }
-    if before.version == 8 {
-        // Everything before the original TOC is copied; only the header's TOC
-        // address (0x10) and flags (0x2C) may differ.
-        // Compared in place: the data area can weigh gigabytes.
-        let toc = usize::try_from(before.toc_offset).unwrap_or(usize::MAX);
-        let unchanged = original.get(..0x10) == rebuilt.get(..0x10)
-            && original.get(0x18..0x2C) == rebuilt.get(0x18..0x2C)
-            && original.get(0x30..toc).is_some()
-            && original.get(0x30..toc) == rebuilt.get(0x30..toc);
-        if !unchanged {
-            return structure_changed(file, "data copied from the original archive changed");
-        }
-    }
-
-    let mut issues = Vec::new();
-    for (old, new) in before.entries.iter().zip(&after.entries) {
-        if replacements.contains_key(&old.path) {
-            continue;
-        }
-        let unchanged = if before.version == 8 {
-            entry_fields(&before, old).is_some()
-                && entry_fields(&before, old) == entry_fields(&after, new)
-        } else {
-            stored_bytes(original, &before, old).is_some()
-                && stored_bytes(original, &before, old) == stored_bytes(rebuilt, &after, new)
-        };
-        if !unchanged {
-            issues.push(IntegrityIssue::UnplannedChange {
-                file: file.to_string(),
-                pointer: old.path.clone(),
-            });
-        }
-    }
-
-    let replaced = match extract_matching(rebuilt, &|path| replacements.contains_key(path)) {
-        Ok(archive) => archive.files,
-        Err(e) => return unparseable(file, e),
-    };
-    for (path, expected) in replacements {
-        let found = replaced.iter().find(|f| &f.path == path).map(|f| &f.data);
-        if found != Some(expected) {
-            issues.push(IntegrityIssue::PlannedValueMissing {
-                file: file.to_string(),
-                pointer: path.clone(),
-            });
-        }
-    }
-    issues.truncate(MAX_ISSUES_PER_FILE);
-    issues
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -489,94 +398,6 @@ mod tests {
                 .as_slice(),
             [IntegrityIssue::UnplannedChange { .. }]
         ));
-    }
-
-    fn archive_files(
-    ) -> [crate::engines::wolf::decrypt::legacy_xor::test_archives::DxFile<'static>; 2] {
-        use crate::engines::wolf::decrypt::legacy_xor::test_archives::DxFile;
-        [
-            DxFile {
-                dir: Some("MapData"),
-                name: "Map001.mps",
-                content: b"original map bytes",
-                compress: true,
-            },
-            DxFile {
-                dir: None,
-                name: "Game.dat",
-                content: b"game settings",
-                compress: false,
-            },
-        ]
-    }
-
-    fn rebuild(archive: &[u8], replacements: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
-        let mut out = Vec::new();
-        crate::engines::wolf::decrypt::writer::rebuild_archive(archive, replacements, &mut out)
-            .unwrap();
-        out
-    }
-
-    fn sample_archives() -> Vec<(u8, Vec<u8>)> {
-        use crate::engines::wolf::decrypt::legacy_xor::test_archives::{
-            make_v6_dx_archive, make_v8_dx_archive,
-        };
-        use crate::engines::wolf::decrypt::legacy_xor::{WOLF_KEYS, WOLF_V8_KEY_STRINGS};
-        let v6_key = WOLF_KEYS.iter().find(|(n, _)| *n == "v2.20").unwrap().1;
-        let v8_key = WOLF_V8_KEY_STRINGS
-            .iter()
-            .find(|(n, _, _)| *n == "v3.14")
-            .unwrap()
-            .2;
-        let mut v8_files = archive_files();
-        v8_files[0].compress = false; // the v8 test builder stores raw files
-        vec![
-            (
-                6,
-                make_v6_dx_archive(&v6_key, &archive_files(), 932, true).bytes,
-            ),
-            (8, make_v8_dx_archive(v8_key, 314, &v8_files)),
-        ]
-    }
-
-    #[test]
-    fn test_rebuilt_archive_passes_and_tampering_is_reported() {
-        let replacements = BTreeMap::from([(
-            "/MapData/Map001.mps".to_string(),
-            b"translated map".to_vec(),
-        )]);
-        for (version, original) in sample_archives() {
-            let rebuilt = rebuild(&original, &replacements);
-            assert_eq!(
-                verify_archive_rebuild("Data.wolf", &original, &rebuilt, &replacements),
-                Vec::new(),
-                "v{version}"
-            );
-
-            // The replacement read back differs from the plan.
-            let other =
-                BTreeMap::from([("/MapData/Map001.mps".to_string(), b"another text".to_vec())]);
-            assert!(matches!(
-                verify_archive_rebuild("Data.wolf", &original, &rebuilt, &other).as_slice(),
-                [IntegrityIssue::PlannedValueMissing { pointer, .. }] if pointer == "/MapData/Map001.mps"
-            ));
-
-            // An unchanged file altered in the rebuilt archive.
-            let mut tampered = rebuilt.clone();
-            let layout = read_layout(&rebuilt).unwrap();
-            let entry = layout
-                .entries
-                .iter()
-                .find(|e| e.path == "/Game.dat")
-                .unwrap();
-            let at = (layout.base_offset + entry.data_offset) as usize;
-            tampered[at] ^= 0xFF;
-            let issues = verify_archive_rebuild("Data.wolf", &original, &tampered, &replacements);
-            assert!(
-                !issues.is_empty(),
-                "v{version}: altered Game.dat not reported"
-            );
-        }
     }
 
     /// A database whose type header carries `STRING_INDICATOR` and its string.

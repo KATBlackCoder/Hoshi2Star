@@ -27,7 +27,7 @@ pub enum ExtractorError {
     Io(#[from] std::io::Error),
     #[error("unsupported Wolf RPG version: {0}.{1}")]
     UnsupportedVersion(u8, u8),
-    /// An archive the game reads cannot be read (plan RW, RW-5).
+    /// An archive holding text is still in the game folder (plan UW, UW-D2).
     #[error(transparent)]
     Sources(#[from] SourcesError),
     /// Maps or common events that could not be read (unknown container or
@@ -180,7 +180,7 @@ pub fn extract_all_wolf(
     // safer than opening it without their dialogue.
     let mut unreadable: Vec<String> = Vec::new();
 
-    // Archives first, then loose files, as the game reads them.
+    // Loose files of the decrypted Data/ (plan UW).
     let sources = WolfSources::load(game_dir)?;
 
     // Maps
@@ -494,14 +494,14 @@ pub fn extract_common_events(
 
 /// Extract ALL translatable segments from a Wolf RPG game directory.
 ///
-/// Reads the files the game reads ([`WolfSources`]: archives first, then
-/// loose `Data/` files):
+/// Reads the loose files of the decrypted `Data/` ([`WolfSources`], plan UW):
 ///   - `MapData/*.mps`        → `extract_map_segments`
 ///   - `BasicData/*.dat`      → `extract_database_segments` (pairs with `.project`)
 ///   - `BasicData/CommonEvent.dat` → `extract_common_events`
 ///
-/// A `.dat` parse error is logged as a warning; an unreadable archive, map or
-/// `CommonEvent.dat` refuses the extraction.
+/// A `.dat` parse error is logged as a warning; an archive holding text still
+/// in the game folder, an unreadable map or `CommonEvent.dat` refuses the
+/// extraction.
 pub fn extract_wolf_project(
     game_dir: &Path,
     version: &crate::engines::detector::WolfVersion,
@@ -1015,41 +1015,20 @@ mod tests {
         assert!(total > 0, "Inko databases must yield segments");
     }
 
-    /// Honoka's `Data.wolf` (v8) bundles a second, bogus copy of
-    /// `DataBase.dat`/`CDataBase.dat`/`SysDatabase.dat`/`SysDataBaseBasic.dat`
-    /// inside a nested "complete initial state" sample folder
-    /// (`データ集/（完全初期状態データ）/Data/BasicData/`). Before path-based
-    /// filtering, the bogus 257-byte `DataBase.dat` (indicator byte 0xbd)
-    /// would shadow the real 85738-byte one, surfacing as a spurious
-    /// "protected database" error — and `CDataBase.dat`'s bogus copy (also
-    /// 257 bytes, but with a *valid* header) would silently shadow the real
-    /// 90631-byte one.
+    /// Honoka still shipped as `Data.wolf` (not decrypted): refused with the
+    /// archive marker (plan UW, UW-D2), never read.
     #[test]
-    fn test_real_honoka_archive_database_pairs() {
+    fn test_real_honoka_archive_is_refused() {
+        use super::super::sources::WOLF_ARCHIVE_PRESENT;
+
         let game_dir = test_dir().join("月咲流ホノカver1.03(.wolf)");
         if !game_dir.exists() {
             return;
         }
-        let sources = WolfSources::load(&game_dir).unwrap();
-        let by_stem: HashMap<String, usize> = sources
-            .databases()
-            .into_iter()
-            .map(|(_project, dat)| (dat.stem(), dat.bytes.len()))
-            .collect();
-
-        assert_eq!(
-            by_stem.get("database").copied(),
-            Some(85738),
-            "must pick the real BasicData/DataBase.dat, not the 257-byte sample copy"
-        );
-        assert_eq!(
-            by_stem.get("cdatabase").copied(),
-            Some(90631),
-            "must pick the real BasicData/CDataBase.dat, not the 257-byte sample copy"
-        );
+        let error = extract_all_wolf(&game_dir, &v2()).unwrap_err();
         assert!(
-            !by_stem.contains_key("sysdatabasebasic"),
-            "SysDataBaseBasic must be skipped (engine-internal, non-translatable)"
+            error.to_string().starts_with(WOLF_ARCHIVE_PRESENT),
+            "{error}"
         );
     }
 

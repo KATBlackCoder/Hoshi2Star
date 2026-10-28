@@ -9,8 +9,8 @@
 - Plan : `tasks/todo.md`, « Plan — UW », **validé le 2026-10-28** (UW-D1 à UW-D8 = recommandations, UW-D5 reporté). Journal : `docs/journal/2026-10-28-plan-wolf-uberwolf.md`.
 - Preuves en jeu du 2026-10-28 : とのかじ 3.723 et ポンコツ 3.714 (`GamePro.exe`), déchiffrés par UberWolf et sans `.wolf`, se lancent et affichent les textes marqués « ★ » par le prototype (copies `RAE-PLAN/wolf/*-essai-marque`, hors Git). Non prouvé : `Evtext/*.txt` de ポンコツ ; un export fait par l'app.
 - Analyse des 24 956 textes du 3.658 : `RAE-PLAN/essais/wolf-3658-analyse-textes.md` et `wolf-3658-segments-classes.tsv` (hors Git) ; 19 chemins `bg/*.png⏎0⏎0⏎0` extraits à tort (filtre corrigé par UW-4).
-- **Implémentation (session cloud, 2026-10-28)** : branche `feat/wolf-uberwolf`. Avancement coché dans `tasks/todo.md` (« Plan — UW »), avec le résultat du gate de chaque étape. UW-1 (détection) fait, gate vert.
-- **Prochaine action** : UW-2 (sources : `Data/` seul, `wolf_archive_present`), puis UW-3 à UW-8 et PR vers `main`. UW-9 (essai en jeu) et UW-R restent à faire en local par l'utilisateur.
+- **Implémentation (session cloud, 2026-10-28)** : branche `feat/wolf-uberwolf`. Avancement coché dans `tasks/todo.md` (« Plan — UW »), avec le résultat du gate de chaque étape. UW-1 (détection), UW-2 et UW-3 (sources `Data/` seul, refus `wolf_archive_present`, export en fichiers libres) faits, gate vert.
+- **Prochaine action** : UW-4 (filtre des chemins), puis UW-5 à UW-8 et PR vers `main`. UW-9 (essai en jeu) et UW-R restent à faire en local par l'utilisateur.
 
 ## Terminé (2026-10-28, Claude) — libellés de terminologie traduits, PR #20 fusionnée
 

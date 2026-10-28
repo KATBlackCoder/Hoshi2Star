@@ -736,7 +736,7 @@ async fn wolf_preflight(
         .filter(|text| !encoding::is_shift_jis(text))
         .count();
     Ok(WolfExportPreflight {
-        archives: sources::archive_paths(game_dir),
+        archives: sources::text_archives(game_dir),
         shift_jis: !version.is_utf8(),
         accented_texts,
         path_warning: encoding::path_warning(game_dir, &version),
@@ -1267,15 +1267,8 @@ fn write_zip(
         zip.set_comment(comment);
     }
     for (rel_path, bytes) in entries {
-        // A rebuilt Wolf archive is already compressed and can weigh gigabytes:
-        // stored as is (plan RW, decision D1).
-        let method = if rel_path.to_ascii_lowercase().ends_with(".wolf") {
-            zip::CompressionMethod::Stored
-        } else {
-            zip::CompressionMethod::Deflated
-        };
         let options = zip::write::SimpleFileOptions::default()
-            .compression_method(method)
+            .compression_method(zip::CompressionMethod::Deflated)
             .large_file(bytes.len() as u64 >= u64::from(u32::MAX));
         zip.start_file(&rel_path, options)
             .map_err(|e| e.to_string())?;
