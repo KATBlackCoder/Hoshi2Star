@@ -1,8 +1,8 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-27 — Claude (WR-E6 : code et tests écrits sur `feat/wr-e6-soft-breaks`, worktree `../Hoshi2Star-e6`, gate cloud vert, essai réel concluant, PR #18 fusionnée).
-**Objectif utilisateur :** lot WR-E6, le LLM n'a plus à replacer chaque `\n` d'un message Wolf. WR (PR #16), WR-E6 (PR #18), RW (PR #13) et DX (PR #15) fusionnés ; EX abandonné.
-**Statut :** WR-E6 livré : PR #18 fusionnée après #16 (2026-10-27). WR-1 à WR-9 faits : gate final vert sur `4221f9e`, essai en jeu 2.23 OK ; PR #16 fusionnée.
+**Mis à jour :** 2026-10-28 — Claude (Wolf : WR, WR-E6 et le correctif de taille de police fusionnés ; ménage des worktrees, branches et copies d'essai).
+**Objectif utilisateur :** chantier Wolf livré : RW (PR #13), DX (PR #15), WR (PR #16), correctif de taille de police à l'export (PR #17) et WR-E6 (PR #18) fusionnés ; EX abandonné.
+**Statut :** `main` @ `1ff3352`, aucune PR ouverte. Vérifié en jeu sur 2.23 ; essai en jeu de l'export de l'app sur 3.658 non fait.
 
 ## En cours (2026-10-27, Claude) — WR-E6 : retours à la ligne Wolf côté LLM
 
@@ -14,7 +14,10 @@
 - **Essai réel E6-7 concluant** (2026-10-27, projet `APP`) : 27/27 messages retraduits par le LLM, 0 ligne de ponctuation seule (9 avant), 0 ligne vide (5 avant), nombre de lignes de la source respecté, aucun `needs_review`. 26 entrées de TM fautives supprimées avant l'essai (sauvegarde `backups/hoshi2star-avant-essai-e6-20261027-215036.db`). Détail : journal du jour.
 - **PR #18 ouverte** (2026-10-27, accord de l'utilisateur), empilée sur `feat/wr-wolf-wrap` (#16).
 - **Fusionné** le 2026-10-27 à la demande de l'utilisateur : #16 (`e47a1e5`), puis #18 repointée vers `main` et fusionnée.
-- **Prochaine action** : mettre le dossier principal à jour sur `main` (`git pull`) ; l'utilisateur retire les projets d'essai (APP, DX) de l'app. Suivis hors E6 : coupe après un trait d'union (« H- ⏎ scenes ») ; noms instables (glossaire). Suivis hors E6 : coupe après un trait d'union (« H- ⏎ scenes ») ; noms instables (glossaire).
+- **#17 fusionnée** ensuite (`1ff3352`, repointée vers `main`, à la demande de l'utilisateur) : la fenêtre d'export propose la taille du jeu au lieu de `\f[18]`.
+- **Ménage (2026-10-27, accord de l'utilisateur)** : worktrees `../Hoshi2Star-rw`, `-e6`, `-wr`, `-font` et Codex `522a` retirés ; branches fusionnées supprimées en local et sur `origin` (dont `fix/sqlite-translation-secs-migration`, déjà dans `main` par la PR #3) ; sauvegardes `avant-essai-*` supprimées ; copies `RAE-PLAN/essais/wolf-v223`, `wolf-v3` et `wolf-v3-en` supprimées (les chemins cités plus bas n'existent plus). Gardés : `RAE-PLAN/essais/extraits` (tests réels Wolf), `bakin-v07`, `test/`.
+- Gardé à décider : le worktree Codex `6fab` (`codex/hoshiyomi-redesign`) porte un travail non commité et absent de `main` (libellés des filtres de terminologie traduits fr/en, `TerminologySelect.tsx`, `terminologyOptions.ts`).
+- **Prochaine action** : l'utilisateur retire les projets d'essai APP et DX de l'app (dossiers de jeu supprimés). Suites Wolf : essai en jeu 3.658 depuis l'app (recopier le jeu) ; garde « jeu mis à jour » Wolf ; coupe après un trait d'union (« H- ⏎ scenes ») ; noms instables (glossaire).
 
 ## Terminé (2026-10-27, Claude) — RW (Wolf), fusionné par la PR #13
 
