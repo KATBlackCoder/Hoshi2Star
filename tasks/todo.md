@@ -97,7 +97,7 @@ WolfX) : l'utilisateur déchiffre le jeu avec UberWolf, l'app lit et exporte les
       partie « archivée » de la note d'export retirée). Restent pour UW-R : variante publique
       `ExtractorError::Decryptor` (référence `decrypt/`). Gate vert : fmt, typecheck, Vitest 157/157, lint,
       clippy, cargo test 806 OK / 0 échec / 15 ignorés.
-- [ ] **UW-4 — Filtre des chemins** (`extractor.rs:330`). Règle : un texte est un chemin si **chaque ligne**
+- [x] **UW-4 — Filtre des chemins** (`extractor.rs:330`). Règle : un texte est un chemin si **chaque ligne**
       (après retrait du `\r` et des espaces de fin) est vide, un nombre, ou un chemin seul, **et** qu'au moins
       une ligne est un chemin seul. Chemin seul : finit par une extension connue, sans espace (normal ou
       pleine chasse) ni ponctuation de phrase (`。、！？「」『』（）…：`), et contient `/` ou `\`, ou est
@@ -105,6 +105,13 @@ WolfX) : l'utilisateur déchiffre le jeu avec UberWolf, l'app lit et exporte les
       `bg/スラム.png⏎0⏎0⏎0` écarté ; `bg/スラム.png\r\n0\r\n0\r\n1` écarté ; `icon.png` écarté ;
       `ファイル名はicon.png` gardé ; `「…icon031.pngみたいな…` gardé ; `画像はこちら：pic.png` gardé ;
       `セリス⏎見てbg.png` gardé ; les cas existants (`test_is_resource_path`) inchangés.
+      **Fait le 2026-10-28 (Claude, cloud)** : `is_resource_path` + `is_lone_path` (`extractor.rs`) ; « un
+      nombre » = `filter::is_pure_number`, signe `-` admis. **Écart à valider** : le plan exige à la fois
+      « sans espace » et `test_is_resource_path` inchangé, qui contient `MS Gothic.ttf` ; règle retenue :
+      l'espace ASCII n'est admis que dans une ligne entièrement ASCII (`MS Gothic.ttf`, `icon.png`), jamais
+      dans une ligne non ASCII (`bg/スラム 2.png` gardé comme texte) ; l'espace pleine chasse jamais.
+      Test ajouté `test_is_resource_path_with_numeric_lines` (cas du plan + `\`, `-1`, espaces).
+      Gate vert : fmt, typecheck, Vitest 157/157, lint, clippy, cargo test 807 OK / 0 échec / 15 ignorés.
 - [ ] **UW-5 — Interface** : `src/lib/projectError.ts` (+ test) reconnaît `wolf_archive_present` ; clés fr/en
       (`projectList.*`, `toasts.*`) ; retrait de `wolfUnreadableArchive` ; texte du moteur non détecté
       (« Wolf RPG 2.x et 3.x » ⇒ mention du `Data/` déchiffré par UberWolf) ; `ExportWolfNotes.tsx`

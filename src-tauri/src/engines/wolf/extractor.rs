@@ -326,9 +326,39 @@ static RE_RESOURCE_EXTENSION: std::sync::LazyLock<regex::Regex> = std::sync::Laz
         .unwrap()
 });
 
-/// Returns true if `text` ends with a known resource file extension.
+/// Sentence punctuation, never part of a resource path.
+const SENTENCE_PUNCTUATION: [char; 12] = [
+    '。', '、', '！', '？', '「', '」', '『', '』', '（', '）', '…', '：',
+];
+
+/// Returns true if `text` is a resource path, possibly followed by numeric
+/// lines (plan UW, UW-4: `bg/スラム.png⏎0⏎0⏎0`, a `SysDatabase` background
+/// field): every line, trailing `\r` and spaces removed, is empty, a number or
+/// a lone path ([`is_lone_path`]), and at least one is a lone path.
 fn is_resource_path(text: &str) -> bool {
-    RE_RESOURCE_EXTENSION.is_match(text)
+    let mut has_path = false;
+    for line in text.split('\n').map(str::trim_end) {
+        let unsigned = line.strip_prefix('-').unwrap_or(line);
+        if line.is_empty() || filter::is_pure_number(unsigned) {
+            continue;
+        }
+        if !is_lone_path(line) {
+            return false;
+        }
+        has_path = true;
+    }
+    has_path
+}
+
+/// A line that is a resource path and nothing else: it ends with a known
+/// extension, holds no full-width space nor sentence punctuation, and either
+/// contains `/` or `\` without any space, or is entirely ASCII (`icon.png`,
+/// `MS Gothic.ttf`). `ファイル名はicon.png` is a sentence, not a path.
+fn is_lone_path(line: &str) -> bool {
+    RE_RESOURCE_EXTENSION.is_match(line)
+        && !line.contains('\u{3000}')
+        && !line.contains(SENTENCE_PUNCTUATION)
+        && (line.is_ascii() || (line.contains(['/', '\\']) && !line.contains(' ')))
 }
 
 /// Returns true if `text` contains at least one Japanese character
@@ -872,10 +902,43 @@ mod tests {
         }
     }
 
+    /// Plan UW, UW-4: a path followed by numeric lines is a path; a sentence
+    /// that ends with a file name is text.
+    #[test]
+    fn test_is_resource_path_with_numeric_lines() {
+        for path in [
+            "bg/スラム.png\n0\n0\n0",
+            "bg/スラム.png\r\n0\r\n0\r\n1",
+            "icon.png",
+            "Picture\\顔\\主人公.png",
+            "bg/title.png  \n\n-1\n",
+        ] {
+            assert!(is_resource_path(path), "{path:?} should be a resource path");
+        }
+
+        for text in [
+            "ファイル名はicon.png",
+            "「…icon031.pngみたいな…",
+            "画像はこちら：pic.png",
+            "セリス\n見てbg.png",
+            "bg/スラム 2.png",
+            "bg/スラム　2.png",
+            "0\n0",
+            "",
+        ] {
+            assert!(
+                !is_resource_path(text),
+                "{text:?} should not be a resource path"
+            );
+        }
+    }
+
     #[test]
     fn test_is_translatable_skips_resource_paths() {
         assert!(!is_translatable("Picture/title.png"));
         assert!(!is_translatable("se001.ogg"));
+        assert!(!is_translatable("bg/スラム.png\n0\n0\n0"));
+        assert!(is_translatable("ファイル名はicon.png"));
         assert!(is_translatable("こんにちは"));
     }
 
