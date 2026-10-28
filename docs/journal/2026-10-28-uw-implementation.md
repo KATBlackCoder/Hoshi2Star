@@ -24,7 +24,10 @@ validées telles que recommandées, UW-D5 reporté, UW-D8 hors périmètre, UW-R
 - UW-4 (`c337f5d`) : filtre des chemins de ressources ligne par ligne (`is_resource_path`, `is_lone_path`).
 - UW-5 (`72bdafe`) : interface (marqueurs, messages fr/en, note d'export sans archives).
 - UW-6 (`d8f396a`) : test e2e `wolf_game_without_database_is_refused_at_open`, texte `engineNotFound` précisé.
-- UW-7 : ADR-008, `docs/engines/wolf-uberwolf.md`, `CONTEXT.md`, `ROADMAP.md`, `BACKLOG.md`, `CHANGELOG.md`.
+- UW-7 (`33e8820`) : ADR-008, `docs/engines/wolf-uberwolf.md`, `CONTEXT.md`, `ROADMAP.md`, `BACKLOG.md`,
+  `CHANGELOG.md`.
+- UW-8 : relecture indépendante du diff par un sous-agent, corrections (archives vérifiées avant l'encodage,
+  en-tête des bases lu seul, `inject_all` refuse avant de créer des dossiers, textes), gate final vert.
 
 ## Fichiers créés
 
@@ -82,7 +85,10 @@ validées telles que recommandées, UW-D5 reporté, UW-D8 hors périmètre, UW-R
 
 - Gate cloud à chaque étape (fmt `--check`, `pnpm typecheck`, `pnpm test`, `pnpm lint`, clippy
   `--all-targets --locked -D warnings`, `cargo test --locked --no-fail-fast`) : vert de UW-1 à UW-6 ; chiffres
-  par étape dans `tasks/todo.md`. Gate final : voir UW-8 dans `tasks/todo.md`.
+  par étape dans `tasks/todo.md`. Gate final (2026-10-28, dernier commit) : vert ; Vitest 39 fichiers /
+  158 tests ; cargo test 808 OK / 0 échec / 15 ignorés.
+- Points laissés à valider par l'utilisateur : `tasks/todo.md`, UW-8 (racine `BasicData/`, chemins non ASCII
+  sans dossier extraits par le filtre UW-4, pas d'e2e UTF-8).
 - **Non exécuté** : tests réels `#[ignore]` (`H2S_WOLF_GAMES`, `H2S_WOLF_FIT_*`, `H2S_WOLF_ARCHIVES`) et tests à
   fixtures `test/` (absents du cloud, ils sortent sans rien vérifier) ; essai en jeu UW-9.
 

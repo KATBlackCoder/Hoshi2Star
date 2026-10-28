@@ -26,9 +26,9 @@ pub const WOLF_ARCHIVE_PRESENT: &str = "wolf_archive_present";
 #[derive(Debug, thiserror::Error)]
 pub enum SourcesError {
     #[error(
-        "{marker}: {archives} still in the game folder: the game would read it instead of \
-         the translated Data/ files. Decrypt the game with UberWolf, then move the .wolf \
-         archives holding text out of the game folder",
+        "{marker}: {archives} still in the game folder: the game reads these archives \
+         instead of the translated Data/ files. Decrypt the game with UberWolf, then move \
+         the .wolf archives holding text out of the game folder",
         marker = WOLF_ARCHIVE_PRESENT
     )]
     ArchivePresent { archives: String },
@@ -105,16 +105,24 @@ fn file_name(path: &Path) -> String {
         .into_owned()
 }
 
+/// Refuse the operation while an archive holding text is in the game folder
+/// ([`text_archives`], decision UW-D2).
+pub(crate) fn refuse_text_archives(game_dir: &Path) -> Result<(), SourcesError> {
+    let archives = text_archives(game_dir);
+    if archives.is_empty() {
+        Ok(())
+    } else {
+        Err(SourcesError::ArchivePresent {
+            archives: archives.join(", "),
+        })
+    }
+}
+
 impl WolfSources {
     /// Read the maps, databases and common events of `Data/`; refused while
-    /// an archive holding text is present ([`text_archives`]).
+    /// an archive holding text is present ([`refuse_text_archives`]).
     pub(crate) fn load(game_dir: &Path) -> Result<Self, SourcesError> {
-        let archives = text_archives(game_dir);
-        if !archives.is_empty() {
-            return Err(SourcesError::ArchivePresent {
-                archives: archives.join(", "),
-            });
-        }
+        refuse_text_archives(game_dir)?;
 
         let mut sources = Self::default();
         let Some(data_dir) = find_wolf_data_dir(game_dir) else {

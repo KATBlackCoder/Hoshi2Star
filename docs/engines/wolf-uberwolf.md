@@ -21,8 +21,10 @@ dossier `Data/` déchiffré par [UberWolf](https://github.com/Sinflower/UberWolf
 ## Ce que l'app attend
 
 - Un lanceur à la racine : `Game.exe`, `GamePro.exe` (Wolf Pro) ou `Game.ini`.
-- `Data/BasicData/` (ou `BasicData/`) contenant au moins un `.project` ou
-  `CommonEvent.dat`. Sinon : « moteur non détecté ».
+- `Data/BasicData/` contenant au moins un `.project` ou `CommonEvent.dat`.
+  Sinon : « moteur non détecté ». (Un `BasicData/` à la racine du jeu est
+  reconnu comme Wolf, mais seuls `Data/MapData/` et `Data/BasicData/` sont lus :
+  un tel jeu est refusé faute de base lisible dans `Data/BasicData/`.)
 - Une base lisible parmi `SysDatabase.dat`, `DataBase.dat`, `CDataBase.dat` :
   son en-tête donne l'encodage (Shift-JIS pour les 2.x, UTF-8 pour les 3.x).
   Sinon le projet est refusé (`wolf_no_database`).
@@ -41,3 +43,6 @@ par-dessus le jeu déchiffré. Chaque fichier passe la garde d'intégrité Wolf.
   déchiffrée intacte du jeu (instantané d'origine Wolf prévu, `BACKLOG.md`).
 - Les fichiers texte propres à un jeu (ex. `Evtext/*.txt`) ne sont pas
   extraits.
+- Un nom de fichier non ASCII sans dossier (`決定.ogg`) ou un chemin contenant
+  une ponctuation de phrase (`Picture/立ち絵（笑顔）.png`) est extrait comme
+  texte : ne pas le traduire (la règle garde `ファイル名はicon.png` comme texte).

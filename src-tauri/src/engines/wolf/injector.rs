@@ -283,9 +283,8 @@ fn serialize_dat(dat: &DatFile, dat_original_header: &[u8]) -> Result<Vec<u8>, I
 
 /// `is_utf8` drives string encoding directly from the `.dat`'s own magic
 /// byte (see [`serialize_dat`]) rather than from the externally-guessed
-/// `WolfVersion` — a game with no `.wolf` archive to sniff a CodePage from
-/// previously defaulted that guess to v2.0/Shift-JIS even when a specific
-/// database was genuinely UTF-8, silently corrupting any non-ASCII
+/// `WolfVersion` — that guess once defaulted to v2.0/Shift-JIS even when a
+/// specific database was genuinely UTF-8, silently corrupting any non-ASCII
 /// translated character while the header still declared UTF-8.
 fn serialize_dat_type(
     buf: &mut Vec<u8>,
@@ -628,8 +627,8 @@ pub async fn inject_all_to_memory(
 /// (`Data/MapData/`, `Data/BasicData/`), read where the game reads them.
 ///
 /// Used by the debug single-file command only; the zip export is
-/// [`inject_all_to_memory`]. Refused like it while an archive holding text is
-/// in the game folder (plan UW, UW-D2).
+/// [`inject_all_to_memory`]. Refused like it, before any folder is created,
+/// while an archive holding text is in the game folder (plan UW, UW-D2).
 ///
 /// Keys in `translations_by_file`:
 ///   `"MapData/{stem}"`   → translations for that `.mps`
@@ -639,13 +638,13 @@ pub async fn inject_all(
     translations_by_file: &HashMap<String, Vec<WolfTranslation>>,
     version: &WolfVersion,
 ) -> Result<Vec<InjectionResult>, InjectorError> {
+    let sources = WolfSources::load(game_dir)?;
     let map_dir = game_dir.join("Data").join("MapData");
     let db_dir = game_dir.join("Data").join("BasicData");
 
     std::fs::create_dir_all(&map_dir)?;
     std::fs::create_dir_all(&db_dir)?;
 
-    let sources = WolfSources::load(game_dir)?;
     let mut results = Vec::new();
 
     for (file_key, translations) in translations_by_file {
@@ -1025,8 +1024,8 @@ mod tests {
     }
 
     /// Regression for a real-world silent-corruption case: a UTF-8 database
-    /// (games with no `.wolf`/`Data.wolf` archive to sniff a CodePage from
-    /// used to fall back to guessing v2.0/Shift-JIS game-wide) must encode
+    /// (whose game-wide encoding guess used to fall back to v2.0/Shift-JIS)
+    /// must encode
     /// non-ASCII translated text as UTF-8 from its own `.dat` magic byte,
     /// never from the externally-guessed (and here deliberately wrong)
     /// `WolfVersion` — otherwise a full-width `．` (U+FF0E) gets written as
@@ -1232,6 +1231,10 @@ mod tests {
 
         let content = std::fs::read(&wolf_path).unwrap();
         assert_eq!(content, b"fake wolf archive", ".wolf must not be modified");
+        assert!(
+            !data_dir.join("MapData").exists() && !data_dir.join("BasicData").exists(),
+            "no folder is created before the refusal"
+        );
     }
 
     fn test_dir() -> std::path::PathBuf {

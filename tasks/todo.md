@@ -150,8 +150,21 @@ WolfX) : l'utilisateur déchiffre le jeu avec UberWolf, l'app lit et exporte les
       « `docs/architecture.md` » ou UW-R ; `inject_all` (export de debug) crée `Data/MapData` et
       `Data/BasicData` avant le refus d'une archive ; les chemins livrés sont `Data/...` même si le dossier du
       jeu s'appelle `data/` (antérieur à UW).
-- [ ] **UW-8 — Gate cloud** (accord de push) : fmt, typecheck, Vitest, clippy `--all-targets -D warnings`,
+- [x] **UW-8 — Gate cloud** (accord de push) : fmt, typecheck, Vitest, clippy `--all-targets -D warnings`,
       `cargo test --locked --no-fail-fast`, lint.
+      **Fait le 2026-10-28 (Claude, cloud)** : relecture indépendante du diff complet par un sous-agent.
+      Corrigé : les archives de textes sont vérifiées avant l'encodage (`refuse_text_archives`, appelée par
+      `guess_wolf_version_from_structure` et `WolfSources::load`), donc un `Data/` à moitié déchiffré reçoit
+      `wolf_archive_present` et non `wolf_no_database` ; seuls les 10 octets d'en-tête des bases sont lus ;
+      `inject_all` refuse avant de créer des dossiers ; message anglais au pluriel ; commentaires périmés ;
+      test de ponctuation `見て：bg/a.png` ; `engineNotFound` demande aussi de retirer les archives.
+      **Laissé, à valider par l'utilisateur** : (1) `BasicData/` à la racine est détecté (UW-D3) mais pas
+      lu (UW-2) : refus `wolf_no_database`, documenté ; (2) le filtre UW-4 extrait `決定.ogg` (non ASCII
+      sans dossier) et `Picture/立ち絵（笑顔）.png` (ponctuation pleine chasse), contrepartie de
+      « `ファイル名はicon.png` gardé » : à surveiller en UW-9 ; (3) pas d'e2e ポンコツ (UTF-8 via
+      `DataBase.dat` seul), couvert en unitaire seulement (pas de générateur de carte UTF-8 dans les tests).
+      Gate final vert : fmt, typecheck, Vitest 39 fichiers / 158 tests, lint, clippy `--all-targets -D
+      warnings`, cargo test 808 OK / 0 échec / 15 ignorés.
 - [ ] **UW-9 — Essai réel par l'utilisateur** : とのかじ, ポンコツ et le 3.658 (déchiffré) ouverts dans l'app,
       quelques segments traduits, export zip appliqué sur une copie, textes traduits vus en jeu ; Evtext du
       prologue de ポンコツ regardé sur la copie marquée.

@@ -923,6 +923,7 @@ mod tests {
             "セリス\n見てbg.png",
             "bg/スラム 2.png",
             "bg/スラム　2.png",
+            "見て：bg/a.png",
             "0\n0",
             "",
         ] {

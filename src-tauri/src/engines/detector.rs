@@ -215,6 +215,10 @@ const WOLF_DATABASES: [&str; 3] = ["SysDatabase.dat", "DataBase.dat", "CDataBase
 
 #[derive(Debug, thiserror::Error)]
 pub enum WolfVersionError {
+    /// An archive holding text is still in the game folder (plan UW, UW-D2):
+    /// checked first, as a half-decrypted `Data/` may lack its databases.
+    #[error(transparent)]
+    ArchivePresent(#[from] crate::engines::wolf::sources::SourcesError),
     /// No database of `Data/BasicData/` declares an encoding (plan UW, UW-D4):
     /// guessing one would write Shift-JIS into UTF-8 files, or the reverse.
     #[error(
@@ -229,8 +233,10 @@ pub enum WolfVersionError {
 /// `Data/BasicData/` (plan UW, UW-D4): the magic of the first readable database
 /// among [`WOLF_DATABASES`] (any case). Pro games may ship without
 /// `SysDatabase.dat`, hence the other two. Without any, the game is refused:
-/// there is no default encoding.
+/// there is no default encoding. A text archive still in the game folder is
+/// refused first ([`crate::engines::wolf::sources::refuse_text_archives`]).
 pub fn guess_wolf_version_from_structure(game_dir: &Path) -> Result<WolfVersion, WolfVersionError> {
+    crate::engines::wolf::sources::refuse_text_archives(game_dir)?;
     let basic_data = find_wolf_data_dir(game_dir)
         .map(|data_dir| data_dir.join("BasicData"))
         .ok_or(WolfVersionError::NoDatabase)?;
@@ -245,8 +251,21 @@ pub fn guess_wolf_version_from_structure(game_dir: &Path) -> Result<WolfVersion,
                     .is_some_and(|file| file.to_string_lossy().eq_ignore_ascii_case(name))
             })
         })
-        .find_map(|path| wolf_version_from_database(&std::fs::read(path).ok()?))
+        .find_map(|path| wolf_version_from_database(&read_database_header(path)?))
         .ok_or(WolfVersionError::NoDatabase)
+}
+
+/// The first 10 bytes of a database (indicator + magic): a `DataBase.dat` can
+/// weigh megabytes.
+fn read_database_header(path: &Path) -> Option<[u8; 10]> {
+    use std::io::Read;
+
+    let mut header = [0u8; 10];
+    std::fs::File::open(path)
+        .ok()?
+        .read_exact(&mut header)
+        .ok()?;
+    Some(header)
 }
 
 /// Version declared by a Wolf database (`SysDatabase.dat`, `DataBase.dat`,
@@ -713,16 +732,31 @@ mod tests {
                 Err(error @ WolfVersionError::NoDatabase) => {
                     assert!(error.to_string().starts_with(WOLF_NO_DATABASE), "{error}");
                 }
-                Ok(version) => panic!("expected NoDatabase, got {version:?}"),
+                other => panic!("expected NoDatabase, got {other:?}"),
             }
         }
     }
 
-    /// An archive is never read for the encoding: a packed game has no version.
+    /// An archive is never read for the encoding, and a text archive is
+    /// reported before a missing database (half-decrypted `Data/`).
     #[test]
-    fn test_guess_wolf_version_ignores_archives() {
-        let game = tempfile::tempdir().unwrap();
-        std::fs::write(game.path().join("Data.wolf"), b"DX\x08\x00").unwrap();
-        assert!(guess_wolf_version_from_structure(game.path()).is_err());
+    fn test_guess_wolf_version_reports_text_archives_first() {
+        use crate::engines::wolf::sources::WOLF_ARCHIVE_PRESENT;
+
+        let packed = tempfile::tempdir().unwrap();
+        std::fs::write(packed.path().join("Data.wolf"), b"DX\x08\x00").unwrap();
+        let half = game_with_databases(&[("DataBase.project", b"project".to_vec())]);
+        std::fs::write(half.path().join("Data").join("BasicData.wolf"), b"").unwrap();
+        for game in [&packed, &half] {
+            match guess_wolf_version_from_structure(game.path()) {
+                Err(error @ WolfVersionError::ArchivePresent(_)) => {
+                    assert!(
+                        error.to_string().starts_with(WOLF_ARCHIVE_PRESENT),
+                        "{error}"
+                    );
+                }
+                other => panic!("expected ArchivePresent, got {other:?}"),
+            }
+        }
     }
 }

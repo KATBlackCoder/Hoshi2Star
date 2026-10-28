@@ -516,7 +516,7 @@
     "delete": "Supprimer le projet",
     "deleted": "Projet « {{name}} » supprimé",
     "openError": "Impossible d'ouvrir le projet",
-    "engineNotFound": "Moteur de jeu non détecté. Supportés : RPG Maker MV/MZ et Wolf RPG (toutes versions, Pro compris) une fois le jeu déchiffré par UberWolf (fichiers en clair dans Data/BasicData/ et Data/MapData/).",
+    "engineNotFound": "Moteur de jeu non détecté. Supportés : RPG Maker MV/MZ et Wolf RPG (toutes versions, Pro compris) une fois le jeu déchiffré par UberWolf (fichiers en clair dans Data/BasicData/ et Data/MapData/, archives Data.wolf, MapData.wolf et BasicData.wolf retirées).",
     "deleteError": "Impossible de supprimer le projet",
     "confirmDeleteTitle": "Supprimer « {{name}} » ?",
     "confirmDeleteDesc": "Tous les segments, traductions, occurrences terminologiques et termes propres à ce projet seront définitivement supprimés de la base de données. Les fichiers du jeu sur le disque ne sont pas touchés.",
