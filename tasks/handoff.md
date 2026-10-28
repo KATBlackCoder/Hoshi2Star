@@ -1,8 +1,15 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-28 — Claude (Wolf livré ; libellés de terminologie traduits fusionnés (PR #20) ; ménage terminé).
-**Objectif utilisateur :** chantier Wolf livré : RW (PR #13), DX (PR #15), WR (PR #16), correctif de taille de police à l'export (PR #17) et WR-E6 (PR #18) fusionnés ; EX abandonné.
-**Statut :** `main` @ `c1afdf5`, aucune PR ouverte, aucune autre branche (locale ou distante), aucun worktree en plus du dossier principal. Vérifié en jeu sur 2.23 ; essai en jeu de l'export de l'app sur 3.658 non fait.
+**Mis à jour :** 2026-10-28 — Claude (plan UW écrit, à valider ; aucun code).
+**Objectif utilisateur :** baser Wolf sur le `Data/` déchiffré par UberWolf, sans lire les `.wolf` (décision prise le 2026-10-28 après les essais en jeu des jeux Pro).
+**Statut :** `main` @ `e95bb38`. Branche `docs/wolf-uberwolf-plan` (worktree `../Hoshi2Star-uw`) : plan UW seul, commité localement, non poussé.
+
+## En cours (2026-10-28, Claude) — UW : Wolf lu depuis le `Data/` déchiffré par UberWolf
+
+- Plan : `tasks/todo.md`, « Plan — UW », **à valider** (décisions UW-D1 à UW-D8). Journal : `docs/journal/2026-10-28-plan-wolf-uberwolf.md`.
+- Preuves en jeu du 2026-10-28 : とのかじ 3.723 et ポンコツ 3.714 (`GamePro.exe`), déchiffrés par UberWolf et sans `.wolf`, se lancent et affichent les textes marqués « ★ » par le prototype (copies `RAE-PLAN/wolf/*-essai-marque`, hors Git). Non prouvé : `Evtext/*.txt` de ポンコツ ; un export fait par l'app.
+- Analyse des 24 956 textes du 3.658 : `RAE-PLAN/essais/wolf-3658-analyse-textes.md` et `wolf-3658-segments-classes.tsv` (hors Git) ; 19 chemins `bg/*.png⏎0⏎0⏎0` extraits à tort (filtre corrigé par UW-4).
+- **Prochaine action** : l'utilisateur valide ou corrige UW-D1 à UW-D8 ; ensuite UW-1 sur une branche `feat/` depuis `main`, sans build local, gate cloud après accord de push.
 
 ## Terminé (2026-10-28, Claude) — libellés de terminologie traduits, PR #20 fusionnée
 

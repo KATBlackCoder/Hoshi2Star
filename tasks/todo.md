@@ -1,5 +1,111 @@
 # Tasks — Hoshi2Star
 
+## Plan — UW : Wolf lu depuis le `Data/` déchiffré par UberWolf (2026-10-28, Claude) — À VALIDER, aucun code
+
+**Objectif.** Une seule façon d'ouvrir un jeu Wolf, quelle que soit sa version (2.x, 3.x, 3.31+, Pro,
+WolfX) : l'utilisateur déchiffre le jeu avec UberWolf, l'app lit et exporte les fichiers libres de
+`Data/`. L'app ne lit plus les archives `.wolf`. Pas de moteurs séparés par variante : le moteur reste
+`wolf`, seul l'encodage (`WolfVersion`) dépend du jeu.
+
+**Preuves (2026-10-28).**
+- Jeux Pro déchiffrés par UberWolf, sans aucun `.wolf` : とのかじ 3.723 (`GamePro.exe`, chiffrement
+  Pro 1020) et ポンコツ 3.714 (`GamePro.exe`, chiffrement 0 avec clé propre au jeu) **se lancent**.
+- Copies marquées (`RAE-PLAN/wolf/*-essai-marque`, hors Git) où le prototype `wolf_v3.py` a préfixé
+  chaque message et choix par « ★ » : **affiché en jeu** (message « ★初期設定を行います。 » dans
+  とのかじ, choix « ★プロローグを見る » dans ポンコツ). Les jeux Pro lisent donc les cartes et
+  événements libres modifiés.
+- Le prototype relit à l'identique, octet par octet, les 27 fichiers de とのかじ et les 306 de ポンコツ :
+  même format de cartes (`WOLFM`, 0x55) et de `CommonEvent.dat` (0xCC) que le 3.658.
+- Déjà prouvé en octobre : sans archive, Wolf 3.658 lit les fichiers libres ; avec archive, l'archive
+  passe en premier (`RAE-PLAN/essais/RESULTATS.md`).
+- **Non prouvé** : les lignes `Evtext/*.txt` de ポンコツ (prologue non regardé) ; un export fait par
+  l'app (et non par le prototype) sur ces jeux.
+
+**Défauts constatés que le lot corrige.**
+- `is_wolf_game_dir` (`engines/detector.rs:322`) exige `Game.exe` ou `Game.ini` : les jeux Pro
+  (`GamePro.exe` seul) sont refusés (« moteur non détecté »).
+- `guess_wolf_version_from_structure` (`detector.rs:218`) ne lit que `BasicData/SysDatabase.dat`,
+  puis l'archive, puis **retombe sur v2 (Shift-JIS)** : ポンコツ (pas de `SysDatabase.dat`, bases en UTF-8)
+  serait exporté en Shift-JIS dans des fichiers UTF-8.
+- `is_resource_path` (`engines/wolf/extractor.rs:330`) ne teste que la fin du texte entier : les 19
+  chemins `bg/xxx.png⏎0⏎0⏎0` de `SysDatabase` (champ `遠景ﾌｧｲﾙ名`, jeu 3.658) sont extraits comme
+  textes à traduire ; les traduire ferait disparaître les fonds (`RAE-PLAN/essais/wolf-3658-analyse-textes.md`).
+
+**Décisions à valider (recommandation en gras).**
+- **UW-D1 — Régression acceptée.** Aujourd'hui, les jeux 2.x (DXA v6) et 3.x jusqu'à 3.30 (DXA v8,
+  clé « v3.14 ») s'ouvrent directement depuis leur `Data.wolf`. Après UW, **tous** les jeux passent par
+  UberWolf. **Accepter** : un seul chemin, prouvé sur 3.658, 3.714 et 3.723.
+- **UW-D2 — Archives présentes.** Si `Data.wolf`, `Data/BasicData.wolf` ou `Data/MapData.wolf` existe,
+  **refuser** l'ouverture et l'export avec un message « déchiffrer avec UberWolf, puis retirer les
+  `.wolf` » (le jeu lirait l'archive et ignorerait la traduction). Les autres `.wolf` (images, sons) ne
+  contiennent pas de texte : **ignorés**.
+- **UW-D3 — Lanceur.** Accepter **`Game.exe`, `GamePro.exe` ou `Game.ini`**, avec `Data/BasicData/`
+  (ou `BasicData/`) contenant au moins un `.project` ou `CommonEvent.dat`.
+- **UW-D4 — Encodage.** Lire l'en-tête de **n'importe quelle base** trouvée (`SysDatabase.dat`,
+  `DataBase.dat`, `CDataBase.dat`) ; sans base lisible, **refuser** avec un message, sans repli sur v2.
+- **UW-D5 — Source = destination.** Une fois l'export appliqué, `Data/` contient des traductions.
+  L'export par position reste juste, mais un segment remis à vide garderait l'ancienne traduction, et une
+  réextraction lirait des traductions comme source. **Reporter** à un lot « instantané d'origine Wolf »
+  (copie des `.mps`/`.dat`/`.project` à la création, `core/originals.rs` existe pour MV/MZ), avec ce
+  risque écrit dans `docs/` et le ROADMAP. Alternative : l'inclure ici (lot plus gros).
+- **UW-D6 — Retrait du code d'archive.** Le module public `decrypt/` (`legacy_xor.rs`, `writer.rs`,
+  `wolfx.rs`) : **lot séparé UW-R** après l'essai en jeu d'un export de l'app. Le code privé qui perd son
+  appelant dans UW est retiré **dans UW** (sinon Clippy `-D warnings` échoue) : voir UW-3.
+- **UW-D7 — Projet 3.658 existant.** Ses `source_files.file_path` sont déjà `…/Data/MapData/*.mps` et ses
+  clés ne dépendent pas de l'origine : il reste valide après UberWolf. **Le recréer quand même** (0
+  traduit) pour profiter du nouveau filtre des chemins.
+- **UW-D8 — Fichiers texte propres à un jeu** (`Evtext/*.txt` de ポンコツ, ~9 740 lignes) : **hors
+  périmètre**, ligne ajoutée dans `BACKLOG.md`.
+
+**Étapes.** Branche depuis `main` (worktree), pas de build local, gate cloud après accord de push.
+
+- [ ] **UW-0.** Validation de UW-D1 à UW-D8 par l'utilisateur.
+- [ ] **UW-1 — Détection** (`engines/detector.rs`) : lanceurs `Game.exe` / `GamePro.exe` / `Game.ini`
+      (UW-D3) ; encodage par n'importe quelle base (UW-D4) ; `guess_wolf_version_from_structure` rend une
+      erreur au lieu de v2 ; appelants à adapter : `commands/project.rs:936`, `commands/export.rs:724`,
+      `:1200`, `:1466`. Retirer `guess_wolf_version_from_archive` (privée) et ses tests
+      (`detector.rs:677-815`). Tests : `GamePro.exe` seul détecté ; encodage depuis `DataBase.dat` seul ;
+      sans base ⇒ erreur ; ancien test `test_guess_wolf_version_no_signal_defaults_to_v2` remplacé.
+- [ ] **UW-2 — Sources** (`engines/wolf/sources.rs`) : `WolfSources::load` lit seulement `Data/MapData` et
+      `Data/BasicData` ; archive de texte présente ⇒ erreur avec un marqueur stable
+      `wolf_archive_present` (UW-D2) ; `Origin` et `display_path` retirés s'ils n'ont plus d'usage ;
+      marqueur `wolf_unreadable_archive` retiré. Tests de `sources.rs:262-390` réécrits sans `test_archives`.
+- [ ] **UW-3 — Export** (`engines/wolf/injector.rs`, `integrity.rs`) : `inject_all_to_memory` livre seulement
+      des fichiers libres `Data/...` ; retrait de `by_archive`, de l'appel à `rebuild_archive` et de
+      `verify_archive_rebuild` (`pub` dans le module `pub(crate)` `integrity` : code mort sinon) et de ses
+      tests. `inject_all` (export de debug) inchangé hors commentaire.
+- [ ] **UW-4 — Filtre des chemins** (`extractor.rs:330`). Règle : un texte est un chemin si **chaque ligne**
+      (après retrait du `\r` et des espaces de fin) est vide, un nombre, ou un chemin seul, **et** qu'au moins
+      une ligne est un chemin seul. Chemin seul : finit par une extension connue, sans espace (normal ou
+      pleine chasse) ni ponctuation de phrase (`。、！？「」『』（）…：`), et contient `/` ou `\`, ou est
+      entièrement ASCII. Tests :
+      `bg/スラム.png⏎0⏎0⏎0` écarté ; `bg/スラム.png\r\n0\r\n0\r\n1` écarté ; `icon.png` écarté ;
+      `ファイル名はicon.png` gardé ; `「…icon031.pngみたいな…` gardé ; `画像はこちら：pic.png` gardé ;
+      `セリス⏎見てbg.png` gardé ; les cas existants (`test_is_resource_path`) inchangés.
+- [ ] **UW-5 — Interface** : `src/lib/projectError.ts` (+ test) reconnaît `wolf_archive_present` ; clés fr/en
+      (`projectList.*`, `toasts.*`) ; retrait de `wolfUnreadableArchive` ; texte du moteur non détecté
+      (« Wolf RPG 2.x et 3.x » ⇒ mention du `Data/` déchiffré par UberWolf) ; `ExportWolfNotes.tsx`
+      (+ test) : plus d'archives annoncées (`preflight_export`, `commands/export.rs:713-742`).
+- [ ] **UW-6 — Tests d'intégration** (`src-tauri/tests/e2e_project_flow.rs:1228-1430`, et tout test qui pose
+      un `.wolf`) : remplacer « jeu livré en `Data.wolf` ouvert et réexporté » par « jeu avec `Data.wolf`
+      refusé avec `wolf_archive_present` » et « jeu `GamePro.exe` + `Data/` ouvert et exporté en fichiers
+      libres ». Chercher toute chaîne littérale d'ancien comportement (leçons du 2026-10-26, RW-4 et RW-5).
+- [ ] **UW-7 — Documentation** : ADR au prochain numéro libre (« Wolf : lire le `Data/` déchiffré par
+      UberWolf », remplace la livraison en archive de RW) et correction de la ligne du ROADMAP qui réserve
+      ADR-008 ; `CONTEXT.md` (Wolf) ; `docs/engines.md` ou `docs/engines/` (procédure UberWolf) ;
+      `ROADMAP.md` (tableau des moteurs, F5) ; `BACKLOG.md` (UW-D8, et UW-D5 si reporté) ; `CHANGELOG.md` ;
+      handoff et journal.
+- [ ] **UW-8 — Gate cloud** (accord de push) : fmt, typecheck, Vitest, clippy `--all-targets -D warnings`,
+      `cargo test --locked --no-fail-fast`, lint.
+- [ ] **UW-9 — Essai réel par l'utilisateur** : とのかじ, ポンコツ et le 3.658 (déchiffré) ouverts dans l'app,
+      quelques segments traduits, export zip appliqué sur une copie, textes traduits vus en jeu ; Evtext du
+      prologue de ポンコツ regardé sur la copie marquée.
+- [ ] **UW-R (lot séparé, après UW-9)** : retrait de `decrypt/` (`legacy_xor.rs` 3 035 lignes, `writer.rs`,
+      `wolfx.rs`), des tests réels `H2S_WOLF_ARCHIVES` et des mentions restantes.
+
+**Hors périmètre.** Evtext (UW-D8) ; instantané d'origine si UW-D5 est reporté ; les autres textes
+« inutiles » repérés dans l'analyse du 3.658 (cartes d'exemple, débogage, commentaires de l'auteur).
+
 ## Analyse complète de l'app (2026-10-25) — SESSIONS 1 À 3 FAITES, Wolf (2 bis) à faire
 
 Session dédiée, à lancer à part. Prompt prêt : `docs/plans/2026-10-25-analyse-complete-app.md`
