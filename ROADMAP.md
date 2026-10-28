@@ -25,8 +25,7 @@
 | Moteur | Statut | Priorité |
 |--------|--------|---------|
 | RPG Maker MV/MZ | ✅ Supporté | — |
-| Wolf RPG v2/v3 | ✅ Supporté : archives DXA v6/v8 (lues et reconstruites) ou `Data/` déchiffré | — |
-| Wolf RPG 1.x, 3.31+, WolfX | ⚠ Refusés à l'ouverture (archive DXA v5, nouveau chiffrement, WolfX) : passer par UberWolf | — |
+| Wolf RPG (2.x, 3.x, Pro, WolfX) | ✅ Supporté depuis le `Data/` déchiffré par UberWolf (ADR-008) ; archives `.wolf` de textes refusées | — |
 | RPG Maker VX Ace | ⏸ Code prêt, désactivé (détection commentée) | Post-consolidation |
 | RPG Developer Bakin | 🔜 Étude faite, pas de code | Basse |
 | Autres (Ren'Py, Kirikiri) | 🔜 Backlog | Si demande |
@@ -90,9 +89,12 @@
 
 ### Wolf RPG v3 / WolfX
 
-- [~] Guidage WolfX : texte d'erreur « utiliser UberWolf » côté Rust (`PossibleWolfX`) ; message d'interface
-      encore générique (`wolfUnreadableArchive`) ; documentation à écrire
-- [ ] Essai en jeu de l'export de l'app sur Wolf 3.658
+- [x] Wolf lu depuis le `Data/` déchiffré par UberWolf (plan UW, ADR-008) : jeux Pro (`GamePro.exe`), encodage
+      par n'importe quelle base, refus `wolf_archive_present` / `wolf_no_database` expliqués dans l'interface,
+      filtre des chemins suivis de lignes numériques ; procédure `docs/engines/wolf-uberwolf.md`
+- [ ] Essai en jeu d'un export de l'app (UW-9) : とのかじ 3.723, ポンコツ 3.714, 3.658 déchiffré
+- [ ] Retrait du code d'archive `engines/wolf/decrypt/` (lot UW-R, après UW-9)
+- [ ] Instantané d'origine Wolf (UW-D5 reporté) : aujourd'hui `Data/` traduit sert de source à l'export suivant
 - [ ] Coupe de ligne après un trait d'union (« H- ⏎ scenes ») dans la recoupe des messages
 
 ### Engine Layer — RPG Developer Bakin
@@ -111,9 +113,9 @@
 
 ### Consolidation
 
-- [ ] ADR-008 (usage personnel, fournisseur unique) et ADR pour les décisions F4/F5 : terminologie, resync et
-      orphelins, reconstruction d'archive Wolf, décision WolfX, export d'essai (dernier ADR : ADR-007)
-- [ ] `docs/engines.md` : aujourd'hui seulement `docs/engines/` MV/MZ ; Wolf à documenter
+- [ ] ADR pour l'usage personnel (fournisseur unique) et les décisions F4/F5 : terminologie, resync et orphelins,
+      export d'essai (dernier ADR : ADR-008, Wolf lu depuis le `Data/` déchiffré par UberWolf)
+- [ ] `docs/engines.md` : aujourd'hui `docs/engines/` MV/MZ et `wolf-uberwolf.md` ; formats Wolf à documenter
 - [ ] `CONTEXT.md` à jour (terminologie, resync, mise en page, `WolfSources`)
 - [ ] `docs/architecture.md` : retirer la monétisation et le support natif WolfX annoncés
 
@@ -145,8 +147,8 @@
       `engines/wolf/line_breaks.rs`, taille de police du jeu proposée à l'export
 - [x] **Textes optionnels MV/MZ** (plugins.js, Keke, note tags) : `commands/coverage.rs`
 - [x] **Bascule de langue du jeu à l'export** : `engines/mv_mz/locale.rs`
-- [x] **Archives Wolf DXA v6/v8** lues et reconstruites, archive avant fichiers libres : `engines/wolf/sources.rs`,
-      `engines/wolf/decrypt/writer.rs` ; formats v3 (`engines/wolf/v3_format/`)
+- [x] **Wolf depuis le `Data/` déchiffré par UberWolf** (ADR-008, remplace la lecture et la reconstruction des
+      archives DXA v6/v8) : `engines/wolf/sources.rs` ; formats v3 (`engines/wolf/v3_format/`)
 - [x] **Contexte de scène et d'orateur** dans les prompts (`llm/context/`) et découpage adaptatif des lots
       (`llm/split.rs`)
 - [x] **Recherche globale** : `commands/search.rs`, `GlobalSearchResults.tsx`

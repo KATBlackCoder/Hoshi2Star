@@ -132,7 +132,7 @@ Utiliser ces termes exactement dans le code, les commentaires et les ADRs :
 | Terme | Définition |
 |-------|-----------|
 | `Project` | Un jeu en cours de traduction (1 moteur, N fichiers) |
-| `SourceFile` | Fichier extrait du jeu (Map001.json, Data.wolf, etc.) |
+| `SourceFile` | Fichier extrait du jeu (Map001.json, Map001.mps, etc.) |
 | `Segment` | Une unité de texte traduisible (source + target + status) |
 | `TM` | Translation Memory — base SQLite des segments déjà traduits |
 | `Glossary` | Paires terme source / terme cible par domaine |
@@ -297,6 +297,11 @@ Voir `docs/adr/` pour le détail. Résumé :
 - **ADR-003** : TM globale à l'installation (pas par projet) — fuzzy matching cross-projet = différenciateur clé vs Translator++
 - **ADR-004** : MVP limité à RPG Maker MV/MZ (JSON natif) — VX Ace ajouté en F3 via marshal-rs (Ruby Marshal binary)
 - **ADR-005** : `lib.rs` comme entrée (pas `main.rs`) — requis pour les builds mobiles futurs Tauri
+- **ADR-008** : Wolf RPG lu et exporté depuis le `Data/` déchiffré par UberWolf, jamais depuis une archive `.wolf`.
+  Détection : `Game.exe` / `GamePro.exe` / `Game.ini` + `Data/BasicData/` en clair ; encodage par la première base
+  lisible (`SysDatabase.dat`, `DataBase.dat`, `CDataBase.dat`), sinon refus `wolf_no_database` ; `Data.wolf`,
+  `Data/MapData.wolf` ou `Data/BasicData.wolf` présent ⇒ refus `wolf_archive_present` (`engines/wolf/sources.rs`,
+  `WolfSources`). Procédure : `docs/engines/wolf-uberwolf.md`
 
 ---
 

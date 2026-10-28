@@ -136,11 +136,20 @@ WolfX) : l'utilisateur déchiffre le jeu avec UberWolf, l'app lit et exporte les
       les tests qui affirment leur absence et le module `decrypt/` (UW-R). Texte `engineNotFound` précisé
       (`Data/BasicData/` et `Data/MapData/` en clair). Gate vert : fmt, typecheck, Vitest 158/158, lint,
       clippy, cargo test 808 OK / 0 échec / 15 ignorés.
-- [ ] **UW-7 — Documentation** : ADR au prochain numéro libre (« Wolf : lire le `Data/` déchiffré par
+- [x] **UW-7 — Documentation** : ADR au prochain numéro libre (« Wolf : lire le `Data/` déchiffré par
       UberWolf », remplace la livraison en archive de RW) et correction de la ligne du ROADMAP qui réserve
       ADR-008 ; `CONTEXT.md` (Wolf) ; `docs/engines.md` ou `docs/engines/` (procédure UberWolf) ;
       `ROADMAP.md` (tableau des moteurs, F5) ; `BACKLOG.md` (UW-D8, et UW-D5 si reporté) ; `CHANGELOG.md` ;
       handoff et journal.
+      **Fait le 2026-10-28 (Claude, cloud)** : `docs/adr/ADR-008.md`, `docs/engines/wolf-uberwolf.md`,
+      `CONTEXT.md` (vocabulaire, résumé ADR-008), `ROADMAP.md` (tableau des moteurs, F5, consolidation : la
+      ligne qui réservait ADR-008 renvoie aux ADR suivants), `BACKLOG.md` (UW-D5, UW-D8), `CHANGELOG.md`,
+      journal `docs/journal/2026-10-28-uw-implementation.md`, leçon du 2026-10-28.
+      **Écarts notés, hors périmètre UW** : `docs/architecture.md` décrit encore la lecture d'archives Wolf
+      (lignes `wolf/extractor.rs`, `wolf/injector.rs`, `decrypt/`) — à corriger avec l'item ROADMAP
+      « `docs/architecture.md` » ou UW-R ; `inject_all` (export de debug) crée `Data/MapData` et
+      `Data/BasicData` avant le refus d'une archive ; les chemins livrés sont `Data/...` même si le dossier du
+      jeu s'appelle `data/` (antérieur à UW).
 - [ ] **UW-8 — Gate cloud** (accord de push) : fmt, typecheck, Vitest, clippy `--all-targets -D warnings`,
       `cargo test --locked --no-fail-fast`, lint.
 - [ ] **UW-9 — Essai réel par l'utilisateur** : とのかじ, ポンコツ et le 3.658 (déchiffré) ouverts dans l'app,
