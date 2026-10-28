@@ -516,7 +516,7 @@
     "delete": "Delete project",
     "deleted": "Project \"{{name}}\" deleted",
     "openError": "Failed to open project",
-    "engineNotFound": "No game engine detected. Supported: RPG Maker MV/MZ, and Wolf RPG (every version, Pro included) once the game is decrypted by UberWolf: its Data/ folder must hold BasicData/ and MapData/.",
+    "engineNotFound": "No game engine detected. Supported: RPG Maker MV/MZ, and Wolf RPG (every version, Pro included) once the game is decrypted by UberWolf (plain files in Data/BasicData/ and Data/MapData/).",
     "deleteError": "Failed to delete project",
     "confirmDeleteTitle": "Delete \"{{name}}\"?",
     "confirmDeleteDesc": "This will permanently remove all segments, translations, terminology occurrences, and project-specific terminology from the database. The game files on disk are not affected.",

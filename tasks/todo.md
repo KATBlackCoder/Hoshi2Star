@@ -123,10 +123,19 @@ WolfX) : l'utilisateur déchiffre le jeu avec UberWolf, l'app lit et exporte les
       `WolfExportPreflight.archives` retiré (Rust et TS), `ExportWolfNotes` sans ligne d'archive ; test e2e
       renommé `wolf_export_preflight_announces_folding`. Gate vert : fmt, typecheck, Vitest 158/158, lint,
       clippy, cargo test 807 OK / 0 échec / 15 ignorés.
-- [ ] **UW-6 — Tests d'intégration** (`src-tauri/tests/e2e_project_flow.rs:1228-1430`, et tout test qui pose
+- [x] **UW-6 — Tests d'intégration** (`src-tauri/tests/e2e_project_flow.rs:1228-1430`, et tout test qui pose
       un `.wolf`) : remplacer « jeu livré en `Data.wolf` ouvert et réexporté » par « jeu avec `Data.wolf`
       refusé avec `wolf_archive_present` » et « jeu `GamePro.exe` + `Data/` ouvert et exporté en fichiers
       libres ». Chercher toute chaîne littérale d'ancien comportement (leçons du 2026-10-26, RW-4 et RW-5).
+      **Fait le 2026-10-28 (Claude, cloud)**, en partie dès UW-1 à UW-3 (chaque étape a réécrit les tests
+      qu'elle cassait) : fixture `write_wolf_v2_basic_data` dans `e2e_project_flow.rs` et `export_debug.rs` ;
+      `wolf_archive_game_is_exported_as_a_rebuilt_archive` → `wolf_game_with_a_text_archive_is_refused_at_open`
+      + `wolf_pro_game_is_exported_as_loose_files` ; ajout `wolf_game_without_database_is_refused_at_open`
+      (marqueur importé de `engines::detector`). Recherche des valeurs littérales (`wolf_unreadable_archive`,
+      `UnreadableArchive`, `UnplacedMaps`, `archive_paths`, `rebuild_archive`, `Data.wolf`…) : ne restent que
+      les tests qui affirment leur absence et le module `decrypt/` (UW-R). Texte `engineNotFound` précisé
+      (`Data/BasicData/` et `Data/MapData/` en clair). Gate vert : fmt, typecheck, Vitest 158/158, lint,
+      clippy, cargo test 808 OK / 0 échec / 15 ignorés.
 - [ ] **UW-7 — Documentation** : ADR au prochain numéro libre (« Wolf : lire le `Data/` déchiffré par
       UberWolf », remplace la livraison en archive de RW) et correction de la ligne du ROADMAP qui réserve
       ADR-008 ; `CONTEXT.md` (Wolf) ; `docs/engines.md` ou `docs/engines/` (procédure UberWolf) ;

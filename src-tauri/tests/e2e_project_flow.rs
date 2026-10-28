@@ -1270,6 +1270,48 @@ async fn wolf_game_with_a_text_archive_is_refused_at_open() {
     assert_eq!(projects, 0, "no partial project may be created");
 }
 
+/// A decrypted Wolf game whose `Data/BasicData/` holds no readable database is
+/// refused at open (plan UW, UW-D4): without one the encoding is unknown, and
+/// a Shift-JIS default would corrupt a UTF-8 game.
+#[tokio::test]
+async fn wolf_game_without_database_is_refused_at_open() {
+    use hoshi2star_lib::engines::detector::WOLF_NO_DATABASE;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let game_root = tmp.path().join("game");
+    let map_dir = game_root.join("Data").join("MapData");
+    std::fs::create_dir_all(&map_dir).unwrap();
+    std::fs::write(
+        map_dir.join("Map001.mps"),
+        wolf_v2_map("こんにちは、旅の人"),
+    )
+    .unwrap();
+    std::fs::write(game_root.join("GamePro.exe"), b"").unwrap();
+    let basic_data = game_root.join("Data").join("BasicData");
+    std::fs::create_dir_all(&basic_data).unwrap();
+    std::fs::write(basic_data.join("DataBase.project"), b"").unwrap();
+
+    let db_file = tmp.path().join("h2s.db");
+    let app = mock_app(db_file.to_str().unwrap()).await;
+    let state = app.state::<AppState>();
+
+    let error = open_project(
+        game_root.to_str().unwrap().to_string(),
+        None,
+        None,
+        app.state(),
+    )
+    .await
+    .expect_err("a Wolf game without a readable database must be refused");
+    assert!(error.contains(WOLF_NO_DATABASE), "{error}");
+
+    let projects: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects")
+        .fetch_one(&state.db)
+        .await
+        .unwrap();
+    assert_eq!(projects, 0, "no partial project may be created");
+}
+
 /// A Wolf Pro game (only `GamePro.exe`) decrypted by UberWolf opens, and its
 /// export delivers the translated map as a loose `Data/` file, no archive
 /// (plan UW, UW-D3).
