@@ -8,7 +8,9 @@
 
 - Travail Codex non commité récupéré du worktree `~/.codex/worktrees/6fab` (branche `codex/hoshiyomi-redesign`, déjà dans `main`) et posé tel quel sur `fix/terminology-i18n-labels` depuis `main` @ `333633a` (accord de l'utilisateur). Worktree et branche Codex retirés ensuite.
 - Contenu : libellés des filtres et fenêtres de terminologie (catégorie grammaticale, type sémantique) passés en clés i18n fr/en au lieu du français écrit en dur ; `TerminologySelect.tsx`, `terminologyOptions.ts`.
-- **Non compilé, non testé, non relu** : gate cloud à faire (typecheck, Vitest, lint), puis relecture et PR.
+- **Gate cloud vert** sur `988c5cb` (typecheck, Vitest 156/156, lint 0 erreur / 10 avertissements connus, Prettier OK). Puis, à la demande de l'utilisateur : `SEMANTIC_TYPE_LABELS` simplifié et `TermTranslateDialog` traduit (clés `terminology.translateDialog.*`), +1 test ; gate refait vert (Vitest 157/157). Commité sur `claude/bold-edison-m1w6yn`, au-dessus de `988c5cb`. Journal : `docs/journal/2026-10-28-terminologie-i18n.md`.
+- À signaler dans la PR : le type sémantique devient une liste fermée (éditeur et filtre), plus de saisie libre.
+- **Prochaine action** : avancer `fix/terminology-i18n-labels` sur `claude/bold-edison-m1w6yn` (ou PR depuis celle-ci), relecture, PR vers `main`.
 
 ## En cours (2026-10-27, Claude) — WR-E6 : retours à la ligne Wolf côté LLM
 

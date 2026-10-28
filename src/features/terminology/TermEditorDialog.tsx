@@ -116,10 +116,11 @@ export function TermEditorDialog({
               onValueChange={setSemanticType}
               options={semanticTypeOptions.map((value) => ({
                 value,
-                label:
-                  value in SEMANTIC_TYPE_LABELS
-                    ? t(`terminology.semanticTypes.${value}`)
-                    : value,
+                label: (SEMANTIC_TYPE_VALUES as readonly string[]).includes(
+                  value,
+                )
+                  ? t(`terminology.semanticTypes.${value}`)
+                  : value,
               }))}
             />
           </Field>
@@ -178,10 +179,6 @@ export function TermEditorDialog({
     </Dialog>
   );
 }
-
-const SEMANTIC_TYPE_LABELS = Object.fromEntries(
-  SEMANTIC_TYPE_VALUES.map((value) => [value, true]),
-);
 
 function Field({
   label,

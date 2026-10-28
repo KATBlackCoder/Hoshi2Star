@@ -132,7 +132,26 @@
     "deletedDone_other": "{{count}} terms deleted",
     "scanDone": "Vocabulary analyzed",
     "scanCancelled": "Analysis cancelled",
-    "scanFailed": "Analysis failed"
+    "scanFailed": "Analysis failed",
+    "translateDialog": {
+      "description": "Each validated {{target}} translation can be used immediately in the chosen scope and stays editable.",
+      "selection": "Selection",
+      "selectionSelected": "Manual selection ({{count}})",
+      "selectionVisible": "Visible page ({{count}})",
+      "selectionUntranslated": "Untranslated only",
+      "scopeProject": "Active project",
+      "scopeGlobal": "Global library",
+      "scopeBoth": "Active project + global library",
+      "termsSent": "Terms sent",
+      "promptEstimate": "Prompt estimate",
+      "tokens": "≈ {{count}} tokens",
+      "model": "Model",
+      "termsProcessed": "terms processed",
+      "translate": "Translate",
+      "translating": "Translating…",
+      "done_one": "{{count}} term translated",
+      "done_other": "{{count}} terms translated"
+    }
   },
   "inspector": {
     "title": "Translation inspector",

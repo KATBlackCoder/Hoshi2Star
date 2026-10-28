@@ -132,7 +132,26 @@
     "deletedDone_other": "{{count}} termes supprimés",
     "scanDone": "Vocabulaire analysé",
     "scanCancelled": "Analyse annulée",
-    "scanFailed": "Échec de l’analyse"
+    "scanFailed": "Échec de l’analyse",
+    "translateDialog": {
+      "description": "Chaque traduction {{target}} validée est immédiatement utilisable dans la portée choisie et reste modifiable.",
+      "selection": "Sélection",
+      "selectionSelected": "Sélection manuelle ({{count}})",
+      "selectionVisible": "Page visible ({{count}})",
+      "selectionUntranslated": "Uniquement sans traduction",
+      "scopeProject": "Projet actif",
+      "scopeGlobal": "Bibliothèque globale",
+      "scopeBoth": "Projet actif + bibliothèque globale",
+      "termsSent": "Termes envoyés",
+      "promptEstimate": "Estimation du prompt",
+      "tokens": "≈ {{count}} tokens",
+      "model": "Modèle",
+      "termsProcessed": "termes traités",
+      "translate": "Traduire",
+      "translating": "Traduction…",
+      "done_one": "{{count}} terme traduit",
+      "done_other": "{{count}} termes traduits"
+    }
   },
   "inspector": {
     "title": "Inspecteur de traduction",
