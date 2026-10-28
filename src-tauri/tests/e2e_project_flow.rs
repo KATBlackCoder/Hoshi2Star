@@ -1334,7 +1334,7 @@ async fn wolf_pro_game_is_exported_as_loose_files() {
 /// The export dialog announces what a Wolf export will do (plan RW, RW-8):
 /// accents folded for a Shift-JIS game.
 #[tokio::test]
-async fn wolf_export_preflight_announces_folding_and_archives() {
+async fn wolf_export_preflight_announces_folding() {
     use hoshi2star_lib::commands::export::preflight_export;
 
     const MESSAGE: &str = "こんにちは、旅の人";
@@ -1389,6 +1389,5 @@ async fn wolf_export_preflight_announces_folding_and_archives() {
         .expect("Wolf notes");
     assert!(wolf.shift_jis);
     assert_eq!(wolf.accented_texts, 1);
-    assert!(wolf.archives.is_empty());
     assert!(wolf.path_warning.is_none());
 }

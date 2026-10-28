@@ -474,7 +474,8 @@
   "toasts": {
     "exportSuccess": "ZIP exporté — hoshi2star.zip prêt",
     "exportError": "Erreur export : {{error}}",
-    "wolfUnreadableArchive": "Export impossible : une archive Wolf RPG du jeu est illisible. Rien n'a été écrit.",
+    "wolfArchivePresent": "Export impossible : une archive Wolf RPG contenant des textes (Data.wolf, MapData.wolf ou BasicData.wolf) est encore dans le dossier du jeu, qui la lirait à la place des traductions. Rien n'a été écrit.",
+    "wolfNoDatabase": "Export impossible : aucune base de données Wolf RPG lisible dans Data/BasicData pour connaître l'encodage du jeu. Rien n'a été écrit.",
     "wolfUnreadableFiles": "Export impossible : des cartes ou des événements communs Wolf RPG n'ont pas pu être lus. Rien n'a été écrit."
   },
   "lang": {
@@ -515,13 +516,14 @@
     "delete": "Supprimer le projet",
     "deleted": "Projet « {{name}} » supprimé",
     "openError": "Impossible d'ouvrir le projet",
-    "engineNotFound": "Moteur de jeu non détecté. Supportés : RPG Maker MV/MZ, Wolf RPG 2.x et 3.x.",
+    "engineNotFound": "Moteur de jeu non détecté. Supportés : RPG Maker MV/MZ et Wolf RPG (toutes versions, Pro compris) une fois le jeu déchiffré par UberWolf : son dossier Data/ doit contenir BasicData/ et MapData/.",
     "deleteError": "Impossible de supprimer le projet",
     "confirmDeleteTitle": "Supprimer « {{name}} » ?",
     "confirmDeleteDesc": "Tous les segments, traductions, occurrences terminologiques et termes propres à ce projet seront définitivement supprimés de la base de données. Les fichiers du jeu sur le disque ne sont pas touchés.",
     "confirmDeleteCancel": "Annuler",
     "confirmDeleteConfirm": "Supprimer",
-    "wolfUnreadableArchive": "Une archive Wolf RPG de ce jeu est illisible (chiffrement 3.31+ ou WolfX, ou disposition inconnue). Déchiffrer le jeu avec UberWolf, puis retirer les fichiers .wolf du dossier du jeu avant de le rouvrir.",
+    "wolfArchivePresent": "Ce jeu Wolf RPG contient encore une archive de textes (Data.wolf, MapData.wolf ou BasicData.wolf) : le jeu la lirait à la place des traductions. Déchiffrer le jeu avec UberWolf, puis retirer ces fichiers .wolf du dossier du jeu avant de le rouvrir.",
+    "wolfNoDatabase": "Aucune base de données Wolf RPG lisible (SysDatabase.dat, DataBase.dat ou CDataBase.dat) dans Data/BasicData : l'encodage du jeu est inconnu. Déchiffrer le jeu avec UberWolf avant de l'ouvrir.",
     "wolfUnreadableFiles": "Des cartes ou des événements communs Wolf RPG n'ont pas pu être lus : le projet n'est pas ouvert, pour ne pas perdre leurs dialogues."
   },
   "updater": {
@@ -698,7 +700,6 @@
     "driftResync": "Réaligner le projet…"
   },
   "exportWolf": {
-    "archives": "Le zip contiendra {{archives}} reconstruit avec les traductions : le décompresser par-dessus le jeu (le jeu lit ses archives avant le dossier Data).",
     "folded": "{{count}} traduction(s) seront écrites sans accents (é → e) : ce jeu Wolf RPG 2.x (Shift-JIS) ne peut pas les afficher.",
     "fontAccents": "{{count}} traduction(s) contiennent des accents : vérifier en jeu que la police les affiche (ce n'était pas le cas sur un jeu Wolf 3.658).",
     "pathWarning": "Le chemin du dossier du jeu contient des caractères (comme 〜 ou des lettres accentuées) qui empêchent un jeu Wolf RPG 2.x de démarrer : copier le jeu dans un dossier au nom simple (lettres sans accent, chiffres) avant de le lancer."

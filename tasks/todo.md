@@ -112,10 +112,17 @@ WolfX) : l'utilisateur déchiffre le jeu avec UberWolf, l'app lit et exporte les
       dans une ligne non ASCII (`bg/スラム 2.png` gardé comme texte) ; l'espace pleine chasse jamais.
       Test ajouté `test_is_resource_path_with_numeric_lines` (cas du plan + `\`, `-1`, espaces).
       Gate vert : fmt, typecheck, Vitest 157/157, lint, clippy, cargo test 807 OK / 0 échec / 15 ignorés.
-- [ ] **UW-5 — Interface** : `src/lib/projectError.ts` (+ test) reconnaît `wolf_archive_present` ; clés fr/en
+- [x] **UW-5 — Interface** : `src/lib/projectError.ts` (+ test) reconnaît `wolf_archive_present` ; clés fr/en
       (`projectList.*`, `toasts.*`) ; retrait de `wolfUnreadableArchive` ; texte du moteur non détecté
       (« Wolf RPG 2.x et 3.x » ⇒ mention du `Data/` déchiffré par UberWolf) ; `ExportWolfNotes.tsx`
       (+ test) : plus d'archives annoncées (`preflight_export`, `commands/export.rs:713-742`).
+      **Fait le 2026-10-28 (Claude, cloud)** : `projectError.ts` reconnaît `wolf_archive_present`,
+      `wolf_no_database` (marqueur ajouté en UW-1) et `wolf_unreadable_files` ; clés fr/en
+      `projectList.*`/`toasts.*` `wolfArchivePresent`, `wolfNoDatabase` ; `wolfUnreadableArchive` et
+      `exportWolf.archives` retirés ; `engineNotFound` mentionne le `Data/` déchiffré par UberWolf ;
+      `WolfExportPreflight.archives` retiré (Rust et TS), `ExportWolfNotes` sans ligne d'archive ; test e2e
+      renommé `wolf_export_preflight_announces_folding`. Gate vert : fmt, typecheck, Vitest 158/158, lint,
+      clippy, cargo test 807 OK / 0 échec / 15 ignorés.
 - [ ] **UW-6 — Tests d'intégration** (`src-tauri/tests/e2e_project_flow.rs:1228-1430`, et tout test qui pose
       un `.wolf`) : remplacer « jeu livré en `Data.wolf` ouvert et réexporté » par « jeu avec `Data.wolf`
       refusé avec `wolf_archive_present` » et « jeu `GamePro.exe` + `Data/` ouvert et exporté en fichiers

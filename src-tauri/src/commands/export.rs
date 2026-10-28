@@ -697,13 +697,11 @@ pub struct ExportPreflight {
     pub wolf: Option<WolfExportPreflight>,
 }
 
-/// Notes shown before a Wolf RPG export, computed without reading any archive.
+/// Notes shown before a Wolf RPG export. The export delivers loose `Data/`
+/// files only (plan UW): there is no archive to announce.
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct WolfExportPreflight {
-    /// Archives the game reads first; the export delivers them rebuilt when they
-    /// hold a translated file (`Data.wolf`, `Data/MapData.wolf`…).
-    pub archives: Vec<String>,
     /// The game's text files are Shift-JIS (Wolf 2.x): accents are folded.
     pub shift_jis: bool,
     /// Translations holding characters Shift-JIS cannot encode: folded (é → e)
@@ -718,7 +716,7 @@ async fn wolf_preflight(
     project_id: &str,
     game_path: &str,
 ) -> Result<WolfExportPreflight, String> {
-    use crate::engines::wolf::{encoding, sources};
+    use crate::engines::wolf::encoding;
 
     let game_dir = Path::new(game_path);
     let version = guess_wolf_version_from_structure(game_dir).map_err(|e| e.to_string())?;
@@ -736,7 +734,6 @@ async fn wolf_preflight(
         .filter(|text| !encoding::is_shift_jis(text))
         .count();
     Ok(WolfExportPreflight {
-        archives: sources::text_archives(game_dir),
         shift_jis: !version.is_utf8(),
         accented_texts,
         path_warning: encoding::path_warning(game_dir, &version),
