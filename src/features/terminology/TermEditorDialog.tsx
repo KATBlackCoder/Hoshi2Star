@@ -15,6 +15,12 @@ import type {
   TerminologyEntry,
 } from "@/lib/types";
 import { useTranslation } from "react-i18next";
+import { TerminologySelect } from "./TerminologySelect";
+import {
+  includeCurrentOption,
+  PART_OF_SPEECH_VALUES,
+  SEMANTIC_TYPE_VALUES,
+} from "./terminologyOptions";
 
 export interface TermEditorValue {
   canonicalText: string;
@@ -57,6 +63,10 @@ export function TermEditorDialog({
   const [enforcement, setEnforcement] = useState<TerminologyEnforcement>(
     entry?.translation?.enforcement ?? "preferred",
   );
+  const semanticTypeOptions = includeCurrentOption(
+    SEMANTIC_TYPE_VALUES,
+    semanticType,
+  );
   const valid = canonicalText.trim() && semanticType.trim();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -89,28 +99,28 @@ export function TermEditorDialog({
             />
           </Field>
           <Field label={t("terminology.partOfSpeech")}>
-            <select
-              className="h-10 w-full rounded-lg border bg-background px-2"
+            <TerminologySelect
+              ariaLabel={t("terminology.partOfSpeech")}
               value={partOfSpeech}
-              onChange={(e) => setPartOfSpeech(e.target.value as PartOfSpeech)}
-            >
-                  {[
-                "noun",
-                "proper_noun",
-                "verb",
-                "adjective",
-                "adverb",
-                "expression",
-                "unknown",
-              ].map((v) => (
-                <option key={v}>{v}</option>
-              ))}
-            </select>
+              onValueChange={(value) => setPartOfSpeech(value as PartOfSpeech)}
+              options={PART_OF_SPEECH_VALUES.map((value) => ({
+                value,
+                label: t(`terminology.partOfSpeechTypes.${value}`),
+              }))}
+            />
           </Field>
           <Field label={t("terminology.semanticType")}>
-            <Input
+            <TerminologySelect
+              ariaLabel={t("terminology.semanticType")}
               value={semanticType}
-              onChange={(e) => setSemanticType(e.target.value)}
+              onValueChange={setSemanticType}
+              options={semanticTypeOptions.map((value) => ({
+                value,
+                label:
+                  value in SEMANTIC_TYPE_LABELS
+                    ? t(`terminology.semanticTypes.${value}`)
+                    : value,
+              }))}
             />
           </Field>
           {entry && (
@@ -127,19 +137,19 @@ export function TermEditorDialog({
                 />
               </Field>
               <Field label={t("terminology.enforcement")}>
-                <select
-                  className="h-10 w-full rounded-lg border bg-background px-2"
+                <TerminologySelect
+                  ariaLabel={t("terminology.enforcement")}
                   value={enforcement}
-                  onChange={(e) =>
-                    setEnforcement(e.target.value as TerminologyEnforcement)
+                  onValueChange={(value) =>
+                    setEnforcement(value as TerminologyEnforcement)
                   }
-                >
-                  {["contextual", "preferred", "required"].map((v) => (
-                    <option key={v} value={v}>
-                      {t(`terminology.enforcementStatus.${v}`)}
-                    </option>
-                  ))}
-                </select>
+                  options={["contextual", "preferred", "required"].map(
+                    (value) => ({
+                      value,
+                      label: t(`terminology.enforcementStatus.${value}`),
+                    }),
+                  )}
+                />
               </Field>
             </>
           )}
@@ -168,6 +178,11 @@ export function TermEditorDialog({
     </Dialog>
   );
 }
+
+const SEMANTIC_TYPE_LABELS = Object.fromEntries(
+  SEMANTIC_TYPE_VALUES.map((value) => [value, true]),
+);
+
 function Field({
   label,
   children,

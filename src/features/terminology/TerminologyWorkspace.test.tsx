@@ -226,7 +226,7 @@ describe("TerminologyWorkspace", () => {
     );
   });
 
-  it("applies POS and target language as server query inputs", async () => {
+  it("applies nature, type, and target as server query inputs", async () => {
     const calls: unknown[] = [];
     mockIPC((cmd, args) => {
       if (cmd === "list_terminology") {
@@ -238,14 +238,19 @@ describe("TerminologyWorkspace", () => {
     });
     render(<TerminologyWorkspace />, { wrapper });
     await screen.findByText("Aucun terme dans cette vue");
-    await userEvent.selectOptions(screen.getByLabelText("Nature"), "verb");
-    await userEvent.selectOptions(screen.getByLabelText("Cible"), "fr");
+    await userEvent.click(screen.getByRole("combobox", { name: "Nature" }));
+    await userEvent.click(screen.getByRole("option", { name: "Verbe" }));
+    await userEvent.click(screen.getByRole("combobox", { name: "Type" }));
+    await userEvent.click(screen.getByRole("option", { name: "Personnage" }));
+    await userEvent.click(screen.getByRole("combobox", { name: "Cible" }));
+    await userEvent.click(screen.getByRole("option", { name: "Français" }));
     await waitFor(() =>
       expect(
         calls.some((call) => {
           const text = JSON.stringify(call);
           return (
             text.includes('"partOfSpeech":"verb"') &&
+            text.includes('"semanticType":"character"') &&
             text.includes('"targetLanguage":"fr"')
           );
         }),

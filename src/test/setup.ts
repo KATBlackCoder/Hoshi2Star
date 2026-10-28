@@ -8,6 +8,22 @@ import i18n from "@/lib/i18n";
 // Deterministic locale for text assertions (the app defaults to fr).
 void i18n.changeLanguage("fr");
 
+// Radix Select uses the Pointer Capture API, which jsdom does not implement.
+// Keep the shared test environment aligned with real browsers so select-based
+// interactions can be exercised through the same pointer path as the app.
+if (!window.HTMLElement.prototype.hasPointerCapture) {
+  window.HTMLElement.prototype.hasPointerCapture = () => false;
+}
+if (!window.HTMLElement.prototype.setPointerCapture) {
+  window.HTMLElement.prototype.setPointerCapture = () => {};
+}
+if (!window.HTMLElement.prototype.releasePointerCapture) {
+  window.HTMLElement.prototype.releasePointerCapture = () => {};
+}
+if (!window.HTMLElement.prototype.scrollIntoView) {
+  window.HTMLElement.prototype.scrollIntoView = () => {};
+}
+
 // mockIPC covers invoke(), but the event plugin's unlisten() goes through
 // this internal object directly — stub it so component unmounts don't reject.
 // Plain assignment (writable): mockIPC's mockInternals() re-assigns it with

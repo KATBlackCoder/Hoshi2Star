@@ -4,6 +4,12 @@
 **Objectif utilisateur :** chantier Wolf livré : RW (PR #13), DX (PR #15), WR (PR #16), correctif de taille de police à l'export (PR #17) et WR-E6 (PR #18) fusionnés ; EX abandonné.
 **Statut :** `main` @ `1ff3352`, aucune PR ouverte. Vérifié en jeu sur 2.23 ; essai en jeu de l'export de l'app sur 3.658 non fait.
 
+## En attente (2026-10-28, Claude) — libellés de terminologie traduits
+
+- Travail Codex non commité récupéré du worktree `~/.codex/worktrees/6fab` (branche `codex/hoshiyomi-redesign`, déjà dans `main`) et posé tel quel sur `fix/terminology-i18n-labels` depuis `main` @ `333633a` (accord de l'utilisateur). Worktree et branche Codex retirés ensuite.
+- Contenu : libellés des filtres et fenêtres de terminologie (catégorie grammaticale, type sémantique) passés en clés i18n fr/en au lieu du français écrit en dur ; `TerminologySelect.tsx`, `terminologyOptions.ts`.
+- **Non compilé, non testé, non relu** : gate cloud à faire (typecheck, Vitest, lint), puis relecture et PR.
+
 ## En cours (2026-10-27, Claude) — WR-E6 : retours à la ligne Wolf côté LLM
 
 - Plan : `tasks/todo.md`, « Plan — WR-E6 », **validé le 2026-10-27** (recommandations). Journal : `docs/journal/2026-10-27-wr-e6-retours-llm-wolf.md`.

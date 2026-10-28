@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import type { ProviderConfig, TerminologyEntry } from "@/lib/types";
 import { terminologyApi } from "./api";
+import { TerminologySelect } from "./TerminologySelect";
 
 type SelectionMode = "selected" | "visible" | "untranslated";
 
@@ -73,8 +74,7 @@ export function TermTranslateDialog({
         unlisten.forEach((fn) => fn());
         activeJobId.current = null;
         if (event.error) toast.error(event.error);
-        else
-          toast.success(`${event.summary?.translated ?? 0} termes traduits`);
+        else toast.success(`${event.summary?.translated ?? 0} termes traduits`);
         setRunning(false);
         onDone();
         onOpenChange(false);
@@ -109,37 +109,51 @@ export function TermTranslateDialog({
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="text-xs text-muted-foreground">
             Sélection
-            <select
-              className="mt-1 h-10 w-full rounded-lg border bg-background px-2 text-sm"
-              value={selectionMode}
-              onChange={(event) =>
-                setSelectionMode(event.target.value as SelectionMode)
-              }
-              disabled={running}
-            >
-              <option value="selected">
-                Sélection manuelle ({selectedIds.length})
-              </option>
-              <option value="visible">Page visible ({entries.length})</option>
-              <option value="untranslated">Uniquement sans traduction</option>
-            </select>
+            <span className="mt-1 block">
+              <TerminologySelect
+                ariaLabel="Sélection"
+                value={selectionMode}
+                onValueChange={(value) =>
+                  setSelectionMode(value as SelectionMode)
+                }
+                disabled={running}
+                options={[
+                  {
+                    value: "selected",
+                    label: `Sélection manuelle (${selectedIds.length})`,
+                  },
+                  {
+                    value: "visible",
+                    label: `Page visible (${entries.length})`,
+                  },
+                  {
+                    value: "untranslated",
+                    label: "Uniquement sans traduction",
+                  },
+                ]}
+              />
+            </span>
           </label>
           <label className="text-xs text-muted-foreground">
             Portée
-            <select
-              className="mt-1 h-10 w-full rounded-lg border bg-background px-2 text-sm"
-              value={scope}
-              onChange={(event) =>
-                setScope(
-                  event.target.value as "project" | "global" | "both",
-                )
-              }
-              disabled={running || !projectId}
-            >
-              <option value="project">Projet actif</option>
-              <option value="global">Bibliothèque globale</option>
-              <option value="both">Projet actif + bibliothèque globale</option>
-            </select>
+            <span className="mt-1 block">
+              <TerminologySelect
+                ariaLabel="Portée"
+                value={scope}
+                onValueChange={(value) =>
+                  setScope(value as "project" | "global" | "both")
+                }
+                disabled={running || !projectId}
+                options={[
+                  { value: "project", label: "Projet actif" },
+                  { value: "global", label: "Bibliothèque globale" },
+                  {
+                    value: "both",
+                    label: "Projet actif + bibliothèque globale",
+                  },
+                ]}
+              />
+            </span>
           </label>
         </div>
         <div className="rounded-xl bg-muted/60 p-3 text-sm">
