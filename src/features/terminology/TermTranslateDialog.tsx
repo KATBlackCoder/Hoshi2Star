@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import type { ProviderConfig, TerminologyEntry } from "@/lib/types";
 import { terminologyApi } from "./api";
+import { TerminologySelect } from "./TerminologySelect";
 
 type SelectionMode = "selected" | "visible" | "untranslated";
 
@@ -36,6 +38,7 @@ export function TermTranslateDialog({
   onOpenChange: (open: boolean) => void;
   onDone: () => void;
 }) {
+  const { t } = useTranslation();
   const [selectionMode, setSelectionMode] = useState<SelectionMode>(
     selectedIds.length ? "selected" : "untranslated",
   );
@@ -74,7 +77,11 @@ export function TermTranslateDialog({
         activeJobId.current = null;
         if (event.error) toast.error(event.error);
         else
-          toast.success(`${event.summary?.translated ?? 0} termes traduits`);
+          toast.success(
+            t("terminology.translateDialog.done", {
+              count: event.summary?.translated ?? 0,
+            }),
+          );
         setRunning(false);
         onDone();
         onOpenChange(false);
@@ -100,59 +107,90 @@ export function TermTranslateDialog({
     <Dialog open={open} onOpenChange={running ? undefined : onOpenChange}>
       <DialogContent aria-busy={running}>
         <DialogHeader>
-          <DialogTitle>Traduire les termes</DialogTitle>
+          <DialogTitle>{t("terminology.translateTerms")}</DialogTitle>
           <DialogDescription>
-            Chaque traduction {targetLanguage.toUpperCase()} validée est
-            immédiatement utilisable dans la portée choisie et reste modifiable.
+            {t("terminology.translateDialog.description", {
+              target: targetLanguage.toUpperCase(),
+            })}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="text-xs text-muted-foreground">
-            Sélection
-            <select
-              className="mt-1 h-10 w-full rounded-lg border bg-background px-2 text-sm"
-              value={selectionMode}
-              onChange={(event) =>
-                setSelectionMode(event.target.value as SelectionMode)
-              }
-              disabled={running}
-            >
-              <option value="selected">
-                Sélection manuelle ({selectedIds.length})
-              </option>
-              <option value="visible">Page visible ({entries.length})</option>
-              <option value="untranslated">Uniquement sans traduction</option>
-            </select>
+            {t("terminology.translateDialog.selection")}
+            <span className="mt-1 block">
+              <TerminologySelect
+                ariaLabel={t("terminology.translateDialog.selection")}
+                value={selectionMode}
+                onValueChange={(value) =>
+                  setSelectionMode(value as SelectionMode)
+                }
+                disabled={running}
+                options={[
+                  {
+                    value: "selected",
+                    label: t("terminology.translateDialog.selectionSelected", {
+                      count: selectedIds.length,
+                    }),
+                  },
+                  {
+                    value: "visible",
+                    label: t("terminology.translateDialog.selectionVisible", {
+                      count: entries.length,
+                    }),
+                  },
+                  {
+                    value: "untranslated",
+                    label: t(
+                      "terminology.translateDialog.selectionUntranslated",
+                    ),
+                  },
+                ]}
+              />
+            </span>
           </label>
           <label className="text-xs text-muted-foreground">
-            Portée
-            <select
-              className="mt-1 h-10 w-full rounded-lg border bg-background px-2 text-sm"
-              value={scope}
-              onChange={(event) =>
-                setScope(
-                  event.target.value as "project" | "global" | "both",
-                )
-              }
-              disabled={running || !projectId}
-            >
-              <option value="project">Projet actif</option>
-              <option value="global">Bibliothèque globale</option>
-              <option value="both">Projet actif + bibliothèque globale</option>
-            </select>
+            {t("terminology.scope")}
+            <span className="mt-1 block">
+              <TerminologySelect
+                ariaLabel={t("terminology.scope")}
+                value={scope}
+                onValueChange={(value) =>
+                  setScope(value as "project" | "global" | "both")
+                }
+                disabled={running || !projectId}
+                options={[
+                  {
+                    value: "project",
+                    label: t("terminology.translateDialog.scopeProject"),
+                  },
+                  {
+                    value: "global",
+                    label: t("terminology.translateDialog.scopeGlobal"),
+                  },
+                  {
+                    value: "both",
+                    label: t("terminology.translateDialog.scopeBoth"),
+                  },
+                ]}
+              />
+            </span>
           </label>
         </div>
         <div className="rounded-xl bg-muted/60 p-3 text-sm">
           <div className="flex justify-between gap-3">
-            <span>Termes envoyés</span>
+            <span>{t("terminology.translateDialog.termsSent")}</span>
             <strong className="tabular-nums">{ids.length}</strong>
           </div>
           <div className="mt-1 flex justify-between gap-3">
-            <span>Estimation du prompt</span>
-            <strong className="tabular-nums">≈ {estimatedTokens} tokens</strong>
+            <span>{t("terminology.translateDialog.promptEstimate")}</span>
+            <strong className="tabular-nums">
+              {t("terminology.translateDialog.tokens", {
+                count: estimatedTokens,
+              })}
+            </strong>
           </div>
           <div className="mt-1 flex justify-between gap-3">
-            <span>Modèle</span>
+            <span>{t("terminology.translateDialog.model")}</span>
             <strong className="truncate">{providerConfig.model}</strong>
           </div>
         </div>
@@ -162,7 +200,7 @@ export function TermTranslateDialog({
             <span className="tabular-nums">
               {progress.processed}/{progress.total || ids.length}
             </span>{" "}
-            termes traités
+            {t("terminology.translateDialog.termsProcessed")}
           </p>
         )}
         <DialogFooter>
@@ -171,13 +209,18 @@ export function TermTranslateDialog({
             onClick={() => onOpenChange(false)}
             disabled={running}
           >
-            Annuler
+            {t("terminology.cancel")}
           </Button>
           <Button
             onClick={() => void start()}
             disabled={running || !ids.length}
           >
-            <Sparkles /> {running ? "Traduction…" : "Traduire"}
+            <Sparkles />{" "}
+            {t(
+              running
+                ? "terminology.translateDialog.translating"
+                : "terminology.translateDialog.translate",
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

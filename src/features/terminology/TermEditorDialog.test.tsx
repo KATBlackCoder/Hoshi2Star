@@ -48,10 +48,8 @@ it("edits a usable term and its enforcement only after explicit save", async () 
   const target = screen.getByLabelText("Traduction EN");
   await userEvent.clear(target);
   await userEvent.type(target, "Champion");
-  await userEvent.selectOptions(
-    screen.getByLabelText("Application"),
-    "required",
-  );
+  await userEvent.click(screen.getByRole("combobox", { name: "Application" }));
+  await userEvent.click(screen.getByRole("option", { name: "Obligatoire" }));
   expect(onSave).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
   expect(onSave).toHaveBeenCalledWith(

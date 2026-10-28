@@ -1,14 +1,13 @@
-import {
-  BookOpenCheck,
-  ChevronDown,
-  Languages,
-  Plus,
-  Search,
-} from "lucide-react";
+import { BookOpenCheck, Languages, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { PartOfSpeech, TerminologyEntryStatus } from "@/lib/types";
 import { useTranslation } from "react-i18next";
+import { TerminologySelect } from "./TerminologySelect";
+import {
+  PART_OF_SPEECH_VALUES,
+  SEMANTIC_TYPE_VALUES,
+} from "./terminologyOptions";
 
 export function TerminologyToolbar(props: {
   search: string;
@@ -57,23 +56,25 @@ export function TerminologyToolbar(props: {
         }
         options={[
           ["all", t("terminology.all")],
-          ["noun", "Nom"],
-          ["proper_noun", "Nom propre"],
-          ["verb", "Verbe"],
-          ["adjective", "Adjectif"],
-          ["adverb", "Adverbe"],
-          ["expression", "Expression"],
+          ...PART_OF_SPEECH_VALUES.map((value) => [
+            value,
+            t(`terminology.partOfSpeechTypes.${value}`),
+          ]),
         ]}
       />
-      <label className="shrink-0 text-xs text-muted-foreground">
-        {t("terminology.semanticType")}
-        <Input
-          className="mt-1 w-32"
-          value={props.semanticType}
-          onChange={(event) => props.onSemanticType(event.target.value)}
-          placeholder="Tous"
-        />
-      </label>
+      <Filter
+        label={t("terminology.semanticType")}
+        value={props.semanticType || "all"}
+        onChange={(value) => props.onSemanticType(value === "all" ? "" : value)}
+        className="min-w-32"
+        options={[
+          ["all", t("terminology.all")],
+          ...SEMANTIC_TYPE_VALUES.map((value) => [
+            value,
+            t(`terminology.semanticTypes.${value}`),
+          ]),
+        ]}
+      />
       <Filter
         label={t("terminology.status")}
         value={props.status}
@@ -132,36 +133,29 @@ function Filter({
   options,
   onChange,
   disabled,
+  className,
 }: {
   label: string;
   value: string;
   options: string[][];
   onChange: (value: string) => void;
   disabled?: boolean;
+  className?: string;
 }) {
   return (
     <label className="shrink-0 text-xs text-muted-foreground">
       {label}
-      <span className="relative mt-1 block">
-        <select
-          className="block h-10 appearance-none rounded-lg border border-input bg-transparent py-1 pl-2.5 pr-8 text-sm text-foreground transition-[background-color,border-color,box-shadow] duration-[var(--duration-fast)] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 dark:bg-input/30 dark:disabled:bg-input/80 dark:[color-scheme:dark]"
+      <span className="mt-1 block">
+        <TerminologySelect
+          ariaLabel={label}
+          className={className ?? "min-w-28"}
           value={value}
-          onChange={(event) => onChange(event.target.value)}
+          onValueChange={onChange}
           disabled={disabled}
-        >
-          {options.map(([option, text]) => (
-            <option
-              className="bg-popover text-popover-foreground"
-              value={option}
-              key={option}
-            >
-              {text}
-            </option>
-          ))}
-        </select>
-        <ChevronDown
-          className="pointer-events-none absolute right-2 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground"
-          aria-hidden="true"
+          options={options.map(([option, text]) => ({
+            value: option,
+            label: text,
+          }))}
         />
       </span>
     </label>

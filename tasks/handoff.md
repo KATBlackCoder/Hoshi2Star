@@ -4,6 +4,14 @@
 **Objectif utilisateur :** chantier Wolf livré : RW (PR #13), DX (PR #15), WR (PR #16), correctif de taille de police à l'export (PR #17) et WR-E6 (PR #18) fusionnés ; EX abandonné.
 **Statut :** `main` @ `1ff3352`, aucune PR ouverte. Vérifié en jeu sur 2.23 ; essai en jeu de l'export de l'app sur 3.658 non fait.
 
+## En attente (2026-10-28, Claude) — libellés de terminologie traduits
+
+- Travail Codex non commité récupéré du worktree `~/.codex/worktrees/6fab` (branche `codex/hoshiyomi-redesign`, déjà dans `main`) et posé tel quel sur `fix/terminology-i18n-labels` depuis `main` @ `333633a` (accord de l'utilisateur). Worktree et branche Codex retirés ensuite.
+- Contenu : libellés des filtres et fenêtres de terminologie (catégorie grammaticale, type sémantique) passés en clés i18n fr/en au lieu du français écrit en dur ; `TerminologySelect.tsx`, `terminologyOptions.ts`.
+- **Gate cloud vert** sur `988c5cb` (typecheck, Vitest 156/156, lint 0 erreur / 10 avertissements connus, Prettier OK). Puis, à la demande de l'utilisateur : `SEMANTIC_TYPE_LABELS` simplifié et `TermTranslateDialog` traduit (clés `terminology.translateDialog.*`), +1 test ; gate refait vert (Vitest 157/157). Commité sur `claude/bold-edison-m1w6yn`, au-dessus de `988c5cb`. Journal : `docs/journal/2026-10-28-terminologie-i18n.md`.
+- À signaler dans la PR : le type sémantique devient une liste fermée (éditeur et filtre), plus de saisie libre.
+- **Prochaine action** : avancer `fix/terminology-i18n-labels` sur `claude/bold-edison-m1w6yn` (ou PR depuis celle-ci), relecture, PR vers `main`.
+
 ## En cours (2026-10-27, Claude) — WR-E6 : retours à la ligne Wolf côté LLM
 
 - Plan : `tasks/todo.md`, « Plan — WR-E6 », **validé le 2026-10-27** (recommandations). Journal : `docs/journal/2026-10-27-wr-e6-retours-llm-wolf.md`.

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 import { TermTranslateDialog } from "./TermTranslateDialog";
 import { terminologyApi } from "./api";
+import i18n from "@/lib/i18n";
 import type { ProviderConfig, TerminologyEntry } from "@/lib/types";
 
 const provider: ProviderConfig = {
@@ -112,4 +113,35 @@ it("estimates tokens and sends only untranslated terms for immediate use", async
     error: null,
   });
   expect(onDone).toHaveBeenCalledOnce();
+});
+
+it("shows its labels in the interface language", async () => {
+  await i18n.changeLanguage("en");
+  try {
+    render(
+      <TermTranslateDialog
+        open
+        entries={entries}
+        selectedIds={[]}
+        targetLanguage="fr"
+        projectId="p1"
+        providerConfig={provider}
+        onOpenChange={vi.fn()}
+        onDone={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Translate terms" }),
+    ).toHaveTextContent("Each validated FR translation");
+    expect(
+      screen.getByRole("combobox", { name: "Selection" }),
+    ).toHaveTextContent("Untranslated only");
+    expect(screen.getByRole("combobox", { name: "Scope" })).toHaveTextContent(
+      "Active project",
+    );
+    expect(screen.getByText("Prompt estimate")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Translate" })).toBeEnabled();
+  } finally {
+    await i18n.changeLanguage("fr");
+  }
 });
