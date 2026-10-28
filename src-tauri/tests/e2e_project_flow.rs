@@ -882,6 +882,7 @@ async fn wolf_unreadable_map_is_refused_at_open() {
     mps.push(0x66);
     std::fs::write(map_dir.join("Map001.mps"), &mps).unwrap();
     std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+    write_wolf_v2_basic_data(&game_root);
 
     let db_file = tmp.path().join("h2s.db");
     let app = mock_app(db_file.to_str().unwrap()).await;
@@ -903,6 +904,23 @@ async fn wolf_unreadable_map_is_refused_at_open() {
         .await
         .unwrap();
     assert_eq!(projects, 0, "no partial project may be created");
+}
+
+/// Database magic of a Shift-JIS (Wolf 2.x) game, as `dat_parser::DB_MAGIC_SJIS`.
+const WOLF_DB_MAGIC_SJIS: [u8; 9] = [0x57, 0x00, 0x00, 0x4F, 0x4C, 0x00, 0x46, 0x4D, 0x00];
+
+/// The `Data/BasicData/` of a Wolf 2.x game decrypted by UberWolf (plan UW):
+/// `SysDatabase.dat` declares the Shift-JIS encoding (UW-D4) and a `.project`
+/// makes the folder recognisable (UW-D3). Neither pairs with the other, so no
+/// database is extracted.
+fn write_wolf_v2_basic_data(game_root: &Path) {
+    let basic_data = game_root.join("Data").join("BasicData");
+    std::fs::create_dir_all(&basic_data).unwrap();
+    let mut sys_database = vec![0x00]; // indicator = unencrypted
+    sys_database.extend_from_slice(&WOLF_DB_MAGIC_SJIS);
+    sys_database.push(0xC1);
+    std::fs::write(basic_data.join("SysDatabase.dat"), sys_database).unwrap();
+    std::fs::write(basic_data.join("DataBase.project"), b"").unwrap();
 }
 
 /// Length-prefixed Wolf string (byte count includes the trailing NUL).
@@ -972,6 +990,7 @@ async fn wolf_v2_game_opens_with_its_dialogue() {
     std::fs::create_dir_all(&map_dir).unwrap();
     std::fs::write(map_dir.join("Map001.mps"), wolf_v2_map(MESSAGE)).unwrap();
     std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+    write_wolf_v2_basic_data(&game_root);
 
     let db_file = tmp.path().join("h2s.db");
     let app = mock_app(db_file.to_str().unwrap()).await;
@@ -1028,6 +1047,7 @@ async fn wolf_v2_export_can_be_repeated_over_its_own_output() {
     std::fs::create_dir_all(map_path.parent().unwrap()).unwrap();
     std::fs::write(&map_path, wolf_v2_map(MESSAGE)).unwrap();
     std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+    write_wolf_v2_basic_data(&game_root);
 
     let db_file = tmp.path().join("h2s.db");
     let app = mock_app(db_file.to_str().unwrap()).await;
@@ -1095,6 +1115,7 @@ async fn wolf_export_rewraps_messages_when_text_fitting_is_on() {
     std::fs::create_dir_all(map_path.parent().unwrap()).unwrap();
     std::fs::write(&map_path, wolf_v2_map(MESSAGE)).unwrap();
     std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+    write_wolf_v2_basic_data(&game_root);
 
     let db_file = tmp.path().join("h2s.db");
     let app = mock_app(db_file.to_str().unwrap()).await;
@@ -1176,6 +1197,7 @@ async fn wolf_font_scan_reports_the_game_font_size() {
     std::fs::create_dir_all(map_path.parent().unwrap()).unwrap();
     std::fs::write(&map_path, wolf_v2_map("こんにちは、旅の人")).unwrap();
     std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+    write_wolf_v2_basic_data(&game_root);
     let db_file = tmp.path().join("h2s.db");
     let app = mock_app(db_file.to_str().unwrap()).await;
     let project = open_project(
@@ -1301,6 +1323,7 @@ async fn wolf_archive_game_is_exported_as_a_rebuilt_archive() {
     let game_root = tmp.path().join("game");
     std::fs::create_dir_all(game_root.join("Data").join("MapData")).unwrap();
     std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+    write_wolf_v2_basic_data(&game_root);
     std::fs::write(
         game_root.join("Data.wolf"),
         keyless_data_wolf(&wolf_v2_map(MESSAGE)),
@@ -1377,6 +1400,7 @@ async fn wolf_export_preflight_announces_folding_and_archives() {
     let loose = tmp.path().join("loose");
     std::fs::create_dir_all(loose.join("Data").join("MapData")).unwrap();
     std::fs::write(loose.join("Game.ini"), b"").unwrap();
+    write_wolf_v2_basic_data(&loose);
     std::fs::write(
         loose.join("Data").join("MapData").join("Map001.mps"),
         wolf_v2_map(MESSAGE),
@@ -1425,6 +1449,7 @@ async fn wolf_export_preflight_announces_folding_and_archives() {
     let archived = tmp.path().join("archived");
     std::fs::create_dir_all(&archived).unwrap();
     std::fs::write(archived.join("Game.ini"), b"").unwrap();
+    write_wolf_v2_basic_data(&archived);
     std::fs::write(
         archived.join("Data.wolf"),
         keyless_data_wolf(&wolf_v2_map(MESSAGE)),

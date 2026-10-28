@@ -60,12 +60,20 @@ WolfX) : l'utilisateur déchiffre le jeu avec UberWolf, l'app lit et exporte les
 **Étapes.** Branche depuis `main` (worktree), pas de build local, gate cloud après accord de push.
 
 - [x] **UW-0.** UW-D1 à UW-D8 validées telles que recommandées (utilisateur, 2026-10-28) : UW-D5 reporté.
-- [ ] **UW-1 — Détection** (`engines/detector.rs`) : lanceurs `Game.exe` / `GamePro.exe` / `Game.ini`
+- [x] **UW-1 — Détection** (`engines/detector.rs`) : lanceurs `Game.exe` / `GamePro.exe` / `Game.ini`
       (UW-D3) ; encodage par n'importe quelle base (UW-D4) ; `guess_wolf_version_from_structure` rend une
       erreur au lieu de v2 ; appelants à adapter : `commands/project.rs:936`, `commands/export.rs:724`,
       `:1200`, `:1466`. Retirer `guess_wolf_version_from_archive` (privée) et ses tests
       (`detector.rs:677-815`). Tests : `GamePro.exe` seul détecté ; encodage depuis `DataBase.dat` seul ;
       sans base ⇒ erreur ; ancien test `test_guess_wolf_version_no_signal_defaults_to_v2` remplacé.
+      **Fait le 2026-10-28 (Claude, cloud)** : `is_wolf_game_dir` (lanceurs `WOLF_LAUNCHERS`, `.project` ou
+      `CommonEvent.dat` dans `Data/BasicData/` ou `BasicData/`), `guess_wolf_version_from_structure` →
+      `Result<WolfVersion, WolfVersionError>` ; code d'archive retiré du détecteur. Écart d'interprétation :
+      l'erreur « sans base » porte un marqueur stable `wolf_no_database` (`WOLF_NO_DATABASE`) pour que
+      l'interface affiche un message (UW-D4 « refuser avec un message ») ; reconnu côté interface en UW-5.
+      Tests e2e Wolf (`e2e_project_flow.rs`, `export_debug.rs`) : fixture `write_wolf_v2_basic_data`
+      (`SysDatabase.dat` Shift-JIS + `DataBase.project`). Gate vert : fmt, typecheck, Vitest 157/157, lint,
+      clippy `--all-targets -D warnings`, cargo test 804 OK / 0 échec / 15 ignorés.
 - [ ] **UW-2 — Sources** (`engines/wolf/sources.rs`) : `WolfSources::load` lit seulement `Data/MapData` et
       `Data/BasicData` ; archive de texte présente ⇒ erreur avec un marqueur stable
       `wolf_archive_present` (UW-D2) ; `Origin` et `display_path` retirés s'ils n'ont plus d'usage ;

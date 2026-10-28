@@ -721,7 +721,7 @@ async fn wolf_preflight(
     use crate::engines::wolf::{encoding, sources};
 
     let game_dir = Path::new(game_path);
-    let version = guess_wolf_version_from_structure(game_dir);
+    let version = guess_wolf_version_from_structure(game_dir).map_err(|e| e.to_string())?;
     let targets: Vec<String> = sqlx::query_scalar(
         "SELECT s.target_text FROM segments s \
          JOIN source_files f ON f.id = s.source_file_id \
@@ -1197,7 +1197,7 @@ async fn collect_wolf_zip_entries(
     scope: ExportScope,
     mut fit: Option<WolfExportFit>,
 ) -> Result<(Vec<(String, Vec<u8>)>, Vec<integrity::IntegrityIssue>), String> {
-    let version = guess_wolf_version_from_structure(game_dir);
+    let version = guess_wolf_version_from_structure(game_dir).map_err(|e| e.to_string())?;
     if let Some(warning) = crate::engines::wolf::encoding::path_warning(game_dir, &version) {
         log::warn!("[h2s] {warning}");
     }
@@ -1463,7 +1463,8 @@ pub async fn debug_inject_file(
                 }
             }
             let game_dir = Path::new(&game_path);
-            let version = crate::engines::detector::guess_wolf_version_from_structure(game_dir);
+            let version = crate::engines::detector::guess_wolf_version_from_structure(game_dir)
+                .map_err(|e| e.to_string())?;
             let results = wolf_inject_all(game_dir, &translations_by_file, &version)
                 .await
                 .map_err(|e| e.to_string())?;

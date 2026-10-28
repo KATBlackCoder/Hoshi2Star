@@ -288,6 +288,23 @@ async fn debug_export_refuses_after_a_game_update() {
     assert!(!game.game_root.join(DEBUG_ZIP).exists());
 }
 
+/// Database magic of a Shift-JIS (Wolf 2.x) game, as `dat_parser::DB_MAGIC_SJIS`.
+const WOLF_DB_MAGIC_SJIS: [u8; 9] = [0x57, 0x00, 0x00, 0x4F, 0x4C, 0x00, 0x46, 0x4D, 0x00];
+
+/// The `Data/BasicData/` of a Wolf 2.x game decrypted by UberWolf (plan UW):
+/// `SysDatabase.dat` declares the Shift-JIS encoding (UW-D4) and a `.project`
+/// makes the folder recognisable (UW-D3). Neither pairs with the other, so no
+/// database is extracted.
+fn write_wolf_v2_basic_data(game_root: &Path) {
+    let basic_data = game_root.join("Data").join("BasicData");
+    std::fs::create_dir_all(&basic_data).unwrap();
+    let mut sys_database = vec![0x00]; // indicator = unencrypted
+    sys_database.extend_from_slice(&WOLF_DB_MAGIC_SJIS);
+    sys_database.push(0xC1);
+    std::fs::write(basic_data.join("SysDatabase.dat"), sys_database).unwrap();
+    std::fs::write(basic_data.join("DataBase.project"), b"").unwrap();
+}
+
 /// Length-prefixed Wolf string (byte count includes the trailing NUL).
 fn wolf_string(bytes: &[u8]) -> Vec<u8> {
     let mut out = ((bytes.len() + 1) as u32).to_le_bytes().to_vec();
@@ -372,6 +389,7 @@ async fn wolf_debug_export_delivers_only_the_ready_translations() {
     )
     .unwrap();
     std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+    write_wolf_v2_basic_data(&game_root);
     let game = opened(temporary, game_root).await;
     assert_eq!(game.project.engine, "wolf");
 

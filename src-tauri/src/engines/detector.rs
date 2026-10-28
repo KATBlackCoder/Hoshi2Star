@@ -128,7 +128,7 @@ pub fn detect_engine(game_dir: &Path) -> Result<Engine, DetectionError> {
         }
     }
 
-    // 2. Wolf RPG — Game.exe/Game.ini + BasicData/ or .wolf/.mps files
+    // 2. Wolf RPG — Game.exe/GamePro.exe/Game.ini + decrypted BasicData/
     if is_wolf_game_dir(game_dir) {
         return Ok(Engine::Wolf);
     }
@@ -205,24 +205,53 @@ pub fn find_wolf_data_dir(game_dir: &Path) -> Option<std::path::PathBuf> {
     candidates.into_iter().find(|p| p.is_dir())
 }
 
-/// Detect the Wolf RPG version (text encoding) from the game's own data.
-///
-/// The archive CodePage is NOT a signal: it only describes the file names, and a
-/// Wolf 3.658 game (UTF-8 data) ships a `Data.wolf` with CodePage 932 (plan RW,
-/// verified 2026-10-26). In order:
-/// 1. the magic of a loose `BasicData` database (`SysDatabase.dat`), cheap to read;
-/// 2. the magic of the same database inside the `.wolf` archive that holds it;
-/// 3. the crypt version of a DXA v8 archive (3.x editors), readable even when the
-///    archive itself is not (3.31+ new crypt, WolfX, Pro);
-/// 4. the v2.0 (Shift-JIS) default.
-pub fn guess_wolf_version_from_structure(game_dir: &Path) -> WolfVersion {
-    guess_wolf_version_from_loose_dat(game_dir)
-        .or_else(|| guess_wolf_version_from_archive(game_dir))
-        .unwrap_or(WolfVersion { major: 2, minor: 0 })
+/// Stable marker at the start of [`WolfVersionError`] messages, matched by the
+/// frontend.
+pub const WOLF_NO_DATABASE: &str = "wolf_no_database";
+
+/// The databases whose 9-byte magic declares the text encoding, in the order
+/// they are read.
+const WOLF_DATABASES: [&str; 3] = ["SysDatabase.dat", "DataBase.dat", "CDataBase.dat"];
+
+#[derive(Debug, thiserror::Error)]
+pub enum WolfVersionError {
+    /// No database of `Data/BasicData/` declares an encoding (plan UW, UW-D4):
+    /// guessing one would write Shift-JIS into UTF-8 files, or the reverse.
+    #[error(
+        "{marker}: no readable Wolf RPG database (SysDatabase.dat, DataBase.dat, CDataBase.dat) \
+         in Data/BasicData: decrypt the game with UberWolf first",
+        marker = WOLF_NO_DATABASE
+    )]
+    NoDatabase,
+}
+
+/// Detect the Wolf RPG version (text encoding) from the game's decrypted
+/// `Data/BasicData/` (plan UW, UW-D4): the magic of the first readable database
+/// among [`WOLF_DATABASES`] (any case). Pro games may ship without
+/// `SysDatabase.dat`, hence the other two. Without any, the game is refused:
+/// there is no default encoding.
+pub fn guess_wolf_version_from_structure(game_dir: &Path) -> Result<WolfVersion, WolfVersionError> {
+    let basic_data = find_wolf_data_dir(game_dir)
+        .map(|data_dir| data_dir.join("BasicData"))
+        .ok_or(WolfVersionError::NoDatabase)?;
+    let entries: Vec<std::path::PathBuf> = std::fs::read_dir(&basic_data)
+        .map(|entries| entries.flatten().map(|entry| entry.path()).collect())
+        .unwrap_or_default();
+    WOLF_DATABASES
+        .iter()
+        .filter_map(|name| {
+            entries.iter().find(|path| {
+                path.file_name()
+                    .is_some_and(|file| file.to_string_lossy().eq_ignore_ascii_case(name))
+            })
+        })
+        .find_map(|path| wolf_version_from_database(&std::fs::read(path).ok()?))
+        .ok_or(WolfVersionError::NoDatabase)
 }
 
 /// Version declared by a Wolf database (`SysDatabase.dat`, `DataBase.dat`,
-/// `CDataBase.dat`): byte 5 of its 9-byte magic, `0x00` Shift-JIS / `0x55` UTF-8.
+/// `CDataBase.dat`): byte 5 of its 9-byte magic, `0x00` Shift-JIS / `0x55` UTF-8
+/// — the same signal [`super::wolf::dat_parser::parse_database`] uses per file.
 fn wolf_version_from_database(bytes: &[u8]) -> Option<WolfVersion> {
     use crate::engines::wolf::dat_parser::{DB_MAGIC_SJIS, DB_MAGIC_UTF8};
 
@@ -236,128 +265,44 @@ fn wolf_version_from_database(bytes: &[u8]) -> Option<WolfVersion> {
     }
 }
 
-/// Step 1 (unpacked games, or a `Data/` decrypted next to its archive): read the
-/// `BasicData/SysDatabase.dat`'s own 9-byte magic (byte 5 = `0x00` Shift-JIS /
-/// `0x55` UTF-8 — the same signal [`super::wolf::dat_parser::parse_database`]
-/// uses per-file). Without this, an unpacked v3.x/UTF-8 project silently fell
-/// back to the v2.0/Shift-JIS default, causing `encode_for_wolf` to
-/// Shift-JIS-encode any non-ASCII translated character into a database whose
-/// header still declares UTF-8 (e.g. a full-width `．` written as `81 44`
-/// under a `DB_MAGIC_UTF8` header) — a mismatch the Wolf RPG Editor runtime
-/// cannot recover from.
-fn guess_wolf_version_from_loose_dat(game_dir: &Path) -> Option<WolfVersion> {
-    let data_dir = find_wolf_data_dir(game_dir)?;
-    let bytes = std::fs::read(data_dir.join("BasicData").join("SysDatabase.dat")).ok()?;
-    wolf_version_from_database(&bytes)
-}
+/// Launchers of a Wolf RPG game: `Game.exe`, `GamePro.exe` (Wolf Pro) or
+/// `Game.ini` (plan UW, UW-D3).
+const WOLF_LAUNCHERS: [&str; 3] = ["Game.exe", "GamePro.exe", "Game.ini"];
 
-/// `true` for the archive path of a Wolf database whose magic carries the encoding.
-fn is_wolf_database_path(path: &str) -> bool {
-    let name = path.rsplit('/').next().unwrap_or(path).to_ascii_lowercase();
-    matches!(
-        name.as_str(),
-        "sysdatabase.dat" | "database.dat" | "cdatabase.dat"
-    )
-}
-
-/// The archive that holds `BasicData`: `Data/BasicData.wolf` in the split layout,
-/// else the single `Data.wolf`, else the first `Data/*.wolf`.
-fn find_basic_data_archive(game_dir: &Path) -> Option<std::path::PathBuf> {
-    find_wolf_data_dir(game_dir)
-        .map(|data_dir| data_dir.join("BasicData.wolf"))
-        .filter(|path| path.is_file())
-        .or_else(|| find_first_wolf_file(game_dir))
-}
-
-/// Steps 2 and 3 of [`guess_wolf_version_from_structure`]: only the database
-/// entries are decrypted, the rest of the archive is just listed.
-fn guess_wolf_version_from_archive(game_dir: &Path) -> Option<WolfVersion> {
-    use crate::engines::wolf::decrypt::legacy_xor::{extract_matching, v8_crypt_version};
-
-    let data = std::fs::read(find_basic_data_archive(game_dir)?).ok()?;
-    let from_database = extract_matching(&data, &is_wolf_database_path)
-        .ok()
-        .and_then(|archive| {
-            archive
-                .files
-                .iter()
-                .find_map(|file| wolf_version_from_database(&file.data))
-        });
-    // Crypt versions 300+ (and the ChaCha modes 0x64 / 0xC8) only come from 3.x
-    // editors; 0 is the 2.2x key.
-    from_database.or_else(|| {
-        v8_crypt_version(&data)
-            .filter(|&crypt| crypt >= 300 || matches!(crypt, 0x64 | 0xC8))
-            .map(|_| WolfVersion { major: 3, minor: 0 })
-    })
-}
-
-fn find_first_wolf_file(game_dir: &Path) -> Option<std::path::PathBuf> {
-    // Fully-packed single-archive distribution (e.g. Honoka Data.wolf at root)
-    let root_wolf = game_dir.join("Data.wolf");
-    if root_wolf.exists() {
-        return Some(root_wolf);
-    }
-    // Multi-archive layout: Data/*.wolf
-    let data_dir = find_wolf_data_dir(game_dir)?;
-    std::fs::read_dir(&data_dir).ok()?.find_map(|e| {
-        let path = e.ok()?.path();
-        if path.extension()?.to_str()? == "wolf" {
-            Some(path)
-        } else {
-            None
-        }
-    })
-}
-
-/// Returns `true` if the directory looks like a Wolf RPG game root.
+/// Returns `true` if the directory looks like a Wolf RPG game root whose data
+/// was decrypted by UberWolf (plan UW, UW-D3).
 ///
 /// Criteria:
-///   - `Game.exe` OR `Game.ini` present at root
-///   - AND one of:
-///     - `BasicData/` directory (unpacked, old layout)
-///     - `Data.wolf` file at root (fully-packed single-archive distribution)
-///     - `Data/*.wolf` files (unpacked multi-archive layout)
-///     - `Data/MapData/*.mps` files (unpacked map data)
+///   - `Game.exe`, `GamePro.exe` or `Game.ini` present at root
+///   - AND `Data/BasicData/` (or `BasicData/`) holding at least one `.project`
+///     or `CommonEvent.dat`.
+///
+/// A game still packed in `.wolf` archives is not recognised: it must be
+/// decrypted with UberWolf first.
 pub fn is_wolf_game_dir(game_dir: &Path) -> bool {
-    let has_launcher = game_dir.join("Game.exe").exists() || game_dir.join("Game.ini").exists();
+    let has_launcher = WOLF_LAUNCHERS
+        .iter()
+        .any(|name| game_dir.join(name).exists());
     if !has_launcher {
         return false;
     }
-    game_dir.join("BasicData").is_dir()
-        || game_dir.join("Data.wolf").exists()
-        || has_wolf_archives(game_dir)
-        || has_mps_files(game_dir)
+    let data_basic_data = find_wolf_data_dir(game_dir).map(|data_dir| data_dir.join("BasicData"));
+    data_basic_data
+        .into_iter()
+        .chain(std::iter::once(game_dir.join("BasicData")))
+        .any(|dir| has_wolf_basic_data_files(&dir))
 }
 
-fn has_wolf_archives(game_dir: &Path) -> bool {
-    let data_dir = game_dir.join("Data");
-    if !data_dir.is_dir() {
-        return false;
-    }
-    std::fs::read_dir(&data_dir)
-        .ok()
+/// `true` if `dir` holds a `.project` file or `CommonEvent.dat` (any case).
+fn has_wolf_basic_data_files(dir: &Path) -> bool {
+    std::fs::read_dir(dir)
         .map(|entries| {
-            entries
-                .filter_map(|e| e.ok())
-                .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("wolf"))
+            entries.flatten().any(|entry| {
+                let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+                name.ends_with(".project") || name == "commonevent.dat"
+            })
         })
         .unwrap_or(false)
-}
-
-fn has_mps_files(game_dir: &Path) -> bool {
-    let map_dir = game_dir.join("Data").join("MapData");
-    if map_dir.is_dir() {
-        return std::fs::read_dir(&map_dir)
-            .ok()
-            .map(|entries| {
-                entries
-                    .filter_map(|e| e.ok())
-                    .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("mps"))
-            })
-            .unwrap_or(false);
-    }
-    false
 }
 
 // ---------------------------------------------------------------------------
@@ -507,56 +452,99 @@ mod tests {
         assert!(matches!(result, Err(DetectionError::UnknownEngine)));
     }
 
-    // --- Wolf RPG detection ---
+    // --- Wolf RPG detection (plan UW, UW-D3) ---
+
+    /// A decrypted Wolf game: `launcher` at the root and `Data/BasicData/{file}`.
+    fn wolf_game(launcher: &str, basic_data_file: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(launcher), b"mock").unwrap();
+        let basic_data = dir.path().join("Data").join("BasicData");
+        std::fs::create_dir_all(&basic_data).unwrap();
+        std::fs::write(basic_data.join(basic_data_file), b"mock").unwrap();
+        dir
+    }
 
     #[test]
-    fn test_detect_wolf_with_game_exe_and_basic_data() {
+    fn test_detect_wolf_with_each_launcher() {
+        for launcher in ["Game.exe", "GamePro.exe", "Game.ini"] {
+            let dir = wolf_game(launcher, "DataBase.project");
+            assert_eq!(
+                detect_engine(dir.path()).unwrap(),
+                Engine::Wolf,
+                "{launcher}"
+            );
+        }
+    }
+
+    /// Wolf Pro games (3.714, 3.723) only ship `GamePro.exe`.
+    #[test]
+    fn test_detect_wolf_pro_launcher_alone() {
+        let dir = wolf_game("GamePro.exe", "CommonEvent.dat");
+        assert!(!dir.path().join("Game.exe").exists());
+        assert!(!dir.path().join("Game.ini").exists());
+        assert_eq!(detect_engine(dir.path()).unwrap(), Engine::Wolf);
+    }
+
+    #[test]
+    fn test_detect_wolf_with_root_basic_data() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("Game.exe"), b"mock").unwrap();
         std::fs::create_dir(dir.path().join("BasicData")).unwrap();
+        std::fs::write(
+            dir.path().join("BasicData").join("SysDatabase.project"),
+            b"mock",
+        )
+        .unwrap();
 
-        let engine = detect_engine(dir.path()).unwrap();
-        assert_eq!(engine, Engine::Wolf);
+        assert_eq!(detect_engine(dir.path()).unwrap(), Engine::Wolf);
+    }
+
+    /// A game still packed in `.wolf` archives is not a Wolf game for the app:
+    /// it must be decrypted with UberWolf first.
+    #[test]
+    fn test_detect_wolf_packed_game_is_not_detected() {
+        let root_archive = tempfile::tempdir().unwrap();
+        std::fs::write(root_archive.path().join("Game.exe"), b"mock").unwrap();
+        std::fs::write(root_archive.path().join("Data.wolf"), b"mock").unwrap();
+        assert!(matches!(
+            detect_engine(root_archive.path()),
+            Err(DetectionError::UnknownEngine)
+        ));
+
+        let split_archives = tempfile::tempdir().unwrap();
+        std::fs::write(split_archives.path().join("Game.exe"), b"mock").unwrap();
+        let data = split_archives.path().join("Data");
+        std::fs::create_dir(&data).unwrap();
+        std::fs::write(data.join("BasicData.wolf"), b"mock").unwrap();
+        std::fs::write(data.join("MapData.wolf"), b"mock").unwrap();
+        assert!(matches!(
+            detect_engine(split_archives.path()),
+            Err(DetectionError::UnknownEngine)
+        ));
     }
 
     #[test]
-    fn test_detect_wolf_with_game_exe_and_wolf_archives() {
+    fn test_detect_wolf_empty_basic_data_is_not_detected() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("Game.exe"), b"mock").unwrap();
-        let data_dir = dir.path().join("Data");
-        std::fs::create_dir(&data_dir).unwrap();
-        std::fs::write(data_dir.join("BasicData.wolf"), b"mock").unwrap();
+        std::fs::create_dir_all(dir.path().join("Data").join("BasicData")).unwrap();
+        std::fs::create_dir_all(dir.path().join("Data").join("MapData")).unwrap();
+        std::fs::write(
+            dir.path().join("Data").join("MapData").join("Map001.mps"),
+            b"mock",
+        )
+        .unwrap();
 
-        let engine = detect_engine(dir.path()).unwrap();
-        assert_eq!(engine, Engine::Wolf);
-    }
-
-    #[test]
-    fn test_detect_wolf_with_root_data_wolf_archive() {
-        // Fully-packed distribution: single Data.wolf at root (no Data/ subdirectory)
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("Game.exe"), b"mock").unwrap();
-        std::fs::write(dir.path().join("Data.wolf"), b"mock").unwrap();
-
-        let engine = detect_engine(dir.path()).unwrap();
-        assert_eq!(engine, Engine::Wolf);
-    }
-
-    #[test]
-    fn test_detect_wolf_with_game_ini() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("Game.ini"), b"[Config]\nTitle=Test").unwrap();
-        std::fs::create_dir(dir.path().join("BasicData")).unwrap();
-
-        let engine = detect_engine(dir.path()).unwrap();
-        assert_eq!(engine, Engine::Wolf);
+        assert!(matches!(
+            detect_engine(dir.path()),
+            Err(DetectionError::UnknownEngine)
+        ));
     }
 
     #[test]
     fn test_detect_wolf_no_launcher() {
-        // BasicData/ alone without Game.exe → UnknownEngine
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir(dir.path().join("BasicData")).unwrap();
+        // A decrypted BasicData/ alone without a launcher → UnknownEngine
+        let dir = wolf_game("Readme.txt", "DataBase.project");
 
         let result = detect_engine(dir.path());
         assert!(matches!(result, Err(DetectionError::UnknownEngine)));
@@ -571,6 +559,11 @@ mod tests {
         std::fs::write(data_dir.join("System.json"), r#"{"gameTitle": "MV Game"}"#).unwrap();
         std::fs::write(dir.path().join("Game.exe"), b"mock").unwrap();
         std::fs::create_dir(dir.path().join("BasicData")).unwrap();
+        std::fs::write(
+            dir.path().join("BasicData").join("DataBase.project"),
+            b"mock",
+        )
+        .unwrap();
 
         // MV/MZ is checked first — must win
         let engine = detect_engine(dir.path()).unwrap();
@@ -579,10 +572,8 @@ mod tests {
 
     #[test]
     fn test_detect_wolf_not_confused_with_mv() {
-        // Game.exe + BasicData/ but NO data/System.json → Wolf
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("Game.exe"), b"mock").unwrap();
-        std::fs::create_dir(dir.path().join("BasicData")).unwrap();
+        // Wolf layout but NO data/System.json → Wolf
+        let dir = wolf_game("Game.exe", "DataBase.project");
 
         let engine = detect_engine(dir.path()).unwrap();
         assert_eq!(engine, Engine::Wolf);
@@ -620,25 +611,37 @@ mod tests {
         assert_eq!(result, dir.path().join("data"));
     }
 
-    /// Regression: an unpacked (no `.wolf` archive) v3.x/UTF-8 game must not
-    /// silently fall back to v2.0/Shift-JIS — that mismatch is what caused
-    /// `encode_for_wolf` to Shift-JIS-encode non-ASCII translated characters
-    /// into a database whose header still declared UTF-8.
+    // --- Encoding from the decrypted databases (plan UW, UW-D4) ---
+
+    fn database_bytes(magic: &[u8; 9]) -> Vec<u8> {
+        let mut bytes = vec![0x00]; // indicator = unencrypted
+        bytes.extend_from_slice(magic);
+        bytes.push(0xC1); // version (content irrelevant to detection)
+        bytes
+    }
+
+    /// A game folder with `Data/BasicData/{name}` holding `bytes` for each file.
+    fn game_with_databases(files: &[(&str, Vec<u8>)]) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let basic_data = dir.path().join("Data").join("BasicData");
+        std::fs::create_dir_all(&basic_data).unwrap();
+        for (name, bytes) in files {
+            std::fs::write(basic_data.join(name), bytes).unwrap();
+        }
+        dir
+    }
+
+    /// Regression: an unpacked v3.x/UTF-8 game must not silently fall back to
+    /// v2.0/Shift-JIS — that mismatch is what caused `encode_for_wolf` to
+    /// Shift-JIS-encode non-ASCII translated characters into a database whose
+    /// header still declared UTF-8.
     #[test]
     fn test_guess_wolf_version_loose_utf8_database() {
         use crate::engines::wolf::dat_parser::DB_MAGIC_UTF8;
 
-        let dir = tempfile::tempdir().unwrap();
-        let basic_data = dir.path().join("Data").join("BasicData");
-        std::fs::create_dir_all(&basic_data).unwrap();
-
-        let mut sys_db = vec![0x00]; // indicator = unencrypted
-        sys_db.extend_from_slice(&DB_MAGIC_UTF8);
-        sys_db.push(0xC1); // version (content irrelevant to detection)
-        std::fs::write(basic_data.join("SysDatabase.dat"), sys_db).unwrap();
-
+        let game = game_with_databases(&[("SysDatabase.dat", database_bytes(&DB_MAGIC_UTF8))]);
         assert_eq!(
-            guess_wolf_version_from_structure(dir.path()),
+            guess_wolf_version_from_structure(game.path()).unwrap(),
             WolfVersion { major: 3, minor: 0 }
         );
     }
@@ -647,180 +650,79 @@ mod tests {
     fn test_guess_wolf_version_loose_sjis_database() {
         use crate::engines::wolf::dat_parser::DB_MAGIC_SJIS;
 
-        let dir = tempfile::tempdir().unwrap();
-        let basic_data = dir.path().join("Data").join("BasicData");
-        std::fs::create_dir_all(&basic_data).unwrap();
-
-        let mut sys_db = vec![0x00];
-        sys_db.extend_from_slice(&DB_MAGIC_SJIS);
-        sys_db.push(0xC1);
-        std::fs::write(basic_data.join("SysDatabase.dat"), sys_db).unwrap();
-
+        let game = game_with_databases(&[("SysDatabase.dat", database_bytes(&DB_MAGIC_SJIS))]);
         assert_eq!(
-            guess_wolf_version_from_structure(dir.path()),
+            guess_wolf_version_from_structure(game.path()).unwrap(),
             WolfVersion { major: 2, minor: 0 }
         );
     }
 
-    // --- RW-2: version from the game's data, never from the archive CodePage ---
-
-    fn database_bytes(magic: &[u8; 9]) -> Vec<u8> {
-        let mut bytes = vec![0x00]; // indicator = unencrypted
-        bytes.extend_from_slice(magic);
-        bytes.push(0xC1);
-        bytes
-    }
-
-    /// Wolf 2.23-style `Data.wolf`: header encrypted from offset 0 with a key outside
-    /// the known table, CodePage 932 (it only describes the file names).
-    fn v6_archive(
-        files: &[crate::engines::wolf::decrypt::legacy_xor::test_archives::DxFile],
-    ) -> Vec<u8> {
-        use crate::engines::wolf::decrypt::legacy_xor::test_archives::make_v6_dx_archive;
-        let key = [
-            0xC7u8, 0x05, 0xCA, 0x7D, 0x8D, 0xE3, 0xDE, 0xF1, 0xD9, 0x0C, 0x85, 0xF4,
-        ];
-        make_v6_dx_archive(&key, files, 932, true).bytes
-    }
-
-    fn v8_key_string(name: &str) -> &'static [u8] {
-        use crate::engines::wolf::decrypt::legacy_xor::WOLF_V8_KEY_STRINGS;
-        WOLF_V8_KEY_STRINGS
-            .iter()
-            .find(|(n, _, _)| *n == name)
-            .map(|&(_, _, k)| k)
-            .unwrap()
-    }
-
-    fn game_with_root_archive(archive: &[u8]) -> tempfile::TempDir {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("Data.wolf"), archive).unwrap();
-        dir
-    }
-
-    /// Regression (Wolf 3.658): UTF-8 data in an archive whose CodePage says 932
-    /// was classified v2.
+    /// Wolf Pro game without `SysDatabase.dat` (ポンコツ 3.714): the encoding
+    /// comes from `DataBase.dat`.
     #[test]
-    fn test_guess_wolf_version_archive_utf8_database_with_code_page_932() {
+    fn test_guess_wolf_version_from_database_dat_alone() {
         use crate::engines::wolf::dat_parser::DB_MAGIC_UTF8;
-        use crate::engines::wolf::decrypt::legacy_xor::test_archives::DxFile;
 
-        let db = database_bytes(&DB_MAGIC_UTF8);
-        let files = [
-            DxFile {
-                dir: Some("BasicData"),
-                name: "SysDatabase.dat",
-                content: &db,
-                compress: false,
-            },
-            DxFile {
-                dir: None,
-                name: "Game.dat",
-                content: b"game",
-                compress: false,
-            },
-        ];
-        let game = game_with_root_archive(&v6_archive(&files));
+        let game = game_with_databases(&[
+            ("DataBase.project", b"project".to_vec()),
+            ("DataBase.dat", database_bytes(&DB_MAGIC_UTF8)),
+        ]);
         assert_eq!(
-            guess_wolf_version_from_structure(game.path()),
+            guess_wolf_version_from_structure(game.path()).unwrap(),
             WolfVersion { major: 3, minor: 0 }
         );
     }
 
     #[test]
-    fn test_guess_wolf_version_archive_sjis_database_with_encrypted_signature() {
+    fn test_guess_wolf_version_from_cdatabase_any_case() {
         use crate::engines::wolf::dat_parser::DB_MAGIC_SJIS;
-        use crate::engines::wolf::decrypt::legacy_xor::test_archives::DxFile;
 
-        let db = database_bytes(&DB_MAGIC_SJIS);
-        let files = [DxFile {
-            dir: Some("BasicData"),
-            name: "DataBase.dat",
-            content: &db,
-            compress: true,
-        }];
-        let game = game_with_root_archive(&v6_archive(&files));
+        let game = game_with_databases(&[("cdatabase.DAT", database_bytes(&DB_MAGIC_SJIS))]);
         assert_eq!(
-            guess_wolf_version_from_structure(game.path()),
+            guess_wolf_version_from_structure(game.path()).unwrap(),
             WolfVersion { major: 2, minor: 0 }
         );
     }
 
-    /// Split layout: `Data/BasicData.wolf` holds the databases at its root and is
-    /// read in preference to the other archives.
+    /// An unreadable `SysDatabase.dat` (unknown magic) does not hide the next base.
     #[test]
-    fn test_guess_wolf_version_prefers_basic_data_archive() {
-        use crate::engines::wolf::dat_parser::{DB_MAGIC_SJIS, DB_MAGIC_UTF8};
-        use crate::engines::wolf::decrypt::legacy_xor::test_archives::DxFile;
+    fn test_guess_wolf_version_skips_an_unreadable_database() {
+        use crate::engines::wolf::dat_parser::DB_MAGIC_UTF8;
 
-        let utf8 = database_bytes(&DB_MAGIC_UTF8);
-        let sjis = database_bytes(&DB_MAGIC_SJIS);
-        let dir = tempfile::tempdir().unwrap();
-        let data = dir.path().join("Data");
-        std::fs::create_dir_all(&data).unwrap();
-        let basic = [DxFile {
-            dir: None,
-            name: "SysDatabase.dat",
-            content: &utf8,
-            compress: false,
-        }];
-        let other = [DxFile {
-            dir: None,
-            name: "SysDatabase.dat",
-            content: &sjis,
-            compress: false,
-        }];
-        std::fs::write(data.join("BasicData.wolf"), v6_archive(&basic)).unwrap();
-        std::fs::write(data.join("AnotherData.wolf"), v6_archive(&other)).unwrap();
+        let game = game_with_databases(&[
+            ("SysDatabase.dat", b"garbage".to_vec()),
+            ("CDataBase.dat", database_bytes(&DB_MAGIC_UTF8)),
+        ]);
         assert_eq!(
-            guess_wolf_version_from_structure(dir.path()),
+            guess_wolf_version_from_structure(game.path()).unwrap(),
             WolfVersion { major: 3, minor: 0 }
         );
     }
 
+    /// No readable database: refused, never a Shift-JIS default (replaces the
+    /// former `test_guess_wolf_version_no_signal_defaults_to_v2`).
     #[test]
-    fn test_guess_wolf_version_v8_crypt_version_without_database() {
-        use crate::engines::wolf::decrypt::legacy_xor::test_archives::{
-            make_v8_dx_archive, DxFile,
-        };
-
-        let files = [DxFile {
-            dir: None,
-            name: "Game.dat",
-            content: b"game",
-            compress: false,
-        }];
-        let v3 = game_with_root_archive(&make_v8_dx_archive(v8_key_string("v3.14"), 314, &files));
-        assert_eq!(
-            guess_wolf_version_from_structure(v3.path()),
-            WolfVersion { major: 3, minor: 0 }
-        );
-        let v2 = game_with_root_archive(&make_v8_dx_archive(v8_key_string("v2.225"), 0, &files));
-        assert_eq!(
-            guess_wolf_version_from_structure(v2.path()),
-            WolfVersion { major: 2, minor: 0 }
-        );
+    fn test_guess_wolf_version_without_database_is_an_error() {
+        let empty = tempfile::tempdir().unwrap();
+        let only_events = game_with_databases(&[
+            ("CommonEvent.dat", b"events".to_vec()),
+            ("SysDatabase.dat", b"garbage".to_vec()),
+        ]);
+        for game in [&empty, &only_events] {
+            match guess_wolf_version_from_structure(game.path()) {
+                Err(error @ WolfVersionError::NoDatabase) => {
+                    assert!(error.to_string().starts_with(WOLF_NO_DATABASE), "{error}");
+                }
+                Ok(version) => panic!("expected NoDatabase, got {version:?}"),
+            }
+        }
     }
 
-    /// A 3.31+ archive cannot be read, but its plaintext crypt version still says v3.
+    /// An archive is never read for the encoding: a packed game has no version.
     #[test]
-    fn test_guess_wolf_version_unreadable_new_crypt_archive_is_v3() {
-        let mut header = vec![0u8; 64];
-        header[0..4].copy_from_slice(&[b'D', b'X', 8, 0]);
-        header[44..48].copy_from_slice(&(350u32 << 16).to_le_bytes());
-        let game = game_with_root_archive(&header);
-        assert_eq!(
-            guess_wolf_version_from_structure(game.path()),
-            WolfVersion { major: 3, minor: 0 }
-        );
-    }
-
-    #[test]
-    fn test_guess_wolf_version_no_signal_defaults_to_v2() {
-        let dir = tempfile::tempdir().unwrap();
-        assert_eq!(
-            guess_wolf_version_from_structure(dir.path()),
-            WolfVersion { major: 2, minor: 0 }
-        );
+    fn test_guess_wolf_version_ignores_archives() {
+        let game = tempfile::tempdir().unwrap();
+        std::fs::write(game.path().join("Data.wolf"), b"DX\x08\x00").unwrap();
+        assert!(guess_wolf_version_from_structure(game.path()).is_err());
     }
 }
