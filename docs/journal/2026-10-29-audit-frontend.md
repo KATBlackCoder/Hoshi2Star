@@ -68,6 +68,10 @@
 - Leçon ajoutée dans `tasks/lessons.md` (2026-10-29, mesurer d'abord dans l'app réelle).
 - Rien n'a été écrit en base ; aucun code applicatif n'a été modifié. L'app de dev a été relancée sans la variable, sur `main`.
 - Non vérifié : l'affichage réel à l'écran sans la variable (à confirmer par l'utilisateur) ; G1 avec le rendu accéléré.
+- **Correctif du script de dev** (branche `fix/tauri-linux-wayland`) : l'utilisateur a confirmé que l'app lancée sans `WEBKIT_DISABLE_DMABUF_RENDERER=1` est plus rapide.
+  - `tauri:linux` ne garde que `__NV_DISABLE_EXPLICIT_SYNC=1`, et le nouveau script `tauri:linux:x11` reprend l'ancien réglage ;
+  - `CLAUDE.md` et `CONTEXT.md` sont mis à jour ;
+  - vérifié : `package.json` lisible par Node, diff relu. Le script lui-même n'a pas été relancé : l'utilisateur a tapé la même commande à la main. Gate applicatif non exécuté (aucun code de l'app modifié).
 
 ---
 *Journal partagé Codex / Claude — Hoshi2Star*

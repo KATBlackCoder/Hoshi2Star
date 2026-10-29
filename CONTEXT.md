@@ -248,6 +248,10 @@ git branch -d <branche>
 ❌  WEBKIT_DISABLE_DMABUF_RENDERER non défini sur GPU NVIDIA (fenêtre blanche, X11)
 ✅  export __NV_DISABLE_EXPLICIT_SYNC=1  dans ~/.config/fish/config.fish (Wayland — env actuel)
    ou export WEBKIT_DISABLE_DMABUF_RENDERER=1  (X11 uniquement)
+   → scripts : `pnpm tauri:linux` (Wayland) ; `pnpm tauri:linux:x11` (X11)
+
+❌  WEBKIT_DISABLE_DMABUF_RENDERER=1 sous Wayland : rendu non accéléré, grille ~5× plus lente
+   (95 ms contre 19 ms par frame, docs/benchmarks/2026-10-29-grid-app-reelle.md)
 
 ❌  cargo build sans .cargo/config.toml → marshal-rs échoue (gxhash exige AES+SSE2)
 ✅  .cargo/config.toml à la racine avec rustflags = ["-C", "target-cpu=native"]

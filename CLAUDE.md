@@ -83,7 +83,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 # Development
 pnpm tauri dev                  # Start Vite dev server + Tauri window
-pnpm tauri:linux                # Linux dev with WebKit/NVIDIA workarounds
+pnpm tauri:linux                # Linux dev, Wayland + NVIDIA (accelerated WebKit rendering)
+pnpm tauri:linux:x11            # Linux dev, X11 + NVIDIA (disables the DMABUF renderer — slow)
 
 # Build
 pnpm tauri build                # Production bundle
@@ -185,7 +186,8 @@ const result = await invoke<MyType>('my_command', { param: 'value' })
 **Linux GPU workarounds** (CachyOS, NVIDIA):
 - Wayland (session actuelle): `export __NV_DISABLE_EXPLICIT_SYNC=1`
 - X11: `export WEBKIT_DISABLE_DMABUF_RENDERER=1`
-- Or use `pnpm tauri:linux` (configured for Wayland)
+- Or use `pnpm tauri:linux` (Wayland) / `pnpm tauri:linux:x11` (X11)
+- Never set `WEBKIT_DISABLE_DMABUF_RENDERER=1` on Wayland: it turns off accelerated rendering and makes the segment grid scroll ~5× slower (95 ms vs 19 ms per frame, `docs/benchmarks/2026-10-29-grid-app-reelle.md`)
 
 ---
 
