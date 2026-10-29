@@ -142,7 +142,7 @@ export default function App() {
                         searchActive ? (
                           <GlobalSearchResults />
                         ) : (
-                          <SegmentGrid highlightPlaceholders />
+                          <SegmentGrid />
                         )
                       ) : (
                         <ProjectList />

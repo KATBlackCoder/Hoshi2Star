@@ -9,6 +9,8 @@ import {
   DEFAULT_OLLAMA_MODEL,
   DEFAULT_OLLAMA_URL,
 } from "@/lib/constants";
+import { errorMessage } from "@/lib/utils";
+import { EVENTS } from "@/lib/events";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -34,6 +36,18 @@ export interface RunSummary {
   cancelled: boolean;
   /** Other rows of the same name (earlier fallbacks) given this run's translation. */
   repaired: number;
+}
+
+/**
+ * Whether a model is configured; if not, says so in a `level` notice.
+ * Every "translate" action checks it before starting a run.
+ */
+export function ensureModelConfigured(
+  level: "error" | "warning" = "error",
+): boolean {
+  if (useLlmStore.getState().providerConfig.model.trim()) return true;
+  toast[level](t("segmentGrid.noModelConfigured"));
+  return false;
 }
 
 /**
@@ -121,20 +135,20 @@ async function setupTranslationListeners(
   }
 
   fns.push(
-    await listen<ProgressPayload>("h2s://llm/progress", (event) => {
+    await listen<ProgressPayload>(EVENTS.llmProgress, (event) => {
       opts.onProgress(event.payload.done, event.payload.total);
     }),
   );
 
   fns.push(
-    await listen<RunSummary>("h2s://llm/completed", (event) => {
+    await listen<RunSummary>(EVENTS.llmCompleted, (event) => {
       opts.onCompleted(event.payload);
       teardown();
     }),
   );
 
   fns.push(
-    await listen<LlmErrorPayload>("h2s://llm/error", (event) => {
+    await listen<LlmErrorPayload>(EVENTS.llmError, (event) => {
       opts.onError(event.payload);
       teardown();
     }),
@@ -143,7 +157,7 @@ async function setupTranslationListeners(
   if (opts.onCooling) {
     const onCooling = opts.onCooling;
     fns.push(
-      await listen<CoolingPayload>("h2s://llm/cooling", (event) => {
+      await listen<CoolingPayload>(EVENTS.llmCooling, (event) => {
         onCooling(event.payload.remainingSecs);
       }),
     );
@@ -221,29 +235,30 @@ export function notifyRunError(payload: LlmErrorPayload): void {
 // Store
 // ---------------------------------------------------------------------------
 
-export const useLlmStore = create<LlmState>()((set, get) => ({
-  isTranslating: false,
-  translationProgress: -1,
-  providerConfig: { ...DEFAULT_CONFIG },
-  error: null,
-  translationStartTime: null,
-  isCooling: false,
-  cooldownRemaining: 0,
-  isCancelling: false,
+export const useLlmStore = create<LlmState>()((set, get) => {
+  /** Run state once a run ends, whatever the way (event or failed launch). */
+  const idle = {
+    isTranslating: false,
+    isCancelling: false,
+    isCooling: false,
+    cooldownRemaining: 0,
+  };
 
-  setProviderConfig: (cfg) =>
-    set((s) => ({ providerConfig: { ...s.providerConfig, ...cfg } })),
-
-  startTimer: () => set({ translationStartTime: Date.now() }),
-
-  stopTimer: () => set({ translationStartTime: null }),
-
-  startTranslation: async (segmentIds, fileId) => {
+  /**
+   * Shared by both entry points: one run at a time, one set of listeners
+   * (torn down on completed/error), one notice per run. `withCooling` listens
+   * to the automatic cooldown of "Translate all".
+   */
+  async function runTranslation(
+    command: string,
+    args: Record<string, unknown>,
+    withCooling: boolean,
+  ): Promise<void> {
     if (get().isTranslating) return;
 
     set({
+      ...idle,
       isTranslating: true,
-      isCancelling: false,
       translationProgress: 0,
       error: null,
     });
@@ -258,142 +273,92 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
       },
       onCompleted: (summary) => {
         get().stopTimer();
-        set({
-          isTranslating: false,
-          isCancelling: false,
-          translationProgress: 100,
-          isCooling: false,
-          cooldownRemaining: 0,
-        });
+        set({ ...idle, translationProgress: 100 });
         notifyRunCompleted(summary);
         activeTeardown = null;
       },
       onError: (payload) => {
         get().stopTimer();
-        set({
-          isTranslating: false,
-          isCancelling: false,
-          translationProgress: -1,
-          isCooling: false,
-          cooldownRemaining: 0,
-          error: payload.message,
-        });
+        set({ ...idle, translationProgress: -1, error: payload.message });
         notifyRunError(payload);
         activeTeardown = null;
       },
+      onCooling: withCooling
+        ? (remainingSecs) =>
+            set({
+              isCooling: remainingSecs > 0,
+              cooldownRemaining: remainingSecs,
+            })
+        : undefined,
     });
 
     try {
-      await invoke("translate_segments", {
-        ids: segmentIds,
-        fileId: fileId ?? null,
-        providerConfig: get().providerConfig,
-      });
+      await invoke(command, { ...args, providerConfig: get().providerConfig });
     } catch (err) {
-      set({
-        isTranslating: false,
-        translationProgress: -1,
-        error: err instanceof Error ? err.message : String(err),
-      });
+      set({ ...idle, translationProgress: -1, error: errorMessage(err) });
       activeTeardown?.();
       activeTeardown = null;
     }
-  },
+  }
 
-  startTranslateAll: async (projectId, thresholdMins, cooldownMins) => {
-    if (get().isTranslating) return;
+  return {
+    isTranslating: false,
+    translationProgress: -1,
+    providerConfig: { ...DEFAULT_CONFIG },
+    error: null,
+    translationStartTime: null,
+    isCooling: false,
+    cooldownRemaining: 0,
+    isCancelling: false,
 
-    set({
-      isTranslating: true,
-      isCancelling: false,
-      translationProgress: 0,
-      error: null,
-      isCooling: false,
-      cooldownRemaining: 0,
-    });
-    get().startTimer();
+    setProviderConfig: (cfg) =>
+      set((s) => ({ providerConfig: { ...s.providerConfig, ...cfg } })),
 
-    activeTeardown?.();
+    startTimer: () => set({ translationStartTime: Date.now() }),
 
-    activeTeardown = await setupTranslationListeners({
-      onProgress: (done, total) => {
-        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-        set({ translationProgress: pct });
-      },
-      onCompleted: (summary) => {
-        get().stopTimer();
-        set({
-          isTranslating: false,
-          isCancelling: false,
-          translationProgress: 100,
-          isCooling: false,
-          cooldownRemaining: 0,
-        });
-        notifyRunCompleted(summary);
-        activeTeardown = null;
-      },
-      onError: (payload) => {
-        get().stopTimer();
-        set({
-          isTranslating: false,
-          isCancelling: false,
-          translationProgress: -1,
-          isCooling: false,
-          cooldownRemaining: 0,
-          error: payload.message,
-        });
-        notifyRunError(payload);
-        activeTeardown = null;
-      },
-      onCooling: (remainingSecs) => {
-        set({ isCooling: remainingSecs > 0, cooldownRemaining: remainingSecs });
-      },
-    });
+    stopTimer: () => set({ translationStartTime: null }),
 
-    try {
-      await invoke("translate_all_segments", {
-        projectId,
-        providerConfig: get().providerConfig,
-        cooldownThresholdSecs: thresholdMins * 60,
-        cooldownDurationSecs: cooldownMins * 60,
-      });
-    } catch (err) {
+    startTranslation: (segmentIds, fileId) =>
+      runTranslation(
+        "translate_segments",
+        { ids: segmentIds, fileId: fileId ?? null },
+        false,
+      ),
+
+    startTranslateAll: (projectId, thresholdMins, cooldownMins) =>
+      runTranslation(
+        "translate_all_segments",
+        {
+          projectId,
+          cooldownThresholdSecs: thresholdMins * 60,
+          cooldownDurationSecs: cooldownMins * 60,
+        },
+        true,
+      ),
+
+    cancelTranslation: async () => {
+      if (!get().isTranslating || get().isCancelling) return;
+      set({ isCancelling: true });
+      try {
+        await invoke("cancel_translation");
+      } catch (err) {
+        set({ isCancelling: false });
+        toast.error(errorMessage(err), { id: RUN_TOAST_ID });
+      }
+    },
+
+    reset: () =>
       set({
         isTranslating: false,
+        isCancelling: false,
         translationProgress: -1,
+        error: null,
+        translationStartTime: null,
         isCooling: false,
         cooldownRemaining: 0,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      activeTeardown?.();
-      activeTeardown = null;
-    }
-  },
-
-  cancelTranslation: async () => {
-    if (!get().isTranslating || get().isCancelling) return;
-    set({ isCancelling: true });
-    try {
-      await invoke("cancel_translation");
-    } catch (err) {
-      set({ isCancelling: false });
-      toast.error(err instanceof Error ? err.message : String(err), {
-        id: RUN_TOAST_ID,
-      });
-    }
-  },
-
-  reset: () =>
-    set({
-      isTranslating: false,
-      isCancelling: false,
-      translationProgress: -1,
-      error: null,
-      translationStartTime: null,
-      isCooling: false,
-      cooldownRemaining: 0,
-    }),
-}));
+      }),
+  };
+});
 
 // Selectors
 export const useIsTranslating = () => useLlmStore((s) => s.isTranslating);

@@ -1,7 +1,6 @@
-import type { ReactNode } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { renderWithQuery } from "@/test/renderWithQuery";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -73,18 +72,6 @@ const STATS: TerminologyStats = {
   globalTranslations: 0,
 };
 
-function wrapper({ children }: { children: ReactNode }) {
-  return (
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
-      {children}
-    </QueryClientProvider>
-  );
-}
-
 beforeEach(() => {
   useProjectStore.setState({ projects: [PROJECT], activeProjectId: "p1" });
   useTerminologyUiStore.setState({
@@ -112,7 +99,7 @@ describe("TerminologyWorkspace", () => {
           ? STATS
           : null,
     );
-    render(<TerminologyWorkspace />, { wrapper });
+    renderWithQuery(<TerminologyWorkspace />);
     expect(
       await screen.findByText("Aucun terme dans cette vue"),
     ).toBeInTheDocument();
@@ -131,7 +118,7 @@ describe("TerminologyWorkspace", () => {
       }
       return null;
     });
-    render(<TerminologyWorkspace />, { wrapper });
+    renderWithQuery(<TerminologyWorkspace />);
     expect(await screen.findByText("Hero")).toBeInTheDocument();
     await userEvent.click(
       screen.getByRole("checkbox", { name: "Sélectionner 勇者" }),
@@ -162,7 +149,7 @@ describe("TerminologyWorkspace", () => {
       }
       return null;
     });
-    render(<TerminologyWorkspace />, { wrapper });
+    renderWithQuery(<TerminologyWorkspace />);
 
     await screen.findByText("Hero");
     await userEvent.click(
@@ -200,7 +187,7 @@ describe("TerminologyWorkspace", () => {
       }
       return null;
     });
-    render(<TerminologyWorkspace />, { wrapper });
+    renderWithQuery(<TerminologyWorkspace />);
 
     await screen.findByText("Hero");
     await userEvent.click(
@@ -236,7 +223,7 @@ describe("TerminologyWorkspace", () => {
       if (cmd === "get_terminology_stats") return STATS;
       return null;
     });
-    render(<TerminologyWorkspace />, { wrapper });
+    renderWithQuery(<TerminologyWorkspace />);
     await screen.findByText("Aucun terme dans cette vue");
     await userEvent.click(screen.getByRole("combobox", { name: "Nature" }));
     await userEvent.click(screen.getByRole("option", { name: "Verbe" }));
@@ -271,7 +258,7 @@ describe("TerminologyWorkspace", () => {
       }
       return null;
     });
-    render(<TerminologyWorkspace />, { wrapper });
+    renderWithQuery(<TerminologyWorkspace />);
     await screen.findByText("Hero");
     await userEvent.click(
       screen.getByRole("button", { name: "Rendre 勇者 global" }),
@@ -297,7 +284,7 @@ describe("TerminologyWorkspace", () => {
       if (cmd === "get_terminology_stats") return STATS;
       return null;
     });
-    render(<TerminologyWorkspace />, { wrapper });
+    renderWithQuery(<TerminologyWorkspace />);
     expect(
       await screen.findByText("Impossible de charger la terminologie"),
     ).toBeInTheDocument();
@@ -313,7 +300,7 @@ describe("TerminologyWorkspace", () => {
         ? { items: [], total: 0, page: 0, pageSize: 100 }
         : STATS,
     );
-    render(<TerminologyWorkspace />, { wrapper });
+    renderWithQuery(<TerminologyWorkspace />);
     expect(
       await screen.findByRole("button", { name: "Analyser le vocabulaire" }),
     ).toBeDisabled();

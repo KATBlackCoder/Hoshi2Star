@@ -1,7 +1,11 @@
 import { BookOpenCheck, Languages, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { PartOfSpeech, TerminologyEntryStatus } from "@/lib/types";
+import type {
+  PartOfSpeech,
+  TerminologyEntryStatus,
+  TerminologyScope,
+} from "@/lib/types";
 import { useTranslation } from "react-i18next";
 import { TerminologySelect } from "./TerminologySelect";
 import {
@@ -21,8 +25,8 @@ export function TerminologyToolbar(props: {
   targetLanguage: string;
   onTargetLanguage: (value: string) => void;
   projectAvailable: boolean;
-  scope: "project" | "global";
-  onScope: (value: "project" | "global") => void;
+  scope: TerminologyScope;
+  onScope: (value: TerminologyScope) => void;
   canScan: boolean;
   scanDisabledReason?: string;
   scanning: boolean;
@@ -101,7 +105,7 @@ export function TerminologyToolbar(props: {
         label={t("terminology.scope")}
         value={props.projectAvailable ? props.scope : "global"}
         disabled={!props.projectAvailable}
-        onChange={(value) => props.onScope(value as "project" | "global")}
+        onChange={(value) => props.onScope(value as TerminologyScope)}
         options={[
           ["project", t("terminology.project")],
           ["global", t("terminology.global")],

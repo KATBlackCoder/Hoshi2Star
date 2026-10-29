@@ -1,6 +1,6 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { renderWithQuery } from "@/test/renderWithQuery";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import { TerminologyInspector } from "@/components/editor/TerminologyInspector";
@@ -33,14 +33,7 @@ describe("TerminologyInspector", () => {
         },
       ];
     });
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    render(
-      <QueryClientProvider client={client}>
-        <TerminologyInspector projectId="p1" langPair="ja-en" />
-      </QueryClientProvider>,
-    );
+    renderWithQuery(<TerminologyInspector projectId="p1" langPair="ja-en" />);
 
     expect(await screen.findByText("勇者")).toBeInTheDocument();
     expect(screen.getByText("Hero")).toBeInTheDocument();

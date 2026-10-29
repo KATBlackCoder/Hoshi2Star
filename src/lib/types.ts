@@ -329,6 +329,23 @@ export interface TerminologyScanDone {
   error: string | null;
 }
 
+/** Where a terminology translation is stored. */
+export type TerminologyScope = "project" | "global";
+
+/** `h2s://terminology/translate-progress` */
+export interface TerminologyTranslateProgress {
+  jobId: string;
+  processed: number;
+  total: number;
+}
+
+/** `h2s://terminology/translate-done` */
+export interface TerminologyTranslateDone {
+  jobId: string;
+  summary: { translated: number; scopesWritten: number } | null;
+  error: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // .h2s exchange pack (share/resume a translation)
 // ---------------------------------------------------------------------------

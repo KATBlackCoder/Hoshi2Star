@@ -55,18 +55,26 @@ typecheck OK, lint 0 erreur / 10 avertissements, Vitest 158/158.
 - [x] I6 : `invalidateSegmentViews` après chaque écriture ; `activeSegmentId` dans la clé `qa-check`.
 - [x] I7 : `loadSettings` lit ses clés en parallèle.
 - [x] Gate P3 (2026-10-29) : typecheck OK ; lint 0 erreur / 10 avertissements ; Vitest 174/174.
-- [ ] Push, PR vers `perf/fe-p2-rerenders`.
+- [x] Push, PR vers `perf/fe-p2-rerenders` : [#30](https://github.com/KATBlackCoder/Hoshi2Star/pull/30) (`0287ff7`).
 
 ### P5 — doublons et code mort (`refactor/fe-p5-duplicates`, depuis P3)
 
-- [ ] D1 `runTranslation` + `errorMessage` dans `lib/` ; D2 `createDialogStore`, `DialogStatus`, `BusyButton` ;
-  D3 `useTauriEvent`, `EVENTS`, `scheduleFrame/cancelFrame` ; D4 `InspectorPanel`/`PanelNotice` ; D5 classes
-  et largeurs de colonnes partagées ; D6 `useExportToFile` réutilisé, `H2S_FILTER` ; D7 `renderWithQuery` ;
-  D8 `ensureModelConfigured` ; D9 types de terminologie ; D10 (déjà couvert par P3, à vérifier) ; D11
-  `StatusBadge` dans le pied de grille. Chaque abstraction gardée seulement si le diff est net négatif.
-- [ ] §8 : prop `highlightPlaceholders`, sélecteurs jamais importés, clés `llmModal.*` ; autres clés i18n
-  supprimées seulement après vérification qu'aucune n'est construite dynamiquement.
-- [ ] Aucun changement visible ; gate P5, push, PR vers `perf/fe-p3-ipc`.
+- [x] D1 `runTranslation` + `errorMessage` dans `lib/utils.ts`.
+- [ ] D2 non fait : aucun gain de lignes (essayé puis annulé), blocs visuels différents d'un dialogue à l'autre.
+- [x] D3 `EVENTS`, `scheduleFrame/cancelFrame`, `useTauriEvent` (abonnements liés au montage).
+- [ ] D4 non fait : en-têtes et états vides aux classes différentes ; pas de réduction sans changement visible.
+- [x] D5 classes de colonnes de la grille dans `columnDef.meta` (recherche et terminologie : colonnes différentes).
+- [x] D6 `useExportToFile` réutilisé par `PackExportDialog`, `H2S_FILTER`.
+- [x] D7 `renderWithQuery`.
+- [x] D8 `ensureModelConfigured`.
+- [x] D9 types de terminologie dans `lib/types.ts`.
+- [x] D10 fait par P3.
+- [x] D11 `StatusBadge` (avec `count`) dans le pied de grille.
+- [x] §8 : prop `highlightPlaceholders`, sélecteurs jamais importés, `llmModal.*` et 11 autres clés i18n sans
+  lecteur (préfixes dynamiques vérifiés) ; `getProjectLangPair` gardé pour F4.
+- [x] Gate P5 (2026-10-29) : typecheck OK ; lint 0 erreur / 10 avertissements ; Vitest 174/174 ; diff −155
+  lignes (−107 hors `locales/`).
+- [ ] Push, PR vers `perf/fe-p3-ipc`.
 
 ### P6 — défauts fonctionnels (`fix/fe-p6-defects`, depuis P5), un test de régression chacun
 

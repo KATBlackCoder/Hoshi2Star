@@ -1,8 +1,5 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { save } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
-import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import {
   AlertDialog,
@@ -16,6 +13,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { PackExportSummary } from "@/lib/types";
+import { H2S_FILTER } from "@/lib/constants";
+import { useExportToFile } from "@/hooks/useExportToFile";
 
 interface PackExportDialogProps {
   open: boolean;
@@ -40,41 +39,25 @@ export function PackExportDialog({
 }: PackExportDialogProps) {
   const { t } = useTranslation();
   const [includeTm, setIncludeTm] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
+  const { isExporting, exportToFile } = useExportToFile();
 
   async function handleExport() {
-    let path: string | null;
-    try {
-      path = await save({
+    const exported = await exportToFile<PackExportSummary>({
+      dialog: {
         title: t("pack.exportTitle"),
         defaultPath: `${projectName}.h2s`,
-        filters: [{ name: "Hoshi2Star pack", extensions: ["h2s"] }],
-      });
-    } catch (e) {
-      toast.error(t("pack.exportError", { error: String(e) }));
-      return;
-    }
-    if (!path) return;
-    setIsExporting(true);
-    try {
-      const summary = await invoke<PackExportSummary>("export_h2s_pack", {
-        projectId,
-        outputPath: path,
-        includeTm,
-        langPair,
-      });
-      toast.success(
-        t("pack.exportDone", {
-          segments: summary.segmentCount,
-          files: summary.fileCount,
-        }),
-      );
-      onClose();
-    } catch (e) {
-      toast.error(t("pack.exportError", { error: String(e) }));
-    } finally {
-      setIsExporting(false);
-    }
+        filters: [H2S_FILTER],
+      },
+      command: "export_h2s_pack",
+      args: { projectId, includeTm, langPair },
+      successKey: "pack.exportDone",
+      successParams: (summary) => ({
+        segments: summary.segmentCount,
+        files: summary.fileCount,
+      }),
+      errorKey: "pack.exportError",
+    });
+    if (exported) onClose();
   }
 
   return (

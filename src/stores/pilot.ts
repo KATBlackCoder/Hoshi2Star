@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { create } from "zustand";
+import { errorMessage } from "@/lib/utils";
+import { EVENTS } from "@/lib/events";
 import type {
   PilotPhase,
   PilotProgressPayload,
@@ -36,10 +38,6 @@ interface PilotState {
 }
 
 let activeProgressUnlisten: UnlistenFn | null = null;
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 export const usePilotStore = create<PilotState>()((set, get) => ({
   isOpen: false,
@@ -89,7 +87,7 @@ export const usePilotStore = create<PilotState>()((set, get) => ({
 
     try {
       activeProgressUnlisten = await listen<PilotProgressPayload>(
-        "h2s://pilot/progress",
+        EVENTS.pilotProgress,
         (event) => set({ progress: event.payload }),
       );
       const report = await invoke<PilotRunReport>("run_mv_mz_pilot", {

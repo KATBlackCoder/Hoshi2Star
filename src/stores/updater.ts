@@ -140,8 +140,6 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
 // Selectors
 // ---------------------------------------------------------------------------
 
-export const useUpdaterStatus = () => useUpdaterStore((s) => s.status);
-
 /** Download progress in [0, 100], or 0 when the total size is unknown. */
 export const useUpdaterProgress = () =>
   useUpdaterStore((s) =>

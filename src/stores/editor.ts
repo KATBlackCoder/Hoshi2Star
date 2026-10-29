@@ -41,7 +41,6 @@ export const useEditorStore = create<EditorState>()((set) => ({
 }));
 
 // Selectors
-export const useActiveFileId = () => useEditorStore((s) => s.activeFileId);
 export const useActiveSegmentId = () =>
   useEditorStore((s) => s.activeSegmentId);
 export const useActiveSegmentSourceText = () =>

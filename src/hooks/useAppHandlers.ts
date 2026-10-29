@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { useProjectStore } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
-import { useLlmStore } from "@/stores/llm";
+import { ensureModelConfigured, useLlmStore } from "@/stores/llm";
 import type {
   DebugExport,
   ExportPreflight,
@@ -206,8 +206,7 @@ export function useAppHandlers() {
 
   async function handleTranslateAll() {
     if (!activeProjectId) return;
-    if (!useLlmStore.getState().providerConfig.model.trim()) {
-      toast.warning(t("segmentGrid.noModelConfigured"));
+    if (!ensureModelConfigured("warning")) {
       setShowSettings(true);
       return;
     }
@@ -232,8 +231,7 @@ export function useAppHandlers() {
   }
 
   function handleTranslate() {
-    if (!useLlmStore.getState().providerConfig.model.trim()) {
-      toast.warning(t("segmentGrid.noModelConfigured"));
+    if (!ensureModelConfigured("warning")) {
       setShowSettings(true);
       return;
     }

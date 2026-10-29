@@ -37,6 +37,7 @@ import {
 } from "@/stores/llm";
 import { UpdateBadge } from "@/components/UpdateBadge";
 import { PackExportDialog } from "@/components/PackExportDialog";
+import { H2S_FILTER } from "@/lib/constants";
 import { PackImportWizard } from "@/components/PackImportWizard";
 import type { ImportPreview } from "@/lib/types";
 import { usePilotStore } from "@/stores/pilot";
@@ -210,7 +211,7 @@ export function AppToolbar({
     const selected = await open({
       multiple: false,
       title: t("pack.importPick"),
-      filters: [{ name: "Hoshi2Star pack", extensions: ["h2s"] }],
+      filters: [H2S_FILTER],
     });
     if (!selected) return;
     setIsPreviewingPack(true);

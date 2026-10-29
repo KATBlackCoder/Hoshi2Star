@@ -1,6 +1,6 @@
-import { useEffect } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { EVENTS } from "@/lib/events";
 import { invalidateSegmentViews } from "@/lib/queryClient";
+import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { runWroteSegments, type RunSummary } from "@/stores/llm";
 import { refreshProjectData, useProjectStore } from "@/stores/project";
 
@@ -11,21 +11,14 @@ import { refreshProjectData, useProjectStore } from "@/stores/project";
  * Each view still reloads its own rows (grid, search results).
  */
 export function useProjectDataSync(): void {
-  useEffect(() => {
-    const refresh = () => {
-      const projectId = useProjectStore.getState().activeProjectId;
-      if (projectId) void refreshProjectData(projectId);
-      else invalidateSegmentViews();
-    };
-    const unlisteners = [
-      listen<RunSummary>("h2s://llm/completed", (event) => {
-        if (runWroteSegments(event.payload)) refresh();
-      }),
-      listen("h2s://project/import-done", refresh),
-      listen("h2s://project/resynced", refresh),
-    ];
-    return () => {
-      for (const unlisten of unlisteners) void unlisten.then((fn) => fn());
-    };
-  }, []);
+  const refresh = () => {
+    const projectId = useProjectStore.getState().activeProjectId;
+    if (projectId) void refreshProjectData(projectId);
+    else invalidateSegmentViews();
+  };
+  useTauriEvent<RunSummary>(EVENTS.llmCompleted, (summary) => {
+    if (runWroteSegments(summary)) refresh();
+  });
+  useTauriEvent(EVENTS.projectImportDone, refresh);
+  useTauriEvent(EVENTS.projectResynced, refresh);
 }
