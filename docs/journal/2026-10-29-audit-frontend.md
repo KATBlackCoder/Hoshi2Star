@@ -58,5 +58,16 @@
 
 - L'utilisateur valide (ou ajuste) les lots P1 à P6. P1 commence par une mesure en build release sur トロイメライ `CommonEvent.dat`, puis applique les étapes du §3.3 une par une, chacune mesurée.
 
+## Suite (même session) — mesure dans l'app réelle
+
+- Le banc cloud (branche `perf/bench-grid`) et le correctif G1 (branche `perf/grid-scroll`) ont été produits par une session cloud, puis relus en local.
+- Mesure dans la vraie app de dev, pilotée par le pont MCP, sur 12 423 segments réels. Détail : `docs/benchmarks/2026-10-29-grid-app-reelle.md`.
+  - G1 : +12 à +31 % seulement, mais des **zones blanches** (jusqu'à 12 frames sur 60, 553 px) que `main` n'a pas. À ne pas fusionner tel quel.
+  - Grille à environ 10 images par seconde, que ce soit avec G1 ou sur `main`. Les variantes CSS (sans `text-wrap: pretty`, zones de saisie masquées, lignes invisibles) n'y changent rien. Un bloc de test sans React est aussi lent (78 ms par frame).
+  - Sans `WEBKIT_DISABLE_DMABUF_RENDERER=1` (imposé par `pnpm tauri:linux`), la grille passe de 95 ms à **19 ms par frame**, et le bloc de test de 78 ms à 17 ms.
+- Leçon ajoutée dans `tasks/lessons.md` (2026-10-29, mesurer d'abord dans l'app réelle).
+- Rien n'a été écrit en base ; aucun code applicatif n'a été modifié. L'app de dev a été relancée sans la variable, sur `main`.
+- Non vérifié : l'affichage réel à l'écran sans la variable (à confirmer par l'utilisateur) ; G1 avec le rendu accéléré.
+
 ---
 *Journal partagé Codex / Claude — Hoshi2Star*

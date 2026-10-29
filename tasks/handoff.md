@@ -16,7 +16,10 @@
   - `perf/grid-scroll` @ `59bd545` : G1 hybride (`SegmentGrid.tsx` : `useFlushSync: false`, plus un `flushSync` seulement quand la zone visible sort des lignes déjà rendues). Mesure appariée : défilement +28 à +40 %, frames de plus de 50 ms −80 à −93 %, 0 zone vide à 600 et 3 000 px/frame, Tab 40/40 (`docs/benchmarks/2026-10-29-grid-g1.md`). La première version (`3e1513f`, asynchrone seul) produisait des écrans blancs sur les grands sauts : elle a été corrigée par `dd70352`. Diff relu : seul `SegmentGrid.tsx` change dans `src/`, et `instance.range` est une API publique de `virtual-core` 3.15.0 ;
   - `chore/deps-minor` @ `6d4907a` : mises à jour mineures du front-end, à vérifier visuellement.
   - Ces trois branches ajoutent chacune une section en tête de `tasks/todo.md` et une leçon dans `tasks/lessons.md` : petits conflits attendus à la fusion.
-- **Prochaine action :** l'utilisateur fait l'essai réel de `perf/grid-scroll` en local, avec son plus gros fichier : molette lente puis rapide, barre de défilement tirée vite, Page suivante et Fin, puis Tab et saisie sur une vingtaine de lignes. Si c'est bon, G2 (estimation de la hauteur des lignes) en cloud.
+- **Mesure dans l'app réelle (2026-10-29, Claude, pont MCP)** : `docs/benchmarks/2026-10-29-grid-app-reelle.md`.
+  - G1 crée des zones blanches dans la vraie app (jusqu'à 12 frames sur 60, 553 px), alors que `main` n'en a pas : **ne pas fusionner `perf/grid-scroll` tel quel**.
+  - La vraie cause de la lenteur est `WEBKIT_DISABLE_DMABUF_RENDERER=1` dans `pnpm tauri:linux`. Sans cette variable, la grille passe de 95 à 19 ms par frame (10 → 53 images/s).
+- **Prochaine action :** l'utilisateur confirme que la fenêtre lancée sans la variable s'affiche correctement à l'écran. Si c'est le cas : retirer la variable de `tauri:linux` (Wayland), garder une variante X11, corriger `CONTEXT.md`, puis remesurer G1 avec le rendu accéléré.
 
 ## En cours (2026-10-29, Claude) — WF : skipper les textes Wolf non traduisibles
 
