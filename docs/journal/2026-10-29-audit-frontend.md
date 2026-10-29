@@ -72,6 +72,7 @@
   - `tauri:linux` ne garde que `__NV_DISABLE_EXPLICIT_SYNC=1`, et le nouveau script `tauri:linux:x11` reprend l'ancien réglage ;
   - `CLAUDE.md` et `CONTEXT.md` sont mis à jour ;
   - vérifié : `package.json` lisible par Node, diff relu. Le script lui-même n'a pas été relancé : l'utilisateur a tapé la même commande à la main. Gate applicatif non exécuté (aucun code de l'app modifié).
+- **G1 remesuré avec le rendu accéléré** (section 4 de `docs/benchmarks/2026-10-29-grid-app-reelle.md`) : environ 21 ms par frame, contre 20 à 22 ms sur `main`, sans zone blanche des deux côtés. Aucun gain mesurable : **G1 est abandonné** (`perf/grid-scroll`).
 
 ---
 *Journal partagé Codex / Claude — Hoshi2Star*

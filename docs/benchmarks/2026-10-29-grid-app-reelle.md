@@ -64,3 +64,21 @@ L'app a été relancée sur `main` avec seulement `__NV_DISABLE_EXPLICIT_SYNC=1`
 1. Retirer `WEBKIT_DISABLE_DMABUF_RENDERER=1` de `tauri:linux` (Wayland), et garder une variante X11 à part. À faire après confirmation visuelle par l'utilisateur.
 2. Ne pas fusionner G1 en l'état : refaire la mesure des zones blanches avec le rendu accéléré, et corriger le contrôle hybride si elles persistent.
 3. Les lots P2 à P5 de l'audit restent utiles, mais leur gain ressenti sera bien plus faible que celui du point 1.
+
+## 4. G1 remesuré avec le rendu accéléré (après le correctif de `tauri:linux`)
+
+App lancée avec le `pnpm tauri:linux` corrigé (`main` @ `5f2d9ad`), même fichier, même méthode. Chaque mesure enchaîne un passage de chauffe, puis deux passages mesurés de 300 frames. Les deux mesures `main` encadrent la mesure G1 :
+
+| Mesure | `main` (1) | G1 (`59bd545`) | `main` (2) |
+|---|---|---|---|
+| Frame p50 (passages A / B) | 21 / 20 ms | 21 / 21 ms | 22 / 22 ms |
+| Frame p95 | 24 / 24 ms | 25 / 24 ms | 26 / 27 ms |
+| Frames > 33 ms (sur 300) | 1 / 1 | 0 / 0 | 1 / 1 |
+| Gestionnaire de défilement p50 | 17 / 16 ms | **0 ms** | 18 / 18 ms |
+| Zones blanches, sauts de 600 px | 0 / 150 | 0 / 150 | — |
+| Zones blanches, sauts de 3 000 px | 0 / 100 | 0 / 100 | — |
+
+- **Pas de gain mesurable.** G1 sort le rendu React de l'événement de défilement (0 ms au lieu de 17 ms), mais le même travail est fait juste après : la durée des frames ne change pas, l'écart reste dans le bruit des mesures.
+- Avec le rendu accéléré, G1 ne crée plus de zones blanches. Celles de la section 1 venaient de frames de 95 ms.
+- Conclusion : **G1 est abandonné**. Il ajoute de la complexité (`flushSync` conditionnel, plage rendue suivie après chaque commit) sans gain.
+- Le reste du coût est le rendu React d'environ 17 ms par frame en build de dev (`StrictMode`, React en développement). En build de production, ce coût devrait être nettement plus faible : non mesuré.

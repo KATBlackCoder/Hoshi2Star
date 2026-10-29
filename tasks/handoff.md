@@ -23,7 +23,8 @@
   - `tauri:linux` ne met plus que `__NV_DISABLE_EXPLICIT_SYNC=1` ;
   - l'ancien réglage est conservé dans `tauri:linux:x11` ;
   - `CLAUDE.md` et `CONTEXT.md` sont corrigés.
-- **Prochaine action :** remesurer G1 (`perf/grid-scroll`) avec le rendu accéléré (zones blanches, vitesse) avant de décider de le fusionner, de le corriger ou de l'abandonner. Puis choisir la suite de l'audit : P2 (re-rendus), P3 (IPC) ou P5 (doublons).
+- **G1 remesuré avec le rendu accéléré (2026-10-29)** : environ 21 ms par frame, contre 20 à 22 ms sur `main`, sans zone blanche des deux côtés. Aucun gain : **G1 est abandonné** (section 4 de `docs/benchmarks/2026-10-29-grid-app-reelle.md`). La branche `perf/grid-scroll` (locale et `origin`) ne sera supprimée qu'avec l'accord de l'utilisateur.
+- **Prochaine action :** l'utilisateur choisit la suite de l'audit : P2 (re-rendus de toute l'app pendant une traduction), P3 (IPC en double) ou P5 (doublons). `perf/bench-grid` et `chore/deps-minor` restent à décider.
 
 ## En cours (2026-10-29, Claude) — WF : skipper les textes Wolf non traduisibles
 
