@@ -86,7 +86,8 @@ typecheck OK, lint 0 erreur / 10 avertissements, Vitest 158/158.
 - [x] F5 une seule `formatDurationMs` (format du panneau de fichiers gardé, pilote légèrement changé).
 - [x] F6 `relativeDate` et l'`aria-label` de `ScanProgress` en i18n fr/en.
 - [x] F7 textes du segment actif complétés par la grille (ouverture depuis l'ajustement du texte).
-- [x] Gate P6 (2026-10-29) : typecheck OK ; lint 0 erreur / 10 avertissements ; Vitest 186/186.
+- [x] Gate P6 (2026-10-29) : typecheck OK ; lint 0 erreur / 10 avertissements ; Vitest 187/187 (test
+  existant de `ScanProgress` restauré, voir journal).
 - [ ] Push, PR vers `refactor/fe-p5-duplicates`.
 - [ ] Après fusion (utilisateur, en local) : essai de 5 minutes listé dans la PR P6.
 
