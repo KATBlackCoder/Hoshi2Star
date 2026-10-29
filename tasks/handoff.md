@@ -4,6 +4,20 @@
 **Objectif utilisateur :** skipper à l'extraction les textes Wolf non traduisibles, avec toutes les règles réunies dans `engines/wolf/filter.rs` (plan WF).
 **Statut :** `main` @ `585f05b` (PR #27, plan WF, fusionnée le 2026-10-29). Les branches fusionnées et les worktrees UW sont supprimés (2026-10-29). Le plan WF s'écrit sur la branche `docs/wolf-filter-plan` (worktree `../Hoshi2Star-wf`).
 
+## Audit (2026-10-29, Claude, session locale) — front-end : défilement, re-rendus, doublons
+
+- Rapport : `docs/audit/2026-10-29-audit-frontend.md`. Journal : `docs/journal/2026-10-29-audit-frontend.md`. Analyse statique seulement, sur `main` @ `b999c9b` : aucune mesure à l'exécution, aucun code modifié.
+- Défilement lent de la grille (12 423 segments dans le plus gros fichier) : la cause est le rendu, pas le chargement. `flushSync` à chaque scroll, hauteur estimée trop basse (la liste s'allonge pendant la descente), `<textarea>` redimensionné après affichage, `text-wrap: pretty` sur les cellules. Autres constats : re-rendus de toute l'app (stores lus en entier), IPC en double, environ 330 lignes de doublons, 7 défauts fonctionnels.
+- Fichiers non commités (le rapport et le journal sont nouveaux) : à placer sur une branche si l'utilisateur le demande.
+- La section « Étude UberWolfCli sous Linux » (non commitée) a disparu de ce fichier lors des pulls du 2026-10-29. L'utilisateur a refusé de la restaurer (2026-10-29).
+- Banc de mesure demandé par l'utilisateur avant de valider P1, à exécuter en cloud (le PC gèle) : session cloud « Banc de mesure du défilement de la grille », branche `perf/bench-grid`, données synthétiques calibrées sur les vrais fichiers, Playwright Chromium et WebKit, rapport `docs/benchmarks/2026-10-29-grid-baseline.md`. Aucune note automatique à la fin : le résultat est à relever dans son transcript.
+- **Résultat cloud (relu en local le 2026-10-29)**, trois branches poussées, sans PR, non fusionnées :
+  - `perf/bench-grid` @ `6710a1d` : le banc (`bench/`, `pnpm bench:grid`), la mesure de référence (`docs/benchmarks/2026-10-29-grid-baseline.md`), et les scénarios S5 (zones vides) et S6 (Tab) ;
+  - `perf/grid-scroll` @ `59bd545` : G1 hybride (`SegmentGrid.tsx` : `useFlushSync: false`, plus un `flushSync` seulement quand la zone visible sort des lignes déjà rendues). Mesure appariée : défilement +28 à +40 %, frames de plus de 50 ms −80 à −93 %, 0 zone vide à 600 et 3 000 px/frame, Tab 40/40 (`docs/benchmarks/2026-10-29-grid-g1.md`). La première version (`3e1513f`, asynchrone seul) produisait des écrans blancs sur les grands sauts : elle a été corrigée par `dd70352`. Diff relu : seul `SegmentGrid.tsx` change dans `src/`, et `instance.range` est une API publique de `virtual-core` 3.15.0 ;
+  - `chore/deps-minor` @ `6d4907a` : mises à jour mineures du front-end, à vérifier visuellement.
+  - Ces trois branches ajoutent chacune une section en tête de `tasks/todo.md` et une leçon dans `tasks/lessons.md` : petits conflits attendus à la fusion.
+- **Prochaine action :** l'utilisateur fait l'essai réel de `perf/grid-scroll` en local, avec son plus gros fichier : molette lente puis rapide, barre de défilement tirée vite, Page suivante et Fin, puis Tab et saisie sur une vingtaine de lignes. Si c'est bon, G2 (estimation de la hauteur des lignes) en cloud.
+
 ## En cours (2026-10-29, Claude) — WF : skipper les textes Wolf non traduisibles
 
 - Plan : `tasks/todo.md`, « Plan — WF », **validé le 2026-10-29** (WF-D1 à WF-D6 = recommandations). Mesures : `RAE-PLAN/essais/wolf-filtres-proposes.md` (hors Git). Journal : `docs/journal/2026-10-29-plan-wolf-filtres.md`.
