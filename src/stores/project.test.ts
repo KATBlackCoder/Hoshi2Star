@@ -19,6 +19,7 @@ import {
   useProjectStore,
 } from "@/stores/project";
 import type { CoverageView, Project, ProjectStats } from "@/lib/types";
+import i18n from "@/lib/i18n";
 import { useSettingsStore } from "@/stores/settings";
 import { useCoverageStore } from "@/stores/coverage";
 
@@ -102,7 +103,7 @@ beforeEach(() => {
 });
 
 describe("project store — openProject thunk", () => {
-  it("registers the project, sets it active and loads files + stats", async () => {
+  it("registers the project, sets it active and reports the extraction stats", async () => {
     let openArgs: unknown;
     mockIPC((cmd, args) => {
       switch (cmd) {
@@ -126,17 +127,23 @@ describe("project store — openProject thunk", () => {
     const s = useProjectStore.getState();
     expect(s.projects).toHaveLength(1);
     expect(s.activeProjectId).toBe("p1");
-    expect(s.activeProjectStats).toEqual(STATS);
     expect(openArgs as Record<string, unknown>).toMatchObject({
       path: "/tmp/game",
       sourceLang: useSettingsStore.getState().settings.defaultSourceLang,
       targetLang: useSettingsStore.getState().settings.defaultTargetLang,
     });
-    expect(toastSuccess).toHaveBeenCalled();
+    expect(toastSuccess).toHaveBeenCalledWith(
+      i18n.t("project.extracted", {
+        total: STATS.totalSegments,
+        translated: STATS.translatedCount,
+      }),
+    );
   });
 
   it("restores an existing project without duplicating it", async () => {
+    const commands: string[] = [];
     mockIPC((cmd) => {
+      commands.push(cmd);
       switch (cmd) {
         case "open_project":
           return { project: PROJECT, wasRestored: true };
@@ -153,6 +160,8 @@ describe("project store — openProject thunk", () => {
 
     await openProject("/tmp/game");
     expect(useProjectStore.getState().projects).toHaveLength(1);
+    // The stats only feed the extraction notice (audit I1).
+    expect(commands).not.toContain("get_project_stats");
     expect(toastWarning).not.toHaveBeenCalled();
     expect(toastInfo).not.toHaveBeenCalled();
   });

@@ -8,6 +8,7 @@ import type {
   ProjectStats,
   SourceFile,
 } from "@/lib/types";
+import { invalidateSegmentViews } from "@/lib/queryClient";
 import { applyPostOpenCoverage, openCoverageDialog } from "@/stores/coverage";
 import { useSettingsStore } from "@/stores/settings";
 import { useUiStore } from "@/stores/ui";
@@ -15,13 +16,11 @@ import { useUiStore } from "@/stores/ui";
 interface ProjectState {
   projects: Project[];
   activeProjectId: string | null;
-  activeProjectStats: ProjectStats | null;
   sourceFiles: SourceFile[];
 
   // Actions
   addProject: (project: Project) => void;
   setActiveProject: (id: string | null) => void;
-  setActiveProjectStats: (stats: ProjectStats | null) => void;
   setSourceFiles: (files: SourceFile[]) => void;
   removeProject: (id: string) => void;
 }
@@ -29,7 +28,6 @@ interface ProjectState {
 export const useProjectStore = create<ProjectState>()((set) => ({
   projects: [],
   activeProjectId: null,
-  activeProjectStats: null,
   sourceFiles: [],
 
   addProject: (project) =>
@@ -49,8 +47,6 @@ export const useProjectStore = create<ProjectState>()((set) => ({
     }),
 
   setActiveProject: (id) => set({ activeProjectId: id }),
-
-  setActiveProjectStats: (stats) => set({ activeProjectStats: stats }),
 
   setSourceFiles: (files) => set({ sourceFiles: files }),
 
@@ -72,9 +68,6 @@ export const useActiveEngine = () =>
   );
 
 export const useSourceFiles = () => useProjectStore((s) => s.sourceFiles);
-
-export const useActiveProjectStats = () =>
-  useProjectStore((s) => s.activeProjectStats);
 
 export const useActiveLangPair = () =>
   useProjectStore((state) => {
@@ -110,14 +103,18 @@ export async function openProject(
   useProjectStore.getState().addProject(project);
   useProjectStore.getState().setActiveProject(project.id);
   useUiStore.getState().setMode("patch");
+  // A fresh extraction may rewrite a known project: its cached views go stale.
+  invalidateSegmentViews();
+  // The stats only feed the extraction notice: not fetched for a restore.
   const [files, stats] = await Promise.all([
     invoke<SourceFile[]>("get_source_files", { projectId: project.id }),
-    invoke<ProjectStats>("get_project_stats", { projectId: project.id }),
+    wasRestored
+      ? null
+      : invoke<ProjectStats>("get_project_stats", { projectId: project.id }),
   ]);
   useProjectStore.getState().setSourceFiles(files);
-  useProjectStore.getState().setActiveProjectStats(stats);
 
-  if (wasRestored) {
+  if (!stats) {
     toast.success(t("project.restored"));
   } else {
     toast.success(
@@ -155,16 +152,14 @@ export async function openProject(
   return { project, wasRestored };
 }
 
-// Thunk: reload source files + stats after a batch translation completes.
+// Thunk: segments were written — reload the source files (per-file counts)
+// and mark the cached views derived from the segments stale.
 // Best-effort: a failed refresh must never surface as an error toast.
 export async function refreshProjectData(projectId: string): Promise<void> {
+  invalidateSegmentViews();
   try {
-    const [files, stats] = await Promise.all([
-      invoke<SourceFile[]>("get_source_files", { projectId }),
-      invoke<ProjectStats>("get_project_stats", { projectId }),
-    ]);
+    const files = await invoke<SourceFile[]>("get_source_files", { projectId });
     useProjectStore.getState().setSourceFiles(files);
-    useProjectStore.getState().setActiveProjectStats(stats);
   } catch {
     // silent — stale counters are acceptable, a toast here would be noise
   }
@@ -176,11 +171,10 @@ export async function loadAllProjects(): Promise<void> {
   // Merge: keep the active project unchanged, add any missing ones
   const existing = useProjectStore.getState().projects;
   const existingIds = new Set(existing.map((p) => p.id));
-  const merged = [
-    ...existing,
-    ...projects.filter((p) => !existingIds.has(p.id)),
-  ];
-  useProjectStore.setState({ projects: merged });
+  const missing = projects.filter((p) => !existingIds.has(p.id));
+  // Same list: keep the array, so subscribers do not render for nothing.
+  if (missing.length === 0) return;
+  useProjectStore.setState({ projects: [...existing, ...missing] });
 }
 
 // Thunk: delete a project from DB + manifest, remove from store.

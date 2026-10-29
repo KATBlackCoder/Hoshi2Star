@@ -15,15 +15,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useProjectStore } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
-import { useLlmStore, useIsTranslating } from "@/stores/llm";
+import {
+  runWroteSegments,
+  useLlmStore,
+  useIsTranslating,
+  type RunSummary,
+} from "@/stores/llm";
 import { createSegmentColumns, STATUS_STYLES } from "@/features/editor/columns";
-import type {
-  PaginatedSegments,
-  ProjectStats,
-  Segment,
-  SegmentUpdate,
-  SourceFile,
-} from "@/lib/types";
+import type { PaginatedSegments, Segment, SegmentUpdate } from "@/lib/types";
+import { invalidateSegmentViews } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { Play, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -59,8 +59,6 @@ export function SegmentGrid({
   void highlightPlaceholders; // consumed by columns in future — prop reserved for F2
   const { t, i18n } = useTranslation();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
-  const setSourceFiles = useProjectStore((s) => s.setSourceFiles);
-  const setActiveProjectStats = useProjectStore((s) => s.setActiveProjectStats);
   const activeFileId = useEditorStore((s) => s.activeFileId);
   const setActiveSegment = useEditorStore((s) => s.setActiveSegment);
   const activeSegmentId = useEditorStore((s) => s.activeSegmentId);
@@ -90,58 +88,42 @@ export function SegmentGrid({
   const pendingUpdatesRef = useRef(new Map<string, SegmentUpdate>());
   const updateFrameRef = useRef<number | null>(null);
 
-  const loadSegments = useCallback((projectId: string, fileId: string) => {
-    const seq = ++loadSeqRef.current;
-    setIsLoading(true);
-    setLoadError(null);
-    void (async () => {
-      try {
-        // The backend is paginated and returns the real COUNT: fetch every
-        // page so files larger than one page are no longer silently truncated
-        // (footer and status counts then cover the whole file).
-        const pageSize = 2000;
-        const all: Segment[] = [];
-        for (let page = 0; ; page++) {
-          const result = await invoke<PaginatedSegments>("get_segments", {
-            projectId,
-            fileId,
-            page,
-            pageSize,
-          });
-          if (seq !== loadSeqRef.current) return; // stale load — file switched
-          all.push(...result.items);
-          if (all.length >= result.total || result.items.length === 0) break;
+  /** `inPlace`: keep the list on screen while it re-syncs (no loading state). */
+  const loadSegments = useCallback(
+    (projectId: string, fileId: string, inPlace = false) => {
+      const seq = ++loadSeqRef.current;
+      if (!inPlace) setIsLoading(true);
+      setLoadError(null);
+      void (async () => {
+        try {
+          // The backend is paginated and returns the real COUNT: fetch every
+          // page so files larger than one page are no longer silently truncated
+          // (footer and status counts then cover the whole file).
+          const pageSize = 2000;
+          const all: Segment[] = [];
+          for (let page = 0; ; page++) {
+            const result = await invoke<PaginatedSegments>("get_segments", {
+              projectId,
+              fileId,
+              page,
+              pageSize,
+            });
+            if (seq !== loadSeqRef.current) return; // stale load — file switched
+            all.push(...result.items);
+            if (all.length >= result.total || result.items.length === 0) break;
+          }
+          setSegments(all);
+        } catch (error) {
+          if (seq === loadSeqRef.current) {
+            setSegments([]);
+            setLoadError(String(error));
+          }
+        } finally {
+          if (seq === loadSeqRef.current) setIsLoading(false);
         }
-        setSegments(all);
-      } catch (error) {
-        if (seq === loadSeqRef.current) {
-          setSegments([]);
-          setLoadError(String(error));
-        }
-      } finally {
-        if (seq === loadSeqRef.current) setIsLoading(false);
-      }
-    })();
-  }, []);
-
-  const reloadSourceFiles = useCallback(
-    (projectId: string) => {
-      invoke<SourceFile[]>("get_source_files", { projectId })
-        .then(setSourceFiles)
-        .catch(() => {});
+      })();
     },
-    [setSourceFiles],
-  );
-
-  const reloadProjectStats = useCallback(
-    (projectId: string) => {
-      invoke<ProjectStats>("get_project_stats", {
-        projectId,
-      })
-        .then(setActiveProjectStats)
-        .catch(() => {});
-    },
-    [setActiveProjectStats],
+    [],
   );
 
   useEffect(() => {
@@ -269,26 +251,33 @@ export function SegmentGrid({
     };
   }, []);
 
-  // Re-fetch segments + source files when the LLM pipeline completes, a
-  // .h2s pack import rewrites segments across the whole project, or the
-  // project is realigned after a game update
+  // Re-fetch the segments when a .h2s pack import rewrites them across the
+  // project or the project is realigned after a game update. After a run,
+  // `segments-updated` already patched target and status; re-sync in place
+  // only when the run wrote something, since the backend also stores each
+  // QA score and repairs other rows of the same name (`llm/pipeline.rs`).
+  // Source files and cached views: `useProjectDataSync`.
   useEffect(() => {
-    const refresh = () => {
+    const reload = (inPlace: boolean) => {
       const pid = activeProjectIdRef.current;
       const fid = activeFileIdRef.current;
-      if (pid && fid) loadSegments(pid, fid);
-      if (pid) reloadSourceFiles(pid);
-      if (pid) reloadProjectStats(pid);
+      if (pid && fid) loadSegments(pid, fid, inPlace);
     };
-    const unlistenLlm = listen("h2s://llm/completed", refresh);
-    const unlistenImport = listen("h2s://project/import-done", refresh);
-    const unlistenResync = listen("h2s://project/resynced", refresh);
+    const unlistenLlm = listen<RunSummary>("h2s://llm/completed", (event) => {
+      if (runWroteSegments(event.payload)) reload(true);
+    });
+    const unlistenImport = listen("h2s://project/import-done", () =>
+      reload(false),
+    );
+    const unlistenResync = listen("h2s://project/resynced", () =>
+      reload(false),
+    );
     return () => {
       void unlistenLlm.then((fn) => fn());
       void unlistenImport.then((fn) => fn());
       void unlistenResync.then((fn) => fn());
     };
-  }, [loadSegments, reloadSourceFiles, reloadProjectStats]);
+  }, [loadSegments]);
 
   const handleSave = useCallback(
     async (id: string, text: string) => {
@@ -300,6 +289,7 @@ export function SegmentGrid({
         setSegments((prev) =>
           prev.map((s) => (s.id === updated.id ? updated : s)),
         );
+        invalidateSegmentViews();
         if (id === activeSegmentIdRef.current) {
           setActiveSegment(id, updated.sourceText, updated.targetText);
         }

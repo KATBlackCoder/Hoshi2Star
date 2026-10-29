@@ -15,8 +15,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { applySegmentUpdates } from "@/components/editor/SegmentGrid";
 import { StatusBadge } from "@/features/editor/columns";
 import { useEditorStore } from "@/stores/editor";
-import { useLlmStore, useIsTranslating } from "@/stores/llm";
-import { refreshProjectData, useProjectStore } from "@/stores/project";
+import {
+  runWroteSegments,
+  useLlmStore,
+  useIsTranslating,
+  type RunSummary,
+} from "@/stores/llm";
+import { useProjectStore } from "@/stores/project";
 import { useSearchStore } from "@/stores/search";
 import type { SegmentSearchHit, SegmentUpdate } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -69,7 +74,7 @@ export function GlobalSearchResults() {
 
   // SegmentGrid is unmounted while this view is shown, so mirror its LLM
   // listeners here: progressive in-memory patch (coalesced per frame, and
-  // skipped when no hit is touched), then full refresh on done.
+  // skipped when no hit is touched), then a fresh search once a run wrote.
   useEffect(() => {
     const pending = new Map<string, SegmentUpdate>();
     let frame: number | null = null;
@@ -109,11 +114,10 @@ export function GlobalSearchResults() {
   }, []);
 
   useEffect(() => {
-    const unlisten = listen("h2s://llm/completed", () => {
+    const unlisten = listen<RunSummary>("h2s://llm/completed", (event) => {
       const pid = activeProjectIdRef.current;
-      if (!pid) return;
+      if (!pid || !runWroteSegments(event.payload)) return;
       void rerun(pid);
-      void refreshProjectData(pid);
     });
     return () => {
       void unlisten.then((fn) => fn());

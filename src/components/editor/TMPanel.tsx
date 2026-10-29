@@ -10,6 +10,7 @@ import {
 import type { TmSuggestion } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useActiveLangPair } from "@/stores/project";
+import { queryKeys } from "@/lib/queryClient";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -59,7 +60,7 @@ export function TMPanel({ onApply }: TMPanelProps) {
   const langPair = useActiveLangPair();
 
   const { data: suggestions = [], isLoading } = useQuery<TmSuggestion[]>({
-    queryKey: ["tm-suggestions", langPair, sourceText],
+    queryKey: [...queryKeys.tmSuggestions, langPair, sourceText],
     queryFn: () =>
       invoke<TmSuggestion[]>("get_tm_suggestions", {
         sourceText: sourceText!,

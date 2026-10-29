@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { mockIPC } from "@tauri-apps/api/mocks";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(async () => null),
@@ -11,6 +12,17 @@ import { useProjectStore } from "@/stores/project";
 import type { Project, ProjectStats } from "@/lib/types";
 
 const initialState = useProjectStore.getState();
+
+function renderList() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <ProjectList />
+    </QueryClientProvider>,
+  );
+}
 
 function makeProject(id: string, name: string): Project {
   return {
@@ -53,7 +65,7 @@ describe("ProjectList — per-project stats resilience (Phase 3)", () => {
       throw new Error(`unexpected command: ${cmd}`);
     });
 
-    render(<ProjectList />);
+    renderList();
 
     // p2's bar renders despite p1's failure (Promise.allSettled).
     expect(await screen.findByText("✓ 15")).toBeInTheDocument();

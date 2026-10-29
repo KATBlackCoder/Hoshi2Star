@@ -21,7 +21,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { refreshProjectData } from "@/stores/project";
 import type {
   ImportBlocker,
   ImportPolicy,
@@ -110,8 +109,8 @@ export function PackImportWizard({
         importTm,
         langPair,
       });
+      // `h2s://project/import-done` refreshes the views.
       setReport(result);
-      void refreshProjectData(projectId);
     } catch (e) {
       toast.error(t("pack.importError", { error: String(e) }));
     } finally {

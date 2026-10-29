@@ -36,6 +36,14 @@ export interface RunSummary {
   repaired: number;
 }
 
+/**
+ * Whether a run persisted anything: translated or needs-review rows, or
+ * earlier fallbacks repaired. Failed segments are never written.
+ */
+export function runWroteSegments(summary: RunSummary): boolean {
+  return summary.translated + summary.needsReview + summary.repaired > 0;
+}
+
 /** `h2s://llm/error` — one notice per run (Rust `LlmErrorPayload`). */
 export interface LlmErrorPayload {
   message: string;
