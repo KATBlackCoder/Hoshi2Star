@@ -1,17 +1,28 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-28 — Claude, session cloud « Implémentation UW » (en cours).
-**Objectif utilisateur :** baser Wolf sur le `Data/` déchiffré par UberWolf, sans lire les `.wolf` (décision prise le 2026-10-28 après les essais en jeu des jeux Pro).
-**Statut :** `main` @ `e95bb38`. Branche `feat/wolf-uberwolf` (depuis `origin/docs/wolf-uberwolf-plan`) : implémentation UW, une étape par commit, gate cloud vert à chaque étape.
+**Mis à jour :** 2026-10-29 — Claude (session locale).
+**Objectif utilisateur :** baser Wolf sur le `Data/` déchiffré par UberWolf, sans lire les `.wolf`. C'est fait : PR #23 fusionnée. La suite est à discuter avec l'utilisateur.
+**Statut :** `main` @ `92570fb` (fusion de la PR #23, 2026-10-29). Branche `docs/wolf-analyse-3-jeux` (worktree `../Hoshi2Star-analyse`) : consignation de l'analyse comparée des trois jeux Wolf.
 
-## En cours (2026-10-28, Claude) — UW : Wolf lu depuis le `Data/` déchiffré par UberWolf
+## Analyse (2026-10-29, Claude) — textes Wolf extraits, trois jeux comparés
+
+- Journal : `docs/journal/2026-10-29-analyse-wolf-3-jeux.md`. Rapport détaillé dans `RAE-PLAN/essais/wolf-comparaison-3-jeux.md`, avec un TSV par jeu (hors Git, sur cette machine seulement).
+- L'analyse a été faite sur l'app de `main` @ `e95bb38`, **pas sur la PR #23** : les extractions de l'utilisateur ont tourné sur un binaire de `main`. **UW-9 n'est donc pas fait.**
+- Fait vérifié : les messages et choix extraits sont complets dans les trois jeux. Les absents n'ont pas de japonais (ou sont des messages des événements système `X[…]`, exclus volontairement). L'app n'invente aucun texte.
+- Constats, aucune décision prise :
+  - texte affiché laissé hors extraction : commandes 122, 150, 210 et 300, et `Evtext/` de ポンコツ (17 352 lignes, Shift-JIS) ;
+  - environ 3 300 segments risqués dans とのかじ et 1 300 dans ポンコツ : clés internes, noms servant de clés, texte et commandes de script mélangés ;
+  - codes non protégés (`\img[…]`, `\v3[n]`, `\a`…). Une carte de session « Wolf : codes de contrôle non protégés au tokenizer » a été proposée.
+- **Prochaine action :** discuter de la suite avec l'utilisateur. Deux pistes : UW-9 sur `main` (qui contient maintenant UW), ou un plan pour élargir l'extraction et protéger les champs de script et de référence.
+
+## Terminé (2026-10-28 → 2026-10-29, Claude) — UW : Wolf lu depuis le `Data/` déchiffré par UberWolf, PR #23 fusionnée
 
 - Plan : `tasks/todo.md`, « Plan — UW », **validé le 2026-10-28** (UW-D1 à UW-D8 = recommandations, UW-D5 reporté). Journal : `docs/journal/2026-10-28-plan-wolf-uberwolf.md`.
 - Preuves en jeu du 2026-10-28 : とのかじ 3.723 et ポンコツ 3.714 (`GamePro.exe`), déchiffrés par UberWolf et sans `.wolf`, se lancent et affichent les textes marqués « ★ » par le prototype (copies `RAE-PLAN/wolf/*-essai-marque`, hors Git). Non prouvé : `Evtext/*.txt` de ポンコツ ; un export fait par l'app.
 - Analyse des 24 956 textes du 3.658 : `RAE-PLAN/essais/wolf-3658-analyse-textes.md` et `wolf-3658-segments-classes.tsv` (hors Git) ; 19 chemins `bg/*.png⏎0⏎0⏎0` extraits à tort (filtre corrigé par UW-4).
 - **Implémentation (session cloud, 2026-10-28)** : branche `feat/wolf-uberwolf`. Avancement coché dans `tasks/todo.md` (« Plan — UW »), avec le résultat du gate de chaque étape. UW-1 (détection), UW-2 et UW-3 (sources `Data/` seul, refus `wolf_archive_present`, export en fichiers libres), UW-4 (filtre des chemins suivis de lignes numériques), UW-5 (interface), UW-6 (tests d'intégration), UW-7 (documentation : ADR-008, `docs/engines/wolf-uberwolf.md`) faits, gate vert. Journal : `docs/journal/2026-10-28-uw-implementation.md`.
-- **UW-8 fait** : relecture indépendante, corrections, gate final vert (cargo test 808 OK / 0 échec / 15 ignorés ; Vitest 158/158). PR [#23](https://github.com/KATBlackCoder/Hoshi2Star/pull/23) `feat/wolf-uberwolf` → `main` ouverte, non fusionnée.
-- **Prochaine action (utilisateur, en local)** : UW-9 (とのかじ, ポンコツ, 3.658 déchiffré : ouvrir, traduire quelques segments, appliquer l'export sur une copie, vérifier en jeu ; Evtext du prologue de ポンコツ) ; tests réels `#[ignore]` (`H2S_WOLF_GAMES`) ; valider les deux écarts notés sous UW-8 dans `tasks/todo.md` ; puis lot UW-R.
+- **UW-8 fait** : relecture indépendante, corrections, gate final vert (cargo test 808 OK / 0 échec / 15 ignorés ; Vitest 158/158). PR [#23](https://github.com/KATBlackCoder/Hoshi2Star/pull/23) `feat/wolf-uberwolf` → `main` **fusionnée le 2026-10-29** à la demande de l'utilisateur (`92570fb`), avant UW-9. Les branches `feat/wolf-uberwolf` et `docs/wolf-uberwolf-plan` sont gardées, ainsi que le worktree `../Hoshi2Star-uw`, désormais périmé.
+- **Reste (utilisateur, en local)** : UW-9 (とのかじ, ポンコツ, 3.658 déchiffré : ouvrir, traduire quelques segments, appliquer l'export sur une copie, vérifier en jeu ; Evtext du prologue de ポンコツ) ; tests réels `#[ignore]` (`H2S_WOLF_GAMES`) ; valider les deux écarts notés sous UW-8 dans `tasks/todo.md` ; puis lot UW-R.
 
 ## Terminé (2026-10-28, Claude) — libellés de terminologie traduits, PR #20 fusionnée
 
