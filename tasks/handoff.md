@@ -6,12 +6,12 @@
 
 ## En cours (2026-10-29, Claude) — WF : skipper les textes Wolf non traduisibles
 
-- Plan : `tasks/todo.md`, « Plan — WF », **à valider** (WF-D1 à WF-D6). Mesures : `RAE-PLAN/essais/wolf-filtres-proposes.md` (hors Git). Journal : `docs/journal/2026-10-29-plan-wolf-filtres.md`.
+- Plan : `tasks/todo.md`, « Plan — WF », **validé le 2026-10-29** (WF-D1 à WF-D6 = recommandations). Mesures : `RAE-PLAN/essais/wolf-filtres-proposes.md` (hors Git). Journal : `docs/journal/2026-10-29-plan-wolf-filtres.md`.
 - Décisions déjà données par l'utilisateur :
   - un texte non traduisible est skippé : aucun segment n'est créé ;
   - les règles vont dans un nouveau fichier `engines/wolf/filter.rs`, plutôt que dans `extractor.rs` ;
   - ce lot ne contient que les règles fiables à 100 %.
-- **Prochaine action :** l'utilisateur valide WF-D1 à WF-D6, puis on implémente WF-1 à WF-6 (gate en cloud).
+- **Prochaine action :** implémenter WF-1 à WF-6 sur une branche `feat/wolf-filter` depuis `docs/wolf-filter-plan`, gate en cloud.
 
 ## Analyse (2026-10-29, Claude) — textes Wolf extraits, trois jeux comparés
 

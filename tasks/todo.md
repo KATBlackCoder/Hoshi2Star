@@ -1,6 +1,6 @@
 # Tasks — Hoshi2Star
 
-## Plan — WF : skipper les textes Wolf non traduisibles, règles dans `engines/wolf/filter.rs` (2026-10-29, Claude) — PLAN À VALIDER
+## Plan — WF : skipper les textes Wolf non traduisibles, règles dans `engines/wolf/filter.rs` (2026-10-29, Claude) — PLAN VALIDÉ le 2026-10-29 (WF-D1 à WF-D6 = recommandations)
 
 **Objectif.** Séparer à l'extraction les textes Wolf traduisibles de ceux qui ne le sont pas. Un texte non
 traduisible est **skippé** : aucun segment n'est créé, il n'apparaît pas dans l'éditeur, il ne part pas au
@@ -68,7 +68,7 @@ dans un nouveau fichier, `src-tauri/src/engines/wolf/filter.rs` (demande de l'ut
 
 **Étapes.** Branche depuis `main` (worktree). Pas de build local ; gate en cloud.
 
-- [ ] **WF-0.** WF-D1 à WF-D6 validées (utilisateur).
+- [x] **WF-0.** WF-D1 à WF-D6 validées telles que recommandées (utilisateur, 2026-10-29).
 - [ ] **WF-1 — Création de `engines/wolf/filter.rs`** et déclaration dans `engines/wolf/mod.rs`. Les
       règles existantes y sont déplacées (WF-D4), avec leurs tests. `extractor.rs` appelle
       `filter::…`. Aucun changement de comportement : les tests existants passent sans modification.
