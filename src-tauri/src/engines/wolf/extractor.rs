@@ -4,8 +4,9 @@ use super::dat_parser;
 use super::filter;
 use super::sources::{SourcesError, WolfSources};
 use super::v3_format;
+use super::v3_format::common_events::CommonEventsV3;
 use regex::Regex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -183,6 +184,13 @@ pub fn extract_all_wolf(
     // Loose files of the decrypted Data/ (plan UW).
     let sources = WolfSources::load(game_dir)?;
 
+    // Common events are read first: their names drive the database field
+    // rules (plan WF, WF-D5). Their entry keeps its place, after the databases.
+    let common_events = sources
+        .common_events()
+        .map(|file| parse_common_events(&file.bytes));
+    let common_event_names = names_of(&common_events);
+
     // Maps
     for map in sources.maps() {
         let name = map.stem();
@@ -198,7 +206,13 @@ pub fn extract_all_wolf(
     // Databases
     for (project, dat) in sources.databases() {
         let name = dat.stem();
-        match extract_database_segments(&name, &project.bytes, &dat.bytes, version) {
+        match extract_database_segments(
+            &name,
+            &project.bytes,
+            &dat.bytes,
+            &common_event_names,
+            version,
+        ) {
             Ok(segs) if !segs.is_empty() => {
                 entries.push((format!("{name}.dat"), "wolf_database".to_string(), segs));
             }
@@ -208,18 +222,19 @@ pub fn extract_all_wolf(
     }
 
     // Common Events
-    if let Some(common_events) = sources.common_events() {
-        match extract_common_events(&common_events.bytes, version) {
-            Ok(segs) if !segs.is_empty() => {
+    match &common_events {
+        Some(Ok(parsed)) => {
+            let segs = common_event_segments(parsed);
+            if !segs.is_empty() {
                 entries.push((
                     "CommonEvent.dat".to_string(),
                     "wolf_common_events".to_string(),
                     segs,
                 ));
             }
-            Ok(_) => {}
-            Err(e) => unreadable.push(format!("CommonEvent.dat ({e})")),
         }
+        Some(Err(e)) => unreadable.push(format!("CommonEvent.dat ({e})")),
+        None => {}
     }
 
     reject_unreadable(unreadable)?;
@@ -327,11 +342,13 @@ pub fn extract_map_segments(
 /// Only fields that are of String type (indexInfo ≥ 0x07D0) are considered.
 /// A value is extracted if the field name is a known translatable name OR if the
 /// value contains Japanese characters.  Empty and placeholder-only values are
-/// skipped.
+/// skipped, and so are whole fields the rules of [`filter::skipped_fields`]
+/// reject (`common_event_names`: the names of the game's common events).
 pub fn extract_database_segments(
     db_name: &str,
     project_bytes: &[u8],
     dat_bytes: &[u8],
+    common_event_names: &HashSet<String>,
     _version: &crate::engines::detector::WolfVersion,
 ) -> Result<Vec<WolfSegment>, ExtractorError> {
     let db = dat_parser::parse_database(project_bytes, dat_bytes).map_err(|e| {
@@ -344,11 +361,12 @@ pub fn extract_database_segments(
     let mut segments = Vec::new();
 
     for (type_idx, dat_type) in db.types.iter().enumerate() {
+        let skipped_fields = filter::skipped_fields(dat_type, common_event_names);
         for (entry_idx, entry) in dat_type.entries.iter().enumerate() {
             // Walk string fields in declaration order; string_values are stored in
             // the same sequential order — one value per string-typed active field.
             let mut str_pos = 0usize;
-            for field in &dat_type.fields {
+            for (field_idx, field) in dat_type.fields.iter().enumerate() {
                 if !field.is_valid() {
                     continue;
                 }
@@ -361,7 +379,9 @@ pub fn extract_database_segments(
                 };
                 str_pos += 1;
 
-                if filter::skip_database_value(&field.name, value) {
+                if skipped_fields.contains(&field_idx)
+                    || filter::skip_database_value(&field.name, value)
+                {
                     continue;
                 }
 
@@ -394,11 +414,34 @@ pub fn extract_common_events(
     bytes: &[u8],
     _version: &crate::engines::detector::WolfVersion,
 ) -> Result<Vec<WolfSegment>, ExtractorError> {
+    Ok(common_event_segments(&parse_common_events(bytes)?))
+}
+
+/// Read `CommonEvent.dat` bytes (v3.5 LZ4 or stored in clear).
+fn parse_common_events(bytes: &[u8]) -> Result<CommonEventsV3, ExtractorError> {
     let decompressed = v3_format::common_events::unpack(bytes)
         .map_err(|e| ExtractorError::MapParser(format!("CommonEvent.dat: {e}")))?;
-    let common_events = v3_format::common_events::CommonEventsV3::parse(&decompressed)
-        .map_err(|e| ExtractorError::MapParser(format!("CommonEvent.dat: {e}")))?;
+    CommonEventsV3::parse(&decompressed)
+        .map_err(|e| ExtractorError::MapParser(format!("CommonEvent.dat: {e}")))
+}
 
+/// Names of every common event (trimmed, non-empty) of a `CommonEvent.dat`
+/// that could be read; empty without one (plan WF, WF-D5).
+fn names_of(common_events: &Option<Result<CommonEventsV3, ExtractorError>>) -> HashSet<String> {
+    let Some(Ok(common_events)) = common_events else {
+        return HashSet::new();
+    };
+    common_events
+        .events
+        .iter()
+        .map(|event| event.name.trim())
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Translatable segments of parsed common events.
+fn common_event_segments(common_events: &CommonEventsV3) -> Vec<WolfSegment> {
     let mut segments = Vec::new();
 
     for (event_idx, event) in common_events.events.iter().enumerate() {
@@ -445,7 +488,7 @@ pub fn extract_common_events(
         }
     }
 
-    Ok(segments)
+    segments
 }
 
 // ---------------------------------------------------------------------------
@@ -471,6 +514,13 @@ pub fn extract_wolf_project(
 
     let sources = WolfSources::load(game_dir)?;
 
+    // --- Common Events, read first: their names drive the database field
+    // rules (plan WF, WF-D5); their segments keep their place, last. ---
+    let common_events = sources
+        .common_events()
+        .map(|file| parse_common_events(&file.bytes));
+    let common_event_names = names_of(&common_events);
+
     // --- Maps ---
     for map in sources.maps() {
         let name = map.stem();
@@ -483,18 +533,23 @@ pub fn extract_wolf_project(
     // --- Databases ---
     for (project, dat) in sources.databases() {
         let name = dat.stem();
-        match extract_database_segments(&name, &project.bytes, &dat.bytes, version) {
+        match extract_database_segments(
+            &name,
+            &project.bytes,
+            &dat.bytes,
+            &common_event_names,
+            version,
+        ) {
             Ok(segs) => segments.extend(segs),
             Err(e) => eprintln!("warn: skipping {name}.dat — {e}"),
         }
     }
 
     // --- Common Events ---
-    if let Some(common_events) = sources.common_events() {
-        match extract_common_events(&common_events.bytes, version) {
-            Ok(segs) => segments.extend(segs),
-            Err(e) => unreadable.push(format!("CommonEvent.dat ({e})")),
-        }
+    match &common_events {
+        Some(Ok(parsed)) => segments.extend(common_event_segments(parsed)),
+        Some(Err(e)) => unreadable.push(format!("CommonEvent.dat ({e})")),
+        None => {}
     }
 
     reject_unreadable(unreadable)?;
@@ -759,7 +814,8 @@ mod tests {
     fn test_extract_database_name_field_japanese() {
         let project = make_db_project("Items", "name");
         let dat = make_db_dat_string("テスト"); // Japanese value → always extracted
-        let segs = extract_database_segments("UserDB", &project, &dat, &v2()).unwrap();
+        let segs =
+            extract_database_segments("UserDB", &project, &dat, &HashSet::new(), &v2()).unwrap();
         assert_eq!(segs.len(), 1);
         assert_eq!(segs[0].source_text, "テスト");
         assert!(segs[0].key.starts_with("Database/UserDB/"));
@@ -771,7 +827,8 @@ mod tests {
         // Field named "name" is a known translatable field even without Japanese.
         let project = make_db_project("Items", "name");
         let dat = make_db_dat_string("Hero");
-        let segs = extract_database_segments("UserDB", &project, &dat, &v2()).unwrap();
+        let segs =
+            extract_database_segments("UserDB", &project, &dat, &HashSet::new(), &v2()).unwrap();
         assert_eq!(
             segs.len(),
             1,
@@ -783,7 +840,8 @@ mod tests {
     fn test_extract_database_skips_int_field() {
         let project = make_db_project("Vars", "hp");
         let dat = make_db_dat_int(100);
-        let segs = extract_database_segments("UserDB", &project, &dat, &v2()).unwrap();
+        let segs =
+            extract_database_segments("UserDB", &project, &dat, &HashSet::new(), &v2()).unwrap();
         assert!(segs.is_empty(), "integer fields must be skipped");
     }
 
@@ -792,7 +850,8 @@ mod tests {
         // An empty string value should not produce a segment.
         let project = make_db_project("Items", "name");
         let dat = make_db_dat_string(""); // empty → skip
-        let segs = extract_database_segments("UserDB", &project, &dat, &v2()).unwrap();
+        let segs =
+            extract_database_segments("UserDB", &project, &dat, &HashSet::new(), &v2()).unwrap();
         assert!(segs.is_empty(), "empty string must be skipped");
     }
 
@@ -804,7 +863,8 @@ mod tests {
     fn test_key_format_dat() {
         let project = make_db_project("Chars", "名前");
         let dat = make_db_dat_string("テスト");
-        let segs = extract_database_segments("CDB", &project, &dat, &v2()).unwrap();
+        let segs =
+            extract_database_segments("CDB", &project, &dat, &HashSet::new(), &v2()).unwrap();
         assert_eq!(segs.len(), 1);
         assert!(
             segs[0].key.starts_with("Database/CDB/"),
@@ -849,12 +909,70 @@ mod tests {
             .is_empty());
     }
 
+    /// Plan WF, WF-3: a field of common event names and a "system" duplicate
+    /// are skipped as whole fields; the displayed names stay.
+    #[test]
+    fn test_extract_database_skips_common_event_and_system_fields() {
+        use crate::engines::wolf::dat_parser::make_string_database_pub;
+
+        let (project, dat) = make_string_database_pub(
+            "アイテム",
+            &["名前", "[ｺﾓﾝｲﾍﾞﾝﾄ]呼び出しｲﾍﾞﾝﾄ名", "ｼｽﾃﾑ名"],
+            &[
+                &["回復薬", "アイテム使用", "回復薬"],
+                &["毒消し", "アイテム使用", "毒消し"],
+                &["地図", "地図を開く", "地図"],
+            ],
+        );
+        let ce_names: HashSet<String> = ["アイテム使用", "地図を開く"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let segs = extract_database_segments("DataBase", &project, &dat, &ce_names, &v2()).unwrap();
+        let keys: Vec<&str> = segs.iter().map(|s| s.key.as_str()).collect();
+        assert_eq!(
+            keys,
+            [
+                "Database/DataBase/0/0/名前",
+                "Database/DataBase/0/1/名前",
+                "Database/DataBase/0/2/名前"
+            ]
+        );
+
+        // Without the common event names, only the system duplicate goes.
+        let segs =
+            extract_database_segments("DataBase", &project, &dat, &HashSet::new(), &v2()).unwrap();
+        assert_eq!(segs.len(), 6);
+        assert!(segs.iter().all(|s| !s.key.ends_with("ｼｽﾃﾑ名")));
+    }
+
+    /// Plan WF, WF-3: `ｼｽﾃﾑ名` repeating `ｴﾝﾁｬﾝﾄ名` is skipped, `ｴﾝﾁｬﾝﾄ名` stays.
+    #[test]
+    fn test_extract_database_keeps_the_field_a_system_field_repeats() {
+        use crate::engines::wolf::dat_parser::make_string_database_pub;
+
+        let (project, dat) = make_string_database_pub(
+            "エンチャント",
+            &["ｼｽﾃﾑ名", "ｴﾝﾁｬﾝﾄ名"],
+            &[
+                &["炎の加護", "炎の加護"],
+                &["氷の加護", "氷の加護"],
+                &["雷の加護", "雷の加護"],
+            ],
+        );
+        let segs =
+            extract_database_segments("CDataBase", &project, &dat, &HashSet::new(), &v2()).unwrap();
+        assert_eq!(segs.len(), 3);
+        assert!(segs.iter().all(|s| s.key.ends_with("/ｴﾝﾁｬﾝﾄ名")));
+    }
+
     #[test]
     fn test_extract_database_skips_auto_init() {
         // Values containing 自動ｼｽﾃﾑ初期化 are auto-replaced at runtime — not player-facing.
         let project = make_db_project("System", "description");
         let dat = make_db_dat_string("ここの値は「自動ｼｽﾃﾑ初期化」処理でセットされます");
-        let segs = extract_database_segments("CDataBase", &project, &dat, &v2()).unwrap();
+        let segs =
+            extract_database_segments("CDataBase", &project, &dat, &HashSet::new(), &v2()).unwrap();
         assert!(
             segs.is_empty(),
             "auto-init placeholder values must be skipped"
@@ -977,8 +1095,14 @@ mod tests {
             let dat_path = basic_data_dir.join(format!("{db_name}.dat"));
             let project_bytes = std::fs::read(&project_path).unwrap();
             let dat_bytes = std::fs::read(&dat_path).unwrap();
-            let segs = extract_database_segments(db_name, &project_bytes, &dat_bytes, &v2())
-                .unwrap_or_else(|e| panic!("Inko {db_name}.dat must parse (LZ4): {e:?}"));
+            let segs = extract_database_segments(
+                db_name,
+                &project_bytes,
+                &dat_bytes,
+                &HashSet::new(),
+                &v2(),
+            )
+            .unwrap_or_else(|e| panic!("Inko {db_name}.dat must parse (LZ4): {e:?}"));
             eprintln!("Inko {db_name}.dat → {} segments", segs.len());
             total += segs.len();
         }

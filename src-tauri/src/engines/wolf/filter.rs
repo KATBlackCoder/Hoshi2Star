@@ -10,10 +10,12 @@
 //! extraction step (map, common event, message, database field), and measure it
 //! on real games first: only rules that skip no displayed text belong here.
 
+use std::collections::HashSet;
 use std::sync::LazyLock;
 
 use regex::Regex;
 
+use super::dat_parser::{DatField, DatType};
 use crate::engines::filter::{is_pure_number, needs_translation};
 use crate::llm::tokenizer::Engine as TokEngine;
 
@@ -160,6 +162,128 @@ pub(crate) fn skip_database_value(field_name: &str, value: &str) -> bool {
         || (!is_known_translatable_field(field_name) && !contains_japanese(value))
 }
 
+/// Minimum number of rows for the "system" duplicate rule (WF-D5).
+const SYSTEM_DUPLICATE_MIN_ROWS: usize = 3;
+
+/// Fragments of an internal "system" field name (WF-D5).
+const SYSTEM_FIELD_PARTS: [&str; 3] = ["ｼｽﾃﾑ", "システム", "Sys"];
+
+/// Separators between the items of a list value (WF-D5).
+const LIST_SEPARATORS: [char; 4] = [',', '、', '|', '\n'];
+
+/// The fields of `dat_type` skipped as a whole, as indices into
+/// `dat_type.fields` (WF-D5): fields holding common event names
+/// ([`holds_common_event_names`]) and "system" duplicates of another field
+/// ([`is_system_duplicate`]).
+pub(crate) fn skipped_fields(
+    dat_type: &DatType,
+    common_event_names: &HashSet<String>,
+) -> HashSet<usize> {
+    let columns = string_columns(dat_type);
+    columns
+        .iter()
+        .filter(|column| {
+            holds_common_event_names(&column.values, common_event_names)
+                || is_system_duplicate(column, &columns)
+        })
+        .map(|column| column.field_idx)
+        .collect()
+}
+
+/// One string field of a database type and its value in every row.
+struct Column<'a> {
+    /// Index into `DatType::fields`.
+    field_idx: usize,
+    field: &'a DatField,
+    /// One value per row, empty when the row does not hold it.
+    values: Vec<&'a str>,
+}
+
+/// The string fields of `dat_type`, in declaration order. Values are stored
+/// one per valid string field, in that order (as the extractor reads them).
+fn string_columns(dat_type: &DatType) -> Vec<Column<'_>> {
+    dat_type
+        .fields
+        .iter()
+        .enumerate()
+        .filter(|(_, field)| field.is_valid() && field.is_string())
+        .enumerate()
+        .map(|(slot, (field_idx, field))| Column {
+            field_idx,
+            field,
+            values: dat_type
+                .entries
+                .iter()
+                .map(|entry| entry.string_values.get(slot).map_or("", String::as_str))
+                .collect(),
+        })
+        .collect()
+}
+
+/// The items of a list value: split on [`LIST_SEPARATORS`], trimmed, empty
+/// items dropped.
+fn list_items(value: &str) -> impl Iterator<Item = &str> {
+    value
+        .split(LIST_SEPARATORS)
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+}
+
+/// `true` when a field holds common event names (WF-D5): at least half of its
+/// non-empty values are lists of common event names or numbers, and at least
+/// one value names a common event (a field of numbers alone is not one).
+fn holds_common_event_names(values: &[&str], common_event_names: &HashSet<String>) -> bool {
+    let filled: Vec<&str> = values
+        .iter()
+        .copied()
+        .filter(|value| !value.trim().is_empty())
+        .collect();
+    let is_number = |item: &str| is_pure_number(item.strip_prefix('-').unwrap_or(item));
+    let listed = filled
+        .iter()
+        .filter(|value| {
+            list_items(value).next().is_some()
+                && list_items(value)
+                    .all(|item| common_event_names.contains(item) || is_number(item))
+        })
+        .count();
+    let names_an_event = filled
+        .iter()
+        .any(|value| list_items(value).any(|item| common_event_names.contains(item)));
+    names_an_event && listed * 2 >= filled.len()
+}
+
+/// `true` when `name` is an internal "system" field name ([`SYSTEM_FIELD_PARTS`]).
+fn is_system_field(name: &str) -> bool {
+    SYSTEM_FIELD_PARTS.iter().any(|part| name.contains(part))
+}
+
+/// `true` when `column` is a "system" duplicate (WF-D5): its name is a system
+/// one ([`is_system_field`]) and, in at least 80 % of its non-empty rows (and
+/// at least [`SYSTEM_DUPLICATE_MIN_ROWS`] of them), it holds the same value as
+/// one other field of the same row whose name is not a system one.
+fn is_system_duplicate(column: &Column<'_>, columns: &[Column<'_>]) -> bool {
+    if !is_system_field(&column.field.name) {
+        return false;
+    }
+    let rows: Vec<usize> = (0..column.values.len())
+        .filter(|&row| !column.values[row].trim().is_empty())
+        .collect();
+    if rows.len() < SYSTEM_DUPLICATE_MIN_ROWS {
+        return false;
+    }
+    columns
+        .iter()
+        .filter(|other| other.field_idx != column.field_idx && !is_system_field(&other.field.name))
+        .any(|other| {
+            let same = rows
+                .iter()
+                .filter(|&&row| other.values.get(row) == column.values.get(row))
+                .count();
+            same * 5 >= rows.len() * 4
+        })
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -301,6 +425,149 @@ mod tests {
         for text in ["エラーが発生しました", "警告する！", "こんにちは"] {
             assert!(!skip_message(text), "{text:?} must stay translatable");
         }
+    }
+
+    /// A database type whose fields are all strings: `rows[i][j]` is the value
+    /// of field `j` in row `i`.
+    fn string_type(field_names: &[&str], rows: &[&[&str]]) -> DatType {
+        use super::super::dat_parser::DatEntry;
+
+        DatType {
+            name: "Type".to_string(),
+            unknown1: 0,
+            unknown1_string: None,
+            fields: field_names
+                .iter()
+                .enumerate()
+                .map(|(i, name)| DatField {
+                    name: (*name).to_string(),
+                    index_info: 0x07D0 + i as u32,
+                })
+                .collect(),
+            entries: rows
+                .iter()
+                .map(|row| DatEntry {
+                    name: String::new(),
+                    int_values: Vec::new(),
+                    string_values: row.iter().map(|value| (*value).to_string()).collect(),
+                })
+                .collect(),
+        }
+    }
+
+    fn names(list: &[&str]) -> HashSet<String> {
+        list.iter().map(|name| (*name).to_string()).collect()
+    }
+
+    /// WF-D5: a field of common event names (lists and numbers included) is
+    /// skipped; the field of displayed names next to it stays.
+    #[test]
+    fn test_common_event_name_field_is_skipped() {
+        let dat_type = string_type(
+            &["名前", "[ｺﾓﾝｲﾍﾞﾝﾄ]呼び出しｲﾍﾞﾝﾄ名"],
+            &[
+                &["回復薬", "アイテム使用"],
+                &["毒消し", "状態回復,アイテム使用"],
+                &["地図", "0"],
+                &["鍵", ""],
+                &["手紙", "読む|閉じる"],
+            ],
+        );
+        let ce_names = names(&["アイテム使用", "状態回復", "読む", "閉じる"]);
+        assert_eq!(skipped_fields(&dat_type, &ce_names), HashSet::from([1]));
+        // Without the common events, nothing is skipped.
+        assert!(skipped_fields(&dat_type, &HashSet::new()).is_empty());
+    }
+
+    /// WF-D5: at least half of the non-empty values; numbers alone do not
+    /// make a field of common event names.
+    #[test]
+    fn test_common_event_name_field_thresholds() {
+        let ce_names = names(&["アイテム使用"]);
+        let half = string_type(&["呼び出し"], &[&["アイテム使用"], &["回復する"], &[""]]);
+        assert_eq!(skipped_fields(&half, &ce_names), HashSet::from([0]));
+        let below = string_type(
+            &["呼び出し"],
+            &[&["アイテム使用"], &["回復する"], &["毒を消す"]],
+        );
+        assert!(skipped_fields(&below, &ce_names).is_empty());
+        let numbers = string_type(&["番号"], &[&["1"], &["2"], &["-1"]]);
+        assert!(skipped_fields(&numbers, &ce_names).is_empty());
+    }
+
+    /// WF-D5: `ｼｽﾃﾑ名` repeats `ｴﾝﾁｬﾝﾄ名` in at least 80 % of the rows: only
+    /// `ｼｽﾃﾑ名` is skipped.
+    #[test]
+    fn test_system_duplicate_field_is_skipped() {
+        let dat_type = string_type(
+            &["ｼｽﾃﾑ名", "ｴﾝﾁｬﾝﾄ名"],
+            &[
+                &["炎の加護", "炎の加護"],
+                &["氷の加護", "氷の加護"],
+                &["雷の加護", "雷の加護"],
+                &["風の加護", "風の加護"],
+                &["内部用", "光の加護"],
+                &["", "闇の加護"],
+            ],
+        );
+        assert_eq!(
+            skipped_fields(&dat_type, &HashSet::new()),
+            HashSet::from([0])
+        );
+    }
+
+    /// WF-D5: below 80 %, fewer than 3 rows, or a non-system name: kept.
+    #[test]
+    fn test_system_duplicate_thresholds() {
+        let below = string_type(
+            &["ｼｽﾃﾑ名", "名前"],
+            &[
+                &["炎", "炎"],
+                &["氷", "氷"],
+                &["雷", "雷"],
+                &["風", "かぜ"],
+                &["光", "ひかり"],
+            ],
+        );
+        assert!(skipped_fields(&below, &HashSet::new()).is_empty());
+        let two_rows = string_type(&["Sys名", "名前"], &[&["炎", "炎"], &["氷", "氷"]]);
+        assert!(skipped_fields(&two_rows, &HashSet::new()).is_empty());
+        // Two system fields repeating each other: neither is a duplicate of a
+        // displayed field.
+        let both_system = string_type(
+            &["ｼｽﾃﾑ名", "システム名"],
+            &[&["炎", "炎"], &["氷", "氷"], &["雷", "雷"]],
+        );
+        assert!(skipped_fields(&both_system, &HashSet::new()).is_empty());
+        // A displayed field repeating a system field is not skipped.
+        let displayed = string_type(
+            &["表示名", "Sys名"],
+            &[&["炎", "炎"], &["氷", "氷"], &["雷", "雷"]],
+        );
+        assert_eq!(
+            skipped_fields(&displayed, &HashSet::new()),
+            HashSet::from([1])
+        );
+    }
+
+    /// Only string fields count: the field indices skip the int fields.
+    #[test]
+    fn test_skipped_fields_use_field_indices() {
+        let mut dat_type = string_type(
+            &["ｼｽﾃﾑ名", "名前"],
+            &[&["炎", "炎"], &["氷", "氷"], &["雷", "雷"]],
+        );
+        dat_type.fields.insert(
+            0,
+            DatField {
+                name: "ｼｽﾃﾑ番号".to_string(),
+                index_info: 0x03E8,
+            },
+        );
+        assert_eq!(
+            skipped_fields(&dat_type, &HashSet::new()),
+            HashSet::from([1])
+        );
     }
 
     /// `skip_message` keeps the rules of `is_translatable`.

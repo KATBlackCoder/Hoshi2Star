@@ -89,7 +89,7 @@ dans un nouveau fichier, `src-tauri/src/engines/wolf/filter.rs` (demande de l'ut
       inchangées). Gate vert : fmt, typecheck, Vitest 158/158, lint 0 erreur (10 avertissements
       connus), clippy `--all-targets` 0, `cargo test --locked --no-fail-fast` 815 OK / 0 échec /
       15 ignorés (+7).
-- [ ] **WF-3 — Règles par champ.**
+- [x] **WF-3 — Règles par champ.**
   - `skipped_fields(type, common_event_names) -> HashSet<usize>`, qui sert les deux règles de champ de
     WF-D5.
   - `extract_database_segments` reçoit la liste des noms d'événements communs et saute les champs rendus.
@@ -97,6 +97,17 @@ dans un nouveau fichier, `src-tauri/src/engines/wolf/filter.rs` (demande de l'ut
     noms. Ses segments gardent leur place dans le résultat.
   - Tests : un type avec un champ `[ｺﾓﾝｲﾍﾞﾝﾄ]呼び出しｲﾍﾞﾝﾄ名` ; un type `ｼｽﾃﾑ名` + `ｴﾝﾁｬﾝﾄ名`, où
     seul `ｼｽﾃﾑ名` est sauté ; un champ de noms affichés qui reste.
+  - Fait (session cloud, 2026-10-29). `extract_common_events` est découpé en lecture
+    (`parse_common_events`) et segments (`common_event_segments`) : `CommonEvent.dat` n'est lu qu'une
+    fois, ses noms (sans espaces autour, non vides) servent aux bases, son entrée reste la dernière.
+    Précisions de lecture de WF-D5, à valider : (1) champ de noms d'événements : il faut aussi
+    **au moins une valeur qui nomme un événement**, sinon un champ moitié nombres, moitié texte
+    affiché serait sauté ; (2) doublon « système » : les lignes comptées sont celles où le champ
+    système n'est pas vide (au moins 3), l'égalité est exacte et l'autre champ est le même sur toutes
+    ces lignes. Constructeur de test `dat_parser::make_string_database_pub` (base à N champs texte).
+    Tests : 5 dans `filter.rs`, 2 dans `extractor.rs`. Gate vert : fmt, typecheck, Vitest 158/158,
+    lint 0 erreur (10 avertissements connus), clippy `--all-targets` 0, `cargo test --locked
+    --no-fail-fast` 822 OK / 0 échec / 15 ignorés (+7).
 - [ ] **WF-4 — Test d'intégration.** Un jeu fabriqué (dans le style des fixtures e2e Wolf) avec une carte
       `SampleMap`, un événement `[D]…`, un message `ｴﾗｰ!!!`, un champ de noms d'événements et un doublon
       `ｼｽﾃﾑ名`. Vérifier qu'aucun de ces textes n'est extrait et que les autres le sont toujours.
