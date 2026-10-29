@@ -19,12 +19,7 @@ beforeEach(() => {
 });
 
 describe("InspectorRail", () => {
-  const props = {
-    projectId: "p1",
-    langPair: "ja-fr",
-    sourceText: "星",
-    targetText: "étoile",
-  };
+  const props = { projectId: "p1", langPair: "ja-fr" };
 
   it("shows one accessible tool panel at a time", async () => {
     render(<InspectorRail {...props} />);

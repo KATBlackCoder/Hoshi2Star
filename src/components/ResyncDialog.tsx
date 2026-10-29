@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { useShallow } from "zustand/react/shallow";
 import { applyResync, useResyncStore } from "@/stores/resync";
 import { useIsTranslating } from "@/stores/llm";
 
@@ -28,7 +29,15 @@ interface ResyncDialogProps {
  */
 export function ResyncDialog({ projectId }: ResyncDialogProps) {
   const { t } = useTranslation();
-  const { open, loading, summary, error, setOpen } = useResyncStore();
+  const { open, loading, summary, error, setOpen } = useResyncStore(
+    useShallow((s) => ({
+      open: s.open,
+      loading: s.loading,
+      summary: s.summary,
+      error: s.error,
+      setOpen: s.setOpen,
+    })),
+  );
   const isTranslating = useIsTranslating();
   const applied = summary?.applied ?? false;
   const nothingToDo = summary !== null && summary.files.length === 0;

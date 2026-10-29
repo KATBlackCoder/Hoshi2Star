@@ -39,6 +39,7 @@ import type {
   CoverageNotCovered,
   CoverageReference,
 } from "@/lib/types";
+import { useShallow } from "zustand/react/shallow";
 import {
   applyCoverageChanges,
   useCoverageStore,
@@ -62,7 +63,15 @@ const REFERENCES_SHOWN = 8;
  */
 export function TextCoverageDialog({ projectId }: TextCoverageDialogProps) {
   const { t } = useTranslation();
-  const { open, loading, view, error, setOpen } = useCoverageStore();
+  const { open, loading, view, error, setOpen } = useCoverageStore(
+    useShallow((s) => ({
+      open: s.open,
+      loading: s.loading,
+      view: s.view,
+      error: s.error,
+      setOpen: s.setOpen,
+    })),
+  );
   const isTranslating = useIsTranslating();
   const [draft, setDraft] = useState<Record<string, boolean>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});

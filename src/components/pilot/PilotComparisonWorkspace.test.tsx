@@ -3,6 +3,20 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
+// Counts the QA badge of each variant panel: two per comparison card render.
+const variantBadgeRenders = vi.hoisted(() => ({ count: 0 }));
+vi.mock("@/components/ui/badge", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/components/ui/badge")>();
+  return {
+    ...actual,
+    Badge: (props: Parameters<typeof actual.Badge>[0]) => {
+      const text = [props.children].flat().join("");
+      if (text.includes(" · ")) variantBadgeRenders.count += 1;
+      return <actual.Badge {...props} />;
+    },
+  };
+});
+
 vi.mock("@/components/ui/scroll-area", () => ({
   ScrollArea: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
@@ -144,5 +158,28 @@ describe("PilotComparisonWorkspace", () => {
     expect(usePilotStore.getState().decisions).toEqual({
       "Map001.json::/events/1": "contextual",
     });
+  });
+
+  it("re-renders only the card whose decision changed (audit R8)", async () => {
+    const [first] = REPORT.comparisons;
+    const comparisons = ["1", "2", "3"].map((n) => ({
+      ...first,
+      segment: { ...first.segment, stableKey: `Map001.json::/events/${n}` },
+    }));
+    usePilotStore.setState({ report: { ...REPORT, comparisons } });
+    render(<PilotComparisonWorkspace />);
+    const before = variantBadgeRenders.count;
+
+    await userEvent.click(
+      screen.getAllByRole("button", {
+        name: i18n.t("pilot.decision.contextual"),
+      })[0],
+    );
+
+    expect(usePilotStore.getState().decisions).toEqual({
+      "Map001.json::/events/1": "contextual",
+    });
+    // Two variant badges per card: only the first card renders again.
+    expect(variantBadgeRenders.count - before).toBe(2);
   });
 });

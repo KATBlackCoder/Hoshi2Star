@@ -17,8 +17,6 @@ import { useUiStore, type InspectorTab } from "@/stores/ui";
 interface InspectorRailProps {
   projectId: string | null;
   langPair: string;
-  sourceText: string | null;
-  targetText: string | null;
 }
 
 const TABS: Array<{
@@ -32,12 +30,7 @@ const TABS: Array<{
   { id: "preview", labelKey: "inspector.preview", icon: WrapText },
 ];
 
-export function InspectorRail({
-  projectId,
-  langPair,
-  sourceText,
-  targetText,
-}: InspectorRailProps) {
+export function InspectorRail({ projectId, langPair }: InspectorRailProps) {
   const { t } = useTranslation();
   const inspectorOpen = useUiStore((state) => state.inspectorOpen);
   const inspectorTab = useUiStore((state) => state.inspectorTab);
@@ -130,7 +123,7 @@ export function InspectorRail({
         {inspectorTab === "tm" ? (
           <TMPanel />
         ) : inspectorTab === "qa" ? (
-          <QAPanel sourceText={sourceText} targetText={targetText} />
+          <QAPanel />
         ) : inspectorTab === "preview" ? (
           <TextFitPreviewPanel />
         ) : (

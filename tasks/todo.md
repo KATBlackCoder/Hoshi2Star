@@ -1,5 +1,85 @@
 # Tasks — Hoshi2Star
 
+## Plan — FE : lots P2, P3, P5, P6 de l'audit front-end (2026-10-29) (Claude, session cloud)
+
+**Source.** `docs/audit/2026-10-29-audit-frontend.md` (§4, §5, §7, §8, §9, §11). Validé par l'utilisateur le
+2026-10-29 : une branche et une PR par lot, empilées, aucune fusion par Claude. Journal :
+`docs/journal/2026-10-29-fe-lots.md`.
+
+**Hors périmètre.** P1 (grille), P4 (CSS, polices, chargement différé : validation visuelle requise), G1
+(`useFlushSync: false`, mesuré sans gain, abandonné). Configuration du virtualiseur de `SegmentGrid` inchangée
+(`useFlushSync`, `overscan`, `estimateSize`). `src/components/ui/` non modifié. Aucun Rust prévu.
+
+**Preuve des gains (leçon du 2026-10-29).** Pas de durée : des comptages déterministes en Vitest (rendus de
+`App`, appels IPC), écrits d'abord, rouges sur `main`, verts après le lot.
+
+**Gate de chaque lot.** `pnpm typecheck`, `pnpm lint` (0 erreur), `pnpm test`. Base `main` @ `a7141e4` :
+typecheck OK, lint 0 erreur / 10 avertissements, Vitest 158/158.
+
+### P2 — re-rendus globaux (`perf/fe-p2-rerenders`, depuis `main`)
+
+- [x] Tests de comptage d'abord (9 rouges sur `main`) : rendus de `App` sur des événements LLM, un clic de ligne
+  et un changement de réglages ; commits de la grille et de la recherche sur l'état LLM ; écritures de la
+  recherche ; colonnes de la grille ; cartes du pilote.
+- [x] R1 : `useAppHandlers` lit `startTranslation`/`startTranslateAll` par sélecteur fin, `providerConfig` via
+  `getState()` dans les handlers.
+- [x] R2 : idem dans `SegmentGrid` et `GlobalSearchResults`.
+- [x] R3 : `QAPanel` lit lui-même le segment actif ; `App` et `InspectorRail` ne reçoivent plus les textes.
+- [x] R4 : suppression de `requestMetrics`, `pipelineMetrics`, de leurs actions, sélecteurs et écouteurs
+  (aucun lecteur hors deux tests de cet état, supprimés avec lui).
+- [x] R5 : `App` lit `loadSettings` par sélecteur ; `TextFitDialog`, `TextCoverageDialog`, `ResyncDialog` par
+  `useShallow`.
+- [x] R6 : `handleTabNext` et colonnes stables pendant un filtre ou une recherche ; sélection remise à zéro sans
+  nouvel objet quand elle est vide.
+- [x] R7 : `GlobalSearchResults` regroupe les `segments-updated` par frame et ne fait rien si aucun résultat
+  n'est touché.
+- [x] R8 : cartes du pilote mémoïsées (callback stable).
+- [x] Gate P2 (2026-10-29) : typecheck OK ; lint 0 erreur / 10 avertissements ; Vitest 165/165. Comptages
+  avant/après : `docs/journal/2026-10-29-fe-lots.md`.
+- [ ] Push, PR vers `main`.
+
+### P3 — IPC (`perf/fe-p3-ipc`, depuis P2)
+
+- [ ] Tests de comptage d'abord : `get_source_files` / `get_project_stats` après resync, import et
+  `llm/completed` ; `get_segments` après un `completed` sans écriture ; `get_project_stats` au remontage de
+  `ProjectList`.
+- [ ] I1 : suppression de `activeProjectStats` (état, action, sélecteur, appels) ; `get_project_stats` gardé
+  pour le toast d'extraction seulement (pas pour un projet restauré).
+- [ ] I2 : un seul rafraîchissement par événement (`resynced`, `import-done`, `llm/completed`), centralisé ;
+  suppression des appels directs dans `resync.ts` et `PackImportWizard`.
+- [ ] I3 : pas de rechargement complet de la grille après `completed` quand rien n'a été écrit ; sinon
+  resynchronisation sans démonter la liste (le backend écrit aussi `qa_score` et répare d'autres lignes,
+  vérifié dans `llm/pipeline.rs`).
+- [ ] I4/I5 : stats de `ProjectList` sous React Query (un seul `setState`, pas de relance au remontage sans
+  écriture), invalidées après chaque écriture ; fichiers gardés dans le store, dédoublonnés.
+- [ ] I6 : invalider `qa-report` et `tm-suggestions` après une écriture ; `activeSegmentId` dans la clé
+  `qa-check`.
+- [ ] I7 : `loadSettings` lit ses clés en parallèle.
+- [ ] Gate P3, push, PR vers `perf/fe-p2-rerenders`.
+
+### P5 — doublons et code mort (`refactor/fe-p5-duplicates`, depuis P3)
+
+- [ ] D1 `runTranslation` + `errorMessage` dans `lib/` ; D2 `createDialogStore`, `DialogStatus`, `BusyButton` ;
+  D3 `useTauriEvent`, `EVENTS`, `scheduleFrame/cancelFrame` ; D4 `InspectorPanel`/`PanelNotice` ; D5 classes
+  et largeurs de colonnes partagées ; D6 `useExportToFile` réutilisé, `H2S_FILTER` ; D7 `renderWithQuery` ;
+  D8 `ensureModelConfigured` ; D9 types de terminologie ; D10 (déjà couvert par P3, à vérifier) ; D11
+  `StatusBadge` dans le pied de grille. Chaque abstraction gardée seulement si le diff est net négatif.
+- [ ] §8 : prop `highlightPlaceholders`, sélecteurs jamais importés, clés `llmModal.*` ; autres clés i18n
+  supprimées seulement après vérification qu'aucune n'est construite dynamiquement.
+- [ ] Aucun changement visible ; gate P5, push, PR vers `perf/fe-p3-ipc`.
+
+### P6 — défauts fonctionnels (`fix/fe-p6-defects`, depuis P5), un test de régression chacun
+
+- [ ] F1 seuils QA : une seule source, valeurs affichées conservées ou écart justifié en commentaire ;
+  décision produit listée dans la PR.
+- [ ] F2 message d'erreur de « Tout traduire ».
+- [ ] F3 thème de l'app passé à `<Toaster>` par prop (sans toucher `ui/sonner.tsx`).
+- [ ] F4 `getProjectLangPair` partout.
+- [ ] F5 une seule `formatDuration`, unité dans le nom.
+- [ ] F6 `relativeDate` et l'`aria-label` de `ScanProgress` en i18n fr/en.
+- [ ] F7 `setActiveSegment` appelé avec les textes depuis `TextFitDialog`.
+- [ ] Gate P6, push, PR vers `refactor/fe-p5-duplicates`.
+
 ## Plan — WF : skipper les textes Wolf non traduisibles, règles dans `engines/wolf/filter.rs` (2026-10-29, Claude) — PLAN VALIDÉ le 2026-10-29 (WF-D1 à WF-D6 = recommandations) ; WF-1 à WF-6 faits, PR #27 fusionnée le 2026-10-29 (`585f05b`) ; WF-7 à faire
 
 **Objectif.** Séparer à l'extraction les textes Wolf traduisibles de ceux qui ne le sont pas. Un texte non

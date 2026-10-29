@@ -3,11 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { t } from "i18next";
-import type {
-  PipelineBatchMetrics,
-  ProviderCallMetrics,
-  ProviderConfig,
-} from "@/lib/types";
+import type { ProviderConfig } from "@/lib/types";
 import {
   DEFAULT_BATCH_SIZE,
   DEFAULT_OLLAMA_MODEL,
@@ -58,8 +54,6 @@ interface LlmState {
   translationStartTime: number | null;
   isCooling: boolean;
   cooldownRemaining: number;
-  requestMetrics: ProviderCallMetrics[];
-  pipelineMetrics: PipelineBatchMetrics[];
   /** "Stop" was pressed; the run ends after its current batch. */
   isCancelling: boolean;
 
@@ -75,8 +69,6 @@ interface LlmState {
   reset: () => void;
   startTimer: () => void;
   stopTimer: () => void;
-  appendMetrics: (metrics: ProviderCallMetrics[]) => void;
-  appendPipelineMetrics: (metrics: PipelineBatchMetrics) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -103,8 +95,6 @@ interface TranslationListenerOpts {
   onCompleted: (summary: RunSummary) => void;
   onError: (payload: LlmErrorPayload) => void;
   onCooling?: (remainingSecs: number) => void;
-  onMetrics: (metrics: ProviderCallMetrics[]) => void;
-  onPipelineMetrics: (metrics: PipelineBatchMetrics) => void;
 }
 
 /**
@@ -129,13 +119,6 @@ async function setupTranslationListeners(
   );
 
   fns.push(
-    await listen<PipelineBatchMetrics>(
-      "h2s://llm/pipeline-metrics",
-      (event) => opts.onPipelineMetrics(event.payload),
-    ),
-  );
-
-  fns.push(
     await listen<RunSummary>("h2s://llm/completed", (event) => {
       opts.onCompleted(event.payload);
       teardown();
@@ -146,12 +129,6 @@ async function setupTranslationListeners(
     await listen<LlmErrorPayload>("h2s://llm/error", (event) => {
       opts.onError(event.payload);
       teardown();
-    }),
-  );
-
-  fns.push(
-    await listen<ProviderCallMetrics[]>("h2s://llm/metrics", (event) => {
-      opts.onMetrics(event.payload);
     }),
   );
 
@@ -244,8 +221,6 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
   translationStartTime: null,
   isCooling: false,
   cooldownRemaining: 0,
-  requestMetrics: [],
-  pipelineMetrics: [],
   isCancelling: false,
 
   setProviderConfig: (cfg) =>
@@ -255,13 +230,6 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
 
   stopTimer: () => set({ translationStartTime: null }),
 
-  appendMetrics: (metrics) =>
-    set((state) => ({ requestMetrics: [...state.requestMetrics, ...metrics] })),
-  appendPipelineMetrics: (metrics) =>
-    set((state) => ({
-      pipelineMetrics: [...state.pipelineMetrics, metrics],
-    })),
-
   startTranslation: async (segmentIds, fileId) => {
     if (get().isTranslating) return;
 
@@ -270,8 +238,6 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
       isCancelling: false,
       translationProgress: 0,
       error: null,
-      requestMetrics: [],
-      pipelineMetrics: [],
     });
     get().startTimer();
 
@@ -307,8 +273,6 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
         notifyRunError(payload);
         activeTeardown = null;
       },
-      onMetrics: (metrics) => get().appendMetrics(metrics),
-      onPipelineMetrics: (metrics) => get().appendPipelineMetrics(metrics),
     });
 
     try {
@@ -338,8 +302,6 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
       error: null,
       isCooling: false,
       cooldownRemaining: 0,
-      requestMetrics: [],
-      pipelineMetrics: [],
     });
     get().startTimer();
 
@@ -375,8 +337,6 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
         notifyRunError(payload);
         activeTeardown = null;
       },
-      onMetrics: (metrics) => get().appendMetrics(metrics),
-      onPipelineMetrics: (metrics) => get().appendPipelineMetrics(metrics),
       onCooling: (remainingSecs) => {
         set({ isCooling: remainingSecs > 0, cooldownRemaining: remainingSecs });
       },
@@ -424,8 +384,6 @@ export const useLlmStore = create<LlmState>()((set, get) => ({
       translationStartTime: null,
       isCooling: false,
       cooldownRemaining: 0,
-      requestMetrics: [],
-      pipelineMetrics: [],
     }),
 }));
 
@@ -440,5 +398,3 @@ export const useIsCooling = () => useLlmStore((s) => s.isCooling);
 export const useIsCancelling = () => useLlmStore((s) => s.isCancelling);
 export const useCooldownRemaining = () =>
   useLlmStore((s) => s.cooldownRemaining);
-export const useRequestMetrics = () => useLlmStore((s) => s.requestMetrics);
-export const usePipelineMetrics = () => useLlmStore((s) => s.pipelineMetrics);

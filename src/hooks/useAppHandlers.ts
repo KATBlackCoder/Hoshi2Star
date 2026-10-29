@@ -56,7 +56,10 @@ export function useAppHandlers() {
   const { t } = useTranslation();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const activeFileId = useEditorStore((s) => s.activeFileId);
-  const { startTranslation, startTranslateAll, providerConfig } = useLlmStore();
+  // Actions only: subscribing to the whole LLM store would re-render App on
+  // every progress / cooldown event of a run.
+  const startTranslation = useLlmStore((s) => s.startTranslation);
+  const startTranslateAll = useLlmStore((s) => s.startTranslateAll);
 
   async function handleExportAll() {
     if (!activeProjectId) return;
@@ -203,7 +206,7 @@ export function useAppHandlers() {
 
   async function handleTranslateAll() {
     if (!activeProjectId) return;
-    if (!providerConfig.model.trim()) {
+    if (!useLlmStore.getState().providerConfig.model.trim()) {
       toast.warning(t("segmentGrid.noModelConfigured"));
       setShowSettings(true);
       return;
@@ -229,7 +232,7 @@ export function useAppHandlers() {
   }
 
   function handleTranslate() {
-    if (!providerConfig.model.trim()) {
+    if (!useLlmStore.getState().providerConfig.model.trim()) {
       toast.warning(t("segmentGrid.noModelConfigured"));
       setShowSettings(true);
       return;

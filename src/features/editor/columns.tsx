@@ -62,7 +62,6 @@ interface EditableCellProps {
   segmentId: string;
   initialValue: string;
   rowIndex: number;
-  totalRows: number;
   onSave: (id: string, text: string) => Promise<void>;
   onTabNext: (currentIndex: number) => void;
   ariaLabel: string;
@@ -72,7 +71,6 @@ const EditableCell = memo(function EditableCell({
   segmentId,
   initialValue,
   rowIndex,
-  totalRows,
   onSave,
   onTabNext,
   ariaLabel,
@@ -119,9 +117,8 @@ const EditableCell = memo(function EditableCell({
         savedRef.current = value;
         void onSave(segmentId, value);
       }
-      if (rowIndex < totalRows - 1) {
-        onTabNext(rowIndex);
-      }
+      // The grid ignores a Tab on its last row.
+      onTabNext(rowIndex);
     }
   }
 
@@ -165,7 +162,6 @@ const SourceCell = memo(function SourceCell({ text }: { text: string }) {
 const helper = createColumnHelper<Segment>();
 
 export interface SegmentColumnMeta {
-  totalRows: number;
   onSave: (id: string, text: string) => Promise<void>;
   onTabNext: (currentIndex: number) => void;
   onTranslate: (segmentId: string) => void;
@@ -230,7 +226,6 @@ export function createSegmentColumns(
           segmentId={ctx.row.original.id}
           initialValue={ctx.getValue()}
           rowIndex={ctx.row.index}
-          totalRows={meta.totalRows}
           onSave={meta.onSave}
           onTabNext={meta.onTabNext}
           ariaLabel={`${meta.t("segmentGrid.targetInput")} ${ctx.row.index + 1}`}

@@ -37,9 +37,13 @@ describe("QAPanel", () => {
       defaultOptions: { queries: { retry: false } },
     });
 
+    useEditorStore.setState({
+      activeSegmentSourceText: "星",
+      activeSegmentTargetText: "   ",
+    });
     render(
       <QueryClientProvider client={queryClient}>
-        <QAPanel sourceText="星" targetText="   " />
+        <QAPanel />
       </QueryClientProvider>,
     );
 
@@ -83,9 +87,13 @@ describe("QAPanel", () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
+    useEditorStore.setState({
+      activeSegmentSourceText: "勇者",
+      activeSegmentTargetText: "Champion",
+    });
     render(
       <QueryClientProvider client={queryClient}>
-        <QAPanel sourceText="勇者" targetText="Champion" />
+        <QAPanel />
       </QueryClientProvider>,
     );
 

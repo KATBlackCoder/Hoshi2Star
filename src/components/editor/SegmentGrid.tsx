@@ -34,21 +34,23 @@ interface SegmentGridProps {
   highlightPlaceholders?: boolean;
 }
 
-export function applySegmentUpdates(
-  segments: Segment[],
+/**
+ * Patch LLM updates into a list of segments (or search hits). Returns the
+ * same array when no row is touched, so callers can skip the state update.
+ */
+export function applySegmentUpdates<T extends Segment>(
+  segments: T[],
   updates: ReadonlyMap<string, SegmentUpdate>,
-): Segment[] {
+): T[] {
   if (updates.size === 0) return segments;
-  return segments.map((segment) => {
+  let touched = false;
+  const next = segments.map((segment) => {
     const update = updates.get(segment.id);
-    return update
-      ? {
-          ...segment,
-          targetText: update.targetText,
-          status: update.status,
-        }
-      : segment;
+    if (!update) return segment;
+    touched = true;
+    return { ...segment, targetText: update.targetText, status: update.status };
   });
+  return touched ? next : segments;
 }
 
 export function SegmentGrid({
@@ -62,7 +64,7 @@ export function SegmentGrid({
   const activeFileId = useEditorStore((s) => s.activeFileId);
   const setActiveSegment = useEditorStore((s) => s.setActiveSegment);
   const activeSegmentId = useEditorStore((s) => s.activeSegmentId);
-  const { startTranslation, providerConfig } = useLlmStore();
+  const startTranslation = useLlmStore((s) => s.startTranslation);
   const isTranslating = useIsTranslating();
   const gridDensity = useUiStore((state) => state.gridDensity);
   const setGridDensity = useUiStore((state) => state.setGridDensity);
@@ -168,8 +170,11 @@ export function SegmentGrid({
 
   // Also drop the selection when the visible subset changes: rows checked
   // then hidden by a filter/search would otherwise stay silently selected.
+  // Keeps the same object when nothing is selected (no extra render).
   useEffect(() => {
-    setRowSelection({});
+    setRowSelection((current) =>
+      Object.keys(current).length === 0 ? current : {},
+    );
   }, [qaFilter, searchQuery]);
 
   const filteredSegments = useMemo(() => {
@@ -310,13 +315,13 @@ export function SegmentGrid({
   // Translate a single segment directly (no config modal — uses current providerConfig)
   const handleTranslate = useCallback(
     (segmentId: string) => {
-      if (!providerConfig.model.trim()) {
+      if (!useLlmStore.getState().providerConfig.model.trim()) {
         toast.error(t("segmentGrid.noModelConfigured"));
         return;
       }
       void startTranslation([segmentId], undefined);
     },
-    [startTranslation, providerConfig.model, t],
+    [startTranslation, t],
   );
 
   const needsReviewIds = useMemo(
@@ -332,7 +337,7 @@ export function SegmentGrid({
   );
 
   function handleTranslateSelected() {
-    if (!providerConfig.model.trim()) {
+    if (!useLlmStore.getState().providerConfig.model.trim()) {
       toast.error(t("segmentGrid.noModelConfigured"));
       return;
     }
@@ -342,37 +347,32 @@ export function SegmentGrid({
 
   const parentRef = useRef<HTMLDivElement>(null);
 
-  const handleTabNext = useCallback(
-    (currentIndex: number) => {
-      const nextIndex = currentIndex + 1;
-      if (nextIndex >= filteredSegments.length) return;
-      virtualizer.scrollToIndex(nextIndex, { align: "auto" });
-      requestAnimationFrame(() => {
-        const nextInput = document.getElementById(`target-input-${nextIndex}`);
-        nextInput?.focus();
-      });
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filteredSegments.length],
-  );
+  // Read through refs so that handleTabNext — and with it the column defs —
+  // stays stable while a filter or a search changes the visible row count.
+  const rowCountRef = useRef(0);
+  rowCountRef.current = filteredSegments.length;
+  const scrollToIndexRef = useRef<(index: number) => void>(() => {});
+
+  const handleTabNext = useCallback((currentIndex: number) => {
+    const nextIndex = currentIndex + 1;
+    if (nextIndex >= rowCountRef.current) return;
+    scrollToIndexRef.current(nextIndex);
+    requestAnimationFrame(() => {
+      const nextInput = document.getElementById(`target-input-${nextIndex}`);
+      nextInput?.focus();
+    });
+  }, []);
 
   const columns = useMemo(
     () =>
       createSegmentColumns({
-        totalRows: filteredSegments.length,
         onSave: handleSave,
         onTabNext: handleTabNext,
         onTranslate: handleTranslate,
         t,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      filteredSegments.length,
-      handleSave,
-      handleTabNext,
-      handleTranslate,
-      i18n.language,
-    ],
+    [handleSave, handleTabNext, handleTranslate, i18n.language],
   );
 
   const table = useReactTable({
@@ -393,6 +393,8 @@ export function SegmentGrid({
     estimateSize: () => (gridDensity === "compact" ? 40 : 56),
     overscan: 5,
   });
+  scrollToIndexRef.current = (index) =>
+    virtualizer.scrollToIndex(index, { align: "auto" });
 
   if (!activeFileId) {
     return (
@@ -501,7 +503,7 @@ export function SegmentGrid({
               className="h-7 gap-1.5 text-xs text-yellow-400 border-yellow-400/40 hover:bg-yellow-400/10"
               disabled={isTranslating}
               onClick={() => {
-                if (!providerConfig.model.trim()) {
+                if (!useLlmStore.getState().providerConfig.model.trim()) {
                   toast.error(t("segmentGrid.noModelConfigured"));
                   return;
                 }
