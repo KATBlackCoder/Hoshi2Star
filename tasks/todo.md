@@ -121,11 +121,22 @@ dans un nouveau fichier, `src-tauri/src/engines/wolf/filter.rs` (demande de l'ut
       `SampleMapA` et une carte `ｴﾗｰ!!!` sans fichier source, zip limité à `Map001.mps`). Gate vert :
       fmt, typecheck, Vitest 158/158, lint 0 erreur (10 avertissements connus), clippy `--all-targets`
       0, `cargo test --locked --no-fail-fast` 825 OK / 0 échec / 15 ignorés (+3).
-- [ ] **WF-5 — Documentation.** `CONTEXT.md` ou `docs/engines/` (où sont les règles, comment en ajouter
+- [x] **WF-5 — Documentation.** `CONTEXT.md` ou `docs/engines/` (où sont les règles, comment en ajouter
       une), `CHANGELOG.md`, journal, handoff. `BACKLOG.md` : les deux règles mises de côté, avec le
       réglage de réinclusion, et le choix sur les noms qui servent de clés.
-- [ ] **WF-6 — Gate cloud** : fmt, typecheck, Vitest, lint, clippy `--all-targets -D warnings`,
+      Fait (2026-10-29) : `docs/engines/wolf-filter.md` (règles, motifs, ajout d'une règle), renvoi dans
+      `CONTEXT.md`, `CHANGELOG.md` (Changed), `BACKLOG.md` (suites WF et risques relevés en relecture),
+      journal `docs/journal/2026-10-29-wf-implementation.md`, handoff.
+- [x] **WF-6 — Gate cloud** : fmt, typecheck, Vitest, lint, clippy `--all-targets -D warnings`,
       `cargo test --locked`. Relecture indépendante du diff.
+      Fait (2026-10-29). Relecture par un sous-agent : rien de bloquant. Corrigé : un champ homonyme
+      d'un champ sauté placé avant lui est sauté aussi (sinon sa traduction irait dans le champ sauté,
+      clé par nom) ; test « carte de débogage illisible ⇒ erreur » ; deux assertions e2e toujours vraies
+      remplacées ; doc d'`extract_common_events`. Non corrigé (toucherait WF-D5, noté dans `BACKLOG.md`) :
+      `デバフ`, `コンテスト`, `Contest` sautés par les fragments de débogage ; répliques `警告！…` ; pas de
+      log des textes sautés. **Gate final vert** : fmt, typecheck, Vitest 158/158, lint 0 erreur
+      (10 avertissements connus), clippy `--all-targets` 0, `cargo test --locked --no-fail-fast`
+      **826 OK / 0 échec / 15 ignorés**.
 - [ ] **WF-7 — Essai (utilisateur, en local).** Recréer les trois projets, puis comparer leurs segments à
       ceux d'aujourd'hui. Gain attendu : 288 textes en moins pour le 3.658, 469 pour とのかじ et 36 pour
       ポンコツ. Les 51 de とのかじ étiquetés « à traduire » sont `ｼｽﾃﾑ効果名`, doublon de `ｽﾃｰﾀｽ効果名`

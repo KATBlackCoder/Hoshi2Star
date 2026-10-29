@@ -410,6 +410,10 @@ pub fn extract_database_segments(
 /// [`v3_format::common_events`]: v3.5 LZ4 files and files stored in clear
 /// (v2.x) share the same flat model. Each event's commands are a flat list
 /// (no pages, unlike `.mps` events).
+///
+/// The project extractors parse the file once and reuse it for the common
+/// event names ([`parse_common_events`], [`common_event_segments`]); this
+/// wrapper reads one file on its own (tests, injector checks).
 pub fn extract_common_events(
     bytes: &[u8],
     _version: &crate::engines::detector::WolfVersion,
@@ -630,6 +634,9 @@ mod tests {
         assert!(extract_map_segments("SampleMapA", &bytes, &v2())
             .unwrap()
             .is_empty());
+        // The map is read before it is skipped: an unreadable debug map still
+        // refuses the project.
+        assert!(extract_map_segments("SampleMapA", &make_empty_mps(), &v2()).is_err());
 
         let map = v3_format::map::MapV3::synthetic_messages(
             0x64,

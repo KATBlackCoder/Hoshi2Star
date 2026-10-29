@@ -175,19 +175,29 @@ const LIST_SEPARATORS: [char; 4] = [',', '、', '|', '\n'];
 /// `dat_type.fields` (WF-D5): fields holding common event names
 /// ([`holds_common_event_names`]) and "system" duplicates of another field
 /// ([`is_system_duplicate`]).
+///
+/// A segment key names its field, and the injector and the integrity gate
+/// resolve it to the first string field of that name: a field named like an
+/// earlier skipped field would have its translation written into the skipped
+/// one, so it is skipped too (the skipped values stay as in the game, WF-D1).
 pub(crate) fn skipped_fields(
     dat_type: &DatType,
     common_event_names: &HashSet<String>,
 ) -> HashSet<usize> {
     let columns = string_columns(dat_type);
-    columns
-        .iter()
-        .filter(|column| {
-            holds_common_event_names(&column.values, common_event_names)
-                || is_system_duplicate(column, &columns)
-        })
-        .map(|column| column.field_idx)
-        .collect()
+    let mut skipped = HashSet::new();
+    let mut skipped_names: HashSet<&str> = HashSet::new();
+    for column in &columns {
+        let name = column.field.name.as_str();
+        if skipped_names.contains(name)
+            || holds_common_event_names(&column.values, common_event_names)
+            || is_system_duplicate(column, &columns)
+        {
+            skipped.insert(column.field_idx);
+            skipped_names.insert(name);
+        }
+    }
+    skipped
 }
 
 /// One string field of a database type and its value in every row.
@@ -568,6 +578,31 @@ mod tests {
             skipped_fields(&dat_type, &HashSet::new()),
             HashSet::from([1])
         );
+    }
+
+    /// A field named like an earlier skipped field is skipped too: its key
+    /// would resolve to the skipped field at export. A same-named field placed
+    /// before the skipped one keeps its key and stays.
+    #[test]
+    fn test_field_named_like_an_earlier_skipped_field_is_skipped() {
+        let ce_names = names(&["アイテム使用"]);
+        let dat_type = string_type(
+            &["説明", "呼び出し", "呼び出し"],
+            &[
+                &["回復する", "アイテム使用", "回復します"],
+                &["毒を消す", "アイテム使用", "毒を消します"],
+            ],
+        );
+        assert_eq!(skipped_fields(&dat_type, &ce_names), HashSet::from([1, 2]));
+
+        let kept_first = string_type(
+            &["呼び出し", "説明", "呼び出し"],
+            &[
+                &["回復します", "回復する", "アイテム使用"],
+                &["毒を消します", "毒を消す", "アイテム使用"],
+            ],
+        );
+        assert_eq!(skipped_fields(&kept_first, &ce_names), HashSet::from([2]));
     }
 
     /// `skip_message` keeps the rules of `is_translatable`.

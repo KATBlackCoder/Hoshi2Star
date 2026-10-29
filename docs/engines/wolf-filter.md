@@ -45,6 +45,10 @@ Seules les règles qui ne sautaient **aucun texte affiché** sur les trois jeux 
   lignes non vides (au moins 3), il a la même valeur qu'un même autre champ de la ligne,
   dont le nom ne contient pas ces mots, dans au moins 80 % des cas. Seul le champ système
   est sauté.
+- **Champ homonyme** : la clé d'un segment de base désigne son champ par son nom, et
+  l'export prend le premier champ texte de ce nom. Un champ qui porte le nom d'un champ
+  sauté placé avant lui est donc sauté aussi : sinon sa traduction serait écrite dans le
+  champ sauté.
 - **Règles reprises sans changement** : chemins de ressources (`bg/スラム.png⏎0⏎0⏎0`),
   événements `X[` et `zz`, `自動ｼｽﾃﾑ初期化`, champs connus (`name`, `名前`, `説明`…) ou
   valeur avec du japonais.
