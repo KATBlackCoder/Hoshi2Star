@@ -19,7 +19,7 @@
 - **Mesure dans l'app réelle (2026-10-29, Claude, pont MCP)** : `docs/benchmarks/2026-10-29-grid-app-reelle.md`.
   - G1 crée des zones blanches dans la vraie app (jusqu'à 12 frames sur 60, 553 px), alors que `main` n'en a pas : **ne pas fusionner `perf/grid-scroll` tel quel**.
   - La vraie cause de la lenteur est `WEBKIT_DISABLE_DMABUF_RENDERER=1` dans `pnpm tauri:linux`. Sans cette variable, la grille passe de 95 à 19 ms par frame (10 → 53 images/s).
-- **Corrigé (2026-10-29)** : l'utilisateur a confirmé que l'app lancée avec `__NV_DISABLE_EXPLICIT_SYNC=1 pnpm tauri dev` (sans DMABUF) est plus rapide. Sur la branche locale `fix/tauri-linux-wayland`, empilée sur `docs/audit-frontend` et non poussée :
+- **Corrigé (2026-10-29)** : l'utilisateur a confirmé que l'app lancée avec `__NV_DISABLE_EXPLICIT_SYNC=1 pnpm tauri dev` (sans DMABUF) est plus rapide. Fusionné dans `main` en avance rapide et poussé le 2026-10-29 (`6df5c00`, sans PR, à la demande de l'utilisateur), avec l'audit et les mesures :
   - `tauri:linux` ne met plus que `__NV_DISABLE_EXPLICIT_SYNC=1` ;
   - l'ancien réglage est conservé dans `tauri:linux:x11` ;
   - `CLAUDE.md` et `CONTEXT.md` sont corrigés.
