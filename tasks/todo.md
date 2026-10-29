@@ -77,11 +77,18 @@ dans un nouveau fichier, `src-tauri/src/engines/wolf/filter.rs` (demande de l'ut
       tels quels ; `.unwrap()` de la regex des extensions remplacé par `.expect(…)`. Gate vert : fmt,
       typecheck, Vitest 158/158, lint 0 erreur (10 avertissements connus), clippy `--all-targets` 0,
       `cargo test --locked --no-fail-fast` 808 OK / 0 échec / 15 ignorés (même total qu'avant).
-- [ ] **WF-2 — Règles de nom et de message.** `skip_map(name)`, `skip_common_event(name)` (`X[`, `zz` et
+- [x] **WF-2 — Règles de nom et de message.** `skip_map(name)`, `skip_common_event(name)` (`X[`, `zz` et
       débogage) et `skip_message(text)` (`!is_translatable` ou message d'erreur). Branchement dans
       `extract_map_segments` et `extract_common_events`. Tests unitaires dans `filter.rs` : chaque motif
       de WF-D5, plus les deux répliques de とのかじ, qui doivent rester traduisibles (`警告、彼女の…`,
       `…警告柵の奥に…`).
+      Fait (session cloud, 2026-10-29). La carte est lue avant d'être sautée : une carte de débogage
+      illisible refuse toujours le projet, comme avant. Tests : 5 dans `filter.rs` (motifs de débogage,
+      `X[`/`zz`, messages d'erreur, les deux répliques de とのかじ, règles de `is_translatable`
+      conservées) et 2 dans `extractor.rs` (carte `SampleMapA`, événements `[D]…`/`ﾃﾞﾊﾞ…`, clés
+      inchangées). Gate vert : fmt, typecheck, Vitest 158/158, lint 0 erreur (10 avertissements
+      connus), clippy `--all-targets` 0, `cargo test --locked --no-fail-fast` 815 OK / 0 échec /
+      15 ignorés (+7).
 - [ ] **WF-3 — Règles par champ.**
   - `skipped_fields(type, common_event_names) -> HashSet<usize>`, qui sert les deux règles de champ de
     WF-D5.

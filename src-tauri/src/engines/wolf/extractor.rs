@@ -264,6 +264,10 @@ pub fn extract_map_segments(
         .map_err(|e| ExtractorError::MapParser(format!("{map_name}: {e}")))?;
 
     let mut segments = Vec::new();
+    // Parsed first: a skipped map that cannot be read still refuses the project.
+    if filter::skip_map(map_name) {
+        return Ok(segments);
+    }
 
     for (event_idx, event) in map.events.iter().enumerate() {
         for (page_idx, page) in event.pages.iter().enumerate() {
@@ -271,7 +275,7 @@ pub fn extract_map_segments(
                 match command.cid {
                     v3_format::command::CID_MESSAGE => {
                         if let Some(text) = command.string_args.first() {
-                            if filter::is_translatable(text) {
+                            if !filter::skip_message(text) {
                                 segments.push(WolfSegment {
                                     key: format!(
                                         "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}"
@@ -289,7 +293,7 @@ pub fn extract_map_segments(
                     }
                     v3_format::command::CID_CHOICES => {
                         for (choice_idx, choice) in command.string_args.iter().enumerate() {
-                            if filter::is_translatable(choice) {
+                            if !filter::skip_message(choice) {
                                 segments.push(WolfSegment {
                                     key: format!(
                                         "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}/choices/{choice_idx}"
@@ -406,7 +410,7 @@ pub fn extract_common_events(
             match command.cid {
                 v3_format::command::CID_MESSAGE => {
                     if let Some(text) = command.string_args.first() {
-                        if filter::is_translatable(text) {
+                        if !filter::skip_message(text) {
                             segments.push(WolfSegment {
                                 key: format!("CommonEvents/{event_name}/{event_idx}/{cmd_idx}"),
                                 source_text: text.clone(),
@@ -421,7 +425,7 @@ pub fn extract_common_events(
                 }
                 v3_format::command::CID_CHOICES => {
                     for (choice_idx, choice) in command.string_args.iter().enumerate() {
-                        if filter::is_translatable(choice) {
+                        if !filter::skip_message(choice) {
                             segments.push(WolfSegment {
                                 key: format!(
                                     "CommonEvents/{event_name}/{event_idx}/{cmd_idx}/choices/{choice_idx}"
@@ -561,6 +565,45 @@ mod tests {
             assert_eq!(segs[0].key, "MapData/Map001/events/0/pages/0/0");
             assert_eq!(segs[2].key, "MapData/Map001/events/0/pages/0/1/choices/1");
         }
+    }
+
+    /// Plan WF, WF-2: a debug map yields nothing, an error message is
+    /// skipped and the other texts of the map stay.
+    #[test]
+    fn test_extract_map_segments_skips_debug_maps_and_error_messages() {
+        let bytes = synthetic_map_bytes(0x64, false);
+        assert!(extract_map_segments("SampleMapA", &bytes, &v2())
+            .unwrap()
+            .is_empty());
+
+        let map = v3_format::map::MapV3::synthetic_messages(
+            0x64,
+            false,
+            &[MESSAGE, "ｴﾗｰ!!!"],
+            &["エラー：戻る", CHOICES[0]],
+        );
+        let bytes = v3_format::compression::pack_map(map.dump().unwrap()).unwrap();
+        let segs = extract_map_segments("Map001", &bytes, &v2()).unwrap();
+        let texts: Vec<&str> = segs.iter().map(|s| s.source_text.as_str()).collect();
+        assert_eq!(texts, [MESSAGE, CHOICES[0]]);
+        // Keys keep the command and choice positions of the file.
+        assert_eq!(segs[1].key, "MapData/Map001/events/0/pages/0/2/choices/1");
+    }
+
+    /// Plan WF, WF-2: a debug common event yields nothing, an error message
+    /// is skipped, the other events stay.
+    #[test]
+    fn test_extract_common_events_skips_debug_events_and_error_messages() {
+        let common_events = v3_format::common_events::CommonEventsV3::synthetic_messages_v2(&[
+            ("[D]全回復", MESSAGE),
+            ("ﾃﾞﾊﾞｯｸﾞﾒﾆｭｰ", MESSAGE),
+            ("Ev003", "警告：セーブできません"),
+            ("Ev004", "警告、彼女の魔力が急激に上昇しています。"),
+            ("Ev005", MESSAGE),
+        ]);
+        let segs = extract_common_events(&common_events.dump().unwrap(), &v2()).unwrap();
+        let keys: Vec<&str> = segs.iter().map(|s| s.key.as_str()).collect();
+        assert_eq!(keys, ["CommonEvents/Ev004/3/0", "CommonEvents/Ev005/4/0"]);
     }
 
     #[test]

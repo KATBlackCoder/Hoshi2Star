@@ -82,14 +82,60 @@ fn contains_japanese(text: &str) -> bool {
     })
 }
 
+/// An error message shown by a game's own checks, never by its story
+/// (WF-D5): `ｴﾗｰ`, or `エラー` / `警告` followed by optional spaces and `!`,
+/// `！`, `:` or `：`. `警告、彼女の…` (a story line) does not match.
+static RE_ERROR_MESSAGE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"ｴﾗｰ|(?:エラー|警告)[ \t\u{3000}]*[!！:：]").expect("RE_ERROR_MESSAGE must compile")
+});
+
+/// `true` when a message or a choice of a map or a common event is skipped:
+/// nothing to translate ([`is_translatable`]) or an error message
+/// ([`RE_ERROR_MESSAGE`]).
+pub(crate) fn skip_message(text: &str) -> bool {
+    !is_translatable(text) || RE_ERROR_MESSAGE.is_match(text)
+}
+
 // ---------------------------------------------------------------------------
-// Common events
+// Maps and common events
 // ---------------------------------------------------------------------------
 
+/// Fragments of a debug or sample name, matched regardless of case (WF-D5).
+const DEBUG_NAME_PARTS: [&str; 8] = [
+    "sample",
+    "debug",
+    "test",
+    "ﾃﾞﾊﾞ",
+    "デバ",
+    "ﾃｽﾄ",
+    "テスト",
+    "使用禁止",
+];
+
+/// Prefixes of a debug name, matched regardless of case (WF-D5).
+const DEBUG_NAME_PREFIXES: [&str; 2] = ["[d]", "※"];
+
+/// `true` when `name` (a map or a common event) is a debug or sample one
+/// (WF-D5): it contains a [`DEBUG_NAME_PARTS`] fragment or starts with `[D]`
+/// or `※`, regardless of case.
+fn is_debug_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    DEBUG_NAME_PARTS.iter().any(|part| lower.contains(part))
+        || DEBUG_NAME_PREFIXES
+            .iter()
+            .any(|prefix| lower.starts_with(prefix))
+}
+
+/// `true` when the map `name` (its file stem, e.g. `SampleMapA`) is skipped as
+/// a whole: a debug or sample map ([`is_debug_name`]).
+pub(crate) fn skip_map(name: &str) -> bool {
+    is_debug_name(name)
+}
+
 /// `true` when the common event `name` is skipped as a whole: engine-internal
-/// (`X[`) and archived or disabled (`zz`) events.
+/// (`X[`), archived or disabled (`zz`), or debug ([`is_debug_name`]) events.
 pub(crate) fn skip_common_event(name: &str) -> bool {
-    name.starts_with("X[") || name.starts_with("zz")
+    name.starts_with("X[") || name.starts_with("zz") || is_debug_name(name)
 }
 
 // ---------------------------------------------------------------------------
@@ -183,5 +229,86 @@ mod tests {
         assert!(!is_translatable("bg/スラム.png\n0\n0\n0"));
         assert!(is_translatable("ファイル名はicon.png"));
         assert!(is_translatable("こんにちは"));
+    }
+
+    /// WF-D5: every debug fragment and prefix, regardless of case.
+    #[test]
+    fn test_debug_names_are_skipped() {
+        for name in [
+            "SampleMapA",
+            "SAMPLE",
+            "DebugRoom",
+            "debug",
+            "Test01",
+            "マップTEST",
+            "ﾃﾞﾊﾞｯｸﾞ用",
+            "デバッグ部屋",
+            "ﾃｽﾄ",
+            "テスト用イベント",
+            "使用禁止_旧イベント",
+            "[D]全回復",
+            "[d]全回復",
+            "※旧仕様",
+        ] {
+            assert!(skip_map(name), "map {name:?} should be skipped");
+            assert!(skip_common_event(name), "event {name:?} should be skipped");
+        }
+        for name in ["Map001", "TitleMap", "町の広場", "戦闘開始", "A[D]", "注※"] {
+            assert!(!skip_map(name), "map {name:?} should be kept");
+            assert!(!skip_common_event(name), "event {name:?} should be kept");
+        }
+    }
+
+    /// The engine-internal and archived events stay skipped (moved rule).
+    #[test]
+    fn test_internal_common_events_are_skipped() {
+        assert!(skip_common_event("X[移動]歩行"));
+        assert!(skip_common_event("zz旧イベント"));
+        assert!(!skip_common_event("イベントX["));
+        // The map rule only looks for debug names.
+        assert!(!skip_map("X[移動]歩行"));
+    }
+
+    /// WF-D5: the strict error pattern.
+    #[test]
+    fn test_error_messages_are_skipped() {
+        for text in [
+            "ｴﾗｰ!!!",
+            "ｴﾗｰ：ﾃﾞｰﾀがありません",
+            "データ読込ｴﾗｰ",
+            "エラー!",
+            "エラー：番号が範囲外です",
+            "エラー　！",
+            "警告!",
+            "警告 : 変数が不正です",
+            "警告：セーブできません",
+            "\\c[2]エラー:\\c[0] 値が不正",
+        ] {
+            assert!(skip_message(text), "{text:?} should be skipped");
+        }
+    }
+
+    /// The two story lines of とのかじ that the broad pattern (`警告` alone)
+    /// would have skipped stay translatable.
+    #[test]
+    fn test_story_lines_with_warning_are_kept() {
+        for text in [
+            "警告、彼女の魔力が急激に上昇しています。",
+            "…迷いの森の警告柵の奥に向かった人が…",
+        ] {
+            assert!(!skip_message(text), "{text:?} must stay translatable");
+        }
+        for text in ["エラーが発生しました", "警告する！", "こんにちは"] {
+            assert!(!skip_message(text), "{text:?} must stay translatable");
+        }
+    }
+
+    /// `skip_message` keeps the rules of `is_translatable`.
+    #[test]
+    fn test_skip_message_keeps_the_translatable_rules() {
+        assert!(skip_message(""));
+        assert!(skip_message("123"));
+        assert!(skip_message("Picture/title.png"));
+        assert!(!skip_message("ファイル名はicon.png"));
     }
 }
