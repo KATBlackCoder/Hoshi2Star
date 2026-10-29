@@ -27,7 +27,7 @@
 - **WF-5** (`b06dd9a` et commit de fin) : `docs/engines/wolf-filter.md`, `CONTEXT.md`, `CHANGELOG.md`,
   `BACKLOG.md`.
 - **WF-6** : relecture indépendante (sous-agent) du diff `src-tauri/`, corrections, gate final.
-- PR [#27](https://github.com/KATBlackCoder/Hoshi2Star/pull/27) `feat/wolf-filter` → `main` ouverte, non fusionnée.
+- PR [#27](https://github.com/KATBlackCoder/Hoshi2Star/pull/27) `feat/wolf-filter` → `main` ouverte, puis fusionnée le 2026-10-29 à la demande de l'utilisateur (`585f05b`).
 
 ## Fichiers créés
 

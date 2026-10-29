@@ -1,6 +1,6 @@
 # Tasks — Hoshi2Star
 
-## Plan — WF : skipper les textes Wolf non traduisibles, règles dans `engines/wolf/filter.rs` (2026-10-29, Claude) — PLAN VALIDÉ le 2026-10-29 (WF-D1 à WF-D6 = recommandations)
+## Plan — WF : skipper les textes Wolf non traduisibles, règles dans `engines/wolf/filter.rs` (2026-10-29, Claude) — PLAN VALIDÉ le 2026-10-29 (WF-D1 à WF-D6 = recommandations) ; WF-1 à WF-6 faits, PR #27 fusionnée le 2026-10-29 (`585f05b`) ; WF-7 à faire
 
 **Objectif.** Séparer à l'extraction les textes Wolf traduisibles de ceux qui ne le sont pas. Un texte non
 traduisible est **skippé** : aucun segment n'est créé, il n'apparaît pas dans l'éditeur, il ne part pas au
