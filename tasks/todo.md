@@ -88,7 +88,7 @@ typecheck OK, lint 0 erreur / 10 avertissements, Vitest 158/158.
 - [x] F7 textes du segment actif complétés par la grille (ouverture depuis l'ajustement du texte).
 - [x] Gate P6 (2026-10-29) : typecheck OK ; lint 0 erreur / 10 avertissements ; Vitest 187/187 (test
   existant de `ScanProgress` restauré, voir journal).
-- [ ] Push, PR vers `refactor/fe-p5-duplicates`.
+- [x] Push, PR vers `refactor/fe-p5-duplicates` : [#32](https://github.com/KATBlackCoder/Hoshi2Star/pull/32).
 - [ ] Après fusion (utilisateur, en local) : essai de 5 minutes listé dans la PR P6.
 
 ## Plan — WF : skipper les textes Wolf non traduisibles, règles dans `engines/wolf/filter.rs` (2026-10-29, Claude) — PLAN VALIDÉ le 2026-10-29 (WF-D1 à WF-D6 = recommandations) ; WF-1 à WF-6 faits, PR #27 fusionnée le 2026-10-29 (`585f05b`) ; WF-7 à faire
