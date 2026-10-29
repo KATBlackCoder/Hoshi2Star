@@ -1129,6 +1129,7 @@ mod tests {
             "TestDB",
             &project,
             &dat,
+            &std::collections::HashSet::new(),
             &v2(),
         )
         .unwrap();
@@ -1151,6 +1152,7 @@ mod tests {
             "TestDB",
             &project,
             &dat,
+            &std::collections::HashSet::new(),
             &v2(),
         )
         .unwrap();

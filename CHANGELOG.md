@@ -53,6 +53,13 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - Add "Realign the project" after a game update (MV/MZ): translations follow their lines to their new position (exact source match, page by page, in order), new lines arrive untranslated, and translations whose line disappeared are kept aside (`orphaned_segments`, migration `0012`) and added to the translation memory. A preview lists moved, new and removed lines before anything is applied, in one transaction. Offered from the integrity dialog when the game changed and from the text-coverage drift notice.
 
 ### Changed
+- Change which Wolf RPG texts are extracted: texts that are never shown to the player are now skipped when a project is opened. They get no segment, never go to the AI translator, and the export leaves them as they are in the game. Skipped:
+  - debug and sample maps and common events (name containing `sample`, `debug`, `test`, `ﾃﾞﾊﾞ`, `デバ`, `ﾃｽﾄ`, `テスト` or `使用禁止`, or starting with `[D]` or `※`);
+  - error messages (`ｴﾗｰ`, or `エラー` / `警告` followed by `!`, `！`, `:` or `：`), while story lines such as `警告、…` stay;
+  - database fields holding common event names;
+  - "system" database fields (`ｼｽﾃﾑ`, `システム`, `Sys`) that repeat another field of the same row.
+
+  On three real games these rules skip no displayed text. Existing projects keep their segments: recreate a project to apply them. All Wolf-specific rules now live in `engines/wolf/filter.rs`; see `docs/engines/wolf-filter.md`.
 - Change how Wolf RPG games are opened: every Wolf game (2.x, 3.x, Pro, WolfX) is now opened from its `Data/` folder decrypted by UberWolf, and the export delivers plain `Data/` files only. Wolf Pro games (`GamePro.exe` only) are now recognised. The text encoding is read from any database (`SysDatabase.dat`, `DataBase.dat` or `CDataBase.dat`); a game without a readable database is refused with a message instead of being treated as Shift-JIS. While `Data.wolf`, `Data/MapData.wolf` or `Data/BasicData.wolf` is still in the game folder, the game would read it instead of the translation, so the project cannot be opened or exported until these archives are moved out. See `docs/engines/wolf-uberwolf.md` (ADR-008).
 - Change MV/MZ placeholder protection to work per segment: `system_term` segments and plugin `%n` templates now protect `%1`/`%2` in the pipeline, QA, the report and batch dedup. A translation that lost a `%n` gets a new QA warning (`missing_format_specifier`). It does not block export, because the game then only shows the message without that value.
 - Change the MV/MZ export font-size prefix (`\FS[n]`) to apply only to core map segments. Optional categories such as map display names are drawn without escape codes, so a prefix would show up literally.

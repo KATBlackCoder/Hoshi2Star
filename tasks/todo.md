@@ -1,5 +1,154 @@
 # Tasks — Hoshi2Star
 
+## Plan — WF : skipper les textes Wolf non traduisibles, règles dans `engines/wolf/filter.rs` (2026-10-29, Claude) — PLAN VALIDÉ le 2026-10-29 (WF-D1 à WF-D6 = recommandations)
+
+**Objectif.** Séparer à l'extraction les textes Wolf traduisibles de ceux qui ne le sont pas. Un texte non
+traduisible est **skippé** : aucun segment n'est créé, il n'apparaît pas dans l'éditeur, il ne part pas au
+LLM, et l'export laisse sa valeur d'origine dans le jeu. Toutes les règles propres à Wolf sont regroupées
+dans un nouveau fichier, `src-tauri/src/engines/wolf/filter.rs` (demande de l'utilisateur, 2026-10-29).
+`extractor.rs` ne fait plus que les appeler.
+
+**Preuves (2026-10-29, `RAE-PLAN/essais/wolf-filtres-proposes.md`, hors Git).**
+- Données : les trois projets en base, à savoir le 3.658 (24 956 segments, classés un par un), とのかじ
+  (12 274) et ポンコツ (12 696). Ces deux derniers sont classés par règle, donc leurs étiquettes sont en
+  partie circulaires. Tous ont été extraits avec l'ancien `main` `e95bb38`.
+- Sur le 3.658, **344 groupes sur 352 sont purs** : un champ de base, un événement commun ou une carte est
+  soit entièrement à traduire, soit entièrement à exclure. Les règles décident donc par champ, par
+  événement et par carte.
+- Règles retenues, sans aucun texte affiché touché dans les trois jeux :
+
+  | Règle | 3.658 | とのかじ | ポンコツ |
+  |---|---|---|---|
+  | Carte ou événement de débogage | 288 | 82 | 36 |
+  | Champ de noms d'événements communs | 0 | 63 (6 champs) | 0 |
+  | Doublon « système » | 0 | 230 (9 champs) | 0 |
+  | Message d'erreur, motif strict | 0 | 95 | 0 |
+
+- Le motif large des messages d'erreur (`警告` seul) touche deux répliques de l'histoire dans とのかじ
+  (`警告、彼女の魔力が急激に上昇しています。`). C'est pourquoi le motif strict est retenu.
+- Règles mesurées et **non retenues dans ce lot** :
+  - mot-clé dans le nom du champ : 77 textes affichés touchés dans とのかじ ;
+  - table de ressources d'après le nom du type : 107 textes touchés dans ポンコツ ;
+  - noms repris d'un autre champ : 371 textes touchés dans le 3.658 ;
+  - faible diversité : `妊娠率` est affiché ;
+  - type de débogage.
+
+**Décisions à valider (recommandation en gras).**
+- **WF-D1 — Skip à l'extraction.** Pas de segment, pas d'état « exclu » en base (décision de l'utilisateur,
+  2026-10-29). L'export ne touche que les segments existants, donc la valeur d'origine reste.
+- **WF-D2 — Seulement les règles fiables à 100 %.** Débogage (cartes et événements), messages d'erreur
+  (motif strict), champs de noms d'événements communs, doublons « système ». Les deux règles moins fiables
+  (mot-clé dans le nom du champ, table de ressources) viendront dans un lot à part, avec un réglage par
+  projet pour réinclure un champ.
+- **WF-D3 — Les noms qui servent de clés** (recettes, compétences requises) : **aucun skip automatique**.
+  Aucune règle fiable n'a été trouvée ; ils restent extraits.
+- **WF-D4 — Un seul fichier de règles.** Les règles Wolf existantes sont **déplacées** dans
+  `wolf/filter.rs`, sans changer leur comportement :
+  - `is_translatable`, avec les chemins seuls d'UW-4 (`is_resource_path`, `is_lone_path`) ;
+  - le saut des événements `X[` et `zz` ;
+  - `自動ｼｽﾃﾑ初期化` ;
+  - `is_known_translatable_field` ;
+  - `contains_japanese`.
+
+  Le module commun `engines/filter.rs`, partagé par tous les moteurs, ne change pas.
+- **WF-D5 — Motifs et seuils exacts.**
+  - Nom de débogage, sans tenir compte de la casse : `sample`, `debug`, `test`, `ﾃﾞﾊﾞ`, `デバ`, `ﾃｽﾄ`,
+    `テスト`, `使用禁止`, ou un nom qui commence par `[D]` ou `※`. Il s'applique au nom de la carte et
+    au nom de l'événement commun.
+  - Message d'erreur : `ｴﾗｰ`, ou `エラー`/`警告` suivi d'espaces éventuels puis `!`, `！`, `:` ou `：`.
+    Il s'applique aux messages et aux choix des cartes et des événements communs.
+  - Champ de noms d'événements communs : parmi les valeurs non vides du champ (tout le type), **au
+    moins 50 %** sont, une fois découpées sur `,`, `、`, `|` et le retour à la ligne, des noms
+    d'événements communs ou des nombres.
+  - Doublon « système » : au moins 3 lignes, et le champ a **la même valeur** qu'un autre champ de la
+    même ligne dans **au moins 80 %** des lignes. Son nom contient `ｼｽﾃﾑ`, `システム` ou `Sys`, et
+    celui de l'autre champ ne le contient pas.
+- **WF-D6 — Projets existants.** Les règles ne s'appliquent qu'à l'extraction. **Recréer** les trois projets
+  d'essai, qui n'ont aucune traduction.
+
+**Étapes.** Branche depuis `main` (worktree). Pas de build local ; gate en cloud.
+
+- [x] **WF-0.** WF-D1 à WF-D6 validées telles que recommandées (utilisateur, 2026-10-29).
+- [x] **WF-1 — Création de `engines/wolf/filter.rs`** et déclaration dans `engines/wolf/mod.rs`. Les
+      règles existantes y sont déplacées (WF-D4), avec leurs tests. `extractor.rs` appelle
+      `filter::…`. Aucun changement de comportement : les tests existants passent sans modification.
+      Fait (session cloud, 2026-10-29) : `is_translatable`, `skip_common_event` (`X[`, `zz`) et
+      `skip_database_value` (chemins, `自動ｼｽﾃﾑ初期化`, champ connu ou japonais) ; trois tests déplacés
+      tels quels ; `.unwrap()` de la regex des extensions remplacé par `.expect(…)`. Gate vert : fmt,
+      typecheck, Vitest 158/158, lint 0 erreur (10 avertissements connus), clippy `--all-targets` 0,
+      `cargo test --locked --no-fail-fast` 808 OK / 0 échec / 15 ignorés (même total qu'avant).
+- [x] **WF-2 — Règles de nom et de message.** `skip_map(name)`, `skip_common_event(name)` (`X[`, `zz` et
+      débogage) et `skip_message(text)` (`!is_translatable` ou message d'erreur). Branchement dans
+      `extract_map_segments` et `extract_common_events`. Tests unitaires dans `filter.rs` : chaque motif
+      de WF-D5, plus les deux répliques de とのかじ, qui doivent rester traduisibles (`警告、彼女の…`,
+      `…警告柵の奥に…`).
+      Fait (session cloud, 2026-10-29). La carte est lue avant d'être sautée : une carte de débogage
+      illisible refuse toujours le projet, comme avant. Tests : 5 dans `filter.rs` (motifs de débogage,
+      `X[`/`zz`, messages d'erreur, les deux répliques de とのかじ, règles de `is_translatable`
+      conservées) et 2 dans `extractor.rs` (carte `SampleMapA`, événements `[D]…`/`ﾃﾞﾊﾞ…`, clés
+      inchangées). Gate vert : fmt, typecheck, Vitest 158/158, lint 0 erreur (10 avertissements
+      connus), clippy `--all-targets` 0, `cargo test --locked --no-fail-fast` 815 OK / 0 échec /
+      15 ignorés (+7).
+- [x] **WF-3 — Règles par champ.**
+  - `skipped_fields(type, common_event_names) -> HashSet<usize>`, qui sert les deux règles de champ de
+    WF-D5.
+  - `extract_database_segments` reçoit la liste des noms d'événements communs et saute les champs rendus.
+  - `extract_all_wolf` et `extract_wolf_project` lisent **d'abord** `CommonEvent.dat` pour obtenir ces
+    noms. Ses segments gardent leur place dans le résultat.
+  - Tests : un type avec un champ `[ｺﾓﾝｲﾍﾞﾝﾄ]呼び出しｲﾍﾞﾝﾄ名` ; un type `ｼｽﾃﾑ名` + `ｴﾝﾁｬﾝﾄ名`, où
+    seul `ｼｽﾃﾑ名` est sauté ; un champ de noms affichés qui reste.
+  - Fait (session cloud, 2026-10-29). `extract_common_events` est découpé en lecture
+    (`parse_common_events`) et segments (`common_event_segments`) : `CommonEvent.dat` n'est lu qu'une
+    fois, ses noms (sans espaces autour, non vides) servent aux bases, son entrée reste la dernière.
+    Précisions de lecture de WF-D5, à valider : (1) champ de noms d'événements : il faut aussi
+    **au moins une valeur qui nomme un événement**, sinon un champ moitié nombres, moitié texte
+    affiché serait sauté ; (2) doublon « système » : les lignes comptées sont celles où le champ
+    système n'est pas vide (au moins 3), l'égalité est exacte et l'autre champ est le même sur toutes
+    ces lignes. Constructeur de test `dat_parser::make_string_database_pub` (base à N champs texte).
+    Tests : 5 dans `filter.rs`, 2 dans `extractor.rs`. Gate vert : fmt, typecheck, Vitest 158/158,
+    lint 0 erreur (10 avertissements connus), clippy `--all-targets` 0, `cargo test --locked
+    --no-fail-fast` 822 OK / 0 échec / 15 ignorés (+7).
+- [x] **WF-4 — Test d'intégration.** Un jeu fabriqué (dans le style des fixtures e2e Wolf) avec une carte
+      `SampleMap`, un événement `[D]…`, un message `ｴﾗｰ!!!`, un champ de noms d'événements et un doublon
+      `ｼｽﾃﾑ名`. Vérifier qu'aucun de ces textes n'est extrait et que les autres le sont toujours.
+      Vérifier aussi que l'export laisse les valeurs skippées intactes.
+      Fait (session cloud, 2026-10-29). Les fixtures publiques d'e2e ne savent pas fabriquer
+      `CommonEvent.dat` ni une base à plusieurs champs (formats `pub(crate)`) : le jeu complet est
+      testé dans `extractor.rs` (`test_extract_all_wolf_skips_non_translatable_texts`, ordre des
+      entrées et `extract_wolf_project` compris ; `test_export_leaves_skipped_texts_untouched` par
+      `inject_all_to_memory`, contrôle d'intégrité vide), et les cartes passent aussi par la vraie
+      couche de commandes (`tests/e2e_project_flow.rs`, `wolf_non_translatable_texts_are_skipped_at_open` :
+      `SampleMapA` et une carte `ｴﾗｰ!!!` sans fichier source, zip limité à `Map001.mps`). Gate vert :
+      fmt, typecheck, Vitest 158/158, lint 0 erreur (10 avertissements connus), clippy `--all-targets`
+      0, `cargo test --locked --no-fail-fast` 825 OK / 0 échec / 15 ignorés (+3).
+- [x] **WF-5 — Documentation.** `CONTEXT.md` ou `docs/engines/` (où sont les règles, comment en ajouter
+      une), `CHANGELOG.md`, journal, handoff. `BACKLOG.md` : les deux règles mises de côté, avec le
+      réglage de réinclusion, et le choix sur les noms qui servent de clés.
+      Fait (2026-10-29) : `docs/engines/wolf-filter.md` (règles, motifs, ajout d'une règle), renvoi dans
+      `CONTEXT.md`, `CHANGELOG.md` (Changed), `BACKLOG.md` (suites WF et risques relevés en relecture),
+      journal `docs/journal/2026-10-29-wf-implementation.md`, handoff.
+- [x] **WF-6 — Gate cloud** : fmt, typecheck, Vitest, lint, clippy `--all-targets -D warnings`,
+      `cargo test --locked`. Relecture indépendante du diff.
+      Fait (2026-10-29). Relecture par un sous-agent : rien de bloquant. Corrigé : un champ homonyme
+      d'un champ sauté placé avant lui est sauté aussi (sinon sa traduction irait dans le champ sauté,
+      clé par nom) ; test « carte de débogage illisible ⇒ erreur » ; deux assertions e2e toujours vraies
+      remplacées ; doc d'`extract_common_events`. Non corrigé (toucherait WF-D5, noté dans `BACKLOG.md`) :
+      `デバフ`, `コンテスト`, `Contest` sautés par les fragments de débogage ; répliques `警告！…` ; pas de
+      log des textes sautés. **Gate final vert** : fmt, typecheck, Vitest 158/158, lint 0 erreur
+      (10 avertissements connus), clippy `--all-targets` 0, `cargo test --locked --no-fail-fast`
+      **826 OK / 0 échec / 15 ignorés**.
+- [ ] **WF-7 — Essai (utilisateur, en local).** Recréer les trois projets, puis comparer leurs segments à
+      ceux d'aujourd'hui. Gain attendu : 288 textes en moins pour le 3.658, 469 pour とのかじ et 36 pour
+      ポンコツ. Les 51 de とのかじ étiquetés « à traduire » sont `ｼｽﾃﾑ効果名`, doublon de `ｽﾃｰﾀｽ効果名`
+      (mon étiquette était fausse). Aucun texte à traduire ne doit être perdu. Puis export et essai en jeu (UW-9).
+
+**Hors périmètre.**
+- Les deux règles moins fiables et le réglage de réinclusion d'un champ.
+- Les noms qui servent de clés.
+- Le texte jamais extrait : commandes 122, 150, 210, 300 et Evtext.
+- La protection des lignes de script au moment de la traduction.
+- Les codes de contrôle non protégés.
+
 ## Plan — UW : Wolf lu depuis le `Data/` déchiffré par UberWolf (2026-10-28, Claude) — PLAN VALIDÉ le 2026-10-28 (UW-D1 à UW-D8 = recommandations) ; implémentation confiée à une session cloud
 
 **Objectif.** Une seule façon d'ouvrir un jeu Wolf, quelle que soit sa version (2.x, 3.x, 3.31+, Pro,

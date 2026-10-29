@@ -573,6 +573,64 @@ pub(crate) fn make_minimal_dat_pub(string_value: &str) -> Vec<u8> {
     b
 }
 
+/// Build an unencrypted SJIS database pair `(.project, .dat)` with one type
+/// whose fields are all strings: `rows[i][j]` is the value of field `j` in
+/// row `i` (plan WF, field rules).
+#[cfg(test)]
+pub(crate) fn make_string_database_pub(
+    type_name: &str,
+    field_names: &[&str],
+    rows: &[&[&str]],
+) -> (Vec<u8>, Vec<u8>) {
+    let field_count = field_names.len() as u32;
+    let mut project = Vec::new();
+    project.extend_from_slice(&1u32.to_le_bytes()); // type_count = 1
+    project.extend(sjis_string_inner(type_name));
+    project.extend_from_slice(&field_count.to_le_bytes());
+    for name in field_names {
+        project.extend(sjis_string_inner(name));
+    }
+    project.extend_from_slice(&(rows.len() as u32).to_le_bytes());
+    for _ in rows {
+        project.extend(sjis_string_inner("")); // row name
+    }
+    project.extend(sjis_string_inner("")); // description
+    project.extend_from_slice(&field_count.to_le_bytes()); // field type list
+    project.extend(std::iter::repeat_n(0u8, field_names.len()));
+    project.extend_from_slice(&field_count.to_le_bytes()); // unknown1
+    for _ in field_names {
+        project.extend(sjis_string_inner(""));
+    }
+    for _ in 0..3 {
+        // unknown2 (string args), unknown3 (int args), unknown4 (defaults)
+        project.extend_from_slice(&field_count.to_le_bytes());
+        for _ in field_names {
+            project.extend_from_slice(&0u32.to_le_bytes());
+        }
+    }
+
+    let version: u8 = 0xC1;
+    let mut dat = vec![0x00]; // indicator = unencrypted
+    dat.extend_from_slice(&DB_MAGIC_SJIS);
+    dat.push(version);
+    dat.extend_from_slice(&1u32.to_le_bytes()); // type_count = 1
+    dat.extend_from_slice(&DAT_TYPE_SEPARATOR);
+    dat.extend_from_slice(&0u32.to_le_bytes()); // unknown1
+    dat.extend_from_slice(&field_count.to_le_bytes()); // fields_size
+    for i in 0..field_count {
+        dat.extend_from_slice(&(STRING_FIELD_START + i).to_le_bytes());
+    }
+    dat.extend_from_slice(&(rows.len() as u32).to_le_bytes());
+    for row in rows {
+        assert_eq!(row.len(), field_names.len(), "one value per field");
+        for value in *row {
+            dat.extend(sjis_string_inner(value));
+        }
+    }
+    dat.push(version); // terminator
+    (project, dat)
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

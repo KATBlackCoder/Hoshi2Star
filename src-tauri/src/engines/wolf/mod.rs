@@ -2,6 +2,7 @@ pub(crate) mod dat_parser;
 pub mod decrypt;
 pub(crate) mod encoding;
 pub mod extractor;
+pub(crate) mod filter;
 pub mod injector;
 pub(crate) mod integrity;
 pub mod layout;

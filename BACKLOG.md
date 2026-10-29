@@ -78,6 +78,28 @@
 - [ ] **Fichiers texte propres à un jeu** (UW-D8) : `Evtext/*.txt` de ポンコツ 3.714 (~9 740 lignes) lus par les
       événements du jeu ; format et chargement à étudier avant tout code (prologue non vérifié en jeu).
 
+## Engine Wolf RPG — suites du plan WF (2026-10-29)
+
+> Les textes Wolf non traduisibles sont skippés à l'extraction, règles dans `engines/wolf/filter.rs`
+> (`docs/engines/wolf-filter.md`). Ce lot ne contient que les règles fiables à 100 % (WF-D2).
+
+- [ ] **Règles moins fiables, avec réglage de réinclusion par projet** : mot-clé dans le nom du champ (77 textes
+      affichés touchés dans とのかじ) et table de ressources d'après le nom du type (107 dans ポンコツ). Prérequis :
+      un réglage par projet pour réinclure un champ sauté à tort, et l'affichage des champs sautés.
+- [ ] **Noms qui servent de clés** (recettes, compétences requises, WF-D3) : aucune règle fiable trouvée, ils restent
+      extraits. Pistes : détecter les références croisées entre champs, ou les protéger à la traduction.
+- [ ] **À trancher avant ou après WF-7** (relecture du 2026-10-29) : les fragments de débogage de WF-D5 sont cherchés
+      partout dans le nom, et sautent une carte ou un événement entier : `デバ`/`ﾃﾞﾊﾞ` attrapent `デバフ` (affaiblissement),
+      `テスト` attrape `コンテスト`, `test` attrape `Contest`/`Latest`. Absent des trois jeux mesurés. Pistes : `デバッグ`
+      au lieu de `デバ`, exclure `コンテスト`, `test` en début de mot. Idem, motif d'erreur : une réplique `「警告！侵入者を
+      発見！」` serait sautée.
+- [ ] **Traces de ce qui est skippé** : aucun log par carte, événement ou champ sauté (règle appliquée). Utile pour
+      vérifier WF-7 au-delà des totaux, et pour le futur réglage de réinclusion.
+- [ ] **Clés de base par position** : un segment de base désigne son champ par son nom ; deux champs homonymes se
+      confondent à l'export (problème antérieur à WF ; WF saute le second quand le premier est sauté).
+- [ ] Règles mesurées et écartées, à ne pas reprendre sans nouvelle mesure : noms repris d'un autre champ (371 textes
+      affichés touchés dans le 3.658), faible diversité (`妊娠率` est affiché), type de débogage.
+
 ---
 
 ## Features différenciantes

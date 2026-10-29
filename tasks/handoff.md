@@ -1,8 +1,19 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-29 — Claude (session locale).
-**Objectif utilisateur :** baser Wolf sur le `Data/` déchiffré par UberWolf, sans lire les `.wolf`. C'est fait : PR #23 fusionnée. La suite est à discuter avec l'utilisateur.
-**Statut :** `main` @ `2c67248` (PR #23 et #24 fusionnées le 2026-10-29). Le dossier principal est à jour. Les worktrees `../Hoshi2Star-uw` et `../Hoshi2Star-analyse` ont été retirés le 2026-10-29, à la demande de l'utilisateur. Branches fusionnées encore présentes, à supprimer si l'utilisateur le confirme : `feat/wolf-uberwolf` sur `origin`, ainsi que `docs/wolf-uberwolf-plan` et `docs/wolf-analyse-3-jeux` en local et sur `origin`.
+**Mis à jour :** 2026-10-29 — Claude (session cloud, WF-1 à WF-6 faits, PR ouverte).
+**Objectif utilisateur :** skipper à l'extraction les textes Wolf non traduisibles, avec toutes les règles réunies dans `engines/wolf/filter.rs` (plan WF).
+**Statut :** `main` @ `8e32c99`. Les branches fusionnées et les worktrees UW sont supprimés (2026-10-29). Le plan WF s'écrit sur la branche `docs/wolf-filter-plan` (worktree `../Hoshi2Star-wf`).
+
+## En cours (2026-10-29, Claude) — WF : skipper les textes Wolf non traduisibles
+
+- Plan : `tasks/todo.md`, « Plan — WF », **validé le 2026-10-29** (WF-D1 à WF-D6 = recommandations). Mesures : `RAE-PLAN/essais/wolf-filtres-proposes.md` (hors Git). Journal : `docs/journal/2026-10-29-plan-wolf-filtres.md`.
+- Décisions déjà données par l'utilisateur :
+  - un texte non traduisible est skippé : aucun segment n'est créé ;
+  - les règles vont dans un nouveau fichier `engines/wolf/filter.rs`, plutôt que dans `extractor.rs` ;
+  - ce lot ne contient que les règles fiables à 100 %.
+- **Implémentation (session cloud Claude, 2026-10-29)** : branche `feat/wolf-filter` depuis `origin/docs/wolf-filter-plan` @ `0806fec`. WF-1 à WF-6 faits, gate vert à chaque étape ; **gate final vert** : `cargo test --locked --no-fail-fast` 826 OK / 0 échec / 15 ignorés, Vitest 158/158, clippy 0, lint 0 erreur. Relecture indépendante faite et corrigée. Journal : `docs/journal/2026-10-29-wf-implementation.md`. Doc : `docs/engines/wolf-filter.md`. PR [#27](https://github.com/KATBlackCoder/Hoshi2Star/pull/27) `feat/wolf-filter` → `main` ouverte (non fusionnée).
+- À valider par l'utilisateur : trois précisions de lecture de WF-D5 (au moins un nom d'événement dans un champ de noms ; lignes non vides pour le doublon « système » ; champ homonyme d'un champ sauté sauté aussi) et les risques de motifs notés dans `BACKLOG.md` (`デバフ`, `コンテスト`, `Contest`, `警告！`).
+- **Prochaine action (utilisateur, en local) :** relire la PR ; WF-7 : recréer les trois projets, comparer les segments (gain attendu 288 / 469 / 36), export et essai en jeu (UW-9).
 
 ## Analyse (2026-10-29, Claude) — textes Wolf extraits, trois jeux comparés
 

@@ -302,6 +302,9 @@ Voir `docs/adr/` pour le détail. Résumé :
   lisible (`SysDatabase.dat`, `DataBase.dat`, `CDataBase.dat`), sinon refus `wolf_no_database` ; `Data.wolf`,
   `Data/MapData.wolf` ou `Data/BasicData.wolf` présent ⇒ refus `wolf_archive_present` (`engines/wolf/sources.rs`,
   `WolfSources`). Procédure : `docs/engines/wolf-uberwolf.md`
+- **Textes Wolf non traduisibles** (plan WF) : skippés à l'extraction, sans segment ; toutes les règles propres à
+  Wolf sont dans `engines/wolf/filter.rs` (`extractor.rs` ne fait que les appeler). Règles et ajout d'une règle :
+  `docs/engines/wolf-filter.md`
 
 ---
 

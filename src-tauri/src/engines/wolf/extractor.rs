@@ -1,11 +1,12 @@
 // Wolf RPG text extractor — F4-03/F4-05 implementation.
 
 use super::dat_parser;
+use super::filter;
 use super::sources::{SourcesError, WolfSources};
 use super::v3_format;
-use crate::{engines::filter, llm::tokenizer::Engine as TokEngine};
+use super::v3_format::common_events::CommonEventsV3;
 use regex::Regex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -183,6 +184,13 @@ pub fn extract_all_wolf(
     // Loose files of the decrypted Data/ (plan UW).
     let sources = WolfSources::load(game_dir)?;
 
+    // Common events are read first: their names drive the database field
+    // rules (plan WF, WF-D5). Their entry keeps its place, after the databases.
+    let common_events = sources
+        .common_events()
+        .map(|file| parse_common_events(&file.bytes));
+    let common_event_names = names_of(&common_events);
+
     // Maps
     for map in sources.maps() {
         let name = map.stem();
@@ -198,7 +206,13 @@ pub fn extract_all_wolf(
     // Databases
     for (project, dat) in sources.databases() {
         let name = dat.stem();
-        match extract_database_segments(&name, &project.bytes, &dat.bytes, version) {
+        match extract_database_segments(
+            &name,
+            &project.bytes,
+            &dat.bytes,
+            &common_event_names,
+            version,
+        ) {
             Ok(segs) if !segs.is_empty() => {
                 entries.push((format!("{name}.dat"), "wolf_database".to_string(), segs));
             }
@@ -208,18 +222,19 @@ pub fn extract_all_wolf(
     }
 
     // Common Events
-    if let Some(common_events) = sources.common_events() {
-        match extract_common_events(&common_events.bytes, version) {
-            Ok(segs) if !segs.is_empty() => {
+    match &common_events {
+        Some(Ok(parsed)) => {
+            let segs = common_event_segments(parsed);
+            if !segs.is_empty() {
                 entries.push((
                     "CommonEvent.dat".to_string(),
                     "wolf_common_events".to_string(),
                     segs,
                 ));
             }
-            Ok(_) => {}
-            Err(e) => unreadable.push(format!("CommonEvent.dat ({e})")),
         }
+        Some(Err(e)) => unreadable.push(format!("CommonEvent.dat ({e})")),
+        None => {}
     }
 
     reject_unreadable(unreadable)?;
@@ -264,6 +279,10 @@ pub fn extract_map_segments(
         .map_err(|e| ExtractorError::MapParser(format!("{map_name}: {e}")))?;
 
     let mut segments = Vec::new();
+    // Parsed first: a skipped map that cannot be read still refuses the project.
+    if filter::skip_map(map_name) {
+        return Ok(segments);
+    }
 
     for (event_idx, event) in map.events.iter().enumerate() {
         for (page_idx, page) in event.pages.iter().enumerate() {
@@ -271,7 +290,7 @@ pub fn extract_map_segments(
                 match command.cid {
                     v3_format::command::CID_MESSAGE => {
                         if let Some(text) = command.string_args.first() {
-                            if is_translatable(text) {
+                            if !filter::skip_message(text) {
                                 segments.push(WolfSegment {
                                     key: format!(
                                         "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}"
@@ -289,7 +308,7 @@ pub fn extract_map_segments(
                     }
                     v3_format::command::CID_CHOICES => {
                         for (choice_idx, choice) in command.string_args.iter().enumerate() {
-                            if is_translatable(choice) {
+                            if !filter::skip_message(choice) {
                                 segments.push(WolfSegment {
                                     key: format!(
                                         "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}/choices/{choice_idx}"
@@ -314,73 +333,6 @@ pub fn extract_map_segments(
     Ok(segments)
 }
 
-fn is_translatable(text: &str) -> bool {
-    filter::needs_translation(text, TokEngine::Wolf) && !is_resource_path(text.trim())
-}
-
-/// Matches a trailing resource file extension (images, audio, video, fonts)
-/// commonly used in Wolf RPG database/event fields for graphic, BGM/SE, and
-/// font references — these are file paths, not translatable text.
-static RE_RESOURCE_EXTENSION: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new(r"(?i)\.(png|jpe?g|bmp|gif|ogg|wav|mp3|mid|midi|ttf|otf|avi|webm|mp4)$")
-        .unwrap()
-});
-
-/// Sentence punctuation, never part of a resource path.
-const SENTENCE_PUNCTUATION: [char; 12] = [
-    '。', '、', '！', '？', '「', '」', '『', '』', '（', '）', '…', '：',
-];
-
-/// Returns true if `text` is a resource path, possibly followed by numeric
-/// lines (plan UW, UW-4: `bg/スラム.png⏎0⏎0⏎0`, a `SysDatabase` background
-/// field): every line, trailing `\r` and spaces removed, is empty, a number or
-/// a lone path ([`is_lone_path`]), and at least one is a lone path.
-fn is_resource_path(text: &str) -> bool {
-    let mut has_path = false;
-    for line in text.split('\n').map(str::trim_end) {
-        let unsigned = line.strip_prefix('-').unwrap_or(line);
-        if line.is_empty() || filter::is_pure_number(unsigned) {
-            continue;
-        }
-        if !is_lone_path(line) {
-            return false;
-        }
-        has_path = true;
-    }
-    has_path
-}
-
-/// A line that is a resource path and nothing else: it ends with a known
-/// extension, holds no full-width space nor sentence punctuation, and either
-/// contains `/` or `\` without any space, or is entirely ASCII (`icon.png`,
-/// `MS Gothic.ttf`). `ファイル名はicon.png` is a sentence, not a path.
-fn is_lone_path(line: &str) -> bool {
-    RE_RESOURCE_EXTENSION.is_match(line)
-        && !line.contains('\u{3000}')
-        && !line.contains(SENTENCE_PUNCTUATION)
-        && (line.is_ascii() || (line.contains(['/', '\\']) && !line.contains(' ')))
-}
-
-/// Returns true if `text` contains at least one Japanese character
-/// (hiragana, katakana, or CJK unified ideograph).
-fn contains_japanese(text: &str) -> bool {
-    text.chars().any(|c| {
-        matches!(c,
-            '\u{3041}'..='\u{3096}'   // hiragana
-            | '\u{30A0}'..='\u{30FF}' // katakana
-            | '\u{4E00}'..='\u{9FFF}' // CJK unified ideographs
-        )
-    })
-}
-
-/// Returns true if the field name is in the set of known translatable field names.
-fn is_known_translatable_field(name: &str) -> bool {
-    matches!(
-        name,
-        "name" | "名前" | "description" | "説明" | "note" | "備考" | "message" | "text"
-    )
-}
-
 // ---------------------------------------------------------------------------
 // .dat Database extraction
 // ---------------------------------------------------------------------------
@@ -390,11 +342,13 @@ fn is_known_translatable_field(name: &str) -> bool {
 /// Only fields that are of String type (indexInfo ≥ 0x07D0) are considered.
 /// A value is extracted if the field name is a known translatable name OR if the
 /// value contains Japanese characters.  Empty and placeholder-only values are
-/// skipped.
+/// skipped, and so are whole fields the rules of [`filter::skipped_fields`]
+/// reject (`common_event_names`: the names of the game's common events).
 pub fn extract_database_segments(
     db_name: &str,
     project_bytes: &[u8],
     dat_bytes: &[u8],
+    common_event_names: &HashSet<String>,
     _version: &crate::engines::detector::WolfVersion,
 ) -> Result<Vec<WolfSegment>, ExtractorError> {
     let db = dat_parser::parse_database(project_bytes, dat_bytes).map_err(|e| {
@@ -407,11 +361,12 @@ pub fn extract_database_segments(
     let mut segments = Vec::new();
 
     for (type_idx, dat_type) in db.types.iter().enumerate() {
+        let skipped_fields = filter::skipped_fields(dat_type, common_event_names);
         for (entry_idx, entry) in dat_type.entries.iter().enumerate() {
             // Walk string fields in declaration order; string_values are stored in
             // the same sequential order — one value per string-typed active field.
             let mut str_pos = 0usize;
-            for field in &dat_type.fields {
+            for (field_idx, field) in dat_type.fields.iter().enumerate() {
                 if !field.is_valid() {
                     continue;
                 }
@@ -424,14 +379,9 @@ pub fn extract_database_segments(
                 };
                 str_pos += 1;
 
-                if !is_translatable(value) {
-                    continue;
-                }
-                // Wolf RPG auto-replaces these values at runtime; they are never player-facing.
-                if value.contains("自動ｼｽﾃﾑ初期化") {
-                    continue;
-                }
-                if !is_known_translatable_field(&field.name) && !contains_japanese(value) {
+                if skipped_fields.contains(&field_idx)
+                    || filter::skip_database_value(&field.name, value)
+                {
                     continue;
                 }
 
@@ -460,27 +410,54 @@ pub fn extract_database_segments(
 /// [`v3_format::common_events`]: v3.5 LZ4 files and files stored in clear
 /// (v2.x) share the same flat model. Each event's commands are a flat list
 /// (no pages, unlike `.mps` events).
+///
+/// The project extractors parse the file once and reuse it for the common
+/// event names ([`parse_common_events`], [`common_event_segments`]); this
+/// wrapper reads one file on its own (tests, injector checks).
 pub fn extract_common_events(
     bytes: &[u8],
     _version: &crate::engines::detector::WolfVersion,
 ) -> Result<Vec<WolfSegment>, ExtractorError> {
+    Ok(common_event_segments(&parse_common_events(bytes)?))
+}
+
+/// Read `CommonEvent.dat` bytes (v3.5 LZ4 or stored in clear).
+fn parse_common_events(bytes: &[u8]) -> Result<CommonEventsV3, ExtractorError> {
     let decompressed = v3_format::common_events::unpack(bytes)
         .map_err(|e| ExtractorError::MapParser(format!("CommonEvent.dat: {e}")))?;
-    let common_events = v3_format::common_events::CommonEventsV3::parse(&decompressed)
-        .map_err(|e| ExtractorError::MapParser(format!("CommonEvent.dat: {e}")))?;
+    CommonEventsV3::parse(&decompressed)
+        .map_err(|e| ExtractorError::MapParser(format!("CommonEvent.dat: {e}")))
+}
 
+/// Names of every common event (trimmed, non-empty) of a `CommonEvent.dat`
+/// that could be read; empty without one (plan WF, WF-D5).
+fn names_of(common_events: &Option<Result<CommonEventsV3, ExtractorError>>) -> HashSet<String> {
+    let Some(Ok(common_events)) = common_events else {
+        return HashSet::new();
+    };
+    common_events
+        .events
+        .iter()
+        .map(|event| event.name.trim())
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Translatable segments of parsed common events.
+fn common_event_segments(common_events: &CommonEventsV3) -> Vec<WolfSegment> {
     let mut segments = Vec::new();
 
     for (event_idx, event) in common_events.events.iter().enumerate() {
         let event_name = &event.name;
-        if event_name.starts_with("X[") || event_name.starts_with("zz") {
+        if filter::skip_common_event(event_name) {
             continue;
         }
         for (cmd_idx, command) in event.commands.iter().enumerate() {
             match command.cid {
                 v3_format::command::CID_MESSAGE => {
                     if let Some(text) = command.string_args.first() {
-                        if is_translatable(text) {
+                        if !filter::skip_message(text) {
                             segments.push(WolfSegment {
                                 key: format!("CommonEvents/{event_name}/{event_idx}/{cmd_idx}"),
                                 source_text: text.clone(),
@@ -495,7 +472,7 @@ pub fn extract_common_events(
                 }
                 v3_format::command::CID_CHOICES => {
                     for (choice_idx, choice) in command.string_args.iter().enumerate() {
-                        if is_translatable(choice) {
+                        if !filter::skip_message(choice) {
                             segments.push(WolfSegment {
                                 key: format!(
                                     "CommonEvents/{event_name}/{event_idx}/{cmd_idx}/choices/{choice_idx}"
@@ -515,7 +492,7 @@ pub fn extract_common_events(
         }
     }
 
-    Ok(segments)
+    segments
 }
 
 // ---------------------------------------------------------------------------
@@ -541,6 +518,13 @@ pub fn extract_wolf_project(
 
     let sources = WolfSources::load(game_dir)?;
 
+    // --- Common Events, read first: their names drive the database field
+    // rules (plan WF, WF-D5); their segments keep their place, last. ---
+    let common_events = sources
+        .common_events()
+        .map(|file| parse_common_events(&file.bytes));
+    let common_event_names = names_of(&common_events);
+
     // --- Maps ---
     for map in sources.maps() {
         let name = map.stem();
@@ -553,18 +537,23 @@ pub fn extract_wolf_project(
     // --- Databases ---
     for (project, dat) in sources.databases() {
         let name = dat.stem();
-        match extract_database_segments(&name, &project.bytes, &dat.bytes, version) {
+        match extract_database_segments(
+            &name,
+            &project.bytes,
+            &dat.bytes,
+            &common_event_names,
+            version,
+        ) {
             Ok(segs) => segments.extend(segs),
             Err(e) => eprintln!("warn: skipping {name}.dat — {e}"),
         }
     }
 
     // --- Common Events ---
-    if let Some(common_events) = sources.common_events() {
-        match extract_common_events(&common_events.bytes, version) {
-            Ok(segs) => segments.extend(segs),
-            Err(e) => unreadable.push(format!("CommonEvent.dat ({e})")),
-        }
+    match &common_events {
+        Some(Ok(parsed)) => segments.extend(common_event_segments(parsed)),
+        Some(Err(e)) => unreadable.push(format!("CommonEvent.dat ({e})")),
+        None => {}
     }
 
     reject_unreadable(unreadable)?;
@@ -637,6 +626,48 @@ mod tests {
         }
     }
 
+    /// Plan WF, WF-2: a debug map yields nothing, an error message is
+    /// skipped and the other texts of the map stay.
+    #[test]
+    fn test_extract_map_segments_skips_debug_maps_and_error_messages() {
+        let bytes = synthetic_map_bytes(0x64, false);
+        assert!(extract_map_segments("SampleMapA", &bytes, &v2())
+            .unwrap()
+            .is_empty());
+        // The map is read before it is skipped: an unreadable debug map still
+        // refuses the project.
+        assert!(extract_map_segments("SampleMapA", &make_empty_mps(), &v2()).is_err());
+
+        let map = v3_format::map::MapV3::synthetic_messages(
+            0x64,
+            false,
+            &[MESSAGE, "ｴﾗｰ!!!"],
+            &["エラー：戻る", CHOICES[0]],
+        );
+        let bytes = v3_format::compression::pack_map(map.dump().unwrap()).unwrap();
+        let segs = extract_map_segments("Map001", &bytes, &v2()).unwrap();
+        let texts: Vec<&str> = segs.iter().map(|s| s.source_text.as_str()).collect();
+        assert_eq!(texts, [MESSAGE, CHOICES[0]]);
+        // Keys keep the command and choice positions of the file.
+        assert_eq!(segs[1].key, "MapData/Map001/events/0/pages/0/2/choices/1");
+    }
+
+    /// Plan WF, WF-2: a debug common event yields nothing, an error message
+    /// is skipped, the other events stay.
+    #[test]
+    fn test_extract_common_events_skips_debug_events_and_error_messages() {
+        let common_events = v3_format::common_events::CommonEventsV3::synthetic_messages_v2(&[
+            ("[D]全回復", MESSAGE),
+            ("ﾃﾞﾊﾞｯｸﾞﾒﾆｭｰ", MESSAGE),
+            ("Ev003", "警告：セーブできません"),
+            ("Ev004", "警告、彼女の魔力が急激に上昇しています。"),
+            ("Ev005", MESSAGE),
+        ]);
+        let segs = extract_common_events(&common_events.dump().unwrap(), &v2()).unwrap();
+        let keys: Vec<&str> = segs.iter().map(|s| s.key.as_str()).collect();
+        assert_eq!(keys, ["CommonEvents/Ev004/3/0", "CommonEvents/Ev005/4/0"]);
+    }
+
     #[test]
     fn test_extract_all_wolf_reads_a_v2_game() {
         let game = tempfile::tempdir().unwrap();
@@ -661,6 +692,190 @@ mod tests {
             .find(|(file, _, _)| file == "CommonEvent.dat")
             .unwrap();
         assert_eq!(ce.2[0].source_text, MESSAGE);
+    }
+
+    // -----------------------------------------------------------------------
+    // Plan WF, WF-4: a whole game with texts to skip, extracted then exported
+    // -----------------------------------------------------------------------
+
+    const SAMPLE_MESSAGE: &str = "サンプルマップの会話です";
+    const ERROR_MESSAGE: &str = "ｴﾗｰ!!!";
+    const DEBUG_EVENT: &str = "[D]全回復";
+    const DEBUG_MESSAGE: &str = "全員の体力を回復しました";
+    const STORY_WARNING: &str = "警告、彼女の魔力が急激に上昇しています。";
+    const CALLED_EVENT: &str = "アイテム使用";
+
+    /// Rows of `DataBase`: displayed name, common event called, system
+    /// duplicate of the name.
+    const DB_FIELDS: [&str; 3] = ["名前", "[ｺﾓﾝｲﾍﾞﾝﾄ]呼び出しｲﾍﾞﾝﾄ名", "ｼｽﾃﾑ名"];
+    const DB_ROWS: [[&str; 3]; 3] = [
+        ["回復薬", CALLED_EVENT, "回復薬"],
+        ["毒消し", CALLED_EVENT, "毒消し"],
+        ["地図", CALLED_EVENT, "地図"],
+    ];
+
+    /// A decrypted Wolf 2.x game: a sample map, a map with an error message,
+    /// a debug common event, a database with a field of common event names and
+    /// a "system" duplicate.
+    fn write_game_with_texts_to_skip(game_dir: &Path) {
+        use crate::engines::wolf::dat_parser::make_string_database_pub;
+
+        let map_dir = game_dir.join("Data").join("MapData");
+        let basic = game_dir.join("Data").join("BasicData");
+        std::fs::create_dir_all(&map_dir).unwrap();
+        std::fs::create_dir_all(&basic).unwrap();
+
+        let map = |messages: &[&str], choices: &[&str]| {
+            let map = v3_format::map::MapV3::synthetic_messages(0x64, false, messages, choices);
+            v3_format::compression::pack_map(map.dump().unwrap()).unwrap()
+        };
+        std::fs::write(map_dir.join("SampleMapA.mps"), map(&[SAMPLE_MESSAGE], &[])).unwrap();
+        std::fs::write(
+            map_dir.join("Map001.mps"),
+            map(&[MESSAGE, ERROR_MESSAGE], &CHOICES),
+        )
+        .unwrap();
+
+        let common_events = v3_format::common_events::CommonEventsV3::synthetic_messages_v2(&[
+            (DEBUG_EVENT, DEBUG_MESSAGE),
+            (CALLED_EVENT, STORY_WARNING),
+        ]);
+        std::fs::write(basic.join("CommonEvent.dat"), common_events.dump().unwrap()).unwrap();
+
+        let rows: Vec<&[&str]> = DB_ROWS.iter().map(|row| row.as_slice()).collect();
+        let (project, dat) = make_string_database_pub("アイテム", &DB_FIELDS, &rows);
+        std::fs::write(basic.join("DataBase.project"), project).unwrap();
+        std::fs::write(basic.join("DataBase.dat"), dat).unwrap();
+    }
+
+    /// Plan WF, WF-4: none of the texts to skip is extracted, every other text
+    /// still is, and the entries keep their order (maps, databases, common
+    /// events) although `CommonEvent.dat` is read first.
+    #[test]
+    fn test_extract_all_wolf_skips_non_translatable_texts() {
+        let game = tempfile::tempdir().unwrap();
+        write_game_with_texts_to_skip(game.path());
+
+        let entries = extract_all_wolf(game.path(), &v2()).unwrap();
+        let files: Vec<(&str, &str)> = entries
+            .iter()
+            .map(|(file, kind, _)| (file.as_str(), kind.as_str()))
+            .collect();
+        assert_eq!(
+            files,
+            [
+                ("Map001.mps", "wolf_map"),
+                ("DataBase.dat", "wolf_database"),
+                ("CommonEvent.dat", "wolf_common_events"),
+            ]
+        );
+        let texts = |idx: usize| -> Vec<&str> {
+            entries[idx]
+                .2
+                .iter()
+                .map(|s| s.source_text.as_str())
+                .collect()
+        };
+        assert_eq!(texts(0), [MESSAGE, CHOICES[0], CHOICES[1]]);
+        assert_eq!(texts(1), ["回復薬", "毒消し", "地図"]);
+        assert!(entries[1].2.iter().all(|s| s.key.ends_with("/名前")));
+        assert_eq!(texts(2), [STORY_WARNING]);
+
+        // extract_wolf_project yields the same segments, in the same order.
+        let flat: Vec<String> = extract_wolf_project(game.path(), &v2())
+            .unwrap()
+            .into_iter()
+            .map(|s| s.key)
+            .collect();
+        let grouped: Vec<String> = entries
+            .iter()
+            .flat_map(|(_, _, segs)| segs.iter().map(|s| s.key.clone()))
+            .collect();
+        assert_eq!(flat, grouped);
+    }
+
+    /// Plan WF, WF-4: exporting every extracted segment leaves the skipped
+    /// texts as they are in the game, and passes the integrity gate.
+    #[tokio::test]
+    async fn test_export_leaves_skipped_texts_untouched() {
+        use crate::engines::wolf::injector::{
+            inject_all_to_memory, injection_bucket, WolfTranslation,
+        };
+
+        let game = tempfile::tempdir().unwrap();
+        write_game_with_texts_to_skip(game.path());
+
+        let mut translations: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
+        for (idx, segment) in extract_wolf_project(game.path(), &v2())
+            .unwrap()
+            .into_iter()
+            .enumerate()
+        {
+            translations
+                .entry(injection_bucket(&segment.key).unwrap())
+                .or_default()
+                .push(WolfTranslation {
+                    key: segment.key,
+                    text: format!("T{idx}"),
+                });
+        }
+        let export = inject_all_to_memory(game.path(), &translations, &v2())
+            .await
+            .unwrap();
+        assert!(export.issues.is_empty(), "{:?}", export.issues);
+        let output: HashMap<&str, &[u8]> = export
+            .entries
+            .iter()
+            .map(|(path, bytes)| (path.as_str(), bytes.as_slice()))
+            .collect();
+        let mut paths: Vec<&str> = output.keys().copied().collect();
+        paths.sort_unstable();
+        // The sample map has no segment: it is not delivered, the game keeps it.
+        assert_eq!(
+            paths,
+            [
+                "Data/BasicData/CommonEvent.dat",
+                "Data/BasicData/DataBase.dat",
+                "Data/MapData/Map001.mps",
+            ]
+        );
+
+        let map_bytes =
+            v3_format::compression::unpack_map(output["Data/MapData/Map001.mps"]).unwrap();
+        let map = v3_format::map::MapV3::parse(&map_bytes).unwrap();
+        let commands = &map.events[0].pages[0].commands;
+        assert_eq!(commands[0].string_args, ["T0"]);
+        assert_eq!(
+            commands[1].string_args,
+            [ERROR_MESSAGE],
+            "error message kept"
+        );
+        assert_eq!(commands[2].string_args, ["T1", "T2"]);
+
+        let project = std::fs::read(game.path().join("Data/BasicData/DataBase.project")).unwrap();
+        let db =
+            dat_parser::parse_database(&project, output["Data/BasicData/DataBase.dat"]).unwrap();
+        for (row, entry) in db.types[0].entries.iter().enumerate() {
+            assert_eq!(
+                entry.string_values,
+                [
+                    format!("T{}", 3 + row),
+                    DB_ROWS[row][1].to_string(),
+                    DB_ROWS[row][2].to_string()
+                ],
+                "row {row}: common event and system fields kept"
+            );
+        }
+
+        let ce_bytes =
+            v3_format::common_events::unpack(output["Data/BasicData/CommonEvent.dat"]).unwrap();
+        let common_events = CommonEventsV3::parse(&ce_bytes).unwrap();
+        assert_eq!(
+            common_events.events[0].commands[0].string_args,
+            [DEBUG_MESSAGE],
+            "debug event kept"
+        );
+        assert_eq!(common_events.events[1].commands[0].string_args, ["T6"]);
     }
 
     /// A map that cannot be read refuses the whole project (never opened
@@ -790,7 +1005,8 @@ mod tests {
     fn test_extract_database_name_field_japanese() {
         let project = make_db_project("Items", "name");
         let dat = make_db_dat_string("テスト"); // Japanese value → always extracted
-        let segs = extract_database_segments("UserDB", &project, &dat, &v2()).unwrap();
+        let segs =
+            extract_database_segments("UserDB", &project, &dat, &HashSet::new(), &v2()).unwrap();
         assert_eq!(segs.len(), 1);
         assert_eq!(segs[0].source_text, "テスト");
         assert!(segs[0].key.starts_with("Database/UserDB/"));
@@ -802,7 +1018,8 @@ mod tests {
         // Field named "name" is a known translatable field even without Japanese.
         let project = make_db_project("Items", "name");
         let dat = make_db_dat_string("Hero");
-        let segs = extract_database_segments("UserDB", &project, &dat, &v2()).unwrap();
+        let segs =
+            extract_database_segments("UserDB", &project, &dat, &HashSet::new(), &v2()).unwrap();
         assert_eq!(
             segs.len(),
             1,
@@ -814,7 +1031,8 @@ mod tests {
     fn test_extract_database_skips_int_field() {
         let project = make_db_project("Vars", "hp");
         let dat = make_db_dat_int(100);
-        let segs = extract_database_segments("UserDB", &project, &dat, &v2()).unwrap();
+        let segs =
+            extract_database_segments("UserDB", &project, &dat, &HashSet::new(), &v2()).unwrap();
         assert!(segs.is_empty(), "integer fields must be skipped");
     }
 
@@ -823,7 +1041,8 @@ mod tests {
         // An empty string value should not produce a segment.
         let project = make_db_project("Items", "name");
         let dat = make_db_dat_string(""); // empty → skip
-        let segs = extract_database_segments("UserDB", &project, &dat, &v2()).unwrap();
+        let segs =
+            extract_database_segments("UserDB", &project, &dat, &HashSet::new(), &v2()).unwrap();
         assert!(segs.is_empty(), "empty string must be skipped");
     }
 
@@ -835,7 +1054,8 @@ mod tests {
     fn test_key_format_dat() {
         let project = make_db_project("Chars", "名前");
         let dat = make_db_dat_string("テスト");
-        let segs = extract_database_segments("CDB", &project, &dat, &v2()).unwrap();
+        let segs =
+            extract_database_segments("CDB", &project, &dat, &HashSet::new(), &v2()).unwrap();
         assert_eq!(segs.len(), 1);
         assert!(
             segs[0].key.starts_with("Database/CDB/"),
@@ -880,67 +1100,61 @@ mod tests {
             .is_empty());
     }
 
+    /// Plan WF, WF-3: a field of common event names and a "system" duplicate
+    /// are skipped as whole fields; the displayed names stay.
     #[test]
-    fn test_is_resource_path() {
-        for path in [
-            "Picture/title.png",
-            "title.PNG",
-            "se001.ogg",
-            "bgm.mp3",
-            "voice.WAV",
-            "MS Gothic.ttf",
-            "movie.webm",
-        ] {
-            assert!(is_resource_path(path), "{path:?} should be a resource path");
-        }
+    fn test_extract_database_skips_common_event_and_system_fields() {
+        use crate::engines::wolf::dat_parser::make_string_database_pub;
 
-        for text in ["こんにちは", "Hello, world!", "Lv.5", "Mr. Smith"] {
-            assert!(
-                !is_resource_path(text),
-                "{text:?} should not be a resource path"
-            );
-        }
+        let (project, dat) = make_string_database_pub(
+            "アイテム",
+            &["名前", "[ｺﾓﾝｲﾍﾞﾝﾄ]呼び出しｲﾍﾞﾝﾄ名", "ｼｽﾃﾑ名"],
+            &[
+                &["回復薬", "アイテム使用", "回復薬"],
+                &["毒消し", "アイテム使用", "毒消し"],
+                &["地図", "地図を開く", "地図"],
+            ],
+        );
+        let ce_names: HashSet<String> = ["アイテム使用", "地図を開く"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let segs = extract_database_segments("DataBase", &project, &dat, &ce_names, &v2()).unwrap();
+        let keys: Vec<&str> = segs.iter().map(|s| s.key.as_str()).collect();
+        assert_eq!(
+            keys,
+            [
+                "Database/DataBase/0/0/名前",
+                "Database/DataBase/0/1/名前",
+                "Database/DataBase/0/2/名前"
+            ]
+        );
+
+        // Without the common event names, only the system duplicate goes.
+        let segs =
+            extract_database_segments("DataBase", &project, &dat, &HashSet::new(), &v2()).unwrap();
+        assert_eq!(segs.len(), 6);
+        assert!(segs.iter().all(|s| !s.key.ends_with("ｼｽﾃﾑ名")));
     }
 
-    /// Plan UW, UW-4: a path followed by numeric lines is a path; a sentence
-    /// that ends with a file name is text.
+    /// Plan WF, WF-3: `ｼｽﾃﾑ名` repeating `ｴﾝﾁｬﾝﾄ名` is skipped, `ｴﾝﾁｬﾝﾄ名` stays.
     #[test]
-    fn test_is_resource_path_with_numeric_lines() {
-        for path in [
-            "bg/スラム.png\n0\n0\n0",
-            "bg/スラム.png\r\n0\r\n0\r\n1",
-            "icon.png",
-            "Picture\\顔\\主人公.png",
-            "bg/title.png  \n\n-1\n",
-        ] {
-            assert!(is_resource_path(path), "{path:?} should be a resource path");
-        }
+    fn test_extract_database_keeps_the_field_a_system_field_repeats() {
+        use crate::engines::wolf::dat_parser::make_string_database_pub;
 
-        for text in [
-            "ファイル名はicon.png",
-            "「…icon031.pngみたいな…",
-            "画像はこちら：pic.png",
-            "セリス\n見てbg.png",
-            "bg/スラム 2.png",
-            "bg/スラム　2.png",
-            "見て：bg/a.png",
-            "0\n0",
-            "",
-        ] {
-            assert!(
-                !is_resource_path(text),
-                "{text:?} should not be a resource path"
-            );
-        }
-    }
-
-    #[test]
-    fn test_is_translatable_skips_resource_paths() {
-        assert!(!is_translatable("Picture/title.png"));
-        assert!(!is_translatable("se001.ogg"));
-        assert!(!is_translatable("bg/スラム.png\n0\n0\n0"));
-        assert!(is_translatable("ファイル名はicon.png"));
-        assert!(is_translatable("こんにちは"));
+        let (project, dat) = make_string_database_pub(
+            "エンチャント",
+            &["ｼｽﾃﾑ名", "ｴﾝﾁｬﾝﾄ名"],
+            &[
+                &["炎の加護", "炎の加護"],
+                &["氷の加護", "氷の加護"],
+                &["雷の加護", "雷の加護"],
+            ],
+        );
+        let segs =
+            extract_database_segments("CDataBase", &project, &dat, &HashSet::new(), &v2()).unwrap();
+        assert_eq!(segs.len(), 3);
+        assert!(segs.iter().all(|s| s.key.ends_with("/ｴﾝﾁｬﾝﾄ名")));
     }
 
     #[test]
@@ -948,7 +1162,8 @@ mod tests {
         // Values containing 自動ｼｽﾃﾑ初期化 are auto-replaced at runtime — not player-facing.
         let project = make_db_project("System", "description");
         let dat = make_db_dat_string("ここの値は「自動ｼｽﾃﾑ初期化」処理でセットされます");
-        let segs = extract_database_segments("CDataBase", &project, &dat, &v2()).unwrap();
+        let segs =
+            extract_database_segments("CDataBase", &project, &dat, &HashSet::new(), &v2()).unwrap();
         assert!(
             segs.is_empty(),
             "auto-init placeholder values must be skipped"
@@ -1071,8 +1286,14 @@ mod tests {
             let dat_path = basic_data_dir.join(format!("{db_name}.dat"));
             let project_bytes = std::fs::read(&project_path).unwrap();
             let dat_bytes = std::fs::read(&dat_path).unwrap();
-            let segs = extract_database_segments(db_name, &project_bytes, &dat_bytes, &v2())
-                .unwrap_or_else(|e| panic!("Inko {db_name}.dat must parse (LZ4): {e:?}"));
+            let segs = extract_database_segments(
+                db_name,
+                &project_bytes,
+                &dat_bytes,
+                &HashSet::new(),
+                &v2(),
+            )
+            .unwrap_or_else(|e| panic!("Inko {db_name}.dat must parse (LZ4): {e:?}"));
             eprintln!("Inko {db_name}.dat → {} segments", segs.len());
             total += segs.len();
         }
