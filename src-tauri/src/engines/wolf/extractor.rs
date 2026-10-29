@@ -1,9 +1,9 @@
 // Wolf RPG text extractor — F4-03/F4-05 implementation.
 
 use super::dat_parser;
+use super::filter;
 use super::sources::{SourcesError, WolfSources};
 use super::v3_format;
-use crate::{engines::filter, llm::tokenizer::Engine as TokEngine};
 use regex::Regex;
 use std::collections::HashMap;
 use std::path::Path;
@@ -271,7 +271,7 @@ pub fn extract_map_segments(
                 match command.cid {
                     v3_format::command::CID_MESSAGE => {
                         if let Some(text) = command.string_args.first() {
-                            if is_translatable(text) {
+                            if filter::is_translatable(text) {
                                 segments.push(WolfSegment {
                                     key: format!(
                                         "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}"
@@ -289,7 +289,7 @@ pub fn extract_map_segments(
                     }
                     v3_format::command::CID_CHOICES => {
                         for (choice_idx, choice) in command.string_args.iter().enumerate() {
-                            if is_translatable(choice) {
+                            if filter::is_translatable(choice) {
                                 segments.push(WolfSegment {
                                     key: format!(
                                         "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}/choices/{choice_idx}"
@@ -312,73 +312,6 @@ pub fn extract_map_segments(
     }
 
     Ok(segments)
-}
-
-fn is_translatable(text: &str) -> bool {
-    filter::needs_translation(text, TokEngine::Wolf) && !is_resource_path(text.trim())
-}
-
-/// Matches a trailing resource file extension (images, audio, video, fonts)
-/// commonly used in Wolf RPG database/event fields for graphic, BGM/SE, and
-/// font references — these are file paths, not translatable text.
-static RE_RESOURCE_EXTENSION: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new(r"(?i)\.(png|jpe?g|bmp|gif|ogg|wav|mp3|mid|midi|ttf|otf|avi|webm|mp4)$")
-        .unwrap()
-});
-
-/// Sentence punctuation, never part of a resource path.
-const SENTENCE_PUNCTUATION: [char; 12] = [
-    '。', '、', '！', '？', '「', '」', '『', '』', '（', '）', '…', '：',
-];
-
-/// Returns true if `text` is a resource path, possibly followed by numeric
-/// lines (plan UW, UW-4: `bg/スラム.png⏎0⏎0⏎0`, a `SysDatabase` background
-/// field): every line, trailing `\r` and spaces removed, is empty, a number or
-/// a lone path ([`is_lone_path`]), and at least one is a lone path.
-fn is_resource_path(text: &str) -> bool {
-    let mut has_path = false;
-    for line in text.split('\n').map(str::trim_end) {
-        let unsigned = line.strip_prefix('-').unwrap_or(line);
-        if line.is_empty() || filter::is_pure_number(unsigned) {
-            continue;
-        }
-        if !is_lone_path(line) {
-            return false;
-        }
-        has_path = true;
-    }
-    has_path
-}
-
-/// A line that is a resource path and nothing else: it ends with a known
-/// extension, holds no full-width space nor sentence punctuation, and either
-/// contains `/` or `\` without any space, or is entirely ASCII (`icon.png`,
-/// `MS Gothic.ttf`). `ファイル名はicon.png` is a sentence, not a path.
-fn is_lone_path(line: &str) -> bool {
-    RE_RESOURCE_EXTENSION.is_match(line)
-        && !line.contains('\u{3000}')
-        && !line.contains(SENTENCE_PUNCTUATION)
-        && (line.is_ascii() || (line.contains(['/', '\\']) && !line.contains(' ')))
-}
-
-/// Returns true if `text` contains at least one Japanese character
-/// (hiragana, katakana, or CJK unified ideograph).
-fn contains_japanese(text: &str) -> bool {
-    text.chars().any(|c| {
-        matches!(c,
-            '\u{3041}'..='\u{3096}'   // hiragana
-            | '\u{30A0}'..='\u{30FF}' // katakana
-            | '\u{4E00}'..='\u{9FFF}' // CJK unified ideographs
-        )
-    })
-}
-
-/// Returns true if the field name is in the set of known translatable field names.
-fn is_known_translatable_field(name: &str) -> bool {
-    matches!(
-        name,
-        "name" | "名前" | "description" | "説明" | "note" | "備考" | "message" | "text"
-    )
 }
 
 // ---------------------------------------------------------------------------
@@ -424,14 +357,7 @@ pub fn extract_database_segments(
                 };
                 str_pos += 1;
 
-                if !is_translatable(value) {
-                    continue;
-                }
-                // Wolf RPG auto-replaces these values at runtime; they are never player-facing.
-                if value.contains("自動ｼｽﾃﾑ初期化") {
-                    continue;
-                }
-                if !is_known_translatable_field(&field.name) && !contains_japanese(value) {
+                if filter::skip_database_value(&field.name, value) {
                     continue;
                 }
 
@@ -473,14 +399,14 @@ pub fn extract_common_events(
 
     for (event_idx, event) in common_events.events.iter().enumerate() {
         let event_name = &event.name;
-        if event_name.starts_with("X[") || event_name.starts_with("zz") {
+        if filter::skip_common_event(event_name) {
             continue;
         }
         for (cmd_idx, command) in event.commands.iter().enumerate() {
             match command.cid {
                 v3_format::command::CID_MESSAGE => {
                     if let Some(text) = command.string_args.first() {
-                        if is_translatable(text) {
+                        if filter::is_translatable(text) {
                             segments.push(WolfSegment {
                                 key: format!("CommonEvents/{event_name}/{event_idx}/{cmd_idx}"),
                                 source_text: text.clone(),
@@ -495,7 +421,7 @@ pub fn extract_common_events(
                 }
                 v3_format::command::CID_CHOICES => {
                     for (choice_idx, choice) in command.string_args.iter().enumerate() {
-                        if is_translatable(choice) {
+                        if filter::is_translatable(choice) {
                             segments.push(WolfSegment {
                                 key: format!(
                                     "CommonEvents/{event_name}/{event_idx}/{cmd_idx}/choices/{choice_idx}"
@@ -878,69 +804,6 @@ mod tests {
         assert!(extract_common_events(&make_empty_common_event_dat(), &v2())
             .unwrap()
             .is_empty());
-    }
-
-    #[test]
-    fn test_is_resource_path() {
-        for path in [
-            "Picture/title.png",
-            "title.PNG",
-            "se001.ogg",
-            "bgm.mp3",
-            "voice.WAV",
-            "MS Gothic.ttf",
-            "movie.webm",
-        ] {
-            assert!(is_resource_path(path), "{path:?} should be a resource path");
-        }
-
-        for text in ["こんにちは", "Hello, world!", "Lv.5", "Mr. Smith"] {
-            assert!(
-                !is_resource_path(text),
-                "{text:?} should not be a resource path"
-            );
-        }
-    }
-
-    /// Plan UW, UW-4: a path followed by numeric lines is a path; a sentence
-    /// that ends with a file name is text.
-    #[test]
-    fn test_is_resource_path_with_numeric_lines() {
-        for path in [
-            "bg/スラム.png\n0\n0\n0",
-            "bg/スラム.png\r\n0\r\n0\r\n1",
-            "icon.png",
-            "Picture\\顔\\主人公.png",
-            "bg/title.png  \n\n-1\n",
-        ] {
-            assert!(is_resource_path(path), "{path:?} should be a resource path");
-        }
-
-        for text in [
-            "ファイル名はicon.png",
-            "「…icon031.pngみたいな…",
-            "画像はこちら：pic.png",
-            "セリス\n見てbg.png",
-            "bg/スラム 2.png",
-            "bg/スラム　2.png",
-            "見て：bg/a.png",
-            "0\n0",
-            "",
-        ] {
-            assert!(
-                !is_resource_path(text),
-                "{text:?} should not be a resource path"
-            );
-        }
-    }
-
-    #[test]
-    fn test_is_translatable_skips_resource_paths() {
-        assert!(!is_translatable("Picture/title.png"));
-        assert!(!is_translatable("se001.ogg"));
-        assert!(!is_translatable("bg/スラム.png\n0\n0\n0"));
-        assert!(is_translatable("ファイル名はicon.png"));
-        assert!(is_translatable("こんにちは"));
     }
 
     #[test]

@@ -69,9 +69,14 @@ dans un nouveau fichier, `src-tauri/src/engines/wolf/filter.rs` (demande de l'ut
 **Étapes.** Branche depuis `main` (worktree). Pas de build local ; gate en cloud.
 
 - [x] **WF-0.** WF-D1 à WF-D6 validées telles que recommandées (utilisateur, 2026-10-29).
-- [ ] **WF-1 — Création de `engines/wolf/filter.rs`** et déclaration dans `engines/wolf/mod.rs`. Les
+- [x] **WF-1 — Création de `engines/wolf/filter.rs`** et déclaration dans `engines/wolf/mod.rs`. Les
       règles existantes y sont déplacées (WF-D4), avec leurs tests. `extractor.rs` appelle
       `filter::…`. Aucun changement de comportement : les tests existants passent sans modification.
+      Fait (session cloud, 2026-10-29) : `is_translatable`, `skip_common_event` (`X[`, `zz`) et
+      `skip_database_value` (chemins, `自動ｼｽﾃﾑ初期化`, champ connu ou japonais) ; trois tests déplacés
+      tels quels ; `.unwrap()` de la regex des extensions remplacé par `.expect(…)`. Gate vert : fmt,
+      typecheck, Vitest 158/158, lint 0 erreur (10 avertissements connus), clippy `--all-targets` 0,
+      `cargo test --locked --no-fail-fast` 808 OK / 0 échec / 15 ignorés (même total qu'avant).
 - [ ] **WF-2 — Règles de nom et de message.** `skip_map(name)`, `skip_common_event(name)` (`X[`, `zz` et
       débogage) et `skip_message(text)` (`!is_translatable` ou message d'erreur). Branchement dans
       `extract_map_segments` et `extract_common_events`. Tests unitaires dans `filter.rs` : chaque motif
