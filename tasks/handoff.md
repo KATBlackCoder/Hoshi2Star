@@ -1,6 +1,6 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-29 — Claude (session locale).
+**Mis à jour :** 2026-10-29 — Claude (session cloud, WF en cours).
 **Objectif utilisateur :** skipper à l'extraction les textes Wolf non traduisibles, avec toutes les règles réunies dans `engines/wolf/filter.rs` (plan WF).
 **Statut :** `main` @ `8e32c99`. Les branches fusionnées et les worktrees UW sont supprimés (2026-10-29). Le plan WF s'écrit sur la branche `docs/wolf-filter-plan` (worktree `../Hoshi2Star-wf`).
 
@@ -11,7 +11,8 @@
   - un texte non traduisible est skippé : aucun segment n'est créé ;
   - les règles vont dans un nouveau fichier `engines/wolf/filter.rs`, plutôt que dans `extractor.rs` ;
   - ce lot ne contient que les règles fiables à 100 %.
-- **Prochaine action :** implémenter WF-1 à WF-6 sur une branche `feat/wolf-filter` depuis `docs/wolf-filter-plan`, gate en cloud.
+- **Implémentation (session cloud Claude, 2026-10-29)** : branche `feat/wolf-filter` depuis `origin/docs/wolf-filter-plan` @ `0806fec`. WF-1, WF-2 et WF-3 faits, gate vert à chaque étape, poussés (avancement et résultats cochés dans `tasks/todo.md`).
+- **Prochaine action :** WF-4 (test d'intégration), WF-5 (documentation), WF-6 (relecture indépendante, gate final), puis PR vers `main`.
 
 ## Analyse (2026-10-29, Claude) — textes Wolf extraits, trois jeux comparés
 
