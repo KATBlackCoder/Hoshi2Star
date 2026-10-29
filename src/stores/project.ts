@@ -70,16 +70,14 @@ export const useActiveEngine = () =>
 export const useSourceFiles = () => useProjectStore((s) => s.sourceFiles);
 
 export const useActiveLangPair = () =>
-  useProjectStore((state) => {
-    const project = state.projects.find(
-      (candidate) => candidate.id === state.activeProjectId,
-    );
-    return project
-      ? `${project.sourceLang}-${project.targetLang}`
-      : `${useSettingsStore.getState().settings.defaultSourceLang}-${useSettingsStore.getState().settings.defaultTargetLang}`;
-  });
+  useProjectStore((state) => getProjectLangPair(state.activeProjectId));
 
-export function getProjectLangPair(projectId: string): string {
+/**
+ * "source-target" pair of a project — the single place that builds it. A
+ * project not in the store (or none) falls back on the default languages of
+ * the settings, as a new project would get them.
+ */
+export function getProjectLangPair(projectId: string | null): string {
   const project = useProjectStore
     .getState()
     .projects.find((candidate) => candidate.id === projectId);

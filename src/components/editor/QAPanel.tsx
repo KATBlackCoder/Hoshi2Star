@@ -11,6 +11,7 @@ import {
 } from "@/stores/editor";
 import { useProjectStore } from "@/stores/project";
 import { queryKeys } from "@/lib/queryClient";
+import { qaScoreLevel } from "@/lib/qaScore";
 import type { QaErrorType, QaReport, QaResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -124,12 +125,11 @@ const QA_RING_CIRCUMFERENCE = 2 * Math.PI * QA_RING_RADIUS;
 
 function QAScoreRing({ score }: { score: number }) {
   const offset = QA_RING_CIRCUMFERENCE * (1 - score / 100);
-  const colorClass =
-    score === 100
-      ? "text-star"
-      : score >= 75
-        ? "text-yellow-400"
-        : "text-red-400";
+  const colorClass = {
+    ok: "text-star",
+    warning: "text-yellow-400",
+    critical: "text-red-400",
+  }[qaScoreLevel(score)];
 
   return (
     <div className="relative h-[52px] w-[52px] shrink-0">

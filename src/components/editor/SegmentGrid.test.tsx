@@ -291,3 +291,27 @@ describe("SegmentGrid — columns are stable while filtering (audit R6)", () => 
     expect(columnBuilds.count - before).toBe(0);
   });
 });
+
+describe("SegmentGrid — QA score colours (audit F1)", () => {
+  it("colours a score like the QA filters classify it", async () => {
+    const scored = [
+      { ...SEGMENTS[0], qaScore: 100 },
+      { ...SEGMENTS[1], qaScore: 90 },
+      { ...SEGMENTS[2], qaScore: 65 },
+    ];
+    mockIPC((cmd) => {
+      if (cmd === "get_segments") {
+        return { items: scored, total: 3, page: 0, pageSize: 2000 };
+      }
+      if (cmd === "plugin:event|listen") return 1;
+      return null;
+    });
+    render(<SegmentGrid />);
+
+    // 90 has a finding (shown by the "errors" filter): never green.
+    expect(await screen.findByText("90")).toHaveClass("text-yellow-400");
+    // 65 is under the critical cut (shown by the "critical" filter).
+    expect(screen.getByText("65")).toHaveClass("text-red-400");
+    expect(screen.getByText("100")).toHaveClass("text-green-400");
+  });
+});

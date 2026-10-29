@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { useSourceFiles } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { cn } from "@/lib/utils";
-import { formatDuration } from "@/lib/format";
+import { formatDurationMs } from "@/lib/format";
 import { STATUS_SUMMARY } from "@/lib/statusSummary";
 import {
   FileText,
@@ -140,7 +140,7 @@ export function FileTree() {
                     variant="secondary"
                     className="shrink-0 text-[10px] opacity-70 px-1 py-0"
                   >
-                    {formatDuration(file.translationSecs)}
+                    {formatDurationMs(file.translationSecs * 1_000)}
                   </Badge>
                 )}
             </button>

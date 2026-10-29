@@ -217,7 +217,7 @@ export function useAppHandlers() {
       setTranslateAllStats(stats);
       setShowTranslateAll(true);
     } catch (err) {
-      toast.error(t("toasts.exportError", { error: String(err) }));
+      toast.error(t("toasts.translateAllError", { error: String(err) }));
     }
   }
 

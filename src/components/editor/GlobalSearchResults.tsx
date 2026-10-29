@@ -23,6 +23,7 @@ import {
 import { useProjectStore } from "@/stores/project";
 import { useSearchStore } from "@/stores/search";
 import { cancelFrame, EVENTS, scheduleFrame } from "@/lib/events";
+import { qaScoreLevel } from "@/lib/qaScore";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
 import type { SegmentSearchHit, SegmentUpdate } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -434,11 +435,12 @@ export function GlobalSearchResults() {
                     <span
                       className={cn(
                         "text-xs tabular-nums",
-                        hit.qaScore === null
-                          ? "text-muted-foreground"
-                          : hit.qaScore < 100
-                            ? "text-amber-600 dark:text-amber-300 font-medium"
-                            : "text-muted-foreground",
+                        // A compact list: any finding stands out, no
+                        // warning/critical split (the grid shows it).
+                        hit.qaScore !== null &&
+                          qaScoreLevel(hit.qaScore) !== "ok"
+                          ? "text-amber-600 dark:text-amber-300 font-medium"
+                          : "text-muted-foreground",
                       )}
                     >
                       {hit.qaScore === null ? "—" : hit.qaScore}

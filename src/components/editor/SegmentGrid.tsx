@@ -25,6 +25,7 @@ import { createSegmentColumns, StatusBadge } from "@/features/editor/columns";
 import type { PaginatedSegments, Segment, SegmentUpdate } from "@/lib/types";
 import { invalidateSegmentViews } from "@/lib/queryClient";
 import { cancelFrame, EVENTS, scheduleFrame } from "@/lib/events";
+import { qaScoreLevel } from "@/lib/qaScore";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { cn } from "@/lib/utils";
 import { Play, RefreshCw } from "lucide-react";
@@ -133,6 +134,17 @@ export function SegmentGrid() {
     }
   }, []);
 
+  // A segment opened by id only (text-fit dialog: it has no texts) gets its
+  // texts once its row is loaded, for the QA and TM panels.
+  useEffect(() => {
+    if (!activeSegmentId) return;
+    if (useEditorStore.getState().activeSegmentSourceText !== null) return;
+    const segment = segments.find((s) => s.id === activeSegmentId);
+    if (segment) {
+      setActiveSegment(segment.id, segment.sourceText, segment.targetText);
+    }
+  }, [activeSegmentId, segments, setActiveSegment]);
+
   // Reset filter + selection when switching files
   useEffect(() => {
     setQaFilter("all");
@@ -156,14 +168,12 @@ export function SegmentGrid() {
     switch (qaFilter) {
       case "errors":
         result = result.filter(
-          (s) =>
-            s.qaScore !== null && s.qaScore !== undefined && s.qaScore < 100,
+          (s) => s.qaScore != null && qaScoreLevel(s.qaScore) !== "ok",
         );
         break;
       case "critical":
         result = result.filter(
-          (s) =>
-            s.qaScore !== null && s.qaScore !== undefined && s.qaScore < 70,
+          (s) => s.qaScore != null && qaScoreLevel(s.qaScore) === "critical",
         );
         break;
       case "untranslated":

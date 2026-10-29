@@ -55,6 +55,7 @@ import { PackImportWizard } from "@/components/PackImportWizard";
 import i18n from "@/lib/i18n";
 import { queryClient } from "@/lib/queryClient";
 import { applyResync } from "@/stores/resync";
+import { toast } from "sonner";
 import { useProjectStore } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { useLlmStore } from "@/stores/llm";
@@ -466,5 +467,47 @@ describe("Inspector queries (audit P3: I6)", () => {
 
     expect(useEditorStore.getState().activeSegmentId).toBe("s2");
     expect(calls.qa_check_segment).toBe(2);
+  });
+});
+
+describe("Toasts follow the app theme (audit F3)", () => {
+  it("passes the theme chosen in the settings to the toaster", async () => {
+    // The OS reports a light theme (matchMedia stub): the app is in dark.
+    useSettingsStore.setState((s) => ({
+      settings: { ...s.settings, theme: "dark" },
+    }));
+    renderApp();
+    await settle();
+
+    act(() => {
+      toast.success("Thème des toasts");
+    });
+    const notice = await screen.findByText("Thème des toasts");
+
+    expect(notice.closest("[data-sonner-theme]")).toHaveAttribute(
+      "data-sonner-theme",
+      "dark",
+    );
+  });
+});
+
+describe("Segment opened by id only (audit F7)", () => {
+  it("gives the QA and TM panels the segment's texts", async () => {
+    renderApp();
+    await screen.findByText("ソース1");
+    await settle();
+
+    // What the text-fit dialog does: it only knows the file and segment ids.
+    act(() => {
+      useEditorStore.getState().setActiveFile("f1");
+      useEditorStore.getState().setActiveSegment("s2");
+    });
+    await settle();
+
+    expect(useEditorStore.getState()).toMatchObject({
+      activeSegmentId: "s2",
+      activeSegmentSourceText: "ソース2",
+      activeSegmentTargetText: "cible 2",
+    });
   });
 });

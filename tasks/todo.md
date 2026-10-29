@@ -74,19 +74,21 @@ typecheck OK, lint 0 erreur / 10 avertissements, Vitest 158/158.
   lecteur (préfixes dynamiques vérifiés) ; `getProjectLangPair` gardé pour F4.
 - [x] Gate P5 (2026-10-29) : typecheck OK ; lint 0 erreur / 10 avertissements ; Vitest 174/174 ; diff −155
   lignes (−107 hors `locales/`).
-- [ ] Push, PR vers `perf/fe-p3-ipc`.
+- [x] Push, PR vers `perf/fe-p3-ipc` : [#31](https://github.com/KATBlackCoder/Hoshi2Star/pull/31) (`ff0a1f2`).
 
 ### P6 — défauts fonctionnels (`fix/fe-p6-defects`, depuis P5), un test de régression chacun
 
-- [ ] F1 seuils QA : une seule source, valeurs affichées conservées ou écart justifié en commentaire ;
-  décision produit listée dans la PR.
-- [ ] F2 message d'erreur de « Tout traduire ».
-- [ ] F3 thème de l'app passé à `<Toaster>` par prop (sans toucher `ui/sonner.tsx`).
-- [ ] F4 `getProjectLangPair` partout.
-- [ ] F5 une seule `formatDuration`, unité dans le nom.
-- [ ] F6 `relativeDate` et l'`aria-label` de `ScanProgress` en i18n fr/en.
-- [ ] F7 `setActiveSegment` appelé avec les textes depuis `TextFitDialog`.
-- [ ] Gate P6, push, PR vers `refactor/fe-p5-duplicates`.
+- [x] F1 seuils QA : `lib/qaScore.ts` seule source ; filtres inchangés (100/70), couleurs alignées sur eux
+  (raison et décision produit restante : journal).
+- [x] F2 message d'erreur de « Tout traduire ».
+- [x] F3 thème de l'app passé à `<Toaster>` par prop (sans toucher `ui/sonner.tsx`).
+- [x] F4 `getProjectLangPair` partout.
+- [x] F5 une seule `formatDurationMs` (format du panneau de fichiers gardé, pilote légèrement changé).
+- [x] F6 `relativeDate` et l'`aria-label` de `ScanProgress` en i18n fr/en.
+- [x] F7 textes du segment actif complétés par la grille (ouverture depuis l'ajustement du texte).
+- [x] Gate P6 (2026-10-29) : typecheck OK ; lint 0 erreur / 10 avertissements ; Vitest 186/186.
+- [ ] Push, PR vers `refactor/fe-p5-duplicates`.
+- [ ] Après fusion (utilisateur, en local) : essai de 5 minutes listé dans la PR P6.
 
 ## Plan — WF : skipper les textes Wolf non traduisibles, règles dans `engines/wolf/filter.rs` (2026-10-29, Claude) — PLAN VALIDÉ le 2026-10-29 (WF-D1 à WF-D6 = recommandations) ; WF-1 à WF-6 faits, PR #27 fusionnée le 2026-10-29 (`585f05b`) ; WF-7 à faire
 

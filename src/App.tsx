@@ -43,6 +43,8 @@ export default function App() {
   const handlers = useAppHandlers();
   useProjectDataSync();
   const loadSettings = useSettingsStore((s) => s.loadSettings);
+  // No next-themes provider: the toaster gets the app's own theme.
+  const theme = useSettingsStore((s) => s.settings.theme);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const activeLangPair = useActiveLangPair();
   const checkForUpdate = useUpdaterStore((s) => s.checkForUpdate);
@@ -164,7 +166,7 @@ export default function App() {
       </AppShell>
       <AppDialogs handlers={handlers} />
       <UpdateDialog />
-      <Toaster />
+      <Toaster theme={theme} />
     </>
   );
 }

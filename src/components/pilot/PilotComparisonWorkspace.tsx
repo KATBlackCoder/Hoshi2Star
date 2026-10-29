@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { formatDurationMs } from "@/lib/format";
 import type {
   PilotComparison,
   PilotQualityFlag,
@@ -425,7 +426,7 @@ function SummaryCard({
             {formatTokenCount(summary.metrics.totalTokens, i18n.language)} ·{" "}
             {summary.metrics.requestCount} {t("pilot.requests")}
           </p>
-          <p>{formatDuration(summary.metrics.durationMs)}</p>
+          <p>{formatDurationMs(summary.metrics.durationMs)}</p>
         </div>
       </div>
     </div>
@@ -597,11 +598,6 @@ function VariantPanel({
 function QualityFlagBadge({ flag }: { flag: PilotQualityFlag }) {
   const { t } = useTranslation();
   return <Badge variant="destructive">{t(`pilot.qualityFlag.${flag}`)}</Badge>;
-}
-
-function formatDuration(durationMs: number): string {
-  if (durationMs < 1_000) return `${durationMs} ms`;
-  return `${(durationMs / 1_000).toFixed(1)} s`;
 }
 
 function formatTokenCount(value: number | null, language: string): string {

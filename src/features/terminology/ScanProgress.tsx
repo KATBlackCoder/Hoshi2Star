@@ -40,7 +40,7 @@ export function ScanProgress({
             aria-valuemin={0}
             aria-valuemax={progress.total}
             aria-valuenow={progress.processed}
-            aria-label="Progression de l’analyse"
+            aria-label={t("terminology.scanProgressLabel")}
           >
             <div
               className="h-full rounded-full bg-primary transition-[width] duration-[var(--duration-normal)]"

@@ -23,7 +23,11 @@ import {
   Square,
   WrapText,
 } from "lucide-react";
-import { openProject, useProjectStore } from "@/stores/project";
+import {
+  getProjectLangPair,
+  openProject,
+  useProjectStore,
+} from "@/stores/project";
 import { openCoverageDialog } from "@/stores/coverage";
 import { openTextFitDialog } from "@/stores/textFit";
 import {
@@ -219,9 +223,7 @@ export function AppToolbar({
       const preview = await invoke<ImportPreview>("preview_h2s_import", {
         projectId: activeProjectId,
         packPath: selected as string,
-        langPair: activeProject
-          ? `${activeProject.sourceLang}-${activeProject.targetLang}`
-          : "ja-fr",
+        langPair: getProjectLangPair(activeProjectId),
       });
       setPackImport({ packPath: selected as string, preview });
     } catch (err) {
@@ -440,7 +442,7 @@ export function AppToolbar({
           open={showPackExport}
           projectId={activeProjectId}
           projectName={activeProject.name}
-          langPair={`${activeProject.sourceLang}-${activeProject.targetLang}`}
+          langPair={getProjectLangPair(activeProjectId)}
           onClose={() => setShowPackExport(false)}
         />
       )}
@@ -449,11 +451,6 @@ export function AppToolbar({
           projectId={activeProjectId}
           packPath={packImport.packPath}
           preview={packImport.preview}
-          langPair={
-            activeProject
-              ? `${activeProject.sourceLang}-${activeProject.targetLang}`
-              : "ja-fr"
-          }
           onClose={() => setPackImport(null)}
         />
       )}
