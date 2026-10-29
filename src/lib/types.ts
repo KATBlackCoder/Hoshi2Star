@@ -62,8 +62,6 @@ export interface LocaleOption {
 
 /** What a Wolf RPG export will do (`preflight_export`, plan RW). */
 export interface WolfExportPreflight {
-  /** Archives the game reads first, delivered rebuilt (`Data.wolf`…). */
-  archives: string[];
   /** Wolf 2.x (Shift-JIS) game: accents are folded (é → e). */
   shiftJis: boolean;
   /** Translations holding characters Shift-JIS cannot encode. */

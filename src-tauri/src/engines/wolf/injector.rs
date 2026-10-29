@@ -1,9 +1,8 @@
 // Wolf RPG binary injector — F4-04 implementation.
 //
-// Delivery (plan RW, RW-5): the game reads its .wolf archives before loose
-// Data/ files (verified in game, Wolf 2.23 and 3.658). A file read from an
-// archive is delivered inside that archive, rebuilt (decrypt::writer); a file
-// read from Data/ is delivered as a loose file.
+// Delivery (plan UW): the game is decrypted with UberWolf, files are read from
+// and delivered as loose Data/ files; a .wolf archive holding text refuses the
+// export (the game would read it instead).
 //
 // .mps / CommonEvent.dat injection: in-house `v3_format` AST, for the v3.x
 //   LZ4 layout and the layout stored in clear (v2.x, v3.x `0x64` maps); the
@@ -13,15 +12,14 @@
 
 use super::dat_parser::{self, DatFile, DatType};
 use super::dat_parser::{DAT_TYPE_SEPARATOR, DB_MAGIC_SJIS, DB_MAGIC_UTF8};
-use super::decrypt::writer::{rebuild_archive, WriterError};
 use super::encoding;
 use super::integrity;
-use super::sources::{display_path, Origin, SourceFile, SourcesError, WolfSources};
+use super::sources::{SourcesError, WolfSources};
 use super::v3_format::{self, V3FormatError};
 use crate::engines::detector::WolfVersion;
 use crate::engines::mv_mz::integrity::IntegrityIssue;
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 // ---------------------------------------------------------------------------
@@ -42,11 +40,9 @@ pub enum InjectorError {
     MissingProject(String),
     #[error("v3.x map format error: {0}")]
     V3Format(#[from] V3FormatError),
-    /// An archive the game reads cannot be read (plan RW, RW-5).
+    /// An archive holding text is still in the game folder (plan UW, UW-D2).
     #[error(transparent)]
     Sources(#[from] SourcesError),
-    #[error("archive rebuild error: {0}")]
-    Archive(#[from] WriterError),
 }
 
 // ---------------------------------------------------------------------------
@@ -287,9 +283,8 @@ fn serialize_dat(dat: &DatFile, dat_original_header: &[u8]) -> Result<Vec<u8>, I
 
 /// `is_utf8` drives string encoding directly from the `.dat`'s own magic
 /// byte (see [`serialize_dat`]) rather than from the externally-guessed
-/// `WolfVersion` — a game with no `.wolf` archive to sniff a CodePage from
-/// previously defaulted that guess to v2.0/Shift-JIS even when a specific
-/// database was genuinely UTF-8, silently corrupting any non-ASCII
+/// `WolfVersion` — that guess once defaulted to v2.0/Shift-JIS even when a
+/// specific database was genuinely UTF-8, silently corrupting any non-ASCII
 /// translated character while the header still declared UTF-8.
 fn serialize_dat_type(
     buf: &mut Vec<u8>,
@@ -537,39 +532,15 @@ pub struct WolfExport {
     pub folded_texts: usize,
 }
 
-/// Translated files of an archive, by path inside it.
-type ArchiveReplacements = BTreeMap<String, Vec<u8>>;
-
-/// Route a produced file to where the game will read it: a loose file under
-/// `Data/`, or a replacement inside the archive it came from.
-fn deliver(
-    file: &SourceFile,
-    bytes: Vec<u8>,
-    entries: &mut Vec<(String, Vec<u8>)>,
-    by_archive: &mut BTreeMap<PathBuf, ArchiveReplacements>,
-) {
-    match &file.origin {
-        Origin::Loose => entries.push((format!("Data/{}", file.logical), bytes)),
-        Origin::Archive { archive, path } => {
-            by_archive
-                .entry(archive.clone())
-                .or_default()
-                .insert(path.clone(), bytes);
-        }
-    }
-}
-
 /// Inject translations and return `(relative_zip_path, bytes)` pairs — no disk
 /// write. Used by the zip export path.
 ///
-/// Files are read where the game reads them ([`WolfSources`]: archives first).
-/// A translated file that comes from an archive is delivered inside that
-/// archive, rebuilt ([`rebuild_archive`], plan RW, RW-5) under its own path
-/// (`Data.wolf`, `Data/MapData.wolf`…); a loose file stays a loose file.
+/// Files are read from the decrypted `Data/` ([`WolfSources`], plan UW) and
+/// delivered as loose files under `Data/` (`Data/MapData/Map001.mps`…).
 ///
-/// Every produced file is checked against the very bytes it was derived from,
-/// and every rebuilt archive against the original ([`super::integrity`]): the
-/// returned issues must be empty for the export to be written.
+/// Every produced file is checked against the very bytes it was derived from
+/// ([`super::integrity`]): the returned issues must be empty for the export to
+/// be written.
 pub async fn inject_all_to_memory(
     game_dir: &Path,
     translations_by_file: &HashMap<String, Vec<WolfTranslation>>,
@@ -579,7 +550,6 @@ pub async fn inject_all_to_memory(
     let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
     let mut issues: Vec<IntegrityIssue> = Vec::new();
     let mut folded_texts = 0usize;
-    let mut by_archive: BTreeMap<PathBuf, ArchiveReplacements> = BTreeMap::new();
 
     for (file_key, translations) in translations_by_file {
         let parts: Vec<&str> = file_key.splitn(2, '/').collect();
@@ -603,7 +573,7 @@ pub async fn inject_all_to_memory(
                 issues.extend(integrity::verify_map_edit(
                     &label, stem, &map.bytes, &new_bytes, &planned,
                 ));
-                deliver(map, new_bytes, &mut entries, &mut by_archive);
+                entries.push((label, new_bytes));
             }
             "Database" => {
                 let (Some(project), Some(dat)) = (
@@ -624,7 +594,7 @@ pub async fn inject_all_to_memory(
                     &new_bytes,
                     &planned,
                 ));
-                deliver(dat, new_bytes, &mut entries, &mut by_archive);
+                entries.push((label, new_bytes));
             }
             "CommonEvents" => {
                 // All CommonEvents/* keys share the single CommonEvent.dat.
@@ -641,30 +611,11 @@ pub async fn inject_all_to_memory(
                     &new_bytes,
                     &planned,
                 ));
-                deliver(common_events, new_bytes, &mut entries, &mut by_archive);
+                entries.push((label, new_bytes));
             }
             _ => {}
         }
     }
-    drop(sources);
-
-    for (archive, replacements) in by_archive {
-        let original = std::fs::read(game_dir.join(&archive))?;
-        // Sized once: the archive can weigh gigabytes.
-        let added: usize = replacements.values().map(Vec::len).sum();
-        let mut rebuilt = Vec::with_capacity(original.len() + added + 4096);
-        rebuild_archive(&original, &replacements, &mut rebuilt)?;
-        let name = display_path(&archive);
-        issues.extend(integrity::verify_archive_rebuild(
-            &name,
-            &original,
-            &rebuilt,
-            &replacements,
-        ));
-        drop(original);
-        entries.push((name, rebuilt));
-    }
-
     Ok(WolfExport {
         entries,
         issues,
@@ -675,9 +626,9 @@ pub async fn inject_all_to_memory(
 /// Inject all translations into a Wolf RPG game directory as loose files
 /// (`Data/MapData/`, `Data/BasicData/`), read where the game reads them.
 ///
-/// Used by the debug single-file command only: the game reads its `.wolf`
-/// archives before loose files, so for a game shipped as archives the zip
-/// export ([`inject_all_to_memory`]) is the one that takes effect.
+/// Used by the debug single-file command only; the zip export is
+/// [`inject_all_to_memory`]. Refused like it, before any folder is created,
+/// while an archive holding text is in the game folder (plan UW, UW-D2).
 ///
 /// Keys in `translations_by_file`:
 ///   `"MapData/{stem}"`   → translations for that `.mps`
@@ -687,13 +638,13 @@ pub async fn inject_all(
     translations_by_file: &HashMap<String, Vec<WolfTranslation>>,
     version: &WolfVersion,
 ) -> Result<Vec<InjectionResult>, InjectorError> {
+    let sources = WolfSources::load(game_dir)?;
     let map_dir = game_dir.join("Data").join("MapData");
     let db_dir = game_dir.join("Data").join("BasicData");
 
     std::fs::create_dir_all(&map_dir)?;
     std::fs::create_dir_all(&db_dir)?;
 
-    let sources = WolfSources::load(game_dir)?;
     let mut results = Vec::new();
 
     for (file_key, translations) in translations_by_file {
@@ -705,7 +656,7 @@ pub async fn inject_all(
 
         match parts[0] {
             "MapData" => {
-                // Source bytes as the game reads them: archives first.
+                // Source bytes from the decrypted Data/.
                 let Some(map) = sources.get(&format!("MapData/{stem}.mps")) else {
                     continue;
                 };
@@ -716,7 +667,7 @@ pub async fn inject_all(
                 results.push(result);
             }
             "Database" => {
-                // Source bytes as the game reads them: archives first.
+                // Source bytes from the decrypted Data/.
                 let (Some(project), Some(dat)) = (
                     sources.get(&format!("BasicData/{stem}.project")),
                     sources.get(&format!("BasicData/{stem}.dat")),
@@ -951,86 +902,79 @@ mod tests {
         assert!(v3_format::compression::is_plain_map(bytes));
     }
 
-    /// A map read from `Data.wolf` is delivered inside that archive, rebuilt;
-    /// the archive copy wins over a stale loose copy (plan RW, RW-5).
+    /// A decrypted game exports loose `Data/` files only, its stems as named on
+    /// disk (plan UW): a map and `CommonEvent.dat`, never an archive.
     #[tokio::test]
-    async fn test_export_of_an_archived_map_rebuilds_the_archive() {
-        use crate::engines::wolf::decrypt::legacy_xor::test_archives::{
-            make_v6_dx_archive, make_v8_dx_archive, DxFile,
+    async fn test_export_delivers_loose_data_files_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let map_dir = tmp.path().join("Data").join("MapData");
+        std::fs::create_dir_all(&map_dir).unwrap();
+        std::fs::write(
+            map_dir.join("TitleMap.mps"),
+            synthetic_map_bytes(0x64, false),
+        )
+        .unwrap();
+        // Archives without text (pictures, sounds) are left alone.
+        std::fs::write(tmp.path().join("Data").join("Picture.wolf"), b"pictures").unwrap();
+        let mut by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
+        by_file.insert(
+            "MapData/TitleMap".to_string(),
+            vec![WolfTranslation {
+                key: "MapData/TitleMap/events/0/pages/0/0".to_string(),
+                text: "Hello, traveller".to_string(),
+            }],
+        );
+
+        let WolfExport {
+            entries, issues, ..
+        } = inject_all_to_memory(tmp.path(), &by_file, &v2())
+            .await
+            .unwrap();
+        assert!(issues.is_empty(), "{issues:?}");
+        let names: Vec<&str> = entries.iter().map(|(name, _)| name.as_str()).collect();
+        assert_eq!(names, ["Data/MapData/TitleMap.mps"]);
+        let segs =
+            crate::engines::wolf::extractor::extract_map_segments("TitleMap", &entries[0].1, &v2())
+                .unwrap();
+        assert_eq!(segs[0].source_text, "Hello, traveller");
+    }
+
+    /// A game still holding a text archive is refused before anything is
+    /// produced (plan UW, UW-D2): the game would read the archive instead.
+    #[tokio::test]
+    async fn test_export_with_a_text_archive_is_refused() {
+        use super::super::sources::WOLF_ARCHIVE_PRESENT;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let map_dir = tmp.path().join("Data").join("MapData");
+        std::fs::create_dir_all(&map_dir).unwrap();
+        std::fs::write(map_dir.join("Map001.mps"), synthetic_map_bytes(0x64, false)).unwrap();
+        std::fs::write(tmp.path().join("Data.wolf"), b"archive").unwrap();
+        let mut by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
+        by_file.insert(
+            "MapData/Map001".to_string(),
+            vec![WolfTranslation {
+                key: "MapData/Map001/events/0/pages/0/0".to_string(),
+                text: "Hello".to_string(),
+            }],
+        );
+
+        let error = match inject_all_to_memory(tmp.path(), &by_file, &v2()).await {
+            Ok(_) => panic!("a text archive must refuse the export"),
+            Err(error) => error,
         };
-        use crate::engines::wolf::decrypt::legacy_xor::{
-            extract_all, WOLF_KEYS, WOLF_V8_KEY_STRINGS,
-        };
-
-        let map = synthetic_map_bytes(0x64, false);
-        let files = [
-            DxFile {
-                dir: Some("MapData"),
-                name: "Map001.mps",
-                content: &map,
-                compress: false,
-            },
-            DxFile {
-                dir: None,
-                name: "Game.dat",
-                content: b"game settings",
-                compress: false,
-            },
-        ];
-        let v6_key = WOLF_KEYS.iter().find(|(n, _)| *n == "v2.20").unwrap().1;
-        let v8_key = WOLF_V8_KEY_STRINGS
-            .iter()
-            .find(|(n, _, _)| *n == "v3.14")
-            .unwrap()
-            .2;
-        let archives = [
-            make_v6_dx_archive(&v6_key, &files, 932, true).bytes,
-            make_v8_dx_archive(v8_key, 314, &files),
-        ];
-
-        for archive in archives {
-            let tmp = tempfile::tempdir().unwrap();
-            std::fs::write(tmp.path().join("Data.wolf"), &archive).unwrap();
-            let loose = tmp.path().join("Data").join("MapData");
-            std::fs::create_dir_all(&loose).unwrap();
-            std::fs::write(loose.join("Map001.mps"), b"stale loose copy").unwrap();
-
-            // Archive stems are lowercase in segment keys.
-            let mut by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
-            by_file.insert(
-                "MapData/map001".to_string(),
-                vec![WolfTranslation {
-                    key: "MapData/map001/events/0/pages/0/0".to_string(),
-                    text: "Hello, traveller".to_string(),
-                }],
-            );
-
-            let WolfExport {
-                entries, issues, ..
-            } = inject_all_to_memory(tmp.path(), &by_file, &v2())
-                .await
-                .unwrap();
-            assert!(issues.is_empty(), "{issues:?}");
-            let names: Vec<&str> = entries.iter().map(|(name, _)| name.as_str()).collect();
-            assert_eq!(names, ["Data.wolf"]);
-
-            let rebuilt = extract_all(&entries[0].1).unwrap();
-            let map = rebuilt
-                .files
-                .iter()
-                .find(|f| f.path == "/MapData/Map001.mps")
-                .unwrap();
-            let segs =
-                crate::engines::wolf::extractor::extract_map_segments("map001", &map.data, &v2())
-                    .unwrap();
-            assert_eq!(segs[0].source_text, "Hello, traveller");
-            let game = rebuilt
-                .files
-                .iter()
-                .find(|f| f.path == "/Game.dat")
-                .unwrap();
-            assert_eq!(game.data, b"game settings");
-        }
+        assert!(
+            matches!(
+                error,
+                InjectorError::Sources(SourcesError::ArchivePresent { ref archives })
+                    if archives == "Data.wolf"
+            ),
+            "expected ArchivePresent, got {error:?}"
+        );
+        assert!(
+            error.to_string().starts_with(WOLF_ARCHIVE_PRESENT),
+            "{error}"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1080,8 +1024,8 @@ mod tests {
     }
 
     /// Regression for a real-world silent-corruption case: a UTF-8 database
-    /// (games with no `.wolf`/`Data.wolf` archive to sniff a CodePage from
-    /// used to fall back to guessing v2.0/Shift-JIS game-wide) must encode
+    /// (whose game-wide encoding guess used to fall back to v2.0/Shift-JIS)
+    /// must encode
     /// non-ASCII translated text as UTF-8 from its own `.dat` magic byte,
     /// never from the externally-guessed (and here deliberately wrong)
     /// `WolfVersion` — otherwise a full-width `．` (U+FF0E) gets written as
@@ -1259,7 +1203,7 @@ mod tests {
         assert_eq!(project_on_disk, project, ".project must never be modified");
     }
 
-    /// An archive the game reads but Hoshi2Star cannot (RW-5) refuses the
+    /// A text archive still in the game folder (plan UW, UW-D2) refuses the
     /// injection, and the `.wolf` file is left untouched on disk.
     #[tokio::test]
     async fn test_inject_all_does_not_overwrite_wolf() {
@@ -1273,20 +1217,24 @@ mod tests {
 
         let by_file: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
         let err = match inject_all(game_dir, &by_file, &v2()).await {
-            Ok(_) => panic!("an unreadable archive must refuse the injection"),
+            Ok(_) => panic!("a text archive must refuse the injection"),
             Err(err) => err,
         };
         assert!(
             matches!(
                 err,
-                InjectorError::Sources(SourcesError::UnreadableArchive { ref archive, .. })
-                    if archive == "Data/MapData.wolf"
+                InjectorError::Sources(SourcesError::ArchivePresent { ref archives })
+                    if archives == "Data/MapData.wolf"
             ),
-            "expected UnreadableArchive, got {err:?}"
+            "expected ArchivePresent, got {err:?}"
         );
 
         let content = std::fs::read(&wolf_path).unwrap();
         assert_eq!(content, b"fake wolf archive", ".wolf must not be modified");
+        assert!(
+            !data_dir.join("MapData").exists() && !data_dir.join("BasicData").exists(),
+            "no folder is created before the refusal"
+        );
     }
 
     fn test_dir() -> std::path::PathBuf {

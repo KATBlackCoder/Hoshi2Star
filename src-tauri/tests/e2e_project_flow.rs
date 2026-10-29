@@ -882,6 +882,7 @@ async fn wolf_unreadable_map_is_refused_at_open() {
     mps.push(0x66);
     std::fs::write(map_dir.join("Map001.mps"), &mps).unwrap();
     std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+    write_wolf_v2_basic_data(&game_root);
 
     let db_file = tmp.path().join("h2s.db");
     let app = mock_app(db_file.to_str().unwrap()).await;
@@ -903,6 +904,23 @@ async fn wolf_unreadable_map_is_refused_at_open() {
         .await
         .unwrap();
     assert_eq!(projects, 0, "no partial project may be created");
+}
+
+/// Database magic of a Shift-JIS (Wolf 2.x) game, as `dat_parser::DB_MAGIC_SJIS`.
+const WOLF_DB_MAGIC_SJIS: [u8; 9] = [0x57, 0x00, 0x00, 0x4F, 0x4C, 0x00, 0x46, 0x4D, 0x00];
+
+/// The `Data/BasicData/` of a Wolf 2.x game decrypted by UberWolf (plan UW):
+/// `SysDatabase.dat` declares the Shift-JIS encoding (UW-D4) and a `.project`
+/// makes the folder recognisable (UW-D3). Neither pairs with the other, so no
+/// database is extracted.
+fn write_wolf_v2_basic_data(game_root: &Path) {
+    let basic_data = game_root.join("Data").join("BasicData");
+    std::fs::create_dir_all(&basic_data).unwrap();
+    let mut sys_database = vec![0x00]; // indicator = unencrypted
+    sys_database.extend_from_slice(&WOLF_DB_MAGIC_SJIS);
+    sys_database.push(0xC1);
+    std::fs::write(basic_data.join("SysDatabase.dat"), sys_database).unwrap();
+    std::fs::write(basic_data.join("DataBase.project"), b"").unwrap();
 }
 
 /// Length-prefixed Wolf string (byte count includes the trailing NUL).
@@ -972,6 +990,7 @@ async fn wolf_v2_game_opens_with_its_dialogue() {
     std::fs::create_dir_all(&map_dir).unwrap();
     std::fs::write(map_dir.join("Map001.mps"), wolf_v2_map(MESSAGE)).unwrap();
     std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+    write_wolf_v2_basic_data(&game_root);
 
     let db_file = tmp.path().join("h2s.db");
     let app = mock_app(db_file.to_str().unwrap()).await;
@@ -1028,6 +1047,7 @@ async fn wolf_v2_export_can_be_repeated_over_its_own_output() {
     std::fs::create_dir_all(map_path.parent().unwrap()).unwrap();
     std::fs::write(&map_path, wolf_v2_map(MESSAGE)).unwrap();
     std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+    write_wolf_v2_basic_data(&game_root);
 
     let db_file = tmp.path().join("h2s.db");
     let app = mock_app(db_file.to_str().unwrap()).await;
@@ -1095,6 +1115,7 @@ async fn wolf_export_rewraps_messages_when_text_fitting_is_on() {
     std::fs::create_dir_all(map_path.parent().unwrap()).unwrap();
     std::fs::write(&map_path, wolf_v2_map(MESSAGE)).unwrap();
     std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+    write_wolf_v2_basic_data(&game_root);
 
     let db_file = tmp.path().join("h2s.db");
     let app = mock_app(db_file.to_str().unwrap()).await;
@@ -1176,6 +1197,7 @@ async fn wolf_font_scan_reports_the_game_font_size() {
     std::fs::create_dir_all(map_path.parent().unwrap()).unwrap();
     std::fs::write(&map_path, wolf_v2_map("こんにちは、旅の人")).unwrap();
     std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+    write_wolf_v2_basic_data(&game_root);
     let db_file = tmp.path().join("h2s.db");
     let app = mock_app(db_file.to_str().unwrap()).await;
     let project = open_project(
@@ -1206,111 +1228,107 @@ async fn wolf_font_scan_reports_the_game_font_size() {
     assert_eq!(scan.game_font_size, Some(12));
 }
 
-/// DxLib name entry: `[u16 PackNum][u16 Parity][UPPER][original]`, both names
-/// NUL-padded to `PackNum * 4` bytes. Returns its offset in `table`.
-fn push_dx_name(table: &mut Vec<u8>, name: &str) -> u64 {
-    let offset = table.len() as u64;
-    let bytes = name.as_bytes();
-    let pack = bytes.len() / 4 + 1;
-    let parity = bytes
-        .iter()
-        .fold(0u16, |sum, &byte| sum.wrapping_add(u16::from(byte)));
-    table.extend_from_slice(&(pack as u16).to_le_bytes());
-    table.extend_from_slice(&parity.to_le_bytes());
-    for half in [bytes.to_ascii_uppercase(), bytes.to_vec()] {
-        let mut padded = half;
-        padded.resize(pack * 4, 0);
-        table.extend_from_slice(&padded);
-    }
-    offset
-}
-
-/// A `Data.wolf` (DXA v8) holding `MapData/Map001.mps`, built without any
-/// encryption: `DXA_FLAG_NO_KEY | DXA_FLAG_NO_HEAD_PRESS`, crypt version 0.
-fn keyless_data_wolf(map: &[u8]) -> Vec<u8> {
-    const HEAD: usize = 0x40;
-    const ENTRY: usize = 0x48;
-    let mut names = Vec::new();
-    let root_name = push_dx_name(&mut names, "");
-    let dir_name = push_dx_name(&mut names, "MapData");
-    let map_name = push_dx_name(&mut names, "Map001.mps");
-
-    // File table: root head, MapData head, Map001.mps.
-    let entry = |name: u64, attributes: u64, data: u64, size: u64, packed: u64| {
-        let mut e = vec![0u8; ENTRY];
-        e[0..8].copy_from_slice(&name.to_le_bytes());
-        e[8..16].copy_from_slice(&attributes.to_le_bytes());
-        e[0x28..0x30].copy_from_slice(&data.to_le_bytes());
-        e[0x30..0x38].copy_from_slice(&size.to_le_bytes());
-        e[0x38..0x40].copy_from_slice(&packed.to_le_bytes());
-        e[0x40..0x48].copy_from_slice(&u64::MAX.to_le_bytes()); // no Huffman
-        e
-    };
-    let mut files = entry(root_name, 0x10, 0, 0, u64::MAX);
-    files.extend(entry(dir_name, 0x10, 32, 0, u64::MAX));
-    files.extend(entry(map_name, 0x20, 0, map.len() as u64, u64::MAX));
-
-    // Directory table: root (1 child at 0x48), MapData (parent root, 1 child at 0x90).
-    let mut dirs = Vec::new();
-    for value in [
-        0u64,
-        u64::MAX,
-        1,
-        ENTRY as u64,
-        ENTRY as u64,
-        0,
-        1,
-        2 * ENTRY as u64,
-    ] {
-        dirs.extend_from_slice(&value.to_le_bytes());
-    }
-
-    let file_table = names.len() as u64;
-    let dir_table = file_table + files.len() as u64;
-    let mut toc = names;
-    toc.extend(files);
-    toc.extend(dirs);
-
-    let mut archive = Vec::new();
-    archive.extend_from_slice(b"DX");
-    archive.extend_from_slice(&8u16.to_le_bytes());
-    archive.extend_from_slice(&(toc.len() as u32).to_le_bytes());
-    archive.extend_from_slice(&(HEAD as u64).to_le_bytes());
-    archive.extend_from_slice(&((HEAD + map.len()) as u64).to_le_bytes());
-    archive.extend_from_slice(&file_table.to_le_bytes());
-    archive.extend_from_slice(&dir_table.to_le_bytes());
-    archive.extend_from_slice(&932u32.to_le_bytes());
-    archive.extend_from_slice(&(0x1u32 | 0x2).to_le_bytes()); // no key, TOC in clear
-    archive.resize(HEAD, 0);
-    archive.extend_from_slice(map);
-    archive.extend(toc);
-    archive
-}
-
-/// A Wolf game shipped as `Data.wolf` (plan RW, RW-5): the map is read from the
-/// archive (a stale loose copy is ignored, as the game ignores it) and the
-/// export delivers the archive rebuilt with the translation, not a loose file.
+/// A Wolf game decrypted by UberWolf but still holding a text archive is
+/// refused at open (plan UW, UW-D2): the game would read `Data.wolf` instead of
+/// the translated `Data/` files. No partial project is created.
 #[tokio::test]
-async fn wolf_archive_game_is_exported_as_a_rebuilt_archive() {
-    use hoshi2star_lib::engines::wolf::decrypt::legacy_xor::extract_all;
+async fn wolf_game_with_a_text_archive_is_refused_at_open() {
+    use hoshi2star_lib::engines::wolf::sources::WOLF_ARCHIVE_PRESENT;
 
+    let tmp = tempfile::tempdir().unwrap();
+    let game_root = tmp.path().join("game");
+    let map_dir = game_root.join("Data").join("MapData");
+    std::fs::create_dir_all(&map_dir).unwrap();
+    std::fs::write(
+        map_dir.join("Map001.mps"),
+        wolf_v2_map("こんにちは、旅の人"),
+    )
+    .unwrap();
+    std::fs::write(game_root.join("Game.exe"), b"").unwrap();
+    write_wolf_v2_basic_data(&game_root);
+    std::fs::write(game_root.join("Data.wolf"), b"never read").unwrap();
+
+    let db_file = tmp.path().join("h2s.db");
+    let app = mock_app(db_file.to_str().unwrap()).await;
+    let state = app.state::<AppState>();
+
+    let error = open_project(
+        game_root.to_str().unwrap().to_string(),
+        None,
+        None,
+        app.state(),
+    )
+    .await
+    .expect_err("a Wolf game holding Data.wolf must be refused");
+    assert!(error.contains(WOLF_ARCHIVE_PRESENT), "{error}");
+    assert!(error.contains("Data.wolf"), "{error}");
+
+    let projects: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects")
+        .fetch_one(&state.db)
+        .await
+        .unwrap();
+    assert_eq!(projects, 0, "no partial project may be created");
+}
+
+/// A decrypted Wolf game whose `Data/BasicData/` holds no readable database is
+/// refused at open (plan UW, UW-D4): without one the encoding is unknown, and
+/// a Shift-JIS default would corrupt a UTF-8 game.
+#[tokio::test]
+async fn wolf_game_without_database_is_refused_at_open() {
+    use hoshi2star_lib::engines::detector::WOLF_NO_DATABASE;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let game_root = tmp.path().join("game");
+    let map_dir = game_root.join("Data").join("MapData");
+    std::fs::create_dir_all(&map_dir).unwrap();
+    std::fs::write(
+        map_dir.join("Map001.mps"),
+        wolf_v2_map("こんにちは、旅の人"),
+    )
+    .unwrap();
+    std::fs::write(game_root.join("GamePro.exe"), b"").unwrap();
+    let basic_data = game_root.join("Data").join("BasicData");
+    std::fs::create_dir_all(&basic_data).unwrap();
+    std::fs::write(basic_data.join("DataBase.project"), b"").unwrap();
+
+    let db_file = tmp.path().join("h2s.db");
+    let app = mock_app(db_file.to_str().unwrap()).await;
+    let state = app.state::<AppState>();
+
+    let error = open_project(
+        game_root.to_str().unwrap().to_string(),
+        None,
+        None,
+        app.state(),
+    )
+    .await
+    .expect_err("a Wolf game without a readable database must be refused");
+    assert!(error.contains(WOLF_NO_DATABASE), "{error}");
+
+    let projects: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects")
+        .fetch_one(&state.db)
+        .await
+        .unwrap();
+    assert_eq!(projects, 0, "no partial project may be created");
+}
+
+/// A Wolf Pro game (only `GamePro.exe`) decrypted by UberWolf opens, and its
+/// export delivers the translated map as a loose `Data/` file, no archive
+/// (plan UW, UW-D3).
+#[tokio::test]
+async fn wolf_pro_game_is_exported_as_loose_files() {
     const MESSAGE: &str = "こんにちは、旅の人";
     const TRANSLATION: &str = "Hello, traveller";
 
     let tmp = tempfile::tempdir().unwrap();
     let game_root = tmp.path().join("game");
-    std::fs::create_dir_all(game_root.join("Data").join("MapData")).unwrap();
-    std::fs::write(game_root.join("Game.ini"), b"").unwrap();
-    std::fs::write(
-        game_root.join("Data.wolf"),
-        keyless_data_wolf(&wolf_v2_map(MESSAGE)),
-    )
-    .unwrap();
-    std::fs::write(
-        game_root.join("Data").join("MapData").join("Map001.mps"),
-        wolf_v2_map("古い"),
-    )
-    .unwrap();
+    let map_dir = game_root.join("Data").join("MapData");
+    std::fs::create_dir_all(&map_dir).unwrap();
+    std::fs::write(map_dir.join("Map001.mps"), wolf_v2_map(MESSAGE)).unwrap();
+    std::fs::write(game_root.join("GamePro.exe"), b"").unwrap();
+    write_wolf_v2_basic_data(&game_root);
+    // Archives without text (pictures) do not stop the game from opening.
+    std::fs::write(game_root.join("Data").join("Picture.wolf"), b"pictures").unwrap();
 
     let db_file = tmp.path().join("h2s.db");
     let app = mock_app(db_file.to_str().unwrap()).await;
@@ -1321,8 +1339,9 @@ async fn wolf_archive_game_is_exported_as_a_rebuilt_archive() {
         app.state(),
     )
     .await
-    .expect("a Wolf game shipped as Data.wolf opens")
+    .expect("a decrypted Wolf Pro game opens")
     .project;
+    assert_eq!(project.engine, "wolf");
 
     let files = get_source_files(project.id.clone(), app.state())
         .await
@@ -1335,7 +1354,7 @@ async fn wolf_archive_game_is_exported_as_a_rebuilt_archive() {
         .items
         .iter()
         .find(|segment| segment.source_text == MESSAGE)
-        .expect("the message comes from the archive, not the stale loose copy");
+        .expect("the map message");
     update_segment(segment.id.clone(), TRANSLATION.to_string(), app.state())
         .await
         .expect("update_segment");
@@ -1346,25 +1365,18 @@ async fn wolf_archive_game_is_exported_as_a_rebuilt_archive() {
     let entries = zip_entries(Path::new(&zip_path));
     assert_eq!(
         entries.keys().map(String::as_str).collect::<Vec<_>>(),
-        ["Data.wolf"],
-        "only the rebuilt archive is delivered"
+        ["Data/MapData/Map001.mps"],
+        "only the translated loose map is delivered"
     );
-    let archive = extract_all(&entries["Data.wolf"]).expect("rebuilt archive reads back");
-    let map = archive
-        .files
-        .iter()
-        .find(|f| f.path == "/MapData/Map001.mps")
-        .expect("map in the rebuilt archive");
-    assert!(map
-        .data
+    assert!(entries["Data/MapData/Map001.mps"]
         .windows(TRANSLATION.len())
         .any(|window| window == TRANSLATION.as_bytes()));
 }
 
 /// The export dialog announces what a Wolf export will do (plan RW, RW-8):
-/// accents folded for a Shift-JIS game, the archive delivered rebuilt.
+/// accents folded for a Shift-JIS game.
 #[tokio::test]
-async fn wolf_export_preflight_announces_folding_and_archives() {
+async fn wolf_export_preflight_announces_folding() {
     use hoshi2star_lib::commands::export::preflight_export;
 
     const MESSAGE: &str = "こんにちは、旅の人";
@@ -1377,6 +1389,7 @@ async fn wolf_export_preflight_announces_folding_and_archives() {
     let loose = tmp.path().join("loose");
     std::fs::create_dir_all(loose.join("Data").join("MapData")).unwrap();
     std::fs::write(loose.join("Game.ini"), b"").unwrap();
+    write_wolf_v2_basic_data(&loose);
     std::fs::write(
         loose.join("Data").join("MapData").join("Map001.mps"),
         wolf_v2_map(MESSAGE),
@@ -1418,32 +1431,5 @@ async fn wolf_export_preflight_announces_folding_and_archives() {
         .expect("Wolf notes");
     assert!(wolf.shift_jis);
     assert_eq!(wolf.accented_texts, 1);
-    assert!(wolf.archives.is_empty());
     assert!(wolf.path_warning.is_none());
-
-    // Game shipped as Data.wolf: the archive is announced.
-    let archived = tmp.path().join("archived");
-    std::fs::create_dir_all(&archived).unwrap();
-    std::fs::write(archived.join("Game.ini"), b"").unwrap();
-    std::fs::write(
-        archived.join("Data.wolf"),
-        keyless_data_wolf(&wolf_v2_map(MESSAGE)),
-    )
-    .unwrap();
-    let project = open_project(
-        archived.to_str().unwrap().to_string(),
-        None,
-        None,
-        app.state(),
-    )
-    .await
-    .expect("archived Wolf game opens")
-    .project;
-    let wolf = preflight_export(project.id.clone(), app.state())
-        .await
-        .expect("preflight")
-        .wolf
-        .expect("Wolf notes");
-    assert_eq!(wolf.archives, ["Data.wolf"]);
-    assert_eq!(wolf.accented_texts, 0);
 }

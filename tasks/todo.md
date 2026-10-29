@@ -1,5 +1,179 @@
 # Tasks — Hoshi2Star
 
+## Plan — UW : Wolf lu depuis le `Data/` déchiffré par UberWolf (2026-10-28, Claude) — PLAN VALIDÉ le 2026-10-28 (UW-D1 à UW-D8 = recommandations) ; implémentation confiée à une session cloud
+
+**Objectif.** Une seule façon d'ouvrir un jeu Wolf, quelle que soit sa version (2.x, 3.x, 3.31+, Pro,
+WolfX) : l'utilisateur déchiffre le jeu avec UberWolf, l'app lit et exporte les fichiers libres de
+`Data/`. L'app ne lit plus les archives `.wolf`. Pas de moteurs séparés par variante : le moteur reste
+`wolf`, seul l'encodage (`WolfVersion`) dépend du jeu.
+
+**Preuves (2026-10-28).**
+- Jeux Pro déchiffrés par UberWolf, sans aucun `.wolf` : とのかじ 3.723 (`GamePro.exe`, chiffrement
+  Pro 1020) et ポンコツ 3.714 (`GamePro.exe`, chiffrement 0 avec clé propre au jeu) **se lancent**.
+- Copies marquées (`RAE-PLAN/wolf/*-essai-marque`, hors Git) où le prototype `wolf_v3.py` a préfixé
+  chaque message et choix par « ★ » : **affiché en jeu** (message « ★初期設定を行います。 » dans
+  とのかじ, choix « ★プロローグを見る » dans ポンコツ). Les jeux Pro lisent donc les cartes et
+  événements libres modifiés.
+- Le prototype relit à l'identique, octet par octet, les 27 fichiers de とのかじ et les 306 de ポンコツ :
+  même format de cartes (`WOLFM`, 0x55) et de `CommonEvent.dat` (0xCC) que le 3.658.
+- Déjà prouvé en octobre : sans archive, Wolf 3.658 lit les fichiers libres ; avec archive, l'archive
+  passe en premier (`RAE-PLAN/essais/RESULTATS.md`).
+- **Non prouvé** : les lignes `Evtext/*.txt` de ポンコツ (prologue non regardé) ; un export fait par
+  l'app (et non par le prototype) sur ces jeux.
+
+**Défauts constatés que le lot corrige.**
+- `is_wolf_game_dir` (`engines/detector.rs:322`) exige `Game.exe` ou `Game.ini` : les jeux Pro
+  (`GamePro.exe` seul) sont refusés (« moteur non détecté »).
+- `guess_wolf_version_from_structure` (`detector.rs:218`) ne lit que `BasicData/SysDatabase.dat`,
+  puis l'archive, puis **retombe sur v2 (Shift-JIS)** : ポンコツ (pas de `SysDatabase.dat`, bases en UTF-8)
+  serait exporté en Shift-JIS dans des fichiers UTF-8.
+- `is_resource_path` (`engines/wolf/extractor.rs:330`) ne teste que la fin du texte entier : les 19
+  chemins `bg/xxx.png⏎0⏎0⏎0` de `SysDatabase` (champ `遠景ﾌｧｲﾙ名`, jeu 3.658) sont extraits comme
+  textes à traduire ; les traduire ferait disparaître les fonds (`RAE-PLAN/essais/wolf-3658-analyse-textes.md`).
+
+**Décisions à valider (recommandation en gras).**
+- **UW-D1 — Régression acceptée.** Aujourd'hui, les jeux 2.x (DXA v6) et 3.x jusqu'à 3.30 (DXA v8,
+  clé « v3.14 ») s'ouvrent directement depuis leur `Data.wolf`. Après UW, **tous** les jeux passent par
+  UberWolf. **Accepter** : un seul chemin, prouvé sur 3.658, 3.714 et 3.723.
+- **UW-D2 — Archives présentes.** Si `Data.wolf`, `Data/BasicData.wolf` ou `Data/MapData.wolf` existe,
+  **refuser** l'ouverture et l'export avec un message « déchiffrer avec UberWolf, puis retirer les
+  `.wolf` » (le jeu lirait l'archive et ignorerait la traduction). Les autres `.wolf` (images, sons) ne
+  contiennent pas de texte : **ignorés**.
+- **UW-D3 — Lanceur.** Accepter **`Game.exe`, `GamePro.exe` ou `Game.ini`**, avec `Data/BasicData/`
+  (ou `BasicData/`) contenant au moins un `.project` ou `CommonEvent.dat`.
+- **UW-D4 — Encodage.** Lire l'en-tête de **n'importe quelle base** trouvée (`SysDatabase.dat`,
+  `DataBase.dat`, `CDataBase.dat`) ; sans base lisible, **refuser** avec un message, sans repli sur v2.
+- **UW-D5 — Source = destination.** Une fois l'export appliqué, `Data/` contient des traductions.
+  L'export par position reste juste, mais un segment remis à vide garderait l'ancienne traduction, et une
+  réextraction lirait des traductions comme source. **Reporter** à un lot « instantané d'origine Wolf »
+  (copie des `.mps`/`.dat`/`.project` à la création, `core/originals.rs` existe pour MV/MZ), avec ce
+  risque écrit dans `docs/` et le ROADMAP. Alternative : l'inclure ici (lot plus gros).
+- **UW-D6 — Retrait du code d'archive.** Le module public `decrypt/` (`legacy_xor.rs`, `writer.rs`,
+  `wolfx.rs`) : **lot séparé UW-R** après l'essai en jeu d'un export de l'app. Le code privé qui perd son
+  appelant dans UW est retiré **dans UW** (sinon Clippy `-D warnings` échoue) : voir UW-3.
+- **UW-D7 — Projet 3.658 existant.** Ses `source_files.file_path` sont déjà `…/Data/MapData/*.mps` et ses
+  clés ne dépendent pas de l'origine : il reste valide après UberWolf. **Le recréer quand même** (0
+  traduit) pour profiter du nouveau filtre des chemins.
+- **UW-D8 — Fichiers texte propres à un jeu** (`Evtext/*.txt` de ポンコツ, ~9 740 lignes) : **hors
+  périmètre**, ligne ajoutée dans `BACKLOG.md`.
+
+**Étapes.** Branche depuis `main` (worktree), pas de build local, gate cloud après accord de push.
+
+- [x] **UW-0.** UW-D1 à UW-D8 validées telles que recommandées (utilisateur, 2026-10-28) : UW-D5 reporté.
+- [x] **UW-1 — Détection** (`engines/detector.rs`) : lanceurs `Game.exe` / `GamePro.exe` / `Game.ini`
+      (UW-D3) ; encodage par n'importe quelle base (UW-D4) ; `guess_wolf_version_from_structure` rend une
+      erreur au lieu de v2 ; appelants à adapter : `commands/project.rs:936`, `commands/export.rs:724`,
+      `:1200`, `:1466`. Retirer `guess_wolf_version_from_archive` (privée) et ses tests
+      (`detector.rs:677-815`). Tests : `GamePro.exe` seul détecté ; encodage depuis `DataBase.dat` seul ;
+      sans base ⇒ erreur ; ancien test `test_guess_wolf_version_no_signal_defaults_to_v2` remplacé.
+      **Fait le 2026-10-28 (Claude, cloud)** : `is_wolf_game_dir` (lanceurs `WOLF_LAUNCHERS`, `.project` ou
+      `CommonEvent.dat` dans `Data/BasicData/` ou `BasicData/`), `guess_wolf_version_from_structure` →
+      `Result<WolfVersion, WolfVersionError>` ; code d'archive retiré du détecteur. Écart d'interprétation :
+      l'erreur « sans base » porte un marqueur stable `wolf_no_database` (`WOLF_NO_DATABASE`) pour que
+      l'interface affiche un message (UW-D4 « refuser avec un message ») ; reconnu côté interface en UW-5.
+      Tests e2e Wolf (`e2e_project_flow.rs`, `export_debug.rs`) : fixture `write_wolf_v2_basic_data`
+      (`SysDatabase.dat` Shift-JIS + `DataBase.project`). Gate vert : fmt, typecheck, Vitest 157/157, lint,
+      clippy `--all-targets -D warnings`, cargo test 804 OK / 0 échec / 15 ignorés.
+- [x] **UW-2 — Sources** (`engines/wolf/sources.rs`) : `WolfSources::load` lit seulement `Data/MapData` et
+      `Data/BasicData` ; archive de texte présente ⇒ erreur avec un marqueur stable
+      `wolf_archive_present` (UW-D2) ; `Origin` et `display_path` retirés s'ils n'ont plus d'usage ;
+      marqueur `wolf_unreadable_archive` retiré. Tests de `sources.rs:262-390` réécrits sans `test_archives`.
+- [x] **UW-3 — Export** (`engines/wolf/injector.rs`, `integrity.rs`) : `inject_all_to_memory` livre seulement
+      des fichiers libres `Data/...` ; retrait de `by_archive`, de l'appel à `rebuild_archive` et de
+      `verify_archive_rebuild` (`pub` dans le module `pub(crate)` `integrity` : code mort sinon) et de ses
+      tests. `inject_all` (export de debug) inchangé hors commentaire.
+      **UW-2 et UW-3 faits le 2026-10-28 (Claude, cloud), un seul commit** : retirer `Origin` des sources
+      retire aussi la livraison en archive de l'injecteur (sinon variante jamais construite, Clippy rouge).
+      `WolfSources::load` lit `Data/MapData` et `Data/BasicData` seuls, refuse `Data.wolf`,
+      `Data/MapData.wolf`, `Data/BasicData.wolf` (toute casse) avec `wolf_archive_present`
+      (`WOLF_ARCHIVE_PRESENT`) ; `text_archives` remplace `archive_paths` (la note d'export l'utilise
+      jusqu'à UW-5) ; `stem()` garde la casse du disque. Injecteur : `deliver`, `by_archive`,
+      `InjectorError::Archive` et l'appel à `rebuild_archive` retirés ; `verify_archive_rebuild` et ses
+      tests retirés d'`integrity.rs` ; `write_zip` ne range plus les `.wolf` en « stored » (plus jamais
+      livrés). Tests remplacés : sources (fichiers libres, refus des 3 archives, autres `.wolf` ignorés),
+      injecteur (`test_export_delivers_loose_data_files_only`, `test_export_with_a_text_archive_is_refused`,
+      `test_inject_all_does_not_overwrite_wolf` → `ArchivePresent`), extracteur réel Honoka `(.wolf)` → refus,
+      e2e (`wolf_game_with_a_text_archive_is_refused_at_open`, `wolf_pro_game_is_exported_as_loose_files`,
+      partie « archivée » de la note d'export retirée). Restent pour UW-R : variante publique
+      `ExtractorError::Decryptor` (référence `decrypt/`). Gate vert : fmt, typecheck, Vitest 157/157, lint,
+      clippy, cargo test 806 OK / 0 échec / 15 ignorés.
+- [x] **UW-4 — Filtre des chemins** (`extractor.rs:330`). Règle : un texte est un chemin si **chaque ligne**
+      (après retrait du `\r` et des espaces de fin) est vide, un nombre, ou un chemin seul, **et** qu'au moins
+      une ligne est un chemin seul. Chemin seul : finit par une extension connue, sans espace (normal ou
+      pleine chasse) ni ponctuation de phrase (`。、！？「」『』（）…：`), et contient `/` ou `\`, ou est
+      entièrement ASCII. Tests :
+      `bg/スラム.png⏎0⏎0⏎0` écarté ; `bg/スラム.png\r\n0\r\n0\r\n1` écarté ; `icon.png` écarté ;
+      `ファイル名はicon.png` gardé ; `「…icon031.pngみたいな…` gardé ; `画像はこちら：pic.png` gardé ;
+      `セリス⏎見てbg.png` gardé ; les cas existants (`test_is_resource_path`) inchangés.
+      **Fait le 2026-10-28 (Claude, cloud)** : `is_resource_path` + `is_lone_path` (`extractor.rs`) ; « un
+      nombre » = `filter::is_pure_number`, signe `-` admis. **Écart à valider** : le plan exige à la fois
+      « sans espace » et `test_is_resource_path` inchangé, qui contient `MS Gothic.ttf` ; règle retenue :
+      l'espace ASCII n'est admis que dans une ligne entièrement ASCII (`MS Gothic.ttf`, `icon.png`), jamais
+      dans une ligne non ASCII (`bg/スラム 2.png` gardé comme texte) ; l'espace pleine chasse jamais.
+      Test ajouté `test_is_resource_path_with_numeric_lines` (cas du plan + `\`, `-1`, espaces).
+      Gate vert : fmt, typecheck, Vitest 157/157, lint, clippy, cargo test 807 OK / 0 échec / 15 ignorés.
+- [x] **UW-5 — Interface** : `src/lib/projectError.ts` (+ test) reconnaît `wolf_archive_present` ; clés fr/en
+      (`projectList.*`, `toasts.*`) ; retrait de `wolfUnreadableArchive` ; texte du moteur non détecté
+      (« Wolf RPG 2.x et 3.x » ⇒ mention du `Data/` déchiffré par UberWolf) ; `ExportWolfNotes.tsx`
+      (+ test) : plus d'archives annoncées (`preflight_export`, `commands/export.rs:713-742`).
+      **Fait le 2026-10-28 (Claude, cloud)** : `projectError.ts` reconnaît `wolf_archive_present`,
+      `wolf_no_database` (marqueur ajouté en UW-1) et `wolf_unreadable_files` ; clés fr/en
+      `projectList.*`/`toasts.*` `wolfArchivePresent`, `wolfNoDatabase` ; `wolfUnreadableArchive` et
+      `exportWolf.archives` retirés ; `engineNotFound` mentionne le `Data/` déchiffré par UberWolf ;
+      `WolfExportPreflight.archives` retiré (Rust et TS), `ExportWolfNotes` sans ligne d'archive ; test e2e
+      renommé `wolf_export_preflight_announces_folding`. Gate vert : fmt, typecheck, Vitest 158/158, lint,
+      clippy, cargo test 807 OK / 0 échec / 15 ignorés.
+- [x] **UW-6 — Tests d'intégration** (`src-tauri/tests/e2e_project_flow.rs:1228-1430`, et tout test qui pose
+      un `.wolf`) : remplacer « jeu livré en `Data.wolf` ouvert et réexporté » par « jeu avec `Data.wolf`
+      refusé avec `wolf_archive_present` » et « jeu `GamePro.exe` + `Data/` ouvert et exporté en fichiers
+      libres ». Chercher toute chaîne littérale d'ancien comportement (leçons du 2026-10-26, RW-4 et RW-5).
+      **Fait le 2026-10-28 (Claude, cloud)**, en partie dès UW-1 à UW-3 (chaque étape a réécrit les tests
+      qu'elle cassait) : fixture `write_wolf_v2_basic_data` dans `e2e_project_flow.rs` et `export_debug.rs` ;
+      `wolf_archive_game_is_exported_as_a_rebuilt_archive` → `wolf_game_with_a_text_archive_is_refused_at_open`
+      + `wolf_pro_game_is_exported_as_loose_files` ; ajout `wolf_game_without_database_is_refused_at_open`
+      (marqueur importé de `engines::detector`). Recherche des valeurs littérales (`wolf_unreadable_archive`,
+      `UnreadableArchive`, `UnplacedMaps`, `archive_paths`, `rebuild_archive`, `Data.wolf`…) : ne restent que
+      les tests qui affirment leur absence et le module `decrypt/` (UW-R). Texte `engineNotFound` précisé
+      (`Data/BasicData/` et `Data/MapData/` en clair). Gate vert : fmt, typecheck, Vitest 158/158, lint,
+      clippy, cargo test 808 OK / 0 échec / 15 ignorés.
+- [x] **UW-7 — Documentation** : ADR au prochain numéro libre (« Wolf : lire le `Data/` déchiffré par
+      UberWolf », remplace la livraison en archive de RW) et correction de la ligne du ROADMAP qui réserve
+      ADR-008 ; `CONTEXT.md` (Wolf) ; `docs/engines.md` ou `docs/engines/` (procédure UberWolf) ;
+      `ROADMAP.md` (tableau des moteurs, F5) ; `BACKLOG.md` (UW-D8, et UW-D5 si reporté) ; `CHANGELOG.md` ;
+      handoff et journal.
+      **Fait le 2026-10-28 (Claude, cloud)** : `docs/adr/ADR-008.md`, `docs/engines/wolf-uberwolf.md`,
+      `CONTEXT.md` (vocabulaire, résumé ADR-008), `ROADMAP.md` (tableau des moteurs, F5, consolidation : la
+      ligne qui réservait ADR-008 renvoie aux ADR suivants), `BACKLOG.md` (UW-D5, UW-D8), `CHANGELOG.md`,
+      journal `docs/journal/2026-10-28-uw-implementation.md`, leçon du 2026-10-28.
+      **Écarts notés, hors périmètre UW** : `docs/architecture.md` décrit encore la lecture d'archives Wolf
+      (lignes `wolf/extractor.rs`, `wolf/injector.rs`, `decrypt/`) — à corriger avec l'item ROADMAP
+      « `docs/architecture.md` » ou UW-R ; `inject_all` (export de debug) crée `Data/MapData` et
+      `Data/BasicData` avant le refus d'une archive ; les chemins livrés sont `Data/...` même si le dossier du
+      jeu s'appelle `data/` (antérieur à UW).
+- [x] **UW-8 — Gate cloud** (accord de push) : fmt, typecheck, Vitest, clippy `--all-targets -D warnings`,
+      `cargo test --locked --no-fail-fast`, lint.
+      **Fait le 2026-10-28 (Claude, cloud)** : relecture indépendante du diff complet par un sous-agent.
+      Corrigé : les archives de textes sont vérifiées avant l'encodage (`refuse_text_archives`, appelée par
+      `guess_wolf_version_from_structure` et `WolfSources::load`), donc un `Data/` à moitié déchiffré reçoit
+      `wolf_archive_present` et non `wolf_no_database` ; seuls les 10 octets d'en-tête des bases sont lus ;
+      `inject_all` refuse avant de créer des dossiers ; message anglais au pluriel ; commentaires périmés ;
+      test de ponctuation `見て：bg/a.png` ; `engineNotFound` demande aussi de retirer les archives.
+      **Laissé, à valider par l'utilisateur** : (1) `BasicData/` à la racine est détecté (UW-D3) mais pas
+      lu (UW-2) : refus `wolf_no_database`, documenté ; (2) le filtre UW-4 extrait `決定.ogg` (non ASCII
+      sans dossier) et `Picture/立ち絵（笑顔）.png` (ponctuation pleine chasse), contrepartie de
+      « `ファイル名はicon.png` gardé » : à surveiller en UW-9 ; (3) pas d'e2e ポンコツ (UTF-8 via
+      `DataBase.dat` seul), couvert en unitaire seulement (pas de générateur de carte UTF-8 dans les tests).
+      Gate final vert : fmt, typecheck, Vitest 39 fichiers / 158 tests, lint, clippy `--all-targets -D
+      warnings`, cargo test 808 OK / 0 échec / 15 ignorés.
+- [ ] **UW-9 — Essai réel par l'utilisateur** : とのかじ, ポンコツ et le 3.658 (déchiffré) ouverts dans l'app,
+      quelques segments traduits, export zip appliqué sur une copie, textes traduits vus en jeu ; Evtext du
+      prologue de ポンコツ regardé sur la copie marquée.
+- [ ] **UW-R (lot séparé, après UW-9)** : retrait de `decrypt/` (`legacy_xor.rs` 3 035 lignes, `writer.rs`,
+      `wolfx.rs`), des tests réels `H2S_WOLF_ARCHIVES` et des mentions restantes.
+
+**Hors périmètre.** Evtext (UW-D8) ; instantané d'origine si UW-D5 est reporté ; les autres textes
+« inutiles » repérés dans l'analyse du 3.658 (cartes d'exemple, débogage, commentaires de l'auteur).
+
 ## Analyse complète de l'app (2026-10-25) — SESSIONS 1 À 3 FAITES, Wolf (2 bis) à faire
 
 Session dédiée, à lancer à part. Prompt prêt : `docs/plans/2026-10-25-analyse-complete-app.md`

@@ -933,7 +933,8 @@ where
             }
         }
         Engine::Wolf => {
-            let wolf_version = guess_wolf_version_from_structure(game_dir);
+            let wolf_version =
+                guess_wolf_version_from_structure(game_dir).map_err(|e| e.to_string())?;
             if let Some(warning) =
                 crate::engines::wolf::encoding::path_warning(game_dir, &wolf_version)
             {

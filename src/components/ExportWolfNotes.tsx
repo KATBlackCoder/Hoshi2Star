@@ -12,11 +12,6 @@ interface ExportWolfNotesProps {
 export function ExportWolfNotes({ notes }: ExportWolfNotesProps) {
   const { t } = useTranslation();
   const lines: string[] = [];
-  if (notes.archives.length > 0) {
-    lines.push(
-      t("exportWolf.archives", { archives: notes.archives.join(", ") }),
-    );
-  }
   if (notes.accentedTexts > 0) {
     lines.push(
       t(notes.shiftJis ? "exportWolf.folded" : "exportWolf.fontAccents", {

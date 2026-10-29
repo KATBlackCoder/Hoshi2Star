@@ -2,8 +2,8 @@
  * Map an `open_project` failure to the i18n key of the toast to show.
  *
  * The backend returns a plain error string; the cases worth distinguishing for
- * the user are an unrecognized game engine and a Wolf RPG game whose archives
- * or maps cannot be read. Kept in one place so the call sites (AppToolbar +
+ * the user are an unrecognized game engine and a Wolf RPG game that cannot be
+ * read (text archive still present, no readable database, unreadable maps). Kept in one place so the call sites (AppToolbar +
  * ProjectList resume/open, export) can't drift apart if the backend error text
  * or the i18n keys change.
  *
@@ -18,28 +18,36 @@ export function openProjectErrorKey(err: unknown): string {
 }
 
 /**
- * Markers the backend puts at the start of a Wolf RPG read failure:
- * an archive the game reads cannot be read (`WOLF_UNREADABLE_ARCHIVE` in
- * `engines/wolf/sources.rs`), or maps / common events cannot be read
- * (`WOLF_UNREADABLE_FILES` in `engines/wolf/extractor.rs`).
+ * Markers the backend puts at the start of a Wolf RPG read failure (plan UW):
+ * a `.wolf` archive holding text is still in the game folder
+ * (`WOLF_ARCHIVE_PRESENT` in `engines/wolf/sources.rs`), no database declares
+ * the encoding (`WOLF_NO_DATABASE` in `engines/detector.rs`), or maps / common
+ * events cannot be read (`WOLF_UNREADABLE_FILES` in `engines/wolf/extractor.rs`).
  */
-export const WOLF_UNREADABLE_ARCHIVE = "wolf_unreadable_archive";
+export const WOLF_ARCHIVE_PRESENT = "wolf_archive_present";
+export const WOLF_NO_DATABASE = "wolf_no_database";
 export const WOLF_UNREADABLE_FILES = "wolf_unreadable_files";
 
+const WOLF_READ_ERRORS = [
+  [WOLF_ARCHIVE_PRESENT, "wolfArchivePresent"],
+  [WOLF_NO_DATABASE, "wolfNoDatabase"],
+  [WOLF_UNREADABLE_FILES, "wolfUnreadableFiles"],
+] as const;
+
+/** Key suffixes of the Wolf RPG read failures. */
+export type WolfReadErrorKey = (typeof WOLF_READ_ERRORS)[number][1];
+
 /** i18n key suffix (`projectList.*`, `toasts.*`) of a Wolf RPG read failure. */
-export function wolfReadErrorKey(
-  err: unknown,
-): "wolfUnreadableArchive" | "wolfUnreadableFiles" | null {
+export function wolfReadErrorKey(err: unknown): WolfReadErrorKey | null {
   const text = String(err);
-  if (text.includes(WOLF_UNREADABLE_ARCHIVE)) return "wolfUnreadableArchive";
-  if (text.includes(WOLF_UNREADABLE_FILES)) return "wolfUnreadableFiles";
-  return null;
+  const found = WOLF_READ_ERRORS.find(([marker]) => text.includes(marker));
+  return found ? found[1] : null;
 }
 
-/** The backend detail after a Wolf marker (archive or files, reason). */
+/** The backend detail after a Wolf marker (archives, database or files). */
 export function wolfReadErrorDetail(err: unknown): string | undefined {
   const text = String(err);
-  for (const marker of [WOLF_UNREADABLE_ARCHIVE, WOLF_UNREADABLE_FILES]) {
+  for (const [marker] of WOLF_READ_ERRORS) {
     const at = text.indexOf(marker);
     if (at >= 0) return text.slice(at + marker.length).replace(/^:\s*/, "");
   }

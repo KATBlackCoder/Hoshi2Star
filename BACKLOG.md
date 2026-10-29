@@ -67,6 +67,19 @@
 
 ---
 
+## Engine Wolf RPG — suites du plan UW (2026-10-28)
+
+> Wolf est lu depuis le `Data/` déchiffré par UberWolf (ADR-008). Ces points ont été écartés du plan UW.
+
+- [ ] **Instantané d'origine Wolf** (UW-D5, reporté) : copier `Data/MapData/*.mps`, `Data/BasicData/*.dat` et
+      `*.project` à la création du projet (comme `core/originals.rs` pour MV/MZ). Aujourd'hui, une fois l'export
+      appliqué, `Data/` contient des traductions : un segment remis à vide garderait l'ancienne traduction et une
+      réextraction lirait des traductions comme source. Prérequis d'une garde « jeu mis à jour » Wolf.
+- [ ] **Fichiers texte propres à un jeu** (UW-D8) : `Evtext/*.txt` de ポンコツ 3.714 (~9 740 lignes) lus par les
+      événements du jeu ; format et chargement à étudier avant tout code (prologue non vérifié en jeu).
+
+---
+
 ## Features différenciantes
 
 - [ ] Overlay playtest "click-to-segment" : plugin injecté dans le jeu (NW.js) qui, via un serveur local exposé par Tauri, sélectionne le segment dans SegmentGrid pendant le playtest

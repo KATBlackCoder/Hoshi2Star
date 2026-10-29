@@ -697,13 +697,11 @@ pub struct ExportPreflight {
     pub wolf: Option<WolfExportPreflight>,
 }
 
-/// Notes shown before a Wolf RPG export, computed without reading any archive.
+/// Notes shown before a Wolf RPG export. The export delivers loose `Data/`
+/// files only (plan UW): there is no archive to announce.
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct WolfExportPreflight {
-    /// Archives the game reads first; the export delivers them rebuilt when they
-    /// hold a translated file (`Data.wolf`, `Data/MapData.wolf`…).
-    pub archives: Vec<String>,
     /// The game's text files are Shift-JIS (Wolf 2.x): accents are folded.
     pub shift_jis: bool,
     /// Translations holding characters Shift-JIS cannot encode: folded (é → e)
@@ -718,10 +716,10 @@ async fn wolf_preflight(
     project_id: &str,
     game_path: &str,
 ) -> Result<WolfExportPreflight, String> {
-    use crate::engines::wolf::{encoding, sources};
+    use crate::engines::wolf::encoding;
 
     let game_dir = Path::new(game_path);
-    let version = guess_wolf_version_from_structure(game_dir);
+    let version = guess_wolf_version_from_structure(game_dir).map_err(|e| e.to_string())?;
     let targets: Vec<String> = sqlx::query_scalar(
         "SELECT s.target_text FROM segments s \
          JOIN source_files f ON f.id = s.source_file_id \
@@ -736,7 +734,6 @@ async fn wolf_preflight(
         .filter(|text| !encoding::is_shift_jis(text))
         .count();
     Ok(WolfExportPreflight {
-        archives: sources::archive_paths(game_dir),
         shift_jis: !version.is_utf8(),
         accented_texts,
         path_warning: encoding::path_warning(game_dir, &version),
@@ -1197,7 +1194,7 @@ async fn collect_wolf_zip_entries(
     scope: ExportScope,
     mut fit: Option<WolfExportFit>,
 ) -> Result<(Vec<(String, Vec<u8>)>, Vec<integrity::IntegrityIssue>), String> {
-    let version = guess_wolf_version_from_structure(game_dir);
+    let version = guess_wolf_version_from_structure(game_dir).map_err(|e| e.to_string())?;
     if let Some(warning) = crate::engines::wolf::encoding::path_warning(game_dir, &version) {
         log::warn!("[h2s] {warning}");
     }
@@ -1267,15 +1264,8 @@ fn write_zip(
         zip.set_comment(comment);
     }
     for (rel_path, bytes) in entries {
-        // A rebuilt Wolf archive is already compressed and can weigh gigabytes:
-        // stored as is (plan RW, decision D1).
-        let method = if rel_path.to_ascii_lowercase().ends_with(".wolf") {
-            zip::CompressionMethod::Stored
-        } else {
-            zip::CompressionMethod::Deflated
-        };
         let options = zip::write::SimpleFileOptions::default()
-            .compression_method(method)
+            .compression_method(zip::CompressionMethod::Deflated)
             .large_file(bytes.len() as u64 >= u64::from(u32::MAX));
         zip.start_file(&rel_path, options)
             .map_err(|e| e.to_string())?;
@@ -1463,7 +1453,8 @@ pub async fn debug_inject_file(
                 }
             }
             let game_dir = Path::new(&game_path);
-            let version = crate::engines::detector::guess_wolf_version_from_structure(game_dir);
+            let version = crate::engines::detector::guess_wolf_version_from_structure(game_dir)
+                .map_err(|e| e.to_string())?;
             let results = wolf_inject_all(game_dir, &translations_by_file, &version)
                 .await
                 .map_err(|e| e.to_string())?;
