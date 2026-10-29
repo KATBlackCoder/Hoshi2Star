@@ -24,7 +24,12 @@
   - l'ancien réglage est conservé dans `tauri:linux:x11` ;
   - `CLAUDE.md` et `CONTEXT.md` sont corrigés.
 - **G1 remesuré avec le rendu accéléré (2026-10-29)** : environ 21 ms par frame, contre 20 à 22 ms sur `main`, sans zone blanche des deux côtés. Aucun gain : **G1 est abandonné** (section 4 de `docs/benchmarks/2026-10-29-grid-app-reelle.md`). La branche `perf/grid-scroll` (locale et `origin`) ne sera supprimée qu'avec l'accord de l'utilisateur.
-- **Prochaine action :** l'utilisateur choisit la suite de l'audit : P2 (re-rendus de toute l'app pendant une traduction), P3 (IPC en double) ou P5 (doublons). `perf/bench-grid` et `chore/deps-minor` restent à décider.
+- **Lots P2, P3, P5 et P6 confiés à une session cloud (2026-10-29)**, « Audit front-end : lots P2, P3, P5, P6 », partie de `main` @ `a7141e4`.
+  - Branches empilées : `perf/fe-p2-rerenders` → `perf/fe-p3-ipc` → `refactor/fe-p5-duplicates` → `fix/fe-p6-defects`, une PR par lot, chacune visant la branche précédente. Aucune fusion par la session.
+  - Preuves attendues : tests Vitest de comptage (rendus, appels IPC), qui échouent sur `main` et passent après le lot ; gate typecheck, lint et Vitest à chaque lot.
+  - Plan dans `tasks/todo.md` (« Plan — FE »), journal `docs/journal/2026-10-29-fe-lots.md`. La session ne touche pas ce fichier.
+  - Aucune note automatique à la fin : le résultat est à relever dans son transcript.
+- **Prochaine action (2026-10-30) :** l'utilisateur relève le compte rendu de la session cloud. Claude vérifie ensuite les branches, les diffs, les tests de comptage et les PR, avant la fusion dans l'ordre P2 → P3 → P5 → P6. Puis essai local de 5 minutes. `perf/bench-grid` et `chore/deps-minor` restent à décider.
 
 ## En cours (2026-10-29, Claude) — WF : skipper les textes Wolf non traduisibles
 
