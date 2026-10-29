@@ -108,10 +108,19 @@ dans un nouveau fichier, `src-tauri/src/engines/wolf/filter.rs` (demande de l'ut
     Tests : 5 dans `filter.rs`, 2 dans `extractor.rs`. Gate vert : fmt, typecheck, Vitest 158/158,
     lint 0 erreur (10 avertissements connus), clippy `--all-targets` 0, `cargo test --locked
     --no-fail-fast` 822 OK / 0 échec / 15 ignorés (+7).
-- [ ] **WF-4 — Test d'intégration.** Un jeu fabriqué (dans le style des fixtures e2e Wolf) avec une carte
+- [x] **WF-4 — Test d'intégration.** Un jeu fabriqué (dans le style des fixtures e2e Wolf) avec une carte
       `SampleMap`, un événement `[D]…`, un message `ｴﾗｰ!!!`, un champ de noms d'événements et un doublon
       `ｼｽﾃﾑ名`. Vérifier qu'aucun de ces textes n'est extrait et que les autres le sont toujours.
       Vérifier aussi que l'export laisse les valeurs skippées intactes.
+      Fait (session cloud, 2026-10-29). Les fixtures publiques d'e2e ne savent pas fabriquer
+      `CommonEvent.dat` ni une base à plusieurs champs (formats `pub(crate)`) : le jeu complet est
+      testé dans `extractor.rs` (`test_extract_all_wolf_skips_non_translatable_texts`, ordre des
+      entrées et `extract_wolf_project` compris ; `test_export_leaves_skipped_texts_untouched` par
+      `inject_all_to_memory`, contrôle d'intégrité vide), et les cartes passent aussi par la vraie
+      couche de commandes (`tests/e2e_project_flow.rs`, `wolf_non_translatable_texts_are_skipped_at_open` :
+      `SampleMapA` et une carte `ｴﾗｰ!!!` sans fichier source, zip limité à `Map001.mps`). Gate vert :
+      fmt, typecheck, Vitest 158/158, lint 0 erreur (10 avertissements connus), clippy `--all-targets`
+      0, `cargo test --locked --no-fail-fast` 825 OK / 0 échec / 15 ignorés (+3).
 - [ ] **WF-5 — Documentation.** `CONTEXT.md` ou `docs/engines/` (où sont les règles, comment en ajouter
       une), `CHANGELOG.md`, journal, handoff. `BACKLOG.md` : les deux règles mises de côté, avec le
       réglage de réinclusion, et le choix sur les noms qui servent de clés.

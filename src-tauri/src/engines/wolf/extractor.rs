@@ -687,6 +687,190 @@ mod tests {
         assert_eq!(ce.2[0].source_text, MESSAGE);
     }
 
+    // -----------------------------------------------------------------------
+    // Plan WF, WF-4: a whole game with texts to skip, extracted then exported
+    // -----------------------------------------------------------------------
+
+    const SAMPLE_MESSAGE: &str = "サンプルマップの会話です";
+    const ERROR_MESSAGE: &str = "ｴﾗｰ!!!";
+    const DEBUG_EVENT: &str = "[D]全回復";
+    const DEBUG_MESSAGE: &str = "全員の体力を回復しました";
+    const STORY_WARNING: &str = "警告、彼女の魔力が急激に上昇しています。";
+    const CALLED_EVENT: &str = "アイテム使用";
+
+    /// Rows of `DataBase`: displayed name, common event called, system
+    /// duplicate of the name.
+    const DB_FIELDS: [&str; 3] = ["名前", "[ｺﾓﾝｲﾍﾞﾝﾄ]呼び出しｲﾍﾞﾝﾄ名", "ｼｽﾃﾑ名"];
+    const DB_ROWS: [[&str; 3]; 3] = [
+        ["回復薬", CALLED_EVENT, "回復薬"],
+        ["毒消し", CALLED_EVENT, "毒消し"],
+        ["地図", CALLED_EVENT, "地図"],
+    ];
+
+    /// A decrypted Wolf 2.x game: a sample map, a map with an error message,
+    /// a debug common event, a database with a field of common event names and
+    /// a "system" duplicate.
+    fn write_game_with_texts_to_skip(game_dir: &Path) {
+        use crate::engines::wolf::dat_parser::make_string_database_pub;
+
+        let map_dir = game_dir.join("Data").join("MapData");
+        let basic = game_dir.join("Data").join("BasicData");
+        std::fs::create_dir_all(&map_dir).unwrap();
+        std::fs::create_dir_all(&basic).unwrap();
+
+        let map = |messages: &[&str], choices: &[&str]| {
+            let map = v3_format::map::MapV3::synthetic_messages(0x64, false, messages, choices);
+            v3_format::compression::pack_map(map.dump().unwrap()).unwrap()
+        };
+        std::fs::write(map_dir.join("SampleMapA.mps"), map(&[SAMPLE_MESSAGE], &[])).unwrap();
+        std::fs::write(
+            map_dir.join("Map001.mps"),
+            map(&[MESSAGE, ERROR_MESSAGE], &CHOICES),
+        )
+        .unwrap();
+
+        let common_events = v3_format::common_events::CommonEventsV3::synthetic_messages_v2(&[
+            (DEBUG_EVENT, DEBUG_MESSAGE),
+            (CALLED_EVENT, STORY_WARNING),
+        ]);
+        std::fs::write(basic.join("CommonEvent.dat"), common_events.dump().unwrap()).unwrap();
+
+        let rows: Vec<&[&str]> = DB_ROWS.iter().map(|row| row.as_slice()).collect();
+        let (project, dat) = make_string_database_pub("アイテム", &DB_FIELDS, &rows);
+        std::fs::write(basic.join("DataBase.project"), project).unwrap();
+        std::fs::write(basic.join("DataBase.dat"), dat).unwrap();
+    }
+
+    /// Plan WF, WF-4: none of the texts to skip is extracted, every other text
+    /// still is, and the entries keep their order (maps, databases, common
+    /// events) although `CommonEvent.dat` is read first.
+    #[test]
+    fn test_extract_all_wolf_skips_non_translatable_texts() {
+        let game = tempfile::tempdir().unwrap();
+        write_game_with_texts_to_skip(game.path());
+
+        let entries = extract_all_wolf(game.path(), &v2()).unwrap();
+        let files: Vec<(&str, &str)> = entries
+            .iter()
+            .map(|(file, kind, _)| (file.as_str(), kind.as_str()))
+            .collect();
+        assert_eq!(
+            files,
+            [
+                ("Map001.mps", "wolf_map"),
+                ("DataBase.dat", "wolf_database"),
+                ("CommonEvent.dat", "wolf_common_events"),
+            ]
+        );
+        let texts = |idx: usize| -> Vec<&str> {
+            entries[idx]
+                .2
+                .iter()
+                .map(|s| s.source_text.as_str())
+                .collect()
+        };
+        assert_eq!(texts(0), [MESSAGE, CHOICES[0], CHOICES[1]]);
+        assert_eq!(texts(1), ["回復薬", "毒消し", "地図"]);
+        assert!(entries[1].2.iter().all(|s| s.key.ends_with("/名前")));
+        assert_eq!(texts(2), [STORY_WARNING]);
+
+        // extract_wolf_project yields the same segments, in the same order.
+        let flat: Vec<String> = extract_wolf_project(game.path(), &v2())
+            .unwrap()
+            .into_iter()
+            .map(|s| s.key)
+            .collect();
+        let grouped: Vec<String> = entries
+            .iter()
+            .flat_map(|(_, _, segs)| segs.iter().map(|s| s.key.clone()))
+            .collect();
+        assert_eq!(flat, grouped);
+    }
+
+    /// Plan WF, WF-4: exporting every extracted segment leaves the skipped
+    /// texts as they are in the game, and passes the integrity gate.
+    #[tokio::test]
+    async fn test_export_leaves_skipped_texts_untouched() {
+        use crate::engines::wolf::injector::{
+            inject_all_to_memory, injection_bucket, WolfTranslation,
+        };
+
+        let game = tempfile::tempdir().unwrap();
+        write_game_with_texts_to_skip(game.path());
+
+        let mut translations: HashMap<String, Vec<WolfTranslation>> = HashMap::new();
+        for (idx, segment) in extract_wolf_project(game.path(), &v2())
+            .unwrap()
+            .into_iter()
+            .enumerate()
+        {
+            translations
+                .entry(injection_bucket(&segment.key).unwrap())
+                .or_default()
+                .push(WolfTranslation {
+                    key: segment.key,
+                    text: format!("T{idx}"),
+                });
+        }
+        let export = inject_all_to_memory(game.path(), &translations, &v2())
+            .await
+            .unwrap();
+        assert!(export.issues.is_empty(), "{:?}", export.issues);
+        let output: HashMap<&str, &[u8]> = export
+            .entries
+            .iter()
+            .map(|(path, bytes)| (path.as_str(), bytes.as_slice()))
+            .collect();
+        let mut paths: Vec<&str> = output.keys().copied().collect();
+        paths.sort_unstable();
+        // The sample map has no segment: it is not delivered, the game keeps it.
+        assert_eq!(
+            paths,
+            [
+                "Data/BasicData/CommonEvent.dat",
+                "Data/BasicData/DataBase.dat",
+                "Data/MapData/Map001.mps",
+            ]
+        );
+
+        let map_bytes =
+            v3_format::compression::unpack_map(output["Data/MapData/Map001.mps"]).unwrap();
+        let map = v3_format::map::MapV3::parse(&map_bytes).unwrap();
+        let commands = &map.events[0].pages[0].commands;
+        assert_eq!(commands[0].string_args, ["T0"]);
+        assert_eq!(
+            commands[1].string_args,
+            [ERROR_MESSAGE],
+            "error message kept"
+        );
+        assert_eq!(commands[2].string_args, ["T1", "T2"]);
+
+        let project = std::fs::read(game.path().join("Data/BasicData/DataBase.project")).unwrap();
+        let db =
+            dat_parser::parse_database(&project, output["Data/BasicData/DataBase.dat"]).unwrap();
+        for (row, entry) in db.types[0].entries.iter().enumerate() {
+            assert_eq!(
+                entry.string_values,
+                [
+                    format!("T{}", 3 + row),
+                    DB_ROWS[row][1].to_string(),
+                    DB_ROWS[row][2].to_string()
+                ],
+                "row {row}: common event and system fields kept"
+            );
+        }
+
+        let ce_bytes =
+            v3_format::common_events::unpack(output["Data/BasicData/CommonEvent.dat"]).unwrap();
+        let common_events = CommonEventsV3::parse(&ce_bytes).unwrap();
+        assert_eq!(
+            common_events.events[0].commands[0].string_args,
+            [DEBUG_MESSAGE],
+            "debug event kept"
+        );
+        assert_eq!(common_events.events[1].commands[0].string_args, ["T6"]);
+    }
+
     /// A map that cannot be read refuses the whole project (never opened
     /// without its dialogue), with the dedicated marker.
     #[test]

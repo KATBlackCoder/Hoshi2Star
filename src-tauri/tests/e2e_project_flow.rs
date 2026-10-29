@@ -1373,6 +1373,87 @@ async fn wolf_pro_game_is_exported_as_loose_files() {
         .any(|window| window == TRANSLATION.as_bytes()));
 }
 
+/// Plan WF, WF-4: a sample map and a map holding only an error message create
+/// no source file; the export delivers the translated map alone and the game
+/// keeps the skipped maps as they are.
+#[tokio::test]
+async fn wolf_non_translatable_texts_are_skipped_at_open() {
+    const MESSAGE: &str = "こんにちは、旅の人";
+    const TRANSLATION: &str = "Hello, traveller";
+
+    let tmp = tempfile::tempdir().unwrap();
+    let game_root = tmp.path().join("game");
+    let map_dir = game_root.join("Data").join("MapData");
+    std::fs::create_dir_all(&map_dir).unwrap();
+    std::fs::write(map_dir.join("Map001.mps"), wolf_v2_map(MESSAGE)).unwrap();
+    let sample_map = wolf_v2_map("サンプルマップの会話です");
+    let error_map = wolf_v2_map("ｴﾗｰ!!!");
+    std::fs::write(map_dir.join("SampleMapA.mps"), &sample_map).unwrap();
+    std::fs::write(map_dir.join("Map002.mps"), &error_map).unwrap();
+    std::fs::write(game_root.join("Game.ini"), b"").unwrap();
+    write_wolf_v2_basic_data(&game_root);
+
+    let db_file = tmp.path().join("h2s.db");
+    let app = mock_app(db_file.to_str().unwrap()).await;
+    let project = open_project(
+        game_root.to_str().unwrap().to_string(),
+        None,
+        None,
+        app.state(),
+    )
+    .await
+    .expect("a Wolf 2.x game opens")
+    .project;
+
+    let files = get_source_files(project.id.clone(), app.state())
+        .await
+        .expect("get_source_files");
+    assert_eq!(
+        files
+            .iter()
+            .map(|f| f.file_name.as_str())
+            .collect::<Vec<_>>(),
+        ["Map001.mps"],
+        "the skipped maps create no source file"
+    );
+    let page = get_segments(
+        project.id.clone(),
+        files[0].id.clone(),
+        0,
+        100_000,
+        app.state(),
+    )
+    .await
+    .expect("get_segments");
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].source_text, MESSAGE);
+    update_segment(
+        page.items[0].id.clone(),
+        TRANSLATION.to_string(),
+        app.state(),
+    )
+    .await
+    .expect("update_segment");
+
+    let zip_path = export_project(project.id.clone(), None, false, None, app.state())
+        .await
+        .expect("export");
+    let entries = zip_entries(Path::new(&zip_path));
+    assert_eq!(
+        entries.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["Data/MapData/Map001.mps"],
+        "only the translated map is delivered"
+    );
+    assert_eq!(
+        std::fs::read(map_dir.join("SampleMapA.mps")).unwrap(),
+        sample_map
+    );
+    assert_eq!(
+        std::fs::read(map_dir.join("Map002.mps")).unwrap(),
+        error_map
+    );
+}
+
 /// The export dialog announces what a Wolf export will do (plan RW, RW-8):
 /// accents folded for a Shift-JIS game.
 #[tokio::test]
