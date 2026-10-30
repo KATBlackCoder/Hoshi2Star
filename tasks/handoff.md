@@ -41,7 +41,9 @@
 - **Corrections faites (cloud, `bb08083` sur `fix/fe-p6-defects`, PR #32)** : l'erreur de run rafraîchit les stats s'il y a eu des écritures (comptées via `segments-updated`) ; le rapport QA attend 1,5 s après la dernière sauvegarde (`invalidateAfterSegmentSave`) ; les sauvegardes faites pendant le rechargement sont réappliquées. Gate cloud : typecheck OK, lint 0 erreur, Vitest 191/191.
   - Relu en local le 2026-10-30 : diff cohérent, périmètre propre, le test P3 adapté vérifie toujours le rafraîchissement.
   - Limite connue : la grille ne se recharge pas après un run en erreur, donc le score QA n'apparaît qu'au chargement suivant (comme avant P3).
-- **Prochaine action :** fusion dans l'ordre #29 → #30 → #31 → #32, en repointant chaque PR vers `main` avant sa fusion, puis push des commits de suivi locaux. Ensuite, essai local de 5 minutes (liste dans `docs/journal/2026-10-29-fe-lots.md`).
+- **Fusionné le 2026-10-30** (accord de l'utilisateur), chaque PR repointée vers `main` avant sa fusion : #29 (`0c536c4`), #30 (`52dbdf2`), #31 (`1eb0a21`) et #32 (`924b40e`). Les branches `perf/fe-p2-rerenders`, `perf/fe-p3-ipc`, `refactor/fe-p5-duplicates` et `fix/fe-p6-defects` existent encore sur `origin` : à supprimer si l'utilisateur le confirme.
+- Gate non réexécuté sur `main` après les fusions : il n'y a pas de CI, et aucun conflit n'est apparu.
+- **Prochaine action (utilisateur, en local) :** essai de 5 minutes avec `pnpm tauri:linux` (liste dans `docs/journal/2026-10-29-fe-lots.md`). Décisions encore ouvertes : la définition de « QA critique » (backend par type d'erreur, front au seuil de 70) ; deux textes de terminologie hors i18n ; le format « 4.2s » des durées du pilote ; les branches `perf/bench-grid` et `chore/deps-minor`.
 
 ## En cours (2026-10-29, Claude) — WF : skipper les textes Wolf non traduisibles
 
