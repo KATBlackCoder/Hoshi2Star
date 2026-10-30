@@ -43,6 +43,16 @@
   - Limite connue : la grille ne se recharge pas après un run en erreur, donc le score QA n'apparaît qu'au chargement suivant (comme avant P3).
 - **Fusionné le 2026-10-30** (accord de l'utilisateur), chaque PR repointée vers `main` avant sa fusion : #29 (`0c536c4`), #30 (`52dbdf2`), #31 (`1eb0a21`) et #32 (`924b40e`). Les quatre branches des lots ont été supprimées de `origin` le 2026-10-30, à la demande de l'utilisateur.
 - Gate non réexécuté sur `main` après les fusions : il n'y a pas de CI, et aucun conflit n'est apparu.
+- **Essai réel par Claude (2026-10-30, pont MCP, `main` @ `dbb586e`), étapes sans écriture en base** :
+  - toast « Projet restauré » à l'ouverture ;
+  - grille de 12 423 segments à 19 ms par frame (p95 22 ms), 0 zone blanche sur les sauts de 600 et 3 000 px ;
+  - QA et Mémoire suivent la ligne cliquée ;
+  - 3 allers-retours Bibliothèque ↔ Patch : stats conservées, grille retrouvée ;
+  - toasts : clairs avec l'app en clair alors que le système est en sombre (F3 vérifié), puis thème sombre remis ;
+  - date relative « Hier » en français (F6).
+  - Non vérifiables sur ce projet : les couleurs QA (aucun segment n'a de score).
+  - Console : un avertissement Radix `DialogContent requires a DialogTitle` à l'ouverture des réglages. `SettingsModal.tsx` n'a pas été modifié par les lots : il était déjà là.
+- **Reste, avec écriture en base** : saisie d'une cible + Tab (rapport QA 1,5 s après), traduction LLM de 3 ou 4 segments, resync, import d'un pack. Ces étapes attendent l'accord de l'utilisateur, car elles écrivent aussi dans la TM globale.
 - **Prochaine action (utilisateur, en local) :** essai de 5 minutes avec `pnpm tauri:linux` (liste dans `docs/journal/2026-10-29-fe-lots.md`). Décisions encore ouvertes : la définition de « QA critique » (backend par type d'erreur, front au seuil de 70) ; deux textes de terminologie hors i18n ; le format « 4.2s » des durées du pilote ; les branches `perf/bench-grid` et `chore/deps-minor`.
 
 ## En cours (2026-10-29, Claude) — WF : skipper les textes Wolf non traduisibles
