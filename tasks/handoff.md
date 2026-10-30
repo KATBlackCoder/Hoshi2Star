@@ -37,7 +37,8 @@
   - (1) les stats de la Bibliothèque (`staleTime: Infinity`, `ProjectList.tsx`) restent périmées après un run qui se termine par `h2s://llm/error` alors qu'il a déjà écrit des lots ;
   - (2) chaque sauvegarde de cellule (`SegmentGrid.tsx` `handleSave`) invalide `qa-report`, donc relance un QA complet du projet si l'onglet QA est ouvert.
   - Point mineur soupçonné : une sauvegarde pendant le rechargement sans démontage peut être affichée avec l'ancien texte, alors que la base est correcte.
-- **Prochaine action :** l'utilisateur décide de faire corriger (1) et (2) avant la fusion, ou de fusionner tel quel. Fusion ensuite dans l'ordre P2 → P3 → P5 → P6, puis essai local de 5 minutes (liste dans le compte rendu cloud et dans `docs/journal/2026-10-29-fe-lots.md` de la branche P6).
+- **Décision de l'utilisateur (2026-10-30) :** corriger avant la fusion. Les points (1), (2) et, s'il est simple, le point mineur ont été envoyés à la même session cloud. Elle doit ajouter des commits sur `fix/fe-p6-defects` (PR #32), avec tests de comptage, gate complet et journal à jour, sans réécrire P2, P3 ni P5.
+- **Prochaine action :** l'utilisateur relève le compte rendu de la session cloud ; Claude vérifie les nouveaux commits. Fusion ensuite dans l'ordre P2 → P3 → P5 → P6, puis essai local de 5 minutes (liste dans le compte rendu cloud et dans `docs/journal/2026-10-29-fe-lots.md` de la branche P6).
 
 ## En cours (2026-10-29, Claude) — WF : skipper les textes Wolf non traduisibles
 
