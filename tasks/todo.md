@@ -1,5 +1,71 @@
 # Tasks — Hoshi2Star
 
+## Plan — FP : préfixe de visage Wolf `@N⏎` ancré en tête (2026-10-30, Claude) — VALIDÉ par l'utilisateur (« corrige @1 ») ; implémentation et gate en session cloud
+
+**Défaut constaté (2026-10-30, app réelle, トロイメライ `CommonEvent.dat`).** Un message Wolf v3 commence par
+`@N⏎`, le numéro du portrait affiché. Ce préfixe n'est reconnu qu'en tête du message (`RE_FACE_PREFIX`,
+`engines/wolf/layout/text.rs:23`). Aujourd'hui, il est tokenisé (`⟦ph_0⟧`, `engines/wolf/placeholders.rs:43`),
+puis envoyé au LLM, qui peut le déplacer : `@1⏎「\cself[8]」⏎を失った。` est devenu
+`Lost \cself[8]「@1⏎」.`. `Tokenizer::validate` ne vérifie que la présence, `rebreak` n'est pas appliqué
+(nombre de blocs différent), et la QA donne 100 : le placeholder est présent, mais pas à sa place.
+Concerne Wolf seulement : aucun autre moteur n'a de code ancré en tête.
+
+**Principe.** Le LLM ne voit plus jamais le préfixe : il est détaché avant la tokenisation, puis remis en
+tête après la restauration. Une règle QA critique couvre les cibles écrites autrement (saisie manuelle,
+suggestion TM appliquée à la main, anciennes traductions).
+
+**Vérifié avant le plan (grep)**
+- Un seul chemin de restauration hors tests : `llm/split.rs:178` (`Tokenized::restore`).
+- La relance sémantique (`semantic_retry.rs`) passe par `llm_translate_with_split`, donc par ce même chemin.
+- Aucun appel à `Tokenizer::restore` ni à `Tokenizer::validate` hors des tests.
+- La TM du pipeline ne s'applique que sur une correspondance exacte du hash de la source, préfixe compris
+  (`pipeline.rs:506`). Une source `@2` ne reçoit donc jamais une cible `@1`.
+- Le run LLM du 2026-10-30 n'a rien écrit dans la TM.
+- Données existantes : les trois projets ont 0 segment traduit. Aucune migration ni réparation n'est nécessaire.
+
+**Étapes**
+- [ ] **FP-1 — Tokenizer (`llm/tokenizer.rs`).** Ajouter un champ `face_prefix: String` à `Tokenized`
+  (vide si aucun).
+  - Dans `Tokenizer::tokenize`, pour `Engine::Wolf` et `Engine::WolfMessage`, appeler `split_face_prefix`
+    **avant** tout le reste (protection des bords, retours souples, regex), puis tout traiter sur le corps.
+  - `Tokenized::restore` : restaurer et appliquer `rebreak` sur le corps, puis préfixer `face_prefix`.
+  - L'alternative `^@\d+\n` de `RE_WOLF` devient inatteignable par `tokenize`. La garder avec un commentaire
+    qui le dit (elle sert de référence pour `PH_RE_WOLF` côté front), ou la retirer : à décider et justifier.
+  - Effet de bord voulu : `protect_edge_decoration` voit désormais le corps, donc `@1⏎-----エネミー` protège
+    ses tirets.
+  - Mettre à jour toutes les constructions littérales de `Tokenized`.
+- [ ] **FP-2 — Tests du tokenizer.**
+  - Le préfixe n'apparaît ni dans `text` ni dans `map`.
+  - Une réponse sans préfixe est restaurée avec le préfixe en tête.
+  - Message à retours souples avec préfixe : `rebreak`, puis préfixe, sur le cas `@2⏎魚淫さん：⏎…`.
+  - `@10⏎` (deux chiffres).
+  - Message sans préfixe : comportement inchangé.
+  - Adapter `placeholders.rs` (vers les lignes 160-185, qui attendent `@2⏎` dans la map), les tests
+    `WolfMessage` de `tokenizer.rs` et ceux de `line_breaks.rs` si besoin.
+- [ ] **FP-3 — Règle QA (`core/qa.rs`).** Nouveau `QaError::MisplacedFacePrefix { expected, found }`, critique,
+  pénalité 25 (comme `MissingPlaceholder`), pour les projets Wolf. Cas couverts :
+  - préfixe de la source absent de la tête de la cible ;
+  - préfixe présent ailleurs que en tête ;
+  - `N` différent ;
+  - préfixe dans la cible alors que la source n'en a pas.
+
+  Tests unitaires pour chacun. Brancher partout où `MissingPlaceholder` l'est déjà : `type_key`, `penalty`,
+  `is_critical`, `report.rs` (libellé, couleur, filtre), union TS de `src/lib/types.ts`, libellé `QAPanel`,
+  clés i18n fr et en.
+- [ ] **FP-4 — Pipeline.** Test d'intégration d'un run Wolf avec un faux fournisseur qui renvoie une
+  traduction sans préfixe : le segment persisté commence par `@1⏎`, et la QA ne signale rien. Second cas :
+  un faux fournisseur qui renvoie un texte contenant `@1⏎` au milieu (ancien comportement) déclenche la
+  règle FP-3.
+- [ ] **FP-5 — Docs.** Une ligne `CHANGELOG.md` (Corrigé) et un journal
+  `docs/journal/2026-10-30-wolf-face-prefix.md`.
+- [ ] **FP-6 — Gate (cloud).** `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test`,
+  `pnpm typecheck`, `pnpm lint`, `pnpm test`. Branche `fix/wolf-face-prefix` et PR vers `main`, sans fusion.
+- [ ] **FP-7 — Essai réel (Claude en local, pont MCP, après fusion).**
+  - Retraduire les lignes 2 à 4 de `CommonEvent.dat` (トロイメライ) : chaque cible doit commencer par `@1⏎`,
+    avec une QA cohérente.
+  - Remettre les lignes vides.
+  - Vérifier en lecture seule que la TM n'a rien gagné.
+
 ## Plan — FE : lots P2, P3, P5, P6 de l'audit front-end (2026-10-29) (Claude, session cloud)
 
 **Source.** `docs/audit/2026-10-29-audit-frontend.md` (§4, §5, §7, §8, §9, §11). Validé par l'utilisateur le

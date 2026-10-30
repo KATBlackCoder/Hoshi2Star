@@ -59,6 +59,7 @@
   - **Reste en TM une entrée de test** : `3efb1c82-cb1b-4101-9eed-04cd3ba4282d` (`@1「\cself[8]」を手に入れた。` → `@1 Got [test]`). Le run LLM n'a rien ajouté à la TM. **Supprimée le 2026-10-30** à la demande de l'utilisateur (1 ligne, `tm_entries`, app arrêtée).
   - Non testés dans l'app : le resync (accessible seulement depuis la fenêtre d'intégrité d'export, quand le jeu a changé) et l'import d'un pack (sélecteur de fichiers natif, aucun pack disponible). Ils restent couverts par les tests Vitest du cloud.
   - Branches `perf/bench-grid` (`6710a1d`) et `chore/deps-minor` (`6d4907a`) supprimées de `origin` le 2026-10-30, à la demande de l'utilisateur, sans fusion. Les mises à jour mineures des dépendances seront refaites plus tard depuis le `main` actuel.
+  - **Suite décidée (2026-10-30)** : correction du préfixe Wolf `@N⏎`, plan FP en tête de `tasks/todo.md`, implémentation et gate confiés à une session cloud (branche `fix/wolf-face-prefix`, PR sans fusion).
   - Observation hors lots : la traduction LLM a déplacé le marqueur `@1` (« Lost \cself[8]「@1⏎」. »), et la QA a quand même donné 100. Qualité de traduction Wolf, à examiner à part.
 - **Prochaine action (utilisateur, en local) :** essai de 5 minutes avec `pnpm tauri:linux` (liste dans `docs/journal/2026-10-29-fe-lots.md`). Décisions encore ouvertes : la définition de « QA critique » (backend par type d'erreur, front au seuil de 70) ; deux textes de terminologie hors i18n ; le format « 4.2s » des durées du pilote ; les branches `perf/bench-grid` et `chore/deps-minor`.
 
