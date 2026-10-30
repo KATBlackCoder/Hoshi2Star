@@ -10,6 +10,7 @@ import {
   useActiveSegmentTargetText,
 } from "@/stores/editor";
 import { useProjectStore } from "@/stores/project";
+import { queryKeys } from "@/lib/queryClient";
 import type { QaErrorType, QaReport, QaResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -204,7 +205,15 @@ export function QAPanel() {
   // Uses a simple hash to avoid re-running on identical input
   const hasEmptyTarget = !!activeSegmentId && !(targetText ?? "").trim();
   const { data: qaResult } = useQuery<QaResult>({
-    queryKey: ["qa-check", sourceText, targetText, activeProjectId],
+    // Keyed by segment too: the backend check depends on the segment (its
+    // neighbours, its terminology), not only on its texts.
+    queryKey: [
+      "qa-check",
+      activeSegmentId,
+      sourceText,
+      targetText,
+      activeProjectId,
+    ],
     queryFn: () =>
       invoke<QaResult>("qa_check_segment", {
         sourceText: sourceText!,
@@ -222,7 +231,7 @@ export function QAPanel() {
 
   // Project QA report badge
   const { data: qaReport } = useQuery<QaReport>({
-    queryKey: ["qa-report", activeProjectId],
+    queryKey: [...queryKeys.qaReport, activeProjectId],
     queryFn: () =>
       invoke<QaReport>("get_qa_report", { projectId: activeProjectId! }),
     enabled: !!activeProjectId,

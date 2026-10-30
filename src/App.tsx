@@ -16,6 +16,7 @@ import { useSearchActive } from "@/stores/search";
 import { useSettingsStore } from "@/stores/settings";
 import { useUpdaterStore } from "@/stores/updater";
 import { useAppHandlers } from "@/hooks/useAppHandlers";
+import { useProjectDataSync } from "@/hooks/useProjectDataSync";
 import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/shell/AppShell";
 import { InspectorRail } from "@/components/shell/InspectorRail";
@@ -40,6 +41,7 @@ const TerminologyWorkspace = lazy(() =>
 
 export default function App() {
   const handlers = useAppHandlers();
+  useProjectDataSync();
   const loadSettings = useSettingsStore((s) => s.loadSettings);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const activeLangPair = useActiveLangPair();

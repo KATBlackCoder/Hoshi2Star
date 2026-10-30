@@ -73,38 +73,56 @@ export const useSettingsStore = create<SettingsState>()((set) => ({
   loadSettings: async () => {
     const store = await load(STORE_FILE, { defaults: {}, autoSave: false });
 
+    // Independent reads: issued together rather than one IPC round trip
+    // after the other.
+    const [
+      storedProviderId,
+      providerUrl,
+      legacyOllamaUrl,
+      providerModel,
+      legacyOllamaModel,
+      storedBatchSize,
+      storedResourceProfile,
+      storedTheme,
+      storedLanguage,
+      storedSourceLang,
+      storedTargetLang,
+      storedDeveloperTools,
+    ] = await Promise.all([
+      store.get<string>("provider_id"),
+      store.get<string>("provider_url"),
+      store.get<string>("ollama_url"),
+      store.get<string>("provider_model"),
+      store.get<string>("ollama_model"),
+      store.get<number>("batch_size"),
+      store.get<string>("resource_profile"),
+      store.get<string>("theme"),
+      store.get<string>("language"),
+      store.get<string>("default_source_lang"),
+      store.get<string>("default_target_lang"),
+      store.get<boolean>("developer_tools"),
+    ]);
+
     const providerId =
-      ((await store.get<string>("provider_id")) as ProviderId | undefined) ??
+      (storedProviderId as ProviderId | undefined) ??
       DEFAULT_SETTINGS.providerId;
     const ollamaUrl =
-      (await store.get<string>("provider_url")) ??
-      (await store.get<string>("ollama_url")) ??
-      DEFAULT_SETTINGS.ollamaUrl;
+      providerUrl ?? legacyOllamaUrl ?? DEFAULT_SETTINGS.ollamaUrl;
     const ollamaModel =
-      (await store.get<string>("provider_model")) ??
-      (await store.get<string>("ollama_model")) ??
-      DEFAULT_SETTINGS.ollamaModel;
-    const batchSize =
-      (await store.get<number>("batch_size")) ?? DEFAULT_SETTINGS.batchSize;
+      providerModel ?? legacyOllamaModel ?? DEFAULT_SETTINGS.ollamaModel;
+    const batchSize = storedBatchSize ?? DEFAULT_SETTINGS.batchSize;
     const resourceProfile =
-      ((await store.get<string>("resource_profile")) as
-        | ResourceProfile
-        | undefined) ?? DEFAULT_SETTINGS.resourceProfile;
-    const theme =
-      ((await store.get<string>("theme")) as Theme | undefined) ??
-      DEFAULT_SETTINGS.theme;
+      (storedResourceProfile as ResourceProfile | undefined) ??
+      DEFAULT_SETTINGS.resourceProfile;
+    const theme = (storedTheme as Theme | undefined) ?? DEFAULT_SETTINGS.theme;
     const language =
-      ((await store.get<string>("language")) as Language | undefined) ??
-      DEFAULT_SETTINGS.language;
+      (storedLanguage as Language | undefined) ?? DEFAULT_SETTINGS.language;
     const defaultSourceLang =
-      (await store.get<string>("default_source_lang")) ??
-      DEFAULT_SETTINGS.defaultSourceLang;
+      storedSourceLang ?? DEFAULT_SETTINGS.defaultSourceLang;
     const defaultTargetLang =
-      (await store.get<string>("default_target_lang")) ??
-      DEFAULT_SETTINGS.defaultTargetLang;
+      storedTargetLang ?? DEFAULT_SETTINGS.defaultTargetLang;
     const developerTools =
-      (await store.get<boolean>("developer_tools")) ??
-      DEFAULT_SETTINGS.developerTools;
+      storedDeveloperTools ?? DEFAULT_SETTINGS.developerTools;
 
     const loaded: AppSettings = {
       providerId,

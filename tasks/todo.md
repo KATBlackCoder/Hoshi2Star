@@ -36,26 +36,26 @@ typecheck OK, lint 0 erreur / 10 avertissements, Vitest 158/158.
 - [x] R8 : cartes du pilote mémoïsées (callback stable).
 - [x] Gate P2 (2026-10-29) : typecheck OK ; lint 0 erreur / 10 avertissements ; Vitest 165/165. Comptages
   avant/après : `docs/journal/2026-10-29-fe-lots.md`.
-- [ ] Push, PR vers `main`.
+- [x] Push, PR vers `main` : [#29](https://github.com/KATBlackCoder/Hoshi2Star/pull/29) (`e166ffa`).
 
 ### P3 — IPC (`perf/fe-p3-ipc`, depuis P2)
 
-- [ ] Tests de comptage d'abord : `get_source_files` / `get_project_stats` après resync, import et
-  `llm/completed` ; `get_segments` après un `completed` sans écriture ; `get_project_stats` au remontage de
-  `ProjectList`.
-- [ ] I1 : suppression de `activeProjectStats` (état, action, sélecteur, appels) ; `get_project_stats` gardé
+- [x] Tests de comptage d'abord (9 rouges sur la base) : `get_source_files` / `get_project_stats` /
+  `get_segments` après resync, import et `llm/completed` (avec et sans écriture) ; `get_project_stats` aux
+  montages de `ProjectList` et à l'ouverture d'un projet restauré ; `get_qa_report` après une sauvegarde ;
+  `qa_check_segment` par segment ; lectures parallèles des réglages.
+- [x] I1 : suppression de `activeProjectStats` (état, action, sélecteur, appels) ; `get_project_stats` gardé
   pour le toast d'extraction seulement (pas pour un projet restauré).
-- [ ] I2 : un seul rafraîchissement par événement (`resynced`, `import-done`, `llm/completed`), centralisé ;
-  suppression des appels directs dans `resync.ts` et `PackImportWizard`.
-- [ ] I3 : pas de rechargement complet de la grille après `completed` quand rien n'a été écrit ; sinon
-  resynchronisation sans démonter la liste (le backend écrit aussi `qa_score` et répare d'autres lignes,
-  vérifié dans `llm/pipeline.rs`).
-- [ ] I4/I5 : stats de `ProjectList` sous React Query (un seul `setState`, pas de relance au remontage sans
-  écriture), invalidées après chaque écriture ; fichiers gardés dans le store, dédoublonnés.
-- [ ] I6 : invalider `qa-report` et `tm-suggestions` après une écriture ; `activeSegmentId` dans la clé
-  `qa-check`.
-- [ ] I7 : `loadSettings` lit ses clés en parallèle.
-- [ ] Gate P3, push, PR vers `perf/fe-p2-rerenders`.
+- [x] I2 : un seul rafraîchissement par événement, centralisé dans `useProjectDataSync` ; suppression des appels
+  directs dans `resync.ts`, `PackImportWizard`, `SegmentGrid` et `GlobalSearchResults`.
+- [x] I3 : pas de rechargement après un `completed` sans écriture ; sinon resynchronisation sans démonter la
+  liste (le backend écrit aussi `qa_score` et répare d'autres lignes, vérifié dans `llm/pipeline.rs`).
+- [x] I4/I5 : stats de `ProjectList` sous React Query (un seul résultat, cache jusqu'à une écriture) ;
+  `loadAllProjects` ne remplace plus une liste inchangée ; fichiers gardés dans le store.
+- [x] I6 : `invalidateSegmentViews` après chaque écriture ; `activeSegmentId` dans la clé `qa-check`.
+- [x] I7 : `loadSettings` lit ses clés en parallèle.
+- [x] Gate P3 (2026-10-29) : typecheck OK ; lint 0 erreur / 10 avertissements ; Vitest 174/174.
+- [ ] Push, PR vers `perf/fe-p2-rerenders`.
 
 ### P5 — doublons et code mort (`refactor/fe-p5-duplicates`, depuis P3)
 

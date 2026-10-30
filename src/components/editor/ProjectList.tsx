@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
@@ -33,8 +34,28 @@ import type { Project, ProjectStats } from "@/lib/types";
 import { engineLabel, relativeDate } from "@/lib/format";
 import { openProjectErrorKey, wolfReadErrorDetail } from "@/lib/projectError";
 import { STATUS_SUMMARY } from "@/lib/statusSummary";
+import { queryKeys } from "@/lib/queryClient";
 import { toast } from "sonner";
 import { useUiStore } from "@/stores/ui";
+
+/**
+ * Stats of every listed project, in one result. allSettled: one failing
+ * get_project_stats must not wipe the stats bars of every other card.
+ */
+async function loadProjectStats(
+  projectIds: string[],
+): Promise<Record<string, ProjectStats>> {
+  const results = await Promise.allSettled(
+    projectIds.map((projectId) =>
+      invoke<ProjectStats>("get_project_stats", { projectId }),
+    ),
+  );
+  const stats: Record<string, ProjectStats> = {};
+  results.forEach((result, index) => {
+    if (result.status === "fulfilled") stats[projectIds[index]] = result.value;
+  });
+  return stats;
+}
 
 export function ProjectList() {
   const { t } = useTranslation();
@@ -43,28 +64,20 @@ export function ProjectList() {
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Project | null>(null);
   const [openingNew, setOpeningNew] = useState(false);
-  const [projectStats, setProjectStats] = useState<
-    Record<string, ProjectStats>
-  >({});
+  const projectIds = projects.map((project) => project.id);
+  // Cached until a write marks it stale (`invalidateSegmentViews`): going
+  // back to the library does not fetch every project's stats again.
+  const { data: projectStats = {} } = useQuery({
+    queryKey: [...queryKeys.projectStats, projectIds],
+    queryFn: () => loadProjectStats(projectIds),
+    enabled: projectIds.length > 0,
+    staleTime: Infinity,
+  });
   const setMode = useUiStore((state) => state.setMode);
 
   useEffect(() => {
     void loadAllProjects();
   }, []);
-
-  useEffect(() => {
-    if (projects.length === 0) return;
-    // allSettled: one failing get_project_stats must not reject the whole
-    // batch and wipe the stats bars of every other card.
-    void Promise.allSettled(
-      projects.map(async (p) => {
-        const stats = await invoke<ProjectStats>("get_project_stats", {
-          projectId: p.id,
-        });
-        setProjectStats((prev) => ({ ...prev, [p.id]: stats }));
-      }),
-    );
-  }, [projects]);
 
   async function handleResume(project: Project) {
     setIsOpening(project.id);

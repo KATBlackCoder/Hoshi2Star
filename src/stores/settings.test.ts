@@ -2,9 +2,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // In-memory stand-in for @tauri-apps/plugin-store — one map per STORE_FILE.
 const storeData = new Map<string, unknown>();
+// Reads in flight, and the most seen at once (sequential reads → 1).
+const reads = { pending: 0, maxPending: 0 };
 vi.mock("@tauri-apps/plugin-store", () => ({
   load: vi.fn(async () => ({
-    get: async (key: string) => storeData.get(key),
+    get: async (key: string) => {
+      reads.pending += 1;
+      reads.maxPending = Math.max(reads.maxPending, reads.pending);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      reads.pending -= 1;
+      return storeData.get(key);
+    },
     set: async (key: string, value: unknown) => {
       storeData.set(key, value);
     },
@@ -21,6 +29,8 @@ const initialLlm = useLlmStore.getState();
 
 beforeEach(() => {
   storeData.clear();
+  reads.pending = 0;
+  reads.maxPending = 0;
   useSettingsStore.setState(initialSettings, true);
   useLlmStore.setState(initialLlm, true);
 });
@@ -34,6 +44,30 @@ describe("settings store", () => {
   it("loadSettings falls back to defaults when the store file is empty", async () => {
     await useSettingsStore.getState().loadSettings();
     expect(useSettingsStore.getState().settings).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it("loadSettings reads every key in parallel (audit I7)", async () => {
+    await useSettingsStore.getState().loadSettings();
+    // 10 settings + the 2 legacy fallbacks (ollama_url, ollama_model).
+    expect(reads.maxPending).toBe(12);
+  });
+
+  it("loadSettings prefers the provider keys over the legacy Ollama keys", async () => {
+    storeData.set("ollama_url", "http://legacy:11434");
+    storeData.set("ollama_model", "legacy:1b");
+    await useSettingsStore.getState().loadSettings();
+    expect(useSettingsStore.getState().settings).toMatchObject({
+      ollamaUrl: "http://legacy:11434",
+      ollamaModel: "legacy:1b",
+    });
+
+    storeData.set("provider_url", "http://new:11434");
+    storeData.set("provider_model", "new:7b");
+    await useSettingsStore.getState().loadSettings();
+    expect(useSettingsStore.getState().settings).toMatchObject({
+      ollamaUrl: "http://new:11434",
+      ollamaModel: "new:7b",
+    });
   });
 
   it("saveSettings persists the draft and pushes providerConfig into the llm store", async () => {
