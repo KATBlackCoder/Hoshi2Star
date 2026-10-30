@@ -29,7 +29,15 @@
   - Preuves attendues : tests Vitest de comptage (rendus, appels IPC), qui échouent sur `main` et passent après le lot ; gate typecheck, lint et Vitest à chaque lot.
   - Plan dans `tasks/todo.md` (« Plan — FE »), journal `docs/journal/2026-10-29-fe-lots.md`. La session ne touche pas ce fichier.
   - Aucune note automatique à la fin : le résultat est à relever dans son transcript.
-- **Prochaine action (2026-10-30) :** l'utilisateur relève le compte rendu de la session cloud. Claude vérifie ensuite les branches, les diffs, les tests de comptage et les PR, avant la fusion dans l'ordre P2 → P3 → P5 → P6. Puis essai local de 5 minutes. `perf/bench-grid` et `chore/deps-minor` restent à décider.
+- **Résultat cloud (relu le 2026-10-30)** : PR [#29](https://github.com/KATBlackCoder/Hoshi2Star/pull/29) (P2, `e166ffa`), [#30](https://github.com/KATBlackCoder/Hoshi2Star/pull/30) (P3, `0287ff7`), [#31](https://github.com/KATBlackCoder/Hoshi2Star/pull/31) (P5, `ff0a1f2`) et [#32](https://github.com/KATBlackCoder/Hoshi2Star/pull/32) (P6, `1ea4286`). Toutes ouvertes, empilées, non fusionnées. Le gate est annoncé vert à chaque lot (Vitest 165, 174, 174, puis 187), mais **le dépôt n'a pas de CI** : rien n'a été réexécuté en local.
+- **Vérification locale (Claude)** :
+  - périmètre propre : pas de `src/components/ui/`, pas de Rust, pas de lockfile, `tasks/handoff.md` intact, aucun test supprimé ;
+  - relecture indépendante des 4 diffs : rien de bloquant, les tests de comptage échoueraient bien sur la base, aucune assertion affaiblie.
+- **Deux points de P3 à corriger avant la fusion** (vérifiés dans le code) :
+  - (1) les stats de la Bibliothèque (`staleTime: Infinity`, `ProjectList.tsx`) restent périmées après un run qui se termine par `h2s://llm/error` alors qu'il a déjà écrit des lots ;
+  - (2) chaque sauvegarde de cellule (`SegmentGrid.tsx` `handleSave`) invalide `qa-report`, donc relance un QA complet du projet si l'onglet QA est ouvert.
+  - Point mineur soupçonné : une sauvegarde pendant le rechargement sans démontage peut être affichée avec l'ancien texte, alors que la base est correcte.
+- **Prochaine action :** l'utilisateur décide de faire corriger (1) et (2) avant la fusion, ou de fusionner tel quel. Fusion ensuite dans l'ordre P2 → P3 → P5 → P6, puis essai local de 5 minutes (liste dans le compte rendu cloud et dans `docs/journal/2026-10-29-fe-lots.md` de la branche P6).
 
 ## En cours (2026-10-29, Claude) — WF : skipper les textes Wolf non traduisibles
 
