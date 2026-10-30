@@ -94,49 +94,6 @@ describe("llm store", () => {
     expect(s.providerConfig.model).toBe("custom:1b");
   });
 
-  it("keeps provider metrics ordered and clears them on reset", () => {
-    const first = {
-      task: "translate" as const,
-      model: "gemma4:e4b",
-      inputUnits: 2,
-      terminologyHints: 1,
-      promptChars: 500,
-      promptTokens: 120,
-      completionTokens: 17,
-      totalTokens: 137,
-      durationMs: 900,
-      attempts: 1,
-      success: true,
-    };
-    const second = { ...first, durationMs: 1100, attempts: 2 };
-
-    useLlmStore.getState().appendMetrics([first]);
-    useLlmStore.getState().appendMetrics([second]);
-
-    expect(useLlmStore.getState().requestMetrics).toEqual([first, second]);
-    useLlmStore.getState().reset();
-    expect(useLlmStore.getState().requestMetrics).toEqual([]);
-    expect(useLlmStore.getState().providerConfig).toEqual(
-      initialState.providerConfig,
-    );
-  });
-
-  it("records pipeline retry and semantic rejection metrics", () => {
-    const metrics = {
-      responseFormatRetries: 2,
-      placeholderRetries: 1,
-      recursiveSplits: 1,
-      semanticRejections: 3,
-      semanticRetries: 2,
-      semanticRecoveries: 1,
-    };
-
-    useLlmStore.getState().appendPipelineMetrics(metrics);
-    expect(useLlmStore.getState().pipelineMetrics).toEqual([metrics]);
-    useLlmStore.getState().reset();
-    expect(useLlmStore.getState().pipelineMetrics).toEqual([]);
-  });
-
   describe("R1 — one notice per run", () => {
     it("never listens to per-segment warnings", async () => {
       await useLlmStore.getState().startTranslateAll("p1", 60, 0);

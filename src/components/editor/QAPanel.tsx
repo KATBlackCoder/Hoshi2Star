@@ -4,7 +4,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { AlertTriangle, CheckCircle, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useExportToFile } from "@/hooks/useExportToFile";
-import { useActiveSegmentId } from "@/stores/editor";
+import {
+  useActiveSegmentId,
+  useActiveSegmentSourceText,
+  useActiveSegmentTargetText,
+} from "@/stores/editor";
 import { useProjectStore } from "@/stores/project";
 import type { QaErrorType, QaReport, QaResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -170,16 +174,15 @@ function QAScoreRing({ score }: { score: number }) {
 // QAPanel
 // ---------------------------------------------------------------------------
 
-interface QAPanelProps {
-  /** Source text to QA-check in real time (active segment). */
-  sourceText: string | null;
-  /** Current target text draft (may not be saved yet). */
-  targetText: string | null;
-}
-
-export function QAPanel({ sourceText, targetText }: QAPanelProps) {
+/**
+ * Live QA of the active segment. Reads the segment from the editor store
+ * itself, so selecting a row re-renders this panel only, not the whole app.
+ */
+export function QAPanel() {
   const { t, i18n } = useTranslation();
   const activeSegmentId = useActiveSegmentId();
+  const sourceText = useActiveSegmentSourceText();
+  const targetText = useActiveSegmentTargetText();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const { isExporting, exportToFile } = useExportToFile();
 

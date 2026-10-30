@@ -21,6 +21,7 @@ import type {
   TextFitSettings,
 } from "@/lib/types";
 import { useEditorStore } from "@/stores/editor";
+import { useShallow } from "zustand/react/shallow";
 import { rescanTextFit, saveTextFit, useTextFitStore } from "@/stores/textFit";
 import { useUiStore } from "@/stores/ui";
 
@@ -62,8 +63,19 @@ function optionalNumber(value: string): number | null {
  */
 export function TextFitDialog({ projectId }: TextFitDialogProps) {
   const { t } = useTranslation();
+  // Not `version`: it is bumped by every per-text choice, even while closed.
   const { open, loading, scanning, view, scan, error, setOpen } =
-    useTextFitStore();
+    useTextFitStore(
+      useShallow((s) => ({
+        open: s.open,
+        loading: s.loading,
+        scanning: s.scanning,
+        view: s.view,
+        scan: s.scan,
+        error: s.error,
+        setOpen: s.setOpen,
+      })),
+    );
   const [draft, setDraft] = useState<TextFitSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const scannedFor = useRef<string | null>(null);

@@ -12,6 +12,7 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { applySegmentUpdates } from "@/components/editor/SegmentGrid";
 import { StatusBadge } from "@/features/editor/columns";
 import { useEditorStore } from "@/stores/editor";
 import { useLlmStore, useIsTranslating } from "@/stores/llm";
@@ -39,7 +40,7 @@ export function GlobalSearchResults() {
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const setActiveFile = useEditorStore((s) => s.setActiveFile);
   const setActiveSegment = useEditorStore((s) => s.setActiveSegment);
-  const { startTranslation, providerConfig } = useLlmStore();
+  const startTranslation = useLlmStore((s) => s.startTranslation);
   const isTranslating = useIsTranslating();
 
   const query = useSearchStore((s) => s.query);
@@ -67,22 +68,42 @@ export function GlobalSearchResults() {
   activeProjectIdRef.current = activeProjectId;
 
   // SegmentGrid is unmounted while this view is shown, so mirror its LLM
-  // listeners here: progressive in-memory patch, then full refresh on done.
+  // listeners here: progressive in-memory patch (coalesced per frame, and
+  // skipped when no hit is touched), then full refresh on done.
   useEffect(() => {
+    const pending = new Map<string, SegmentUpdate>();
+    let frame: number | null = null;
+
+    const flush = () => {
+      frame = null;
+      if (pending.size === 0) return;
+      const updates = new Map(pending);
+      pending.clear();
+      const { results: current } = useSearchStore.getState();
+      const next = applySegmentUpdates(current, updates);
+      if (next !== current) useSearchStore.setState({ results: next });
+    };
+
     const unlisten = listen<SegmentUpdate[]>(
       "h2s://llm/segments-updated",
       (event) => {
-        const updates = new Map(event.payload.map((u) => [u.id, u]));
-        if (updates.size === 0) return;
-        useSearchStore.setState((s) => ({
-          results: s.results.map((h) => {
-            const u = updates.get(h.id);
-            return u ? { ...h, targetText: u.targetText, status: u.status } : h;
-          }),
-        }));
+        for (const update of event.payload) pending.set(update.id, update);
+        if (frame !== null || pending.size === 0) return;
+        frame =
+          typeof window.requestAnimationFrame === "function"
+            ? window.requestAnimationFrame(flush)
+            : window.setTimeout(flush, 16);
       },
     );
     return () => {
+      if (frame !== null) {
+        if (typeof window.cancelAnimationFrame === "function") {
+          window.cancelAnimationFrame(frame);
+        } else {
+          window.clearTimeout(frame);
+        }
+      }
+      pending.clear();
       void unlisten.then((fn) => fn());
     };
   }, []);
@@ -164,7 +185,7 @@ export function GlobalSearchResults() {
   }
 
   function handleTranslateSelected() {
-    if (!providerConfig.model.trim()) {
+    if (!useLlmStore.getState().providerConfig.model.trim()) {
       toast.error(t("segmentGrid.noModelConfigured"));
       return;
     }

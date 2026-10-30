@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowLeft,
@@ -224,9 +224,7 @@ export function PilotComparisonWorkspace() {
                     decision={decisions[comparison.segment.stableKey]}
                     index={index + 1}
                     key={comparison.segment.stableKey}
-                    onDecision={(decision) =>
-                      setDecision(comparison.segment.stableKey, decision)
-                    }
+                    onDecision={setDecision}
                   />
                 ))}
               </div>
@@ -454,7 +452,8 @@ function StatCard({
   );
 }
 
-function ComparisonCard({
+// Memoized: a decision re-renders its own card, not the whole list.
+const ComparisonCard = memo(function ComparisonCard({
   comparison,
   decision,
   index,
@@ -463,7 +462,8 @@ function ComparisonCard({
   comparison: PilotComparison;
   decision?: PilotReviewDecision;
   index: number;
-  onDecision: (decision: PilotReviewDecision) => void;
+  /** Stable store action, keyed by the segment's `stableKey`. */
+  onDecision: (stableKey: string, decision: PilotReviewDecision) => void;
 }) {
   const { t } = useTranslation();
   const { segment } = comparison;
@@ -532,7 +532,7 @@ function ComparisonCard({
             aria-pressed={decision === value}
             className="h-7 text-xs"
             key={value}
-            onClick={() => onDecision(value)}
+            onClick={() => onDecision(segment.stableKey, value)}
             size="sm"
             variant={decision === value ? "secondary" : "ghost"}
           >
@@ -542,7 +542,7 @@ function ComparisonCard({
       </div>
     </article>
   );
-}
+});
 
 function VariantPanel({
   accent = false,

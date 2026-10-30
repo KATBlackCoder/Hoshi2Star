@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { Profiler } from "react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import i18n from "@/lib/i18n";
@@ -18,6 +19,22 @@ vi.mock("@tanstack/react-virtual", () => ({
     scrollToIndex: () => {},
   }),
 }));
+
+// Pass-through spy: counts how often the grid rebuilds its column defs.
+const columnBuilds = vi.hoisted(() => ({ count: 0 }));
+vi.mock("@/features/editor/columns", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/features/editor/columns")>();
+  return {
+    ...actual,
+    createSegmentColumns: (
+      ...args: Parameters<typeof actual.createSegmentColumns>
+    ) => {
+      columnBuilds.count += 1;
+      return actual.createSegmentColumns(...args);
+    },
+  };
+});
 
 const toastError = vi.fn();
 vi.mock("sonner", () => ({
@@ -230,5 +247,47 @@ describe("SegmentGrid — row density", () => {
     await user.click(compact);
     expect(useUiStore.getState().gridDensity).toBe("compact");
     expect(compact).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
+describe("SegmentGrid — LLM run state does not re-render the grid (audit R2)", () => {
+  it("commits nothing when only progress or cooldown change", async () => {
+    mockGridIpc();
+    let commits = 0;
+    render(
+      <Profiler id="grid" onRender={() => (commits += 1)}>
+        <SegmentGrid />
+      </Profiler>,
+    );
+    await screen.findByDisplayValue("target 5");
+    const before = commits;
+
+    // One act per event, as each Tauri event arrives in its own task.
+    act(() => useLlmStore.setState({ translationProgress: 30 }));
+    act(() => useLlmStore.setState({ isCooling: true, cooldownRemaining: 12 }));
+    act(() => useLlmStore.setState({ cooldownRemaining: 11 }));
+
+    expect(commits - before).toBe(0);
+  });
+});
+
+describe("SegmentGrid — columns are stable while filtering (audit R6)", () => {
+  it("does not rebuild the columns on each search keystroke", async () => {
+    mockGridIpc();
+    const user = userEvent.setup();
+    render(<SegmentGrid />);
+    await screen.findByDisplayValue("target 5");
+    const before = columnBuilds.count;
+
+    const search = screen.getByPlaceholderText(
+      i18n.t("segmentGrid.searchPlaceholder"),
+    );
+    await user.type(search, "target 1");
+    expect(screen.queryByDisplayValue("target 5")).not.toBeInTheDocument();
+    await user.clear(search);
+    expect(screen.getByDisplayValue("target 5")).toBeInTheDocument();
+
+    // 5 → 1 → 5 visible rows: the column defs must not follow the count.
+    expect(columnBuilds.count - before).toBe(0);
   });
 });

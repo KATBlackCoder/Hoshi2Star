@@ -12,7 +12,6 @@ import { AppToolbar } from "@/components/AppToolbar";
 import { AppDialogs } from "@/components/AppDialogs";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import { useProjectStore, useActiveLangPair } from "@/stores/project";
-import { useEditorStore } from "@/stores/editor";
 import { useSearchActive } from "@/stores/search";
 import { useSettingsStore } from "@/stores/settings";
 import { useUpdaterStore } from "@/stores/updater";
@@ -41,15 +40,9 @@ const TerminologyWorkspace = lazy(() =>
 
 export default function App() {
   const handlers = useAppHandlers();
-  const { loadSettings } = useSettingsStore();
+  const loadSettings = useSettingsStore((s) => s.loadSettings);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const activeLangPair = useActiveLangPair();
-  const activeSegmentSourceText = useEditorStore(
-    (s) => s.activeSegmentSourceText,
-  );
-  const activeSegmentTargetText = useEditorStore(
-    (s) => s.activeSegmentTargetText,
-  );
   const checkForUpdate = useUpdaterStore((s) => s.checkForUpdate);
   const searchActive = useSearchActive();
   const mode = useAppMode();
@@ -159,8 +152,6 @@ export default function App() {
                 <InspectorRail
                   projectId={activeProjectId}
                   langPair={activeLangPair}
-                  sourceText={activeSegmentSourceText}
-                  targetText={activeSegmentTargetText}
                 />
               </div>
             )}

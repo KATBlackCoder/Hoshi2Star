@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { Profiler } from "react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { mockIPC } from "@tauri-apps/api/mocks";
+import { emit } from "@tauri-apps/api/event";
 import i18n from "@/lib/i18n";
 
 // jsdom has no layout: replace the virtualizer with a render-everything stub.
@@ -327,5 +329,79 @@ describe("GlobalSearchResults — background batch loading indicator", () => {
         i18n.t("projectSearch.loadingProgress", { loaded: 3, total: 3 }),
       ),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("GlobalSearchResults — LLM updates (audit R2, R7)", () => {
+  beforeEach(() => {
+    mockIPC(() => null, { shouldMockEvents: true });
+  });
+
+  async function nextFrame() {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+  }
+
+  it("commits nothing when only the LLM progress changes", () => {
+    let commits = 0;
+    render(
+      <Profiler id="search" onRender={() => (commits += 1)}>
+        <GlobalSearchResults />
+      </Profiler>,
+    );
+    const before = commits;
+
+    // One act per event, as each Tauri event arrives in its own task.
+    act(() => useLlmStore.setState({ translationProgress: 30 }));
+    act(() => useLlmStore.setState({ isCooling: true, cooldownRemaining: 12 }));
+    act(() => useLlmStore.setState({ cooldownRemaining: 11 }));
+
+    expect(commits - before).toBe(0);
+  });
+
+  it("does not write the results when no hit is touched", async () => {
+    render(<GlobalSearchResults />);
+    await nextFrame();
+    let writes = 0;
+    const unsubscribe = useSearchStore.subscribe(() => (writes += 1));
+
+    await act(async () => {
+      await emit("h2s://llm/segments-updated", [
+        { id: "other", targetText: "x", status: "translated" },
+      ]);
+      await emit("h2s://llm/segments-updated", [
+        { id: "another", targetText: "y", status: "translated" },
+      ]);
+    });
+    await nextFrame();
+    unsubscribe();
+
+    expect(writes).toBe(0);
+    expect(useSearchStore.getState().results).toBe(HITS);
+  });
+
+  it("writes the touched results once per frame", async () => {
+    render(<GlobalSearchResults />);
+    await nextFrame();
+    let writes = 0;
+    const unsubscribe = useSearchStore.subscribe(() => (writes += 1));
+
+    await act(async () => {
+      await emit("h2s://llm/segments-updated", [
+        { id: "s1", targetText: "un", status: "translated" },
+      ]);
+      await emit("h2s://llm/segments-updated", [
+        { id: "s3", targetText: "trois", status: "needs_review" },
+      ]);
+    });
+    await nextFrame();
+    unsubscribe();
+
+    expect(writes).toBe(1);
+    const results = useSearchStore.getState().results;
+    expect(results.find((h) => h.id === "s1")?.targetText).toBe("un");
+    expect(results.find((h) => h.id === "s3")?.status).toBe("needs_review");
+    expect(results.find((h) => h.id === "s2")).toBe(HITS[1]);
   });
 });
