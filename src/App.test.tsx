@@ -1,6 +1,6 @@
 import type React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { mockIPC } from "@tauri-apps/api/mocks";
@@ -93,6 +93,8 @@ const SEGMENTS = Array.from({ length: 3 }, (_, i) => ({
 
 /** Segments served by `get_segments` (a test may swap them). */
 let served: Segment[] = SEGMENTS;
+/** While set, `get_segments` answers only once it resolves (slow reload). */
+let segmentsGate: Promise<void> | null = null;
 /** IPC calls per command since the last `resetCalls()`. */
 let calls: Record<string, number> = {};
 function resetCalls() {
@@ -104,13 +106,16 @@ function mockAppIpc() {
     (cmd, args) => {
       calls[cmd] = (calls[cmd] ?? 0) + 1;
       switch (cmd) {
-        case "get_segments":
-          return {
+        case "get_segments": {
+          // The rows as the backend read them, when the request arrived.
+          const page = {
             items: served,
             total: served.length,
             page: 0,
             pageSize: 2000,
           };
+          return segmentsGate ? segmentsGate.then(() => page) : page;
+        }
         case "list_projects":
           return [PROJECT];
         case "update_segment": {
@@ -240,6 +245,7 @@ beforeEach(() => {
   });
   queryClient.clear();
   served = SEGMENTS;
+  segmentsGate = null;
   resetCalls();
   renders.app = 0;
   mockAppIpc();
@@ -438,10 +444,17 @@ describe("Inspector queries (audit P3: I6)", () => {
     const reports = calls.get_qa_report ?? 0;
     expect(reports).toBe(1);
 
-    await userEvent.clear(target);
-    await userEvent.type(target, "nouvelle cible");
-    await userEvent.tab();
-    await settle();
+    vi.useFakeTimers();
+    try {
+      fireEvent.change(target, { target: { value: "nouvelle cible" } });
+      fireEvent.blur(target);
+      // Refreshed once the saves stop (QA_REPORT_REFRESH_DELAY_MS).
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_500);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
 
     expect(calls.update_segment).toBe(1);
     expect(calls.get_qa_report).toBe(reports + 1);
@@ -509,5 +522,129 @@ describe("Segment opened by id only (audit F7)", () => {
       activeSegmentSourceText: "ソース2",
       activeSegmentTargetText: "cible 2",
     });
+  });
+});
+
+describe("Corrections after review (2026-10-30)", () => {
+  async function switchMode(mode: "library" | "patch") {
+    act(() => useUiStore.getState().setMode(mode));
+    await settle();
+  }
+
+  it("refreshes the library stats after a run that wrote then failed", async () => {
+    useUiStore.setState({ mode: "library" });
+    renderApp();
+    await screen.findAllByText("Jeu");
+    await settle();
+    expect(calls.get_project_stats).toBe(1);
+
+    await switchMode("patch");
+    await screen.findByText("ソース1");
+    await act(async () => {
+      await useLlmStore.getState().startTranslation(["s1", "s2"], undefined);
+    });
+    // One batch persisted, then the provider goes down: no `completed`.
+    await act(async () => {
+      await emit("h2s://llm/segments-updated", [
+        { id: "s1", targetText: "un", status: "translated" },
+      ]);
+      await emit("h2s://llm/error", {
+        message: "provider down",
+        providerUnavailable: true,
+        processed: 1,
+        total: 2,
+      });
+    });
+    await settle();
+
+    await switchMode("library");
+    expect(calls.get_project_stats).toBe(2);
+  });
+
+  it("does not refresh anything after a run that failed before writing", async () => {
+    renderApp();
+    await screen.findByText("ソース1");
+    await settle();
+    await act(async () => {
+      await useLlmStore.getState().startTranslation(["s1"], undefined);
+    });
+    resetCalls();
+
+    await act(async () => {
+      await emit("h2s://llm/error", {
+        message: "provider down",
+        providerUnavailable: true,
+        processed: 0,
+        total: 1,
+      });
+    });
+    await settle();
+
+    expect(calls.get_source_files ?? 0).toBe(0);
+  });
+
+  it("runs one project QA report for a burst of saves", async () => {
+    served = Array.from({ length: 10 }, (_, i) => ({
+      ...SEGMENTS[0],
+      id: `s${i + 1}`,
+      sourceText: `ソース${i + 1}`,
+      targetText: `cible ${i + 1}`,
+    }));
+    renderApp();
+    await screen.findByDisplayValue("cible 10");
+    await settle();
+    expect(calls.get_qa_report).toBe(1);
+
+    vi.useFakeTimers();
+    try {
+      for (let i = 1; i <= 10; i++) {
+        const target = screen.getByDisplayValue(`cible ${i}`);
+        fireEvent.change(target, { target: { value: `nouvelle ${i}` } });
+        fireEvent.blur(target);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(50);
+        });
+      }
+      expect(calls.update_segment).toBe(10);
+      expect(calls.get_qa_report).toBe(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_500);
+      });
+      expect(calls.get_qa_report).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a save made while the grid re-syncs after a run", async () => {
+    renderApp();
+    await screen.findByDisplayValue("cible 1");
+    await settle();
+    await act(async () => {
+      await useLlmStore.getState().startTranslation(["s2"], undefined);
+    });
+
+    // The in-place reload reads the rows before the save below lands.
+    let release!: () => void;
+    segmentsGate = new Promise((resolve) => (release = resolve));
+    await act(async () => {
+      await emit("h2s://llm/completed", RUN);
+    });
+    await settle();
+
+    const target = screen.getByDisplayValue("cible 1");
+    fireEvent.change(target, { target: { value: "sauvée" } });
+    fireEvent.blur(target);
+    await settle();
+    expect(calls.update_segment).toBe(1);
+
+    await act(async () => {
+      release();
+    });
+    await settle();
+
+    expect(screen.getByDisplayValue("sauvée")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("cible 1")).toBeNull();
   });
 });

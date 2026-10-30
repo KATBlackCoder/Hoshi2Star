@@ -89,6 +89,11 @@ typecheck OK, lint 0 erreur / 10 avertissements, Vitest 158/158.
 - [x] Gate P6 (2026-10-29) : typecheck OK ; lint 0 erreur / 10 avertissements ; Vitest 187/187 (test
   existant de `ScanProgress` restauré, voir journal).
 - [x] Push, PR vers `refactor/fe-p5-duplicates` : [#32](https://github.com/KATBlackCoder/Hoshi2Star/pull/32).
+- [x] Corrections après relecture (2026-10-30, demandées par la session de relecture, sur `fix/fe-p6-defects`) :
+  - [x] stats de la Bibliothèque rafraîchies après un run qui a écrit puis émis `llm/error` ;
+  - [x] `qa-report` rafraîchi une fois, 1,5 s après la dernière sauvegarde (stats et TM tout de suite) ;
+  - [x] sauvegarde faite pendant la resynchronisation après un run réappliquée sur son résultat ;
+  - [x] gate : typecheck OK ; lint 0 erreur / 10 avertissements ; Vitest 191/191.
 - [ ] Après fusion (utilisateur, en local) : essai de 5 minutes listé dans la PR P6.
 
 ## Plan — WF : skipper les textes Wolf non traduisibles, règles dans `engines/wolf/filter.rs` (2026-10-29, Claude) — PLAN VALIDÉ le 2026-10-29 (WF-D1 à WF-D6 = recommandations) ; WF-1 à WF-6 faits, PR #27 fusionnée le 2026-10-29 (`585f05b`) ; WF-7 à faire
