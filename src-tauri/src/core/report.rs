@@ -339,6 +339,7 @@ struct Labels {
     all_pass: &'static str,
     no_rows: &'static str,
     err_missing_ph: &'static str,
+    err_face_prefix: &'static str,
     err_line_long: &'static str,
     err_bom: &'static str,
     err_terminology: &'static str,
@@ -378,6 +379,7 @@ fn labels(lang: &str) -> Labels {
             all_pass: "✅ Tous les segments passent le QA — aucune erreur détectée.",
             no_rows: "Aucune ligne ne correspond aux filtres actifs.",
             err_missing_ph: "Placeholder manquant",
+            err_face_prefix: "Préfixe de visage",
             err_line_long: "Ligne trop longue",
             err_bom: "BOM UTF-8",
             err_terminology: "Terminologie",
@@ -415,6 +417,7 @@ fn labels(lang: &str) -> Labels {
             all_pass: "✅ All segments pass QA — no errors found.",
             no_rows: "No rows match the current filters.",
             err_missing_ph: "Missing placeholder",
+            err_face_prefix: "Face prefix",
             err_line_long: "Line too long",
             err_bom: "BOM detected",
             err_terminology: "Terminology mismatch",
@@ -487,9 +490,9 @@ pub fn generate_qa_html(
     for d in details {
         for e in &d.errors {
             match e {
-                QaError::MissingPlaceholder { .. } | QaError::MissingFormatSpecifier { .. } => {
-                    count_missing_ph += 1
-                }
+                QaError::MissingPlaceholder { .. }
+                | QaError::MisplacedFacePrefix { .. }
+                | QaError::MissingFormatSpecifier { .. } => count_missing_ph += 1,
                 QaError::LineTooLong { .. } => count_line_long += 1,
                 QaError::BomDetected => count_bom += 1,
                 QaError::TerminologyMismatch { .. } => count_terminology += 1,
@@ -554,6 +557,7 @@ td{{padding:7px 10px;vertical-align:top}}
 .err-item{{display:flex;align-items:flex-start;gap:4px;font-size:11px;color:#ccc}}
 .err-dot{{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:4px}}
 .err-dot.missing_placeholder{{background:#ef4444}}
+.err-dot.misplaced_face_prefix{{background:#ef4444}}
 .err-dot.line_too_long{{background:#f59e0b}}
 .err-dot.bom_detected{{background:#f59e0b}}
 .err-dot.terminology_mismatch{{background:#a78bfa}}
@@ -645,6 +649,7 @@ td{{padding:7px 10px;vertical-align:top}}
 <div class="filter-sep"></div>
 <div class="filter-group" style="gap:12px">
 <label><input type="checkbox" class="err-filter" value="missing_placeholder" checked> {err_missing_ph}</label>
+<label><input type="checkbox" class="err-filter" value="misplaced_face_prefix" checked> {err_face_prefix}</label>
 <label><input type="checkbox" class="err-filter" value="line_too_long" checked> {err_line_long}</label>
 <label><input type="checkbox" class="err-filter" value="bom_detected" checked> {err_bom}</label>
 <label><input type="checkbox" class="err-filter" value="terminology_mismatch" checked> {err_terminology}</label>
@@ -663,6 +668,7 @@ td{{padding:7px 10px;vertical-align:top}}
         lbl_filter_lt90 = lbl.filter_lt90,
         lbl_filter_lt70 = lbl.filter_lt70,
         err_missing_ph = lbl.err_missing_ph,
+        err_face_prefix = lbl.err_face_prefix,
         err_line_long = lbl.err_line_long,
         err_bom = lbl.err_bom,
         err_terminology = lbl.err_terminology,
@@ -884,6 +890,26 @@ mod tests {
             !html.contains("All segments pass"),
             "should not show all-pass msg"
         );
+    }
+
+    #[test]
+    fn misplaced_face_prefix_is_listed_coloured_and_filterable() {
+        let details = vec![make_detail(
+            "CommonEvent.dat",
+            2,
+            "@1\n「\\cself[8]」を失った。",
+            "Lost \\cself[8]「@1\n」.",
+            75,
+            vec![QaError::MisplacedFacePrefix {
+                expected: "@1".to_string(),
+                found: "@1".to_string(),
+            }],
+        )];
+        let html = generate_qa_html("Wolf", &details, details.len(), "fr");
+        assert!(html.contains("data-errors=\"misplaced_face_prefix\""));
+        assert!(html.contains(".err-dot.misplaced_face_prefix{background:#ef4444}"));
+        assert!(html.contains("value=\"misplaced_face_prefix\" checked> Préfixe de visage"));
+        assert!(html.contains("Préfixe de visage @1 déplacé"));
     }
 
     #[test]

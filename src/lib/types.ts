@@ -181,6 +181,8 @@ export interface TmSuggestion {
 
 export type QaErrorType =
   | { type: "missing_placeholder"; placeholder: string }
+  /** Wolf `@N` face prefix not leading the target (`""`: none). */
+  | { type: "misplaced_face_prefix"; expected: string; found: string }
   | {
       type: "line_too_long";
       line: number;

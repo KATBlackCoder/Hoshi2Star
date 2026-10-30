@@ -15,6 +15,7 @@
 //! ## Score
 //! 100 if 0 errors.  Per error:
 //! - `MissingPlaceholder`  → −25
+//! - `MisplacedFacePrefix` → −25 (Wolf `@N\n` not leading the message)
 //! - `LineTooLong`         → −10
 //! - `BomDetected`         → −15
 //! - `TerminologyMismatch` → severity-dependent (0/15/35)
@@ -25,6 +26,7 @@ use crate::core::terminology::{
     resolver::QaTerminologyRule,
     types::{Enforcement, PartOfSpeech},
 };
+use crate::engines::wolf::layout::text::split_face_prefix;
 use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -111,6 +113,15 @@ pub enum QaError {
     },
     MissingPlaceholder {
         placeholder: String,
+    },
+    /// The Wolf face prefix `@N\n` does not lead the target as it leads the
+    /// source: the engine only reads it as the first characters of a
+    /// message, anywhere else it is shown as text and the face is lost.
+    /// `expected` is the source's prefix and `found` the misplaced one, both
+    /// as `@N` (empty: none).
+    MisplacedFacePrefix {
+        expected: String,
+        found: String,
     },
     LineTooLong {
         /// 1-based line number.
@@ -315,6 +326,50 @@ fn legacy_rules(source: &str, terms: &[(String, String)]) -> Vec<QaTerminologyRu
         .collect()
 }
 
+/// A Wolf face prefix `@N\n` anywhere in a text.
+static RE_FACE_PREFIX_ANYWHERE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"@\d+\n").expect("RE_FACE_PREFIX_ANYWHERE must compile"));
+
+/// The leading face prefix of the target must be the source's, and the
+/// target's body must not hold more `@N\n` than the source's body (a prefix
+/// moved or repeated inside the text).
+fn check_face_prefix(source: &str, target: &str) -> Option<QaError> {
+    let (source_prefix, source_body) = split_face_prefix(source);
+    let (target_prefix, target_body) = split_face_prefix(target);
+    let source_stray: Vec<&str> = RE_FACE_PREFIX_ANYWHERE
+        .find_iter(source_body)
+        .map(|found| found.as_str())
+        .collect();
+    let target_stray: Vec<&str> = RE_FACE_PREFIX_ANYWHERE
+        .find_iter(target_body)
+        .map(|found| found.as_str())
+        .collect();
+    let stray = (target_stray.len() > source_stray.len()).then(|| {
+        target_stray
+            .iter()
+            .find(|found| !source_stray.contains(found))
+            .or(target_stray.first())
+            .copied()
+            .unwrap_or_default()
+    });
+    let found = if target_prefix != source_prefix && !target_prefix.is_empty() {
+        // Another `N`, or a prefix the source does not have.
+        target_prefix
+    } else if let Some(stray) = stray {
+        // Moved or repeated inside the text.
+        stray
+    } else if target_prefix != source_prefix {
+        // Missing.
+        ""
+    } else {
+        return None;
+    };
+    Some(QaError::MisplacedFacePrefix {
+        expected: source_prefix.trim_end_matches('\n').to_string(),
+        found: found.trim_end_matches('\n').to_string(),
+    })
+}
+
 fn check_line_length(text: &str, config: &LineWidthConfig) -> Vec<QaError> {
     let max_units = config.max_halfwidth_units();
     text.lines()
@@ -416,6 +471,12 @@ fn check_with_rules(
                 QaError::MissingPlaceholder { placeholder }
             });
         }
+    }
+
+    // 2b. Wolf face prefix: detached from the LLM text (plan FP), so a target
+    //     written elsewhere (manual edit, older translation) is checked here.
+    if matches!(tok_engine, TokEngine::Wolf | TokEngine::WolfMessage) {
+        errors.extend(check_face_prefix(source, target));
     }
 
     // 3. Line width check
@@ -664,6 +725,7 @@ impl QaError {
             QaError::ContextLeak { .. } => 60,
             QaError::InconsistentRepeatedSource { .. } => 50,
             QaError::MissingPlaceholder { .. } => 25,
+            QaError::MisplacedFacePrefix { .. } => 25,
             QaError::MissingFormatSpecifier { .. } => 15,
             QaError::LineTooLong { .. } => 10,
             QaError::BomDetected => 15,
@@ -692,6 +754,7 @@ impl QaError {
             QaError::ContextLeak { .. } => "context_leak",
             QaError::InconsistentRepeatedSource { .. } => "inconsistent_repeated_source",
             QaError::MissingPlaceholder { .. } => "missing_placeholder",
+            QaError::MisplacedFacePrefix { .. } => "misplaced_face_prefix",
             QaError::MissingFormatSpecifier { .. } => "missing_format_specifier",
             QaError::LineTooLong { .. } => "line_too_long",
             QaError::BomDetected => "bom_detected",
@@ -714,6 +777,7 @@ impl QaError {
                 | QaError::ContextLeak { .. }
                 | QaError::InconsistentRepeatedSource { .. }
                 | QaError::MissingPlaceholder { .. }
+                | QaError::MisplacedFacePrefix { .. }
                 | QaError::BomDetected
                 | QaError::TerminologyMismatch {
                     severity: QaSeverity::Critical,
@@ -756,6 +820,17 @@ impl QaError {
             }
             QaError::MissingPlaceholder { placeholder } => {
                 format!("Missing placeholder: {placeholder}")
+            }
+            QaError::MisplacedFacePrefix { expected, found } => {
+                if found.is_empty() {
+                    format!("Face prefix {expected} missing at the start of the message")
+                } else if expected.is_empty() {
+                    format!("Face prefix {found} not in the source")
+                } else if expected == found {
+                    format!("Face prefix {expected} out of place: it must open the message")
+                } else {
+                    format!("Face prefix {found} instead of {expected}")
+                }
             }
             QaError::MissingFormatSpecifier { placeholder } => {
                 format!("Missing value {placeholder}: the game shows the message without it")
@@ -830,6 +905,17 @@ impl QaError {
             }
             QaError::MissingPlaceholder { placeholder } => {
                 format!("Placeholder manquant : {placeholder}")
+            }
+            QaError::MisplacedFacePrefix { expected, found } => {
+                if found.is_empty() {
+                    format!("Préfixe de visage {expected} absent du début du message")
+                } else if expected.is_empty() {
+                    format!("Préfixe de visage {found} absent de la source")
+                } else if expected == found {
+                    format!("Préfixe de visage {expected} déplacé : il doit ouvrir le message")
+                } else {
+                    format!("Préfixe de visage {found} au lieu de {expected}")
+                }
             }
             QaError::MissingFormatSpecifier { placeholder } => {
                 format!("Valeur {placeholder} manquante : le jeu affiche le message sans elle")
@@ -1326,6 +1412,127 @@ mod tests {
             Some("MapData/Map001/events/0/pages/0/3"),
         );
         assert!(label.has_critical_errors());
+    }
+
+    /// Face prefix error of a Wolf message (plan FP), if any.
+    fn face_prefix_error(source: &str, target: &str) -> Option<QaError> {
+        let result = check_segment(
+            source,
+            target,
+            &[],
+            "wolf",
+            "unknown",
+            None,
+            Some("CommonEvents/Intro/3/7"),
+        );
+        let found = result
+            .errors
+            .iter()
+            .find(|error| matches!(error, QaError::MisplacedFacePrefix { .. }))
+            .cloned();
+        if found.is_some() {
+            assert!(result.has_critical_errors());
+            assert!(result.score <= 75, "{result:?}");
+        }
+        found
+    }
+
+    fn misplaced(expected: &str, found: &str) -> Option<QaError> {
+        Some(QaError::MisplacedFacePrefix {
+            expected: expected.to_string(),
+            found: found.to_string(),
+        })
+    }
+
+    #[test]
+    fn wolf_face_prefix_leading_the_target_passes() {
+        assert_eq!(
+            face_prefix_error("@1\n「\\cself[8]」を失った。", "@1\nLost 「\\cself[8]」."),
+            None
+        );
+        assert_eq!(face_prefix_error("@10\nテキスト", "@10\nText"), None);
+        assert_eq!(face_prefix_error("テキスト", "Text"), None);
+        // `@N⏎` already inside the source body is ordinary text.
+        assert_eq!(face_prefix_error("テスト@2\nつぎ", "Test@2\nnext"), None);
+    }
+
+    #[test]
+    fn wolf_face_prefix_missing_from_the_target_head_is_critical() {
+        assert_eq!(
+            face_prefix_error("@1\n「\\cself[8]」を失った。", "Lost 「\\cself[8]」."),
+            misplaced("@1", "")
+        );
+    }
+
+    #[test]
+    fn wolf_face_prefix_moved_inside_the_target_is_critical() {
+        // Real case of plan FP (2026-10-30).
+        assert_eq!(
+            face_prefix_error("@1\n「\\cself[8]」\nを失った。", "Lost \\cself[8]「@1\n」."),
+            misplaced("@1", "@1")
+        );
+        // Repeated after a correct head.
+        assert_eq!(
+            face_prefix_error("@1\nテキスト", "@1\nText @1\nagain"),
+            misplaced("@1", "@1")
+        );
+    }
+
+    #[test]
+    fn wolf_face_prefix_with_another_number_is_critical() {
+        assert_eq!(
+            face_prefix_error("@1\nテキスト", "@2\nText"),
+            misplaced("@1", "@2")
+        );
+    }
+
+    #[test]
+    fn wolf_face_prefix_absent_from_the_source_is_critical() {
+        assert_eq!(
+            face_prefix_error("テキスト", "@3\nText"),
+            misplaced("", "@3")
+        );
+        assert_eq!(
+            face_prefix_error("テキスト", "Text @3\nmore"),
+            misplaced("", "@3")
+        );
+    }
+
+    #[test]
+    fn face_prefix_rule_is_wolf_only_and_labelled() {
+        let mv = check_segment("@1\nテキスト", "Text", &[], "mv_mz", "dialogue", None, None);
+        assert!(!mv
+            .errors
+            .iter()
+            .any(|error| matches!(error, QaError::MisplacedFacePrefix { .. })));
+        // Wolf database fields (not messages) are checked too.
+        let field = check_segment(
+            "@1\nテキスト",
+            "Text",
+            &[],
+            "wolf",
+            "unknown",
+            None,
+            Some("Database/DataBase/2/15/説明文"),
+        );
+        assert!(field.errors.contains(&QaError::MisplacedFacePrefix {
+            expected: "@1".to_string(),
+            found: String::new(),
+        }));
+        let moved = misplaced("@1", "@1").unwrap();
+        assert_eq!(moved.type_key(), "misplaced_face_prefix");
+        assert_eq!(moved.penalty(), 25);
+        assert!(moved.is_critical());
+        assert!(moved.label("fr").contains("déplacé"));
+        assert!(misplaced("@1", "").unwrap().label("en").contains("missing"));
+        assert!(misplaced("", "@3")
+            .unwrap()
+            .label("en")
+            .contains("not in the source"));
+        assert!(misplaced("@1", "@2")
+            .unwrap()
+            .label("fr")
+            .contains("@2 au lieu de @1"));
     }
 
     #[test]

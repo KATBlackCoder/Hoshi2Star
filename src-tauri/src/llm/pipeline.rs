@@ -1508,7 +1508,8 @@ mod tests {
         .unwrap();
         let english = "This is a short piece, but we hope it will be of some help in grasping \
                        the overall atmosphere of the work.";
-        let provider = MockProvider::new(vec![Ok(vec![format!("⟦ph_0⟧{english}")])]);
+        // The face prefix `@4⏎` is not sent (plan FP): no token at all.
+        let provider = MockProvider::new(vec![Ok(vec![english.to_string()])]);
         let mut wolf_ctx = ctx();
         wolf_ctx.engine = "wolf".to_string();
 
@@ -1535,6 +1536,152 @@ mod tests {
             .all(|line| line.chars().any(char::is_alphanumeric)));
         assert_eq!(lines.join(" "), english);
         assert!(!results[0].needs_review, "{:?}", results[0].qa_errors);
+    }
+
+    /// One Wolf common-event message (`CommonEvent.dat`, トロイメライ) in a
+    /// fresh project, for the face prefix runs of plan FP.
+    async fn insert_wolf_message(db: &SqlitePool, source: &str) {
+        sqlx::query(
+            "INSERT INTO projects (id, name, engine, game_path) \
+             VALUES ('fp-p', 'Wolf', 'wolf', '/tmp')",
+        )
+        .execute(db)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO source_files (id, project_id, file_name, file_path, file_type) \
+             VALUES ('fp-f', 'fp-p', 'CommonEvent.dat', '/tmp/CommonEvent.dat', 'common_event')",
+        )
+        .execute(db)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO segments (id, source_file_id, json_key, source_text) \
+             VALUES ('fp-msg', 'fp-f', 'CommonEvents/Intro/3/7', ?)",
+        )
+        .bind(source)
+        .execute(db)
+        .await
+        .unwrap();
+    }
+
+    async fn persisted_target(db: &SqlitePool) -> (String, String) {
+        sqlx::query_as("SELECT target_text, status FROM segments WHERE id = 'fp-msg'")
+            .fetch_one(db)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn wolf_face_prefix_is_kept_in_front_of_the_persisted_translation() {
+        let (db, _f) = test_db().await;
+        let source = "@1\n「\\cself[8]」を失った。";
+        insert_wolf_message(&db, source).await;
+        // The LLM only sees the body, so its answer has no prefix.
+        let provider = MockProvider::new(vec![Ok(vec!["Lost 「⟦ph_0⟧」.".to_string()])]);
+        let mut wolf_ctx = ctx();
+        wolf_ctx.engine = "wolf".to_string();
+
+        let results = run_inner(
+            vec![("fp-msg".to_string(), source.to_string())],
+            &provider,
+            wolf_ctx,
+            &db,
+            None,
+            None,
+            None,
+            |_, _| {},
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(provider.calls(), 1);
+        assert_eq!(results[0].translated_text, "@1\nLost 「\\cself[8]」.");
+        assert!(!results[0].needs_review, "{:?}", results[0].qa_errors);
+        assert!(!results[0]
+            .qa_errors
+            .iter()
+            .any(|error| matches!(error, qa::QaError::MisplacedFacePrefix { .. })));
+        let (target, status) = persisted_target(&db).await;
+        assert!(target.starts_with("@1\n"), "{target}");
+        assert_eq!(target, "@1\nLost 「\\cself[8]」.");
+        assert_eq!(status, "translated");
+    }
+
+    #[tokio::test]
+    async fn wolf_empty_answer_is_not_saved_as_a_bare_face_prefix() {
+        // Before plan FP, an empty answer lost the prefix token and failed;
+        // it must still fail now that the prefix is put back after restore.
+        let (db, _f) = test_db().await;
+        let source = "@1\nテキスト";
+        insert_wolf_message(&db, source).await;
+        let provider = MockProvider::new(vec![Ok(vec![String::new()])]);
+        let mut wolf_ctx = ctx();
+        wolf_ctx.engine = "wolf".to_string();
+
+        let results = run_inner(
+            vec![("fp-msg".to_string(), source.to_string())],
+            &provider,
+            wolf_ctx,
+            &db,
+            None,
+            None,
+            None,
+            |_, _| {},
+        )
+        .await
+        .unwrap();
+
+        assert!(results[0].failed);
+        let target: Option<String> =
+            sqlx::query_scalar("SELECT target_text FROM segments WHERE id = 'fp-msg'")
+                .fetch_one(&db)
+                .await
+                .unwrap();
+        assert!(target.unwrap_or_default().is_empty(), "nothing written");
+    }
+
+    #[tokio::test]
+    async fn wolf_face_prefix_written_inside_the_answer_needs_review() {
+        // Old behaviour of the 2026-10-30 run: `@1⏎` moved inside the quotes.
+        // The prefix is still put in front, and the stray copy is flagged.
+        let (db, _f) = test_db().await;
+        let source = "@1\n「\\cself[8]」を失った。";
+        insert_wolf_message(&db, source).await;
+        let moved = "Lost 「⟦ph_0⟧@1\n」.".to_string();
+        // First answer, then the two semantic retries.
+        let provider = MockProvider::new(vec![
+            Ok(vec![moved.clone()]),
+            Ok(vec![moved.clone()]),
+            Ok(vec![moved]),
+        ]);
+        let mut wolf_ctx = ctx();
+        wolf_ctx.engine = "wolf".to_string();
+
+        let results = run_inner(
+            vec![("fp-msg".to_string(), source.to_string())],
+            &provider,
+            wolf_ctx,
+            &db,
+            None,
+            None,
+            None,
+            |_, _| {},
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(provider.calls(), 3, "first answer and two semantic retries");
+        assert!(results[0].needs_review);
+        assert!(results[0]
+            .qa_errors
+            .contains(&qa::QaError::MisplacedFacePrefix {
+                expected: "@1".to_string(),
+                found: "@1".to_string(),
+            }));
+        let (target, status) = persisted_target(&db).await;
+        assert!(target.starts_with("@1\n"), "{target}");
+        assert_eq!(status, "needs_review");
     }
 
     #[tokio::test]

@@ -52,7 +52,7 @@ static RE_FONT_PREFIX_MVMZ: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\\FS\[\d+\]").expect("RE_FONT_PREFIX_MVMZ must compile"));
 
 /// Wolf RPG v3 speaker sprite index prefix: `@N\n` (leading only — see
-/// `wolf::placeholders::RE_WOLF`). The engine's built-in name/face lookup
+/// `wolf::layout::text::split_face_prefix`). The engine's built-in name/face lookup
 /// requires this to be the true first characters of the message, so the
 /// font-size code must always be inserted after it, never before: prepending
 /// `\f[N]` unconditionally used to push `@N\n` out of the leading position,
