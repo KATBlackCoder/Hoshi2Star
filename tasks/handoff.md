@@ -62,7 +62,7 @@
   - **Suite décidée (2026-10-30)** : correction du préfixe Wolf `@N⏎`, plan FP en tête de `tasks/todo.md`, implémentation et gate confiés à une session cloud (branche `fix/wolf-face-prefix`, PR sans fusion).
   - **Plan FP fusionné (2026-10-30)** : PR #33 relue en local (tokenizer, règle QA critique `MisplacedFacePrefix`, réponse vide gardée vide), puis fusionnée (`914d871`). Gate cloud : clippy 0, cargo test 841 OK / 15 ignorés, Vitest 195/195. La branche `fix/wolf-face-prefix` existe encore sur `origin`.
   - **FP-7 (essai réel)** : mon premier lancement de `pnpm tauri:linux` après la fusion a recompilé le Rust et fait geler le PC (redémarrage ; leçon du 2026-10-30 dans `tasks/lessons.md`). L'utilisateur a ensuite compilé lui-même avec `CARGO_BUILD_JOBS=2`, sans gel. **Essai réussi** : 3 messages retraduits, chacun avec `@1⏎` en tête ; les QA à 90 viennent d'une ligne trop large. Lignes remises vides, TM inchangée (6 entrées). Plan FP terminé.
-  - Reste : branche fusionnée `fix/wolf-face-prefix` encore sur `origin` (à supprimer avec l'accord de l'utilisateur).
+  - Branche `fix/wolf-face-prefix` supprimée de `origin` le 2026-10-30, à la demande de l'utilisateur.
   - Observation hors lots : la traduction LLM a déplacé le marqueur `@1` (« Lost \cself[8]「@1⏎」. »), et la QA a quand même donné 100. Qualité de traduction Wolf, à examiner à part.
 - **Prochaine action (utilisateur, en local) :** essai de 5 minutes avec `pnpm tauri:linux` (liste dans `docs/journal/2026-10-29-fe-lots.md`). Décisions encore ouvertes : la définition de « QA critique » (backend par type d'erreur, front au seuil de 70) ; deux textes de terminologie hors i18n ; le format « 4.2s » des durées du pilote ; les branches `perf/bench-grid` et `chore/deps-minor`.
 
