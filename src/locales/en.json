@@ -258,10 +258,7 @@
     "title": "Files",
     "empty": "Open a game to view files",
     "collapse": "Collapse files",
-    "expand": "Show files",
-    "debugInject": "Debug inject",
-    "debugInjectDone": "Injected: {{path}}",
-    "debugInjectError": "Injection failed: {{error}}"
+    "expand": "Show files"
   },
   "projectSearch": {
     "placeholder": "Search project… (Enter)",
@@ -337,18 +334,15 @@
     "empty": "Select a segment to view TM suggestions",
     "searching": "Searching...",
     "noMatch": "No TM match",
-    "confidence": "{{percent}}%",
     "exact": "Exact",
     "fuzzy": "~{{percent}}%",
     "export": "Export TM (.tmx)",
-    "exporting": "Exporting...",
     "exportSuccess": "TM exported successfully",
     "exportError": "Export failed: {{error}}"
   },
   "qaPanel": {
     "title": "QA",
     "empty": "Select a segment to view QA errors",
-    "score": "Score",
     "ok": "Segment OK",
     "export": "Export QA Report",
     "exportSuccess": "QA report exported",
@@ -392,7 +386,6 @@
   },
   "settings": {
     "title": "Settings",
-    "close": "Close settings",
     "sections": "Settings sections",
     "tabs": {
       "provider": "AI provider",
@@ -424,7 +417,6 @@
       "urlLabel": "OpenAI-compatible URL",
       "modelLabel": "Model",
       "modelLoading": "Loading models...",
-      "modelNone": "No model available",
       "modelManual": "Enter model name manually",
       "modelError": "Cannot reach the provider — check its URL and key",
       "testButton": "Test",
@@ -457,19 +449,7 @@
     },
     "reset": "Reset to defaults",
     "cancel": "Cancel",
-    "save": "Save",
-    "saved": "Settings saved"
-  },
-  "llmModal": {
-    "title": "LLM Configuration",
-    "urlLabel": "Ollama URL",
-    "modelLabel": "Model",
-    "modelLoading": "Loading models...",
-    "modelNone": "No model available",
-    "modelManual": "Enter model name manually",
-    "modelError": "Cannot reach Ollama — check the URL",
-    "cancel": "Cancel",
-    "start": "Translate"
+    "save": "Save"
   },
   "toasts": {
     "exportSuccess": "ZIP exported — hoshi2star.zip ready",
@@ -477,9 +457,6 @@
     "wolfArchivePresent": "Export not possible: a Wolf RPG archive holding text (Data.wolf, MapData.wolf or BasicData.wolf) is still in the game folder, and the game would read it instead of the translations. Nothing was written.",
     "wolfNoDatabase": "Export not possible: no readable Wolf RPG database in Data/BasicData to tell the game's encoding. Nothing was written.",
     "wolfUnreadableFiles": "Export not possible: Wolf RPG maps or common events could not be read. Nothing was written."
-  },
-  "lang": {
-    "toggle": "EN"
   },
   "project": {
     "restored": "Project restored — continuing where you left off",
@@ -537,8 +514,7 @@
     "readyBody": "The new version is ready. Restart to apply it.",
     "restart": "Restart now",
     "later": "Later",
-    "badge": "Update available — click to review",
-    "error": "The update failed. Please try again later."
+    "badge": "Update available — click to review"
   },
   "pack": {
     "shareButton": "Share project (.h2s)",

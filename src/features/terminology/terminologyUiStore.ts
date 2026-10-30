@@ -1,20 +1,23 @@
 import { create } from "zustand";
-import type { PartOfSpeech, TerminologyEntryStatus } from "@/lib/types";
+import type {
+  PartOfSpeech,
+  TerminologyEntryStatus,
+  TerminologyScope,
+} from "@/lib/types";
 
-type Scope = "project" | "global";
 interface TerminologyUiState {
   search: string;
   partOfSpeech: PartOfSpeech | "all";
   semanticType: string;
   status: TerminologyEntryStatus | "all";
-  scope: Scope;
+  scope: TerminologyScope;
   page: number;
   selectedIds: string[];
   setSearch: (value: string) => void;
   setPartOfSpeech: (value: PartOfSpeech | "all") => void;
   setSemanticType: (value: string) => void;
   setStatus: (value: TerminologyEntryStatus | "all") => void;
-  setScope: (value: Scope) => void;
+  setScope: (value: TerminologyScope) => void;
   setPage: (value: number) => void;
   toggleSelected: (id: string) => void;
   setPageSelection: (ids: string[], selected: boolean) => void;

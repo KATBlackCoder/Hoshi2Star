@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { listen } from "@tauri-apps/api/event";
 import {
   ChevronDown,
   ChevronRight,
@@ -9,13 +8,13 @@ import {
   Loader2,
   Play,
 } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { applySegmentUpdates } from "@/components/editor/SegmentGrid";
 import { StatusBadge } from "@/features/editor/columns";
 import { useEditorStore } from "@/stores/editor";
 import {
+  ensureModelConfigured,
   runWroteSegments,
   useLlmStore,
   useIsTranslating,
@@ -23,6 +22,8 @@ import {
 } from "@/stores/llm";
 import { useProjectStore } from "@/stores/project";
 import { useSearchStore } from "@/stores/search";
+import { cancelFrame, EVENTS, scheduleFrame } from "@/lib/events";
+import { useTauriEvent } from "@/hooks/useTauriEvent";
 import type { SegmentSearchHit, SegmentUpdate } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -69,60 +70,37 @@ export function GlobalSearchResults() {
     }
   }, [status]);
 
-  const activeProjectIdRef = useRef(activeProjectId);
-  activeProjectIdRef.current = activeProjectId;
-
   // SegmentGrid is unmounted while this view is shown, so mirror its LLM
   // listeners here: progressive in-memory patch (coalesced per frame, and
   // skipped when no hit is touched), then a fresh search once a run wrote.
-  useEffect(() => {
-    const pending = new Map<string, SegmentUpdate>();
-    let frame: number | null = null;
-
-    const flush = () => {
-      frame = null;
-      if (pending.size === 0) return;
-      const updates = new Map(pending);
+  const pendingRef = useRef(new Map<string, SegmentUpdate>());
+  const frameRef = useRef<number | null>(null);
+  useTauriEvent<SegmentUpdate[]>(EVENTS.llmSegmentsUpdated, (updates) => {
+    const pending = pendingRef.current;
+    for (const update of updates) pending.set(update.id, update);
+    if (frameRef.current !== null || pending.size === 0) return;
+    frameRef.current = scheduleFrame(() => {
+      frameRef.current = null;
+      const batch = new Map(pending);
       pending.clear();
       const { results: current } = useSearchStore.getState();
-      const next = applySegmentUpdates(current, updates);
+      const next = applySegmentUpdates(current, batch);
       if (next !== current) useSearchStore.setState({ results: next });
-    };
-
-    const unlisten = listen<SegmentUpdate[]>(
-      "h2s://llm/segments-updated",
-      (event) => {
-        for (const update of event.payload) pending.set(update.id, update);
-        if (frame !== null || pending.size === 0) return;
-        frame =
-          typeof window.requestAnimationFrame === "function"
-            ? window.requestAnimationFrame(flush)
-            : window.setTimeout(flush, 16);
-      },
-    );
+    });
+  });
+  useEffect(() => {
+    const pending = pendingRef.current;
     return () => {
-      if (frame !== null) {
-        if (typeof window.cancelAnimationFrame === "function") {
-          window.cancelAnimationFrame(frame);
-        } else {
-          window.clearTimeout(frame);
-        }
-      }
+      if (frameRef.current !== null) cancelFrame(frameRef.current);
       pending.clear();
-      void unlisten.then((fn) => fn());
     };
   }, []);
 
-  useEffect(() => {
-    const unlisten = listen<RunSummary>("h2s://llm/completed", (event) => {
-      const pid = activeProjectIdRef.current;
-      if (!pid || !runWroteSegments(event.payload)) return;
-      void rerun(pid);
-    });
-    return () => {
-      void unlisten.then((fn) => fn());
-    };
-  }, [rerun]);
+  useTauriEvent<RunSummary>(EVENTS.llmCompleted, (summary) => {
+    if (activeProjectId && runWroteSegments(summary)) {
+      void rerun(activeProjectId);
+    }
+  });
 
   // Hit ids per file — drives the per-file select-all checkbox and the
   // header hit counts (which must stay stable while a file is collapsed).
@@ -189,10 +167,7 @@ export function GlobalSearchResults() {
   }
 
   function handleTranslateSelected() {
-    if (!useLlmStore.getState().providerConfig.model.trim()) {
-      toast.error(t("segmentGrid.noModelConfigured"));
-      return;
-    }
+    if (!ensureModelConfigured()) return;
     void startTranslation(selectedIds, undefined);
     setSelected({});
   }

@@ -1,6 +1,6 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { renderWithQuery } from "@/test/renderWithQuery";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import { TextFitPreviewPanel } from "@/components/editor/TextFitPreviewPanel";
@@ -90,14 +90,7 @@ const PREVIEW: TextFitPreview = {
 };
 
 function renderPanel() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  render(
-    <QueryClientProvider client={queryClient}>
-      <TextFitPreviewPanel />
-    </QueryClientProvider>,
-  );
+  renderWithQuery(<TextFitPreviewPanel />);
 }
 
 beforeEach(() => {

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { EVENTS } from "@/lib/events";
 import type {
   PaginatedTerminology,
   PartOfSpeech,
@@ -7,9 +8,10 @@ import type {
   TerminologyEntry,
   TerminologyEntryStatus,
   GlobalizeTranslationsSummary,
-  TerminologyScanDone,
-  TerminologyScanProgress,
+  TerminologyScope,
   TerminologyStats,
+  TerminologyTranslateDone,
+  TerminologyTranslateProgress,
   TerminologyTranslation,
   ProviderConfig,
 } from "@/lib/types";
@@ -80,7 +82,7 @@ export const terminologyApi = {
     entryIds: string[];
     targetLanguage: string;
     projectId: string | null;
-    scope: "project" | "global" | "both";
+    scope: TerminologyScope | "both";
     providerConfig: ProviderConfig;
   }) => invoke<{ jobId: string }>("translate_terminology_entries", { input }),
   globalize: (input: {
@@ -96,45 +98,17 @@ export const terminologyApi = {
       "globalize_filtered_terminology_translations",
       { query },
     ),
-  onScanProgress: (
-    handler: (payload: TerminologyScanProgress) => void,
+  onTranslateProgress: (
+    handler: (payload: TerminologyTranslateProgress) => void,
   ): Promise<UnlistenFn> =>
-    listen<TerminologyScanProgress>(
-      "h2s://terminology/scan-progress",
+    listen<TerminologyTranslateProgress>(
+      EVENTS.terminologyTranslateProgress,
       (event) => handler(event.payload),
     ),
-  onScanDone: (
-    handler: (payload: TerminologyScanDone) => void,
-  ): Promise<UnlistenFn> =>
-    listen<TerminologyScanDone>("h2s://terminology/scan-done", (event) =>
-      handler(event.payload),
-    ),
-  onTranslateProgress: (
-    handler: (payload: {
-      jobId: string;
-      processed: number;
-      total: number;
-    }) => void,
-  ): Promise<UnlistenFn> =>
-    listen("h2s://terminology/translate-progress", (event) =>
-      handler(
-        event.payload as { jobId: string; processed: number; total: number },
-      ),
-    ),
   onTranslateDone: (
-    handler: (payload: {
-      jobId: string;
-      summary: { translated: number; scopesWritten: number } | null;
-      error: string | null;
-    }) => void,
+    handler: (payload: TerminologyTranslateDone) => void,
   ): Promise<UnlistenFn> =>
-    listen("h2s://terminology/translate-done", (event) =>
-      handler(
-        event.payload as {
-          jobId: string;
-          summary: { translated: number; scopesWritten: number } | null;
-          error: string | null;
-        },
-      ),
+    listen<TerminologyTranslateDone>(EVENTS.terminologyTranslateDone, (event) =>
+      handler(event.payload),
     ),
 };

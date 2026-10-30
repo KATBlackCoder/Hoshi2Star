@@ -28,8 +28,6 @@ export const useCoverageStore = create<CoverageState>()((set) => ({
   setView: (view) => set({ view }),
 }));
 
-export const useCoverageOpen = () => useCoverageStore((s) => s.open);
-
 /** Scan the project and open the coverage dialog. */
 export async function openCoverageDialog(projectId: string): Promise<void> {
   useCoverageStore.setState({ open: true, loading: true, error: null });

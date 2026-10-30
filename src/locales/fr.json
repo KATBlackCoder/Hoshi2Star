@@ -258,10 +258,7 @@
     "title": "Fichiers",
     "empty": "Ouvrir un jeu pour afficher les fichiers",
     "collapse": "Replier les fichiers",
-    "expand": "Afficher les fichiers",
-    "debugInject": "Injecter (debug)",
-    "debugInjectDone": "Injecté : {{path}}",
-    "debugInjectError": "Échec injection : {{error}}"
+    "expand": "Afficher les fichiers"
   },
   "projectSearch": {
     "placeholder": "Rechercher dans le projet… (Entrée)",
@@ -337,18 +334,15 @@
     "empty": "Sélectionnez un segment pour voir les suggestions TM",
     "searching": "Recherche…",
     "noMatch": "Aucune correspondance TM",
-    "confidence": "{{percent}}%",
     "exact": "Exact",
     "fuzzy": "~{{percent}}%",
     "export": "Exporter TM (.tmx)",
-    "exporting": "Exportation…",
     "exportSuccess": "TM exportée avec succès",
     "exportError": "Échec de l'export : {{error}}"
   },
   "qaPanel": {
     "title": "QA",
     "empty": "Sélectionnez un segment pour voir les erreurs QA",
-    "score": "Score",
     "ok": "Segment OK",
     "export": "Exporter le rapport QA",
     "exportSuccess": "Rapport QA exporté",
@@ -392,7 +386,6 @@
   },
   "settings": {
     "title": "Paramètres",
-    "close": "Fermer les paramètres",
     "sections": "Sections des paramètres",
     "tabs": {
       "provider": "Fournisseur IA",
@@ -424,7 +417,6 @@
       "urlLabel": "URL compatible OpenAI",
       "modelLabel": "Modèle",
       "modelLoading": "Chargement des modèles…",
-      "modelNone": "Aucun modèle disponible",
       "modelManual": "Saisir le nom du modèle manuellement",
       "modelError": "Impossible de contacter le fournisseur — vérifiez l'URL et la clé",
       "testButton": "Tester",
@@ -457,19 +449,7 @@
     },
     "reset": "Réinitialiser",
     "cancel": "Annuler",
-    "save": "Enregistrer",
-    "saved": "Paramètres enregistrés"
-  },
-  "llmModal": {
-    "title": "Configuration LLM",
-    "urlLabel": "URL Ollama",
-    "modelLabel": "Modèle",
-    "modelLoading": "Chargement des modèles…",
-    "modelNone": "Aucun modèle disponible",
-    "modelManual": "Saisir le modèle manuellement",
-    "modelError": "Impossible de contacter Ollama — vérifiez l'URL",
-    "cancel": "Annuler",
-    "start": "Traduire"
+    "save": "Enregistrer"
   },
   "toasts": {
     "exportSuccess": "ZIP exporté — hoshi2star.zip prêt",
@@ -477,9 +457,6 @@
     "wolfArchivePresent": "Export impossible : une archive Wolf RPG contenant des textes (Data.wolf, MapData.wolf ou BasicData.wolf) est encore dans le dossier du jeu, qui la lirait à la place des traductions. Rien n'a été écrit.",
     "wolfNoDatabase": "Export impossible : aucune base de données Wolf RPG lisible dans Data/BasicData pour connaître l'encodage du jeu. Rien n'a été écrit.",
     "wolfUnreadableFiles": "Export impossible : des cartes ou des événements communs Wolf RPG n'ont pas pu être lus. Rien n'a été écrit."
-  },
-  "lang": {
-    "toggle": "FR"
   },
   "project": {
     "restored": "Projet restauré — reprise de la traduction",
@@ -537,8 +514,7 @@
     "readyBody": "La nouvelle version est prête. Redémarrez pour l'appliquer.",
     "restart": "Redémarrer",
     "later": "Plus tard",
-    "badge": "Mise à jour disponible — cliquer pour revoir",
-    "error": "La mise à jour a échoué. Réessayez plus tard."
+    "badge": "Mise à jour disponible — cliquer pour revoir"
   },
   "pack": {
     "shareButton": "Partager le projet (.h2s)",

@@ -11,7 +11,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { ProviderConfig, TerminologyEntry } from "@/lib/types";
+import type {
+  ProviderConfig,
+  TerminologyEntry,
+  TerminologyScope,
+} from "@/lib/types";
 import { terminologyApi } from "./api";
 import { TerminologySelect } from "./TerminologySelect";
 
@@ -33,7 +37,7 @@ export function TermTranslateDialog({
   selectedIds: string[];
   targetLanguage: string;
   projectId: string | null;
-  defaultScope?: "project" | "global";
+  defaultScope?: TerminologyScope;
   providerConfig: ProviderConfig;
   onOpenChange: (open: boolean) => void;
   onDone: () => void;
@@ -42,7 +46,7 @@ export function TermTranslateDialog({
   const [selectionMode, setSelectionMode] = useState<SelectionMode>(
     selectedIds.length ? "selected" : "untranslated",
   );
-  const [scope, setScope] = useState<"project" | "global" | "both">(
+  const [scope, setScope] = useState<TerminologyScope | "both">(
     defaultScope ?? (projectId ? "project" : "global"),
   );
   const [running, setRunning] = useState(false);
@@ -155,7 +159,7 @@ export function TermTranslateDialog({
                 ariaLabel={t("terminology.scope")}
                 value={scope}
                 onValueChange={(value) =>
-                  setScope(value as "project" | "global" | "both")
+                  setScope(value as TerminologyScope | "both")
                 }
                 disabled={running || !projectId}
                 options={[

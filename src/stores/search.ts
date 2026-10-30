@@ -100,5 +100,3 @@ export const useSearchStore = create<SearchState>()((set, get) => ({
 
 // Selectors
 export const useSearchActive = () => useSearchStore((s) => s.isActive);
-export const useSearchResults = () => useSearchStore((s) => s.results);
-export const useSearchStatus = () => useSearchStore((s) => s.status);

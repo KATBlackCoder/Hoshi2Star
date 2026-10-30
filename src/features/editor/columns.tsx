@@ -1,4 +1,8 @@
-import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
+import {
+  createColumnHelper,
+  type ColumnDef,
+  type RowData,
+} from "@tanstack/react-table";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Segment, SegmentStatus } from "@/lib/types";
@@ -7,6 +11,16 @@ import { cn } from "@/lib/utils";
 import { getPlaceholderRegex } from "@/lib/constants";
 import { buildHighlightedNodes } from "@/lib/highlight-utils";
 import { Play } from "lucide-react";
+
+declare module "@tanstack/react-table" {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface ColumnMeta<TData extends RowData, TValue> {
+    /** Width and alignment, shared by the header and the cells. */
+    className?: string;
+    /** Extra classes of the cells only. */
+    cellClassName?: string;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Status badge
@@ -36,8 +50,11 @@ export const STATUS_STYLES: Record<
 
 export const StatusBadge = memo(function StatusBadge({
   status,
+  count,
 }: {
   status: SegmentStatus;
+  /** Shown before the label (grid footer recap). */
+  count?: number;
 }) {
   const { t } = useTranslation();
   const style = STATUS_STYLES[status];
@@ -45,11 +62,15 @@ export const StatusBadge = memo(function StatusBadge({
     <span
       className={cn(
         "inline-flex min-w-0 max-w-full items-center gap-1.5 text-xs font-medium",
+        count !== undefined && "tabular-nums",
         style.label,
       )}
     >
       <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", style.dot)} />
-      <span className="truncate">{t(`segmentGrid.status.${status}`)}</span>
+      <span className="truncate">
+        {count !== undefined && `${count.toLocaleString()} `}
+        {t(`segmentGrid.status.${status}`)}
+      </span>
     </span>
   );
 });
@@ -175,7 +196,10 @@ export function createSegmentColumns(
     // Checkbox selection column
     helper.display({
       id: "select",
-      size: 36,
+      meta: {
+        className: "w-9 shrink-0 justify-center",
+        cellClassName: "items-center",
+      },
       header: ({ table }) => (
         <input
           type="checkbox"
@@ -204,7 +228,7 @@ export function createSegmentColumns(
     helper.display({
       id: "index",
       header: meta.t("segmentGrid.columns.number"),
-      size: 56,
+      meta: { className: "w-14 shrink-0 justify-end" },
       cell: (ctx) => (
         <span className="text-xs text-muted-foreground tabular-nums select-none">
           {ctx.row.index + 1}
@@ -214,13 +238,13 @@ export function createSegmentColumns(
 
     helper.accessor("sourceText", {
       header: meta.t("segmentGrid.columns.source"),
-      size: 0, // flex
+      meta: { className: "flex-1 min-w-0" },
       cell: (ctx) => <SourceCell text={ctx.getValue()} />,
     }) as ColumnDef<Segment>,
 
     helper.accessor("targetText", {
       header: meta.t("segmentGrid.columns.target"),
-      size: 0, // flex
+      meta: { className: "flex-1 min-w-0" },
       cell: (ctx) => (
         <EditableCell
           segmentId={ctx.row.original.id}
@@ -235,13 +259,16 @@ export function createSegmentColumns(
 
     helper.accessor("status", {
       header: meta.t("segmentGrid.columns.status"),
-      size: 100,
+      meta: { className: "w-28 shrink-0", cellClassName: "items-center" },
       cell: (ctx) => <StatusBadge status={ctx.getValue()} />,
     }) as ColumnDef<Segment>,
 
     helper.accessor("qaScore", {
       header: meta.t("segmentGrid.columns.qa"),
-      size: 52,
+      meta: {
+        className: "w-14 shrink-0",
+        cellClassName: "justify-center items-center",
+      },
       cell: (ctx) => {
         const score = ctx.getValue();
         if (score === null)
@@ -266,7 +293,10 @@ export function createSegmentColumns(
     // Per-row translate button
     helper.display({
       id: "actions",
-      size: 36,
+      meta: {
+        className: "w-12 shrink-0",
+        cellClassName: "justify-center items-center",
+      },
       header: () => null,
       cell: (ctx) => (
         <button

@@ -12,27 +12,25 @@ import {
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { useProjectStore } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import {
+  ensureModelConfigured,
   runWroteSegments,
   useLlmStore,
   useIsTranslating,
   type RunSummary,
 } from "@/stores/llm";
-import { createSegmentColumns, STATUS_STYLES } from "@/features/editor/columns";
+import { createSegmentColumns, StatusBadge } from "@/features/editor/columns";
 import type { PaginatedSegments, Segment, SegmentUpdate } from "@/lib/types";
 import { invalidateSegmentViews } from "@/lib/queryClient";
+import { cancelFrame, EVENTS, scheduleFrame } from "@/lib/events";
+import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { cn } from "@/lib/utils";
 import { Play, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useUiStore } from "@/stores/ui";
-
-interface SegmentGridProps {
-  highlightPlaceholders?: boolean;
-}
 
 /**
  * Patch LLM updates into a list of segments (or search hits). Returns the
@@ -53,10 +51,7 @@ export function applySegmentUpdates<T extends Segment>(
   return touched ? next : segments;
 }
 
-export function SegmentGrid({
-  highlightPlaceholders = false,
-}: SegmentGridProps) {
-  void highlightPlaceholders; // consumed by columns in future — prop reserved for F2
+export function SegmentGrid() {
   const { t, i18n } = useTranslation();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const activeFileId = useEditorStore((s) => s.activeFileId);
@@ -76,11 +71,6 @@ export function SegmentGrid({
   const [qaFilter, setQaFilter] = useState<QaFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-
-  const activeProjectIdRef = useRef(activeProjectId);
-  const activeFileIdRef = useRef(activeFileId);
-  activeProjectIdRef.current = activeProjectId;
-  activeFileIdRef.current = activeFileId;
 
   // Monotonic sequence: a load started for a file the user has already left
   // must not overwrite the segments of the newly opened file.
@@ -134,21 +124,22 @@ export function SegmentGrid({
     loadSegments(activeProjectId, activeFileId);
   }, [activeProjectId, activeFileId, loadSegments]);
 
+  /** Drop the LLM updates not applied yet (file switch, unmount). */
+  const dropPendingUpdates = useCallback(() => {
+    pendingUpdatesRef.current.clear();
+    if (updateFrameRef.current !== null) {
+      cancelFrame(updateFrameRef.current);
+      updateFrameRef.current = null;
+    }
+  }, []);
+
   // Reset filter + selection when switching files
   useEffect(() => {
     setQaFilter("all");
     setSearchQuery("");
     setRowSelection({});
-    pendingUpdatesRef.current.clear();
-    if (updateFrameRef.current !== null) {
-      if (typeof window.cancelAnimationFrame === "function") {
-        window.cancelAnimationFrame(updateFrameRef.current);
-      } else {
-        window.clearTimeout(updateFrameRef.current);
-      }
-      updateFrameRef.current = null;
-    }
-  }, [activeFileId]);
+    dropPendingUpdates();
+  }, [activeFileId, dropPendingUpdates]);
 
   // Also drop the selection when the visible subset changes: rows checked
   // then hidden by a filter/search would otherwise stay silently selected.
@@ -208,48 +199,20 @@ export function SegmentGrid({
 
   // Patch translated segments into the in-memory list as each batch is
   // persisted, so the table updates progressively during long translations
-  // instead of waiting for the whole project to finish.
-  useEffect(() => {
-    const pendingUpdates = pendingUpdatesRef.current;
-
-    const flushUpdates = () => {
+  // instead of waiting for the whole project to finish (once per frame).
+  useTauriEvent<SegmentUpdate[]>(EVENTS.llmSegmentsUpdated, (updates) => {
+    const pending = pendingUpdatesRef.current;
+    for (const update of updates) pending.set(update.id, update);
+    if (updateFrameRef.current !== null) return;
+    updateFrameRef.current = scheduleFrame(() => {
       updateFrameRef.current = null;
-      if (pendingUpdates.size === 0) return;
-      const updates = new Map(pendingUpdates);
-      pendingUpdates.clear();
-      setSegments((previous) => applySegmentUpdates(previous, updates));
-    };
-
-    const scheduleFlush = () => {
-      if (updateFrameRef.current !== null) return;
-      updateFrameRef.current =
-        typeof window.requestAnimationFrame === "function"
-          ? window.requestAnimationFrame(flushUpdates)
-          : window.setTimeout(flushUpdates, 16);
-    };
-
-    const unlisten = listen<SegmentUpdate[]>(
-      "h2s://llm/segments-updated",
-      (event) => {
-        for (const update of event.payload) {
-          pendingUpdates.set(update.id, update);
-        }
-        scheduleFlush();
-      },
-    );
-    return () => {
-      if (updateFrameRef.current !== null) {
-        if (typeof window.cancelAnimationFrame === "function") {
-          window.cancelAnimationFrame(updateFrameRef.current);
-        } else {
-          window.clearTimeout(updateFrameRef.current);
-        }
-      }
-      updateFrameRef.current = null;
-      pendingUpdates.clear();
-      void unlisten.then((fn) => fn());
-    };
-  }, []);
+      if (pending.size === 0) return;
+      const batch = new Map(pending);
+      pending.clear();
+      setSegments((previous) => applySegmentUpdates(previous, batch));
+    });
+  });
+  useEffect(() => dropPendingUpdates, [dropPendingUpdates]);
 
   // Re-fetch the segments when a .h2s pack import rewrites them across the
   // project or the project is realigned after a game update. After a run,
@@ -257,27 +220,16 @@ export function SegmentGrid({
   // only when the run wrote something, since the backend also stores each
   // QA score and repairs other rows of the same name (`llm/pipeline.rs`).
   // Source files and cached views: `useProjectDataSync`.
-  useEffect(() => {
-    const reload = (inPlace: boolean) => {
-      const pid = activeProjectIdRef.current;
-      const fid = activeFileIdRef.current;
-      if (pid && fid) loadSegments(pid, fid, inPlace);
-    };
-    const unlistenLlm = listen<RunSummary>("h2s://llm/completed", (event) => {
-      if (runWroteSegments(event.payload)) reload(true);
-    });
-    const unlistenImport = listen("h2s://project/import-done", () =>
-      reload(false),
-    );
-    const unlistenResync = listen("h2s://project/resynced", () =>
-      reload(false),
-    );
-    return () => {
-      void unlistenLlm.then((fn) => fn());
-      void unlistenImport.then((fn) => fn());
-      void unlistenResync.then((fn) => fn());
-    };
-  }, [loadSegments]);
+  const reloadActiveFile = (inPlace: boolean) => {
+    if (activeProjectId && activeFileId) {
+      loadSegments(activeProjectId, activeFileId, inPlace);
+    }
+  };
+  useTauriEvent<RunSummary>(EVENTS.llmCompleted, (summary) => {
+    if (runWroteSegments(summary)) reloadActiveFile(true);
+  });
+  useTauriEvent(EVENTS.projectImportDone, () => reloadActiveFile(false));
+  useTauriEvent(EVENTS.projectResynced, () => reloadActiveFile(false));
 
   const handleSave = useCallback(
     async (id: string, text: string) => {
@@ -305,13 +257,10 @@ export function SegmentGrid({
   // Translate a single segment directly (no config modal — uses current providerConfig)
   const handleTranslate = useCallback(
     (segmentId: string) => {
-      if (!useLlmStore.getState().providerConfig.model.trim()) {
-        toast.error(t("segmentGrid.noModelConfigured"));
-        return;
-      }
-      void startTranslation([segmentId], undefined);
+      if (ensureModelConfigured())
+        void startTranslation([segmentId], undefined);
     },
-    [startTranslation, t],
+    [startTranslation],
   );
 
   const needsReviewIds = useMemo(
@@ -327,10 +276,7 @@ export function SegmentGrid({
   );
 
   function handleTranslateSelected() {
-    if (!useLlmStore.getState().providerConfig.model.trim()) {
-      toast.error(t("segmentGrid.noModelConfigured"));
-      return;
-    }
+    if (!ensureModelConfigured()) return;
     void startTranslation(selectedIds, undefined);
     setRowSelection({});
   }
@@ -456,13 +402,7 @@ export function SegmentGrid({
               key={header.id}
               className={cn(
                 "flex items-center px-3 py-2 select-none",
-                header.id === "select" && "w-9 shrink-0 justify-center",
-                header.id === "index" && "w-14 shrink-0 justify-end",
-                header.id === "sourceText" && "flex-1 min-w-0",
-                header.id === "targetText" && "flex-1 min-w-0",
-                header.id === "status" && "w-28 shrink-0",
-                header.id === "qaScore" && "w-14 shrink-0",
-                header.id === "actions" && "w-12 shrink-0",
+                header.column.columnDef.meta?.className,
               )}
             >
               {flexRender(header.column.columnDef.header, header.getContext())}
@@ -493,11 +433,9 @@ export function SegmentGrid({
               className="h-7 gap-1.5 text-xs text-yellow-400 border-yellow-400/40 hover:bg-yellow-400/10"
               disabled={isTranslating}
               onClick={() => {
-                if (!useLlmStore.getState().providerConfig.model.trim()) {
-                  toast.error(t("segmentGrid.noModelConfigured"));
-                  return;
+                if (ensureModelConfigured()) {
+                  void startTranslation(needsReviewIds, undefined);
                 }
-                void startTranslation(needsReviewIds, undefined);
               }}
             >
               <RefreshCw className="h-3 w-3" />
@@ -563,17 +501,8 @@ export function SegmentGrid({
                       gridDensity === "compact"
                         ? "min-h-10 py-1"
                         : "min-h-14 py-2.5",
-                      cell.column.id === "select" &&
-                        "w-9 shrink-0 justify-center items-center",
-                      cell.column.id === "index" && "w-14 shrink-0 justify-end",
-                      cell.column.id === "sourceText" && "flex-1 min-w-0",
-                      cell.column.id === "targetText" && "flex-1 min-w-0",
-                      cell.column.id === "status" &&
-                        "w-28 shrink-0 items-center",
-                      cell.column.id === "qaScore" &&
-                        "w-14 shrink-0 justify-center items-center",
-                      cell.column.id === "actions" &&
-                        "w-12 shrink-0 justify-center items-center",
+                      cell.column.columnDef.meta?.className,
+                      cell.column.columnDef.meta?.cellClassName,
                     )}
                   >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -609,22 +538,11 @@ export function SegmentGrid({
             ).map(
               (status) =>
                 statusCounts[status] > 0 && (
-                  <span
+                  <StatusBadge
                     key={status}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 font-medium tabular-nums",
-                      STATUS_STYLES[status].label,
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "h-1.5 w-1.5 shrink-0 rounded-full",
-                        STATUS_STYLES[status].dot,
-                      )}
-                    />
-                    {statusCounts[status].toLocaleString()}{" "}
-                    {t(`segmentGrid.status.${status}`)}
-                  </span>
+                    status={status}
+                    count={statusCounts[status]}
+                  />
                 ),
             )}
           </div>

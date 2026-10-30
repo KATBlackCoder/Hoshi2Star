@@ -1,6 +1,6 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { renderWithQuery } from "@/test/renderWithQuery";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { QAPanel } from "@/components/editor/QAPanel";
 import i18n from "@/lib/i18n";
@@ -33,19 +33,12 @@ describe("QAPanel", () => {
       }
       throw new Error(`unexpected command: ${cmd}`);
     });
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
 
     useEditorStore.setState({
       activeSegmentSourceText: "星",
       activeSegmentTargetText: "   ",
     });
-    render(
-      <QueryClientProvider client={queryClient}>
-        <QAPanel />
-      </QueryClientProvider>,
-    );
+    renderWithQuery(<QAPanel />);
 
     expect(
       await screen.findByText(i18n.t("qaPanel.errors.empty_translation")),
@@ -84,18 +77,11 @@ describe("QAPanel", () => {
       }
       throw new Error(`unexpected command: ${cmd}`);
     });
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
     useEditorStore.setState({
       activeSegmentSourceText: "勇者",
       activeSegmentTargetText: "Champion",
     });
-    render(
-      <QueryClientProvider client={queryClient}>
-        <QAPanel />
-      </QueryClientProvider>,
-    );
+    renderWithQuery(<QAPanel />);
 
     expect(await screen.findByText(/Information/)).toBeInTheDocument();
     expect(qaArgs).toMatchObject({ segmentId: "s1", projectId: "p1" });

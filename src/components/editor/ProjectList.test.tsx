@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { renderWithQuery } from "@/test/renderWithQuery";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(async () => null),
@@ -14,14 +14,7 @@ import type { Project, ProjectStats } from "@/lib/types";
 const initialState = useProjectStore.getState();
 
 function renderList() {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  return render(
-    <QueryClientProvider client={client}>
-      <ProjectList />
-    </QueryClientProvider>,
-  );
+  return renderWithQuery(<ProjectList />);
 }
 
 function makeProject(id: string, name: string): Project {

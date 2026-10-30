@@ -5,6 +5,9 @@ export const DEFAULT_OLLAMA_URL = "http://localhost:11434/v1";
 export const DEFAULT_OLLAMA_MODEL = "gemma4:e4b";
 export const DEFAULT_BATCH_SIZE = 20;
 
+/** Save/open dialog filter of a `.h2s` exchange pack. */
+export const H2S_FILTER = { name: "Hoshi2Star pack", extensions: ["h2s"] };
+
 export const RESOURCE_PROFILES = [
   { id: "eco", batchSize: 8 },
   { id: "balanced", batchSize: DEFAULT_BATCH_SIZE },

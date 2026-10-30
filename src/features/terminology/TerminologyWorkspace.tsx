@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useState } from "react";
+import { useDeferredValue, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -23,7 +23,13 @@ import {
 import { useActiveProject } from "@/stores/project";
 import { useSettingsStore } from "@/stores/settings";
 import { useLlmStore } from "@/stores/llm";
-import type { TerminologyEntry, TerminologyScanProgress } from "@/lib/types";
+import type {
+  TerminologyEntry,
+  TerminologyScanDone,
+  TerminologyScanProgress,
+} from "@/lib/types";
+import { EVENTS } from "@/lib/events";
+import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { terminologyApi } from "./api";
 import { terminologyKeys } from "./queryKeys";
 import { ScanProgress } from "./ScanProgress";
@@ -101,31 +107,27 @@ export function TerminologyWorkspace() {
       terminologyApi.stats(sourceLanguage, targetLanguage, projectId),
   });
 
-  useEffect(() => {
-    const cleanup = Promise.all([
-      terminologyApi.onScanProgress((progress) => {
-        if (progress.projectId === activeProject?.id) setScanProgress(progress);
-      }),
-      terminologyApi.onScanDone((done) => {
-        if (done.projectId !== activeProject?.id) return;
-        setScanProgress(null);
-        void queryClient.invalidateQueries({ queryKey: terminologyKeys.all });
-        if (done.status === "failed")
-          toast.error(done.error ?? t("terminology.scanFailed"));
-        else
-          toast.success(
-            t(
-              done.status === "cancelled"
-                ? "terminology.scanCancelled"
-                : "terminology.scanDone",
-            ),
-          );
-      }),
-    ]);
-    return () => {
-      void cleanup.then((unlisten) => unlisten.forEach((fn) => fn()));
-    };
-  }, [activeProject?.id, queryClient, t]);
+  useTauriEvent<TerminologyScanProgress>(
+    EVENTS.terminologyScanProgress,
+    (progress) => {
+      if (progress.projectId === activeProject?.id) setScanProgress(progress);
+    },
+  );
+  useTauriEvent<TerminologyScanDone>(EVENTS.terminologyScanDone, (done) => {
+    if (done.projectId !== activeProject?.id) return;
+    setScanProgress(null);
+    void queryClient.invalidateQueries({ queryKey: terminologyKeys.all });
+    if (done.status === "failed")
+      toast.error(done.error ?? t("terminology.scanFailed"));
+    else
+      toast.success(
+        t(
+          done.status === "cancelled"
+            ? "terminology.scanCancelled"
+            : "terminology.scanDone",
+        ),
+      );
+  });
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: terminologyKeys.all });
