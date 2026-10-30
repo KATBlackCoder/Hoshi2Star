@@ -1,6 +1,6 @@
 # Tasks — Hoshi2Star
 
-## Plan — FP : préfixe de visage Wolf `@N⏎` ancré en tête (2026-10-30, Claude) — VALIDÉ par l'utilisateur (« corrige @1 ») ; FP-1 à FP-6 faits en session cloud (branche `fix/wolf-face-prefix`, PR sans fusion) ; FP-7 à faire après la fusion
+## Plan — FP : préfixe de visage Wolf `@N⏎` ancré en tête (2026-10-30, Claude) — VALIDÉ par l'utilisateur (« corrige @1 ») ; FP-1 à FP-6 faits en session cloud, PR #33 fusionnée (`914d871`) ; FP-7 vérifié le 2026-10-30 — TERMINÉ
 
 **Défaut constaté (2026-10-30, app réelle, トロイメライ `CommonEvent.dat`).** Un message Wolf v3 commence par
 `@N⏎`, le numéro du portrait affiché. Ce préfixe n'est reconnu qu'en tête du message (`RE_FACE_PREFIX`,
@@ -78,7 +78,7 @@ suggestion TM appliquée à la main, anciennes traductions).
   dans des fichiers non touchés) ; `pnpm test` 195/195 (42 fichiers). PR vers `main`, sans fusion.
   Plan d'origine : `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test`,
   `pnpm typecheck`, `pnpm lint`, `pnpm test`. Branche `fix/wolf-face-prefix` et PR vers `main`, sans fusion.
-- [ ] **FP-7 — Essai réel (Claude en local, pont MCP, après fusion).**
+- [x] **FP-7 — Essai réel (Claude en local, pont MCP, après fusion).** Fait le 2026-10-30 : lignes 2 à 4 de `CommonEvent.dat` retraduites par Ollama `gemma4:e4b`. Les trois cibles commencent par `@1⏎`, sans autre `@N⏎` dans le texte. QA à 100, 90 et 90 : les 10 points perdus viennent d'une ligne trop large, aucune erreur de préfixe. Les lignes ont été remises vides (12 423 « untranslated »), et la TM est inchangée (6 entrées, en lecture seule). L'app a été compilée par l'utilisateur avec `CARGO_BUILD_JOBS=2`, sans gel.
   - Retraduire les lignes 2 à 4 de `CommonEvent.dat` (トロイメライ) : chaque cible doit commencer par `@1⏎`,
     avec une QA cohérente.
   - Remettre les lignes vides.
