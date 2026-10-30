@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use crate::engines::wolf::layout::is_fitted_key;
+use crate::engines::wolf::layout::text::split_face_prefix;
 use crate::engines::wolf::line_breaks::{self, LinePlan};
 
 // ---------------------------------------------------------------------------
@@ -172,18 +173,29 @@ pub struct Tokenized {
     /// Source lines per block when soft line breaks were joined
     /// ([`Engine::WolfMessage`]): the response is broken again on restore.
     pub line_plan: Option<LinePlan>,
+    /// Leading Wolf face prefix `@N\n` ([`Engine::Wolf`],
+    /// [`Engine::WolfMessage`]), empty if none. The engine reads it only as
+    /// the first characters of a message, so it is never sent to the LLM
+    /// (which could move it): it is put back in front on restore (plan FP).
+    pub face_prefix: String,
 }
 
 impl Tokenized {
     /// [`Tokenizer::restore`], then, for a Wolf message whose soft line breaks
     /// were joined, break each block again into its source's number of lines
-    /// (plan WR-E6).
+    /// (plan WR-E6), and finally put the face prefix back in front (plan FP).
+    /// An empty response stays empty: the prefix alone is no translation, and
+    /// the pipeline must still see the segment as failed.
     pub fn restore(&self, response: &str) -> Result<String, TokenizerError> {
         let restored = Tokenizer::restore(response, &self.map)?;
-        Ok(match &self.line_plan {
+        let body = match &self.line_plan {
             Some(plan) => line_breaks::rebreak(&restored, plan),
             None => restored,
-        })
+        };
+        if body.trim().is_empty() {
+            return Ok(body);
+        }
+        Ok(format!("{}{body}", self.face_prefix))
     }
 }
 
@@ -213,11 +225,20 @@ impl Tokenizer {
     /// visible to the LLM and gets translated. The engine regex then tokenizes
     /// everything else, including codes nested inside the name box.
     ///
+    /// For Wolf, the leading face prefix `@N\n` is detached first and kept in
+    /// [`Tokenized::face_prefix`]: everything below only sees the body, and
+    /// the LLM never sees the prefix (plan FP).
+    ///
     /// Returns a `Tokenized` value containing the modified text and the
     /// token→original map needed for `restore`.
     pub fn tokenize(text: &str, engine: Engine) -> Tokenized {
         let mut map = PlaceholderMap::new();
         let mut counter = 0usize;
+
+        let (face_prefix, text) = match engine {
+            Engine::Wolf | Engine::WolfMessage => split_face_prefix(text),
+            Engine::MvMz | Engine::MzOnly => ("", text),
+        };
 
         // Structural edge decoration belongs to the game UI, not to the word
         // being translated. Protect it exactly like an engine placeholder so
@@ -272,6 +293,7 @@ impl Tokenizer {
             text: tokenized_text,
             map,
             line_plan: soft.map(|soft| soft.plan),
+            face_prefix: face_prefix.to_string(),
         }
     }
 
@@ -524,8 +546,10 @@ mod tests {
     fn wolf_message_joins_soft_line_breaks_and_breaks_the_response_again() {
         let source = "@4\n釣りを行いたい場合は水場に面して\n「決定ボタン」を押す事で\\c[2]竿\\c[0]を振れるぞ！";
         let tokenized = Tokenizer::tokenize(source, Engine::WolfMessage);
-        // Face prefix and colour codes are tokens; the soft break is not.
-        assert_eq!(tokenized.map.len(), 3);
+        // Colour codes are tokens; the soft break is not, and the face prefix
+        // is kept aside (plan FP).
+        assert_eq!(tokenized.map.len(), 2);
+        assert_eq!(tokenized.face_prefix, "@4\n");
         assert!(!tokenized.map.values().any(|original| original == "\n"));
         assert!(!tokenized.text.contains('\n'));
         assert!(tokenized.text.contains("面して「決定"));
@@ -563,6 +587,88 @@ mod tests {
             .unwrap();
         assert_eq!(restored.split('\n').count(), 3, "{restored}");
         assert!(restored.starts_with("Gyoin:\n"));
+    }
+
+    #[test]
+    fn wolf_face_prefix_is_never_sent_to_the_llm() {
+        // Real case of plan FP: the LLM moved `@1⏎` inside the quotes.
+        let source = "@1\n「\\cself[8]」\nを失った。";
+        for engine in [Engine::Wolf, Engine::WolfMessage] {
+            let tokenized = Tokenizer::tokenize(source, engine);
+            assert_eq!(tokenized.face_prefix, "@1\n", "{engine:?}");
+            assert!(
+                !tokenized.text.contains('@'),
+                "{engine:?}: {}",
+                tokenized.text
+            );
+            assert!(
+                !tokenized
+                    .map
+                    .values()
+                    .any(|original| original.contains('@')),
+                "{engine:?}: {:?}",
+                tokenized.map
+            );
+            assert!(tokenized.text.starts_with("「⟦ph_0⟧」"), "{engine:?}");
+        }
+    }
+
+    #[test]
+    fn wolf_face_prefix_is_put_back_in_front_of_the_response() {
+        let tokenized = Tokenizer::tokenize("@1\n「\\cself[8]」を失った。", Engine::WolfMessage);
+        assert_eq!(
+            tokenized.restore("Lost 「⟦ph_0⟧」.").unwrap(),
+            "@1\nLost 「\\cself[8]」."
+        );
+        let two_digits = Tokenizer::tokenize("@10\nテキスト", Engine::WolfMessage);
+        assert_eq!(two_digits.face_prefix, "@10\n");
+        assert_eq!(two_digits.text, "テキスト");
+        assert!(two_digits.map.is_empty());
+        assert_eq!(two_digits.restore("Text").unwrap(), "@10\nText");
+        // An empty answer is not turned into a bare prefix.
+        assert_eq!(two_digits.restore("").unwrap(), "");
+        assert_eq!(two_digits.restore("  ").unwrap(), "  ");
+    }
+
+    #[test]
+    fn wolf_face_prefix_comes_before_the_rebroken_lines() {
+        let source = "@2\n魚淫さん：\n俺君、本格的に行動に移す前に、\n確か…この道を進んだ";
+        let tokenized = Tokenizer::tokenize(source, Engine::WolfMessage);
+        assert_eq!(tokenized.face_prefix, "@2\n");
+        // Only the label break stays mandatory; the soft one is joined.
+        assert_eq!(tokenized.map.len(), 1);
+        assert_eq!(tokenized.map.get("⟦ph_0⟧").unwrap(), "\n");
+        assert!(tokenized.line_plan.is_some());
+        let restored = tokenized
+            .restore("Gyoin:⟦ph_0⟧Kid, before you really get moving, if I remember right…")
+            .unwrap();
+        let lines: Vec<&str> = restored.split('\n').collect();
+        assert_eq!(lines.len(), 4, "{restored}");
+        assert_eq!(lines[0], "@2");
+        assert_eq!(lines[1], "Gyoin:");
+    }
+
+    #[test]
+    fn wolf_face_prefix_detached_before_edge_protection() {
+        // The body's edge decoration is now protected like any other.
+        let tokenized = Tokenizer::tokenize("@1\n-----エネミー", Engine::Wolf);
+        assert_eq!(tokenized.face_prefix, "@1\n");
+        assert_eq!(tokenized.map.get("⟦ph_0⟧").unwrap(), "-----");
+        assert_eq!(tokenized.text, "⟦ph_0⟧エネミー");
+        assert_eq!(tokenized.restore("⟦ph_0⟧Enemy").unwrap(), "@1\n-----Enemy");
+    }
+
+    #[test]
+    fn messages_without_face_prefix_are_unchanged() {
+        let wolf = Tokenizer::tokenize("テキスト\nつぎの行", Engine::Wolf);
+        assert!(wolf.face_prefix.is_empty());
+        assert_eq!(wolf.text, "テキスト⟦ph_0⟧つぎの行");
+        assert_eq!(wolf.restore(&wolf.text).unwrap(), "テキスト\nつぎの行");
+        // `@N⏎` means nothing outside Wolf: MV/MZ keeps it in the text.
+        let mv = Tokenizer::tokenize("@2\nHello", Engine::MvMz);
+        assert!(mv.face_prefix.is_empty());
+        assert_eq!(mv.text, "@2⟦ph_0⟧Hello");
+        assert_eq!(mv.restore(&mv.text).unwrap(), "@2\nHello");
     }
 
     #[test]

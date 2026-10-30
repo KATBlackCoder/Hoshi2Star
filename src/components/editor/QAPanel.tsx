@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 function errorIcon(error: QaErrorType) {
   switch (error.type) {
     case "missing_placeholder":
+    case "misplaced_face_prefix":
       return <AlertTriangle className="h-3 w-3 text-red-400 shrink-0" />;
     case "empty_translation":
     case "unchanged_source":
@@ -60,6 +61,16 @@ function errorIcon(error: QaErrorType) {
   }
 }
 
+/** Same cases as `QaError::MisplacedFacePrefix` labels in `core/qa.rs`. */
+function facePrefixCase({
+  expected,
+  found,
+}: Extract<QaErrorType, { type: "misplaced_face_prefix" }>) {
+  if (found === "") return "missing";
+  if (expected === "") return "unexpected";
+  return expected === found ? "moved" : "wrong";
+}
+
 function errorLabel(
   error: QaErrorType,
   t: (key: string, opts?: Record<string, unknown>) => string,
@@ -69,6 +80,14 @@ function errorLabel(
       return t("qaPanel.errors.missing_placeholder", {
         name: error.placeholder,
       });
+    case "misplaced_face_prefix":
+      return t(
+        `qaPanel.errors.misplaced_face_prefix.${facePrefixCase(error)}`,
+        {
+          expected: error.expected,
+          found: error.found,
+        },
+      );
     case "line_too_long":
       return t("qaPanel.errors.line_too_long", {
         line: error.line,

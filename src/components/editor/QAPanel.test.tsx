@@ -114,3 +114,50 @@ describe("QAPanel — score ring (audit F1)", () => {
     expect(await screen.findByText("72")).toHaveClass("text-yellow-400");
   });
 });
+
+describe("QAPanel — Wolf face prefix (plan FP)", () => {
+  it.each([
+    ["@1", "", "missing"],
+    ["@1", "@1", "moved"],
+    ["@1", "@2", "wrong"],
+    ["", "@3", "unexpected"],
+  ])(
+    "labels expected %j / found %j as %s, in red",
+    async (expected, found, labelCase) => {
+      mockIPC((cmd) => {
+        if (cmd === "get_qa_report") {
+          return {
+            totalSegments: 1,
+            okCount: 0,
+            errorCount: 1,
+            criticalCount: 1,
+            errorsByType: { misplaced_face_prefix: 1 },
+          };
+        }
+        if (cmd === "qa_check_segment") {
+          return {
+            score: 75,
+            errors: [{ type: "misplaced_face_prefix", expected, found }],
+          };
+        }
+        throw new Error(`unexpected command: ${cmd}`);
+      });
+      useEditorStore.setState({
+        activeSegmentSourceText: "@1\n「\\cself[8]」を失った。",
+        activeSegmentTargetText: "Lost \\cself[8]「@1\n」.",
+      });
+      renderWithQuery(<QAPanel />);
+
+      const label = await screen.findByText(
+        i18n.t(`qaPanel.errors.misplaced_face_prefix.${labelCase}`, {
+          expected,
+          found,
+        }),
+      );
+      expect(label.textContent).toContain(expected || found);
+      expect(label.parentElement?.querySelector("svg")).toHaveClass(
+        "text-red-400",
+      );
+    },
+  );
+});

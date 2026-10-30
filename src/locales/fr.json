@@ -244,6 +244,7 @@
     "empty": "Traduction vide",
     "qaError": {
       "missing_placeholder": "Code manquant",
+      "misplaced_face_prefix": "Préfixe de visage",
       "missing_format_specifier": "Valeur manquante",
       "line_too_long": "Ligne trop longue",
       "bom_detected": "BOM détecté",
@@ -350,6 +351,12 @@
     "exportError": "Échec de l'export : {{error}}",
     "errors": {
       "missing_placeholder": "Placeholder manquant : {{name}}",
+      "misplaced_face_prefix": {
+        "missing": "Préfixe de visage {{expected}} absent du début du message",
+        "moved": "Préfixe de visage {{expected}} déplacé : il doit ouvrir le message",
+        "wrong": "Préfixe de visage {{found}} au lieu de {{expected}}",
+        "unexpected": "Préfixe de visage {{found}} absent de la source"
+      },
       "missing_format_specifier": "Valeur {{name}} manquante : le jeu affiche le message sans elle",
       "line_too_long": "Ligne {{line}} trop large ({{units}} / {{maxUnits}} unités — {{chars}} caractères)",
       "bom_detected": "BOM UTF-8 détecté en début de cible",
@@ -792,6 +799,7 @@
       "unchanged_source": "identique à la source",
       "source_script_remaining": "langue source restante",
       "missing_placeholder": "placeholder manquant",
+      "misplaced_face_prefix": "préfixe de visage",
       "suspicious_expansion": "expansion suspecte",
       "inconsistent_repeated_source": "traductions incohérentes",
       "terminology_mismatch": "terminologie",

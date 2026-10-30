@@ -244,6 +244,7 @@
     "empty": "Empty translation",
     "qaError": {
       "missing_placeholder": "Missing code",
+      "misplaced_face_prefix": "Face prefix",
       "missing_format_specifier": "Missing value",
       "line_too_long": "Line too long",
       "bom_detected": "BOM detected",
@@ -350,6 +351,12 @@
     "exportError": "Export failed: {{error}}",
     "errors": {
       "missing_placeholder": "Missing placeholder: {{name}}",
+      "misplaced_face_prefix": {
+        "missing": "Face prefix {{expected}} missing at the start of the message",
+        "moved": "Face prefix {{expected}} out of place: it must open the message",
+        "wrong": "Face prefix {{found}} instead of {{expected}}",
+        "unexpected": "Face prefix {{found}} not in the source"
+      },
       "missing_format_specifier": "Missing value {{name}}: the game shows the message without it",
       "line_too_long": "Line {{line}} too wide ({{units}} / {{maxUnits}} units — {{chars}} chars)",
       "bom_detected": "UTF-8 BOM detected at start of target",
@@ -792,6 +799,7 @@
       "unchanged_source": "same as source",
       "source_script_remaining": "source language left",
       "missing_placeholder": "missing placeholder",
+      "misplaced_face_prefix": "face prefix",
       "suspicious_expansion": "suspicious expansion",
       "inconsistent_repeated_source": "inconsistent translations",
       "terminology_mismatch": "terminology",
