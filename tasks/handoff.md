@@ -52,7 +52,13 @@
   - date relative « Hier » en français (F6).
   - Non vérifiables sur ce projet : les couleurs QA (aucun segment n'a de score).
   - Console : un avertissement Radix `DialogContent requires a DialogTitle` à l'ouverture des réglages. `SettingsModal.tsx` n'a pas été modifié par les lots : il était déjà là.
-- **Reste, avec écriture en base** : saisie d'une cible + Tab (rapport QA 1,5 s après), traduction LLM de 3 ou 4 segments, resync, import d'un pack. Ces étapes attendent l'accord de l'utilisateur, car elles écrivent aussi dans la TM globale.
+- **Étapes avec écriture en base** (accord de l'utilisateur le 2026-10-30, sans sauvegarde), avec les appels relevés en interceptant `fetch` dans la page :
+  - sauvegarde d'une cible → `update_segment`, puis **un seul `get_qa_report` 1 567 ms plus tard** ;
+  - traduction LLM de 3 segments (Ollama `gemma4:e4b`) → pas d'écran « Chargement », grille non démontée, position conservée (240 px), scores QA à 100. Après la fin du run : un seul rechargement en arrière-plan (7 pages de `get_segments`), un `get_source_files` et un `get_qa_report`.
+  - Les 4 segments touchés (lignes 1 à 4 de `CommonEvent.dat`, トロイメライ) ont été remis vides (« Non traduit »).
+  - **Reste en TM une entrée de test** : `3efb1c82-cb1b-4101-9eed-04cd3ba4282d` (`@1「\cself[8]」を手に入れた。` → `@1 Got [test]`). Le run LLM n'a rien ajouté à la TM. Suppression seulement avec l'accord de l'utilisateur.
+  - Non testés dans l'app : le resync (accessible seulement depuis la fenêtre d'intégrité d'export, quand le jeu a changé) et l'import d'un pack (sélecteur de fichiers natif, aucun pack disponible). Ils restent couverts par les tests Vitest du cloud.
+  - Observation hors lots : la traduction LLM a déplacé le marqueur `@1` (« Lost \cself[8]「@1⏎」. »), et la QA a quand même donné 100. Qualité de traduction Wolf, à examiner à part.
 - **Prochaine action (utilisateur, en local) :** essai de 5 minutes avec `pnpm tauri:linux` (liste dans `docs/journal/2026-10-29-fe-lots.md`). Décisions encore ouvertes : la définition de « QA critique » (backend par type d'erreur, front au seuil de 70) ; deux textes de terminologie hors i18n ; le format « 4.2s » des durées du pilote ; les branches `perf/bench-grid` et `chore/deps-minor`.
 
 ## En cours (2026-10-29, Claude) — WF : skipper les textes Wolf non traduisibles
