@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { getProjectLangPair } from "@/stores/project";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
@@ -31,6 +32,7 @@ import type {
 interface PackImportWizardProps {
   projectId: string;
   packPath: string;
+  /** Defaults to the project's own pair. */
   langPair?: string;
   /** Dry-run result — already fetched by the caller before opening. */
   preview: ImportPreview;
@@ -81,7 +83,7 @@ export function PackImportWizard({
   projectId,
   packPath,
   preview,
-  langPair = "ja-en",
+  langPair = getProjectLangPair(projectId),
   onClose,
 }: PackImportWizardProps) {
   const { t } = useTranslation();

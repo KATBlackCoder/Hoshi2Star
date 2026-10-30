@@ -87,3 +87,30 @@ describe("QAPanel", () => {
     expect(qaArgs).toMatchObject({ segmentId: "s1", projectId: "p1" });
   });
 });
+
+describe("QAPanel — score ring (audit F1)", () => {
+  it("shows a score above the critical cut as a warning", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "get_qa_report") {
+        return {
+          totalSegments: 1,
+          okCount: 0,
+          errorCount: 1,
+          criticalCount: 0,
+          errorsByType: {},
+        };
+      }
+      if (cmd === "qa_check_segment") {
+        return { score: 72, errors: [{ type: "bom_detected" }] };
+      }
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+    useEditorStore.setState({
+      activeSegmentSourceText: "星",
+      activeSegmentTargetText: "étoile",
+    });
+    renderWithQuery(<QAPanel />);
+
+    expect(await screen.findByText("72")).toHaveClass("text-yellow-400");
+  });
+});

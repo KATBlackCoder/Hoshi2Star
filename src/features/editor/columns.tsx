@@ -10,6 +10,7 @@ import { useActiveEngine } from "@/stores/project";
 import { cn } from "@/lib/utils";
 import { getPlaceholderRegex } from "@/lib/constants";
 import { buildHighlightedNodes } from "@/lib/highlight-utils";
+import { qaScoreLevel, type QaScoreLevel } from "@/lib/qaScore";
 import { Play } from "lucide-react";
 
 declare module "@tanstack/react-table" {
@@ -74,6 +75,13 @@ export const StatusBadge = memo(function StatusBadge({
     </span>
   );
 });
+
+/** Same cuts as the QA filters of the grid: a score with a finding is never green. */
+const QA_SCORE_COLORS: Record<QaScoreLevel, string> = {
+  ok: "text-green-400",
+  warning: "text-yellow-400",
+  critical: "text-red-400",
+};
 
 // ---------------------------------------------------------------------------
 // Editable target cell
@@ -277,11 +285,7 @@ export function createSegmentColumns(
           <span
             className={cn(
               "text-xs tabular-nums font-medium",
-              score >= 80
-                ? "text-green-400"
-                : score >= 50
-                  ? "text-yellow-400"
-                  : "text-red-400",
+              QA_SCORE_COLORS[qaScoreLevel(score)],
             )}
           >
             {score}

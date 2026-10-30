@@ -151,7 +151,8 @@
       "translating": "Traduction…",
       "done_one": "{{count}} terme traduit",
       "done_other": "{{count}} termes traduits"
-    }
+    },
+    "scanProgressLabel": "Progression de l’analyse"
   },
   "inspector": {
     "title": "Inspecteur de traduction",
@@ -456,7 +457,8 @@
     "exportError": "Erreur export : {{error}}",
     "wolfArchivePresent": "Export impossible : une archive Wolf RPG contenant des textes (Data.wolf, MapData.wolf ou BasicData.wolf) est encore dans le dossier du jeu, qui la lirait à la place des traductions. Rien n'a été écrit.",
     "wolfNoDatabase": "Export impossible : aucune base de données Wolf RPG lisible dans Data/BasicData pour connaître l'encodage du jeu. Rien n'a été écrit.",
-    "wolfUnreadableFiles": "Export impossible : des cartes ou des événements communs Wolf RPG n'ont pas pu être lus. Rien n'a été écrit."
+    "wolfUnreadableFiles": "Export impossible : des cartes ou des événements communs Wolf RPG n'ont pas pu être lus. Rien n'a été écrit.",
+    "translateAllError": "Impossible de préparer « Tout traduire » : {{error}}"
   },
   "project": {
     "restored": "Projet restauré — reprise de la traduction",
@@ -830,5 +832,13 @@
     "confirm": "Créer le zip de debug",
     "success": "Export de debug créé",
     "successDesc": "{{path}} — {{exported}} traduits exportés, {{untranslated}} non traduits et {{skipped}} en erreur critique laissés d’origine."
+  },
+  "relativeDate": {
+    "today": "Aujourd’hui",
+    "yesterday": "Hier",
+    "days": "il y a {{count}} j",
+    "months": "il y a {{count}} mois",
+    "years_one": "il y a {{count}} an",
+    "years_other": "il y a {{count}} ans"
   }
 }

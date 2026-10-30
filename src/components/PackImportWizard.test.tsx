@@ -12,7 +12,8 @@ vi.mock("sonner", () => ({
 }));
 
 import { PackImportWizard } from "@/components/PackImportWizard";
-import type { ImportPreview, ImportReport } from "@/lib/types";
+import type { ImportPreview, ImportReport, Project } from "@/lib/types";
+import { useProjectStore } from "@/stores/project";
 
 function makePreview(overrides: Partial<ImportPreview> = {}): ImportPreview {
   return {
@@ -176,5 +177,43 @@ describe("PackImportWizard", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/wolf/)).toBeInTheDocument();
     expect(screen.queryByText("Appliquer")).not.toBeInTheDocument();
+  });
+});
+
+describe("PackImportWizard — language pair (audit F4)", () => {
+  it("applies with the project's own language pair", async () => {
+    useProjectStore.setState({
+      projects: [
+        {
+          id: "p1",
+          name: "Jeu",
+          engine: "mv_mz",
+          gamePath: "/tmp/p1",
+          sourceLang: "ja",
+          targetLang: "de",
+          createdAt: "",
+          updatedAt: "",
+        } as Project,
+      ],
+    });
+    const invoked: Array<{ cmd: string; args: unknown }> = [];
+    mockIPC((cmd, args) => {
+      invoked.push({ cmd, args });
+      if (cmd === "apply_h2s_import") return report;
+      return null;
+    });
+
+    render(
+      <PackImportWizard
+        projectId="p1"
+        packPath="/tmp/pack.h2s"
+        preview={makePreview()}
+        onClose={() => {}}
+      />,
+    );
+    await userEvent.click(screen.getByText("Appliquer"));
+
+    const apply = invoked.find((c) => c.cmd === "apply_h2s_import");
+    expect(apply?.args).toMatchObject({ langPair: "ja-de" });
   });
 });

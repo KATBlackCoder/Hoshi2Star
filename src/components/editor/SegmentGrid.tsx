@@ -23,8 +23,9 @@ import {
 } from "@/stores/llm";
 import { createSegmentColumns, StatusBadge } from "@/features/editor/columns";
 import type { PaginatedSegments, Segment, SegmentUpdate } from "@/lib/types";
-import { invalidateSegmentViews } from "@/lib/queryClient";
+import { invalidateAfterSegmentSave } from "@/lib/queryClient";
 import { cancelFrame, EVENTS, scheduleFrame } from "@/lib/events";
+import { qaScoreLevel } from "@/lib/qaScore";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
 import { cn } from "@/lib/utils";
 import { Play, RefreshCw } from "lucide-react";
@@ -75,6 +76,8 @@ export function SegmentGrid() {
   // Monotonic sequence: a load started for a file the user has already left
   // must not overwrite the segments of the newly opened file.
   const loadSeqRef = useRef(0);
+  // Rows saved while a load is in flight: its snapshot may predate them.
+  const savedDuringLoadRef = useRef<Map<string, Segment> | null>(null);
   const pendingUpdatesRef = useRef(new Map<string, SegmentUpdate>());
   const updateFrameRef = useRef<number | null>(null);
 
@@ -82,6 +85,7 @@ export function SegmentGrid() {
   const loadSegments = useCallback(
     (projectId: string, fileId: string, inPlace = false) => {
       const seq = ++loadSeqRef.current;
+      savedDuringLoadRef.current = new Map();
       if (!inPlace) setIsLoading(true);
       setLoadError(null);
       void (async () => {
@@ -102,14 +106,22 @@ export function SegmentGrid() {
             all.push(...result.items);
             if (all.length >= result.total || result.items.length === 0) break;
           }
-          setSegments(all);
+          const saved = savedDuringLoadRef.current;
+          setSegments(
+            saved && saved.size > 0
+              ? all.map((segment) => saved.get(segment.id) ?? segment)
+              : all,
+          );
         } catch (error) {
           if (seq === loadSeqRef.current) {
             setSegments([]);
             setLoadError(String(error));
           }
         } finally {
-          if (seq === loadSeqRef.current) setIsLoading(false);
+          if (seq === loadSeqRef.current) {
+            setIsLoading(false);
+            savedDuringLoadRef.current = null;
+          }
         }
       })();
     },
@@ -132,6 +144,17 @@ export function SegmentGrid() {
       updateFrameRef.current = null;
     }
   }, []);
+
+  // A segment opened by id only (text-fit dialog: it has no texts) gets its
+  // texts once its row is loaded, for the QA and TM panels.
+  useEffect(() => {
+    if (!activeSegmentId) return;
+    if (useEditorStore.getState().activeSegmentSourceText !== null) return;
+    const segment = segments.find((s) => s.id === activeSegmentId);
+    if (segment) {
+      setActiveSegment(segment.id, segment.sourceText, segment.targetText);
+    }
+  }, [activeSegmentId, segments, setActiveSegment]);
 
   // Reset filter + selection when switching files
   useEffect(() => {
@@ -156,14 +179,12 @@ export function SegmentGrid() {
     switch (qaFilter) {
       case "errors":
         result = result.filter(
-          (s) =>
-            s.qaScore !== null && s.qaScore !== undefined && s.qaScore < 100,
+          (s) => s.qaScore != null && qaScoreLevel(s.qaScore) !== "ok",
         );
         break;
       case "critical":
         result = result.filter(
-          (s) =>
-            s.qaScore !== null && s.qaScore !== undefined && s.qaScore < 70,
+          (s) => s.qaScore != null && qaScoreLevel(s.qaScore) === "critical",
         );
         break;
       case "untranslated":
@@ -241,7 +262,8 @@ export function SegmentGrid() {
         setSegments((prev) =>
           prev.map((s) => (s.id === updated.id ? updated : s)),
         );
-        invalidateSegmentViews();
+        savedDuringLoadRef.current?.set(updated.id, updated);
+        invalidateAfterSegmentSave();
         if (id === activeSegmentIdRef.current) {
           setActiveSegment(id, updated.sourceText, updated.targetText);
         }

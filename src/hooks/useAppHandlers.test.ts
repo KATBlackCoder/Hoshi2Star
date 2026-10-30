@@ -9,6 +9,7 @@ vi.mock("sonner", () => ({
 import { toast } from "sonner";
 import { integrityIssuesOf, useAppHandlers } from "@/hooks/useAppHandlers";
 import { useProjectStore } from "@/stores/project";
+import i18n from "@/lib/i18n";
 import type {
   DebugExport,
   ExportPreflight,
@@ -54,6 +55,7 @@ const INTEGRITY_ERROR =
 
 interface MockOptions {
   untranslated: number;
+  statsError?: string;
   preflight?: ExportPreflight | Error;
   exportResult?: string | Error;
   debugResult?: DebugExport | Error;
@@ -64,6 +66,7 @@ interface MockOptions {
  * `export_debug_project` call, with the command name. */
 function mockBackend({
   untranslated,
+  statsError,
   preflight,
   exportResult,
   debugResult,
@@ -73,6 +76,7 @@ function mockBackend({
   mockIPC((cmd, args) => {
     switch (cmd) {
       case "get_project_stats":
+        if (statsError) throw statsError;
         return statsWith(untranslated);
       case "get_text_fit":
         if (!fit) throw new Error("text fitting not mocked");
@@ -299,5 +303,21 @@ describe("useAppHandlers — debug export (developer tool)", () => {
 
     expect(toast.error).toHaveBeenCalledTimes(1);
     expect(result.current.isExporting).toBe(false);
+  });
+});
+
+describe("useAppHandlers — Translate all (audit F2)", () => {
+  it("reports a failure to prepare the run, not an export error", async () => {
+    mockBackend({ untranslated: 0, statsError: "db locked" });
+    const { result } = renderHook(() => useAppHandlers());
+
+    await act(async () => {
+      await result.current.handleTranslateAll();
+    });
+
+    expect(toast.error).toHaveBeenCalledWith(
+      i18n.t("toasts.translateAllError", { error: "db locked" }),
+    );
+    expect(result.current.showTranslateAll).toBe(false);
   });
 });

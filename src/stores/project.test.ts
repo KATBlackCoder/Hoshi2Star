@@ -14,6 +14,7 @@ vi.mock("sonner", () => ({
 }));
 
 import {
+  getProjectLangPair,
   openProject,
   loadAllProjects,
   useProjectStore,
@@ -290,5 +291,19 @@ describe("project store — loadAllProjects", () => {
     await loadAllProjects();
     const ids = useProjectStore.getState().projects.map((p) => p.id);
     expect(ids).toEqual(["p1", "p2"]);
+  });
+});
+
+describe("getProjectLangPair (audit F4: the single builder of the pair)", () => {
+  it("uses the project's languages, else the settings' defaults", () => {
+    useProjectStore.setState({ projects: [PROJECT] });
+    expect(getProjectLangPair(PROJECT.id)).toBe(
+      `${PROJECT.sourceLang}-${PROJECT.targetLang}`,
+    );
+    const { defaultSourceLang, defaultTargetLang } =
+      useSettingsStore.getState().settings;
+    expect(getProjectLangPair(null)).toBe(
+      `${defaultSourceLang}-${defaultTargetLang}`,
+    );
   });
 });
