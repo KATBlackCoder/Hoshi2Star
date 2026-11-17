@@ -119,33 +119,16 @@ where
                 Err(LlmError::ResponseFormat(_)) => {
                     metrics.response_format_retries += 1;
                     if indices.len() > 1 {
-                        metrics.recursive_splits += 1;
-                        let mid = indices.len() / 2;
-                        let left = indices[..mid].to_vec();
-                        let right = indices[mid..].to_vec();
-                        let left_outcome = llm_translate_with_split(
-                            left,
+                        return split_in_halves(
+                            &indices,
                             tokenized,
                             provider,
                             context,
                             db,
                             segment_ids,
+                            metrics,
                         )
-                        .await?;
-                        let right_outcome = llm_translate_with_split(
-                            right,
-                            tokenized,
-                            provider,
-                            context,
-                            db,
-                            segment_ids,
-                        )
-                        .await?;
-                        metrics.merge(left_outcome.metrics);
-                        metrics.merge(right_outcome.metrics);
-                        let mut results = left_outcome.results;
-                        results.extend(right_outcome.results);
-                        return Ok(SplitOutcome { results, metrics });
+                        .await;
                     } else {
                         log::warn!(
                             "[h2s] single-segment ResponseFormat after {} attempts — \
@@ -192,33 +175,16 @@ where
             metrics.placeholder_retries += 1;
             if attempt >= MAX_RETRIES {
                 if indices.len() > 1 {
-                    metrics.recursive_splits += 1;
-                    let mid = indices.len() / 2;
-                    let left = indices[..mid].to_vec();
-                    let right = indices[mid..].to_vec();
-                    let left_outcome = llm_translate_with_split(
-                        left,
+                    return split_in_halves(
+                        &indices,
                         tokenized,
                         provider,
                         context,
                         db,
                         segment_ids,
+                        metrics,
                     )
-                    .await?;
-                    let right_outcome = llm_translate_with_split(
-                        right,
-                        tokenized,
-                        provider,
-                        context,
-                        db,
-                        segment_ids,
-                    )
-                    .await?;
-                    metrics.merge(left_outcome.metrics);
-                    metrics.merge(right_outcome.metrics);
-                    let mut results = left_outcome.results;
-                    results.extend(right_outcome.results);
-                    return Ok(SplitOutcome { results, metrics });
+                    .await;
                 } else {
                     log::warn!(
                         "[h2s] single-segment placeholder failure after {} attempts — \
@@ -243,4 +209,33 @@ where
             metrics,
         })
     })
+}
+
+/// Translate each half of `indices` on its own (recursively) and merge the
+/// halves' results and metrics into `metrics`. Counts one recursive split.
+async fn split_in_halves<P>(
+    indices: &[usize],
+    tokenized: &[Tokenized],
+    provider: &P,
+    context: &TranslationContext,
+    db: &SqlitePool,
+    segment_ids: &[String],
+    mut metrics: PipelineBatchMetrics,
+) -> Result<SplitOutcome, LlmError>
+where
+    P: LlmProvider,
+{
+    metrics.recursive_splits += 1;
+    let mid = indices.len() / 2;
+    let left = indices[..mid].to_vec();
+    let right = indices[mid..].to_vec();
+    let left_outcome =
+        llm_translate_with_split(left, tokenized, provider, context, db, segment_ids).await?;
+    let right_outcome =
+        llm_translate_with_split(right, tokenized, provider, context, db, segment_ids).await?;
+    metrics.merge(left_outcome.metrics);
+    metrics.merge(right_outcome.metrics);
+    let mut results = left_outcome.results;
+    results.extend(right_outcome.results);
+    Ok(SplitOutcome { results, metrics })
 }
