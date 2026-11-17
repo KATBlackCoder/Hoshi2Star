@@ -10,6 +10,7 @@ use crate::domain::types::{QaReport, QaTerminologyIssue};
 use crate::engines::mv_mz::layout::message::is_fitted_segment;
 use crate::llm::context::{self, PromptContextClass};
 use crate::utils::text::escape_xml;
+use crate::utils::time::{civil_now, CivilTime};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
@@ -434,26 +435,14 @@ fn labels(lang: &str) -> Labels {
 
 /// Format current wall-clock time as "YYYY-MM-DD HH:MM:SS UTC" without external crates.
 fn unix_timestamp_to_date_str() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let sec = secs % 60;
-    let min = (secs / 60) % 60;
-    let hour = (secs / 3600) % 24;
-    let days = secs / 86400;
-    // Civil date from days since epoch (Gregorian)
-    let z = days + 719_468;
-    let era = z / 146_097;
-    let doe = z % 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let mon = if mp < 10 { mp + 3 } else { mp - 9 };
-    let yr = if mon <= 2 { y + 1 } else { y };
+    let CivilTime {
+        year: yr,
+        month: mon,
+        day: d,
+        hour,
+        minute: min,
+        second: sec,
+    } = civil_now();
     format!(
         "{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
         yr, mon, d, hour, min, sec
