@@ -1,5 +1,276 @@
 # Tasks — Hoshi2Star
 
+## Plan — DD : mise en commun des doublons, front et back (2026-11-17, Claude ; relu par Fable le 2026-11-17) — VALIDÉ par l'utilisateur le 2026-11-17 (DD-D1 à DD-D8 et points tranchés) ; exécution confiée à une session cloud
+
+**Source.** Audit `docs/audit/2026-11-17-audit-doublons.md` sur `main` @ `1f2b841` (numéros B*, C*, P*, F*, D*). Les
+`fichier:ligne` valent pour ce commit ; chemins Rust relatifs à `src-tauri/src/`, sauf mention. Objectif : remplacer
+le code répété par des fonctions communes que chaque usage adapte, en commençant par la mise en page du texte.
+
+**Exécution.** Préalable : audit, plan et brief (`docs/plans/2026-11-17-brief-cloud-dd.md`) poussés sur `main`. Une
+session cloud (Fable) enchaîne les lots jusqu'aux PR, sans fusion ; Claude vérifie en local (section V) ;
+l'utilisateur fusionne. Aucun build ni test sur le poste de l'utilisateur (leçons des 2026-10-25 et 2026-10-30).
+
+### Décisions (DD-D1 à DD-D8 : recommandations validées par l'utilisateur le 2026-11-17)
+
+- **DD-D1 — Ordre et branches.** Deux chaînes empilées : le premier lot vise `main`, chaque PR suivante la branche du
+  lot précédent.
+  - Back : **L4 → L2 → L1 → L5 → L3**. L4 d'abord : `debug_inject_file` appelle `fitted_lines`, `split_fitted` et
+    `with_font_prefix` (`commands/export.rs:1415-1432`) ; la supprimer évite à L1 d'adapter un appel mort. Ces trois
+    fonctions restent (`write_export` les appelle). L2 est court et sûr. L5 suit L1, qui retire déjà des
+    comparaisons de moteur. L3 suit L2, qui touche aussi `engines/wolf/extractor.rs` (B5).
+  - Front : **L6 → L7**. Aucun fichier de code en commun avec la chaîne back ; seul `CHANGELOG.md` est modifié par
+    les deux (L4, L6) : petit conflit possible à la fusion.
+- **DD-D2 — Comportement.** Aucun changement, sauf deux exceptions voulues : la commande `debug_inject_file` disparaît
+  (L4) ; aux 24 sites F1 du front (L6-1), le texte affiché d'une erreur de type `Error` ne commence plus par
+  « Error: » (le toast de la terminologie en est l'exemple visible). Les messages d'erreur renvoyés par le back
+  restent identiques (`src/lib/projectError.ts` en lit certains). (Point tranché 3.)
+- **DD-D3 — Tests existants.** Aucun test existant modifié ni supprimé, lignes `use` comprises. Tout élément déplacé
+  que des tests importent ou écrivent en entier garde un `pub use` à son ancien chemin dans `engines/mv_mz/layout/`
+  (`fit.rs`, `font.rs`, `plan.rs`…) : par exemple `tests/text_fit.rs:19-20`, `tests/real_game_coverage.rs:61-62`,
+  `:102-109`, et `tests/e2e_project_flow.rs:1177`, qui écrit `…::mv_mz::layout::fit::Overflow::NewPage` hors ligne
+  `use`. Ajouter des tests est permis et attendu. (Point tranché 4.)
+- **DD-D4 — Champs `wolf_*` des réglages.** Gardés tels quels dans `TextFitSettings` et en base, lus par l'adaptateur
+  Wolf. Aucun changement d'IPC ; `TextFitDialog.tsx` n'est pas touché par L1.
+- **DD-D5 — Forme du `TextBox`.** Trait à dispatch **statique** (génériques, pas de `dyn`), adaptateur choisi par un
+  seul `match` sur le moteur dans la couche commande. Compatible avec ADR-006, qui rejette les objets-trait pour le
+  dispatch moteur. Nouvel ADR-009.
+- **DD-D6 — Hors chantier.** B2 (`engines/wolf/decrypt/` sera supprimé par UW-R). Repli de langue `"fr"`
+  (`commands/translate.rs:143`, `:290`) : correctif séparé, non planifié ; L5 le garde tel quel. Second passage
+  `jscpd`, B9, B10, B12, type d'erreur commun, VX Ace : non.
+- **DD-D7 — Git.** En validant ce plan, l'utilisateur autorise branches, commits, push et ouverture des PR. Pas de
+  fusion, pas de push forcé, rien sur `main`.
+- **DD-D8 — Suivi.** La session cloud ne modifie ni `tasks/todo.md` ni `tasks/handoff.md`. Elle tient un journal par
+  chaîne (modèle `docs/journal/TEMPLATE.md`, une section par lot) : `docs/journal/2026-11-17-dd-back.md` et
+  `docs/journal/2026-11-17-dd-front.md`. Claude coche ce plan et met à jour le handoff en local, après relecture.
+  `CHANGELOG.md` : seulement L4 (Removed) et L6 (Fixed).
+- **Points tranchés par l'utilisateur le 2026-11-17** (relecture Fable, détails et preuves dans
+  `docs/journal/2026-11-17-plan-dd.md`) : (1) imports MZ hors du moteur MZ, voir L1-D et les preuves de L1 ;
+  (2) correspondance chaîne → adaptateur en L1, voir L1-D, remplacée en L5-4 ; (3) portée de F1, voir DD-D2 et L6 ;
+  (4) `pub use` aux anciens chemins, voir DD-D3. Les quatre recommandations de la relecture sont retenues.
+
+### Règles communes
+
+- **Avant chaque lot** : `AGENTS.md`, `CONTEXT.md`, `tasks/lessons.md` (gate cloud et `lindera.dev`, hook
+  `PreToolUse`, fichier écrasé par `cat >`, valeur littérale cherchée avant d'être retirée), partie de l'audit du lot.
+- **Constat « supposé »** (audit §7, marqué ci-dessous) : le vérifier d'abord ; s'il est faux, le retirer du lot, le
+  noter au journal, continuer.
+- **Gate complet** (chaque lot back ; une fois en fin de chaîne front) : `cargo fmt --manifest-path
+  src-tauri/Cargo.toml -- --check` ; `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked --
+  -D warnings` ; `cargo test --manifest-path src-tauri/Cargo.toml --locked --no-fail-fast` ; `pnpm typecheck` ;
+  `pnpm lint` ; `pnpm test`. **Gate front** (chaque lot front) : les trois commandes `pnpm`. Nombres au journal
+  (tests réussis, en échec, ignorés ; avertissements).
+- **Preuve d'un lot** : gate vert ; preuves du lot ; aucun test existant modifié hors DD-D3
+  (`git diff --name-status <base>...HEAD -- src-tauri/tests '*.test.ts' '*.test.tsx'` ne montre que des ajouts, et
+  le diff des modules `mod tests` est relu) ; solde de production (`git diff --stat`) négatif ou justifié.
+- **Commits et PR** : un commit par étape logique, message en anglais (`refactor(...)`), ligne `Co-Authored-By`
+  demandée par la session. PR en français : contenu, preuves, nombres du gate, limites.
+
+### Règles d'arrêt
+
+- **Arrêt du lot et de la suite de sa chaîne** si : un test existant doit changer hors DD-D3 ; un test de
+  caractérisation (L1-0, L3-1, L5-1) change de résultat ; un comportement change hors DD-D2 ; le gate reste rouge
+  après 3 tentatives de correction ; une décision de conception non prévue ici apparaît.
+- Après un arrêt : passer à l'autre chaîne si elle n'est pas finie, puis s'arrêter. Au journal : point exact, cause,
+  options.
+- Accès réseau manquant (par exemple `lindera.dev`) : arrêter et le signaler. Un build `DOCS_RS=1` ne vaut pas gate.
+
+### L4 — Supprimer `debug_inject_file` (back, PR 1 → `main`, branche `refactor/dd-l4-remove-debug-inject`)
+
+- [ ] L4-1. `rg 'debug_inject_file|debugInjectFile' src src-tauri/src src-tauri/tests` ne trouve que la définition
+      (`commands/export.rs:1346`) et l'enregistrement (`lib.rs:16`, `:100`). Sinon, arrêt.
+- [ ] L4-2. Supprimer la commande, son import, son entrée dans `generate_handler!`, puis le code qui ne servait qu'à
+      elle (repéré par `clippy` `dead_code`, chaque cas vérifié avec `rg`).
+- [ ] L4-3. `CHANGELOG.md`, `[Unreleased]`, Removed : commande interne sans interface. Les anciens journaux restent.
+- [ ] L4-4. Gate complet.
+- **Preuves** : `rg debug_inject_file src src-tauri/src src-tauri/tests` = 0 ; tests d'export verts
+  (`tests/export_game_update.rs`, `export_debug.rs`, `text_fit.rs`, `e2e_project_flow.rs`).
+
+### L2 — Clones exacts du back (back, PR 2 → L4, branche `refactor/dd-l2-exact-clones`)
+
+- [ ] L2-1. B3 : les deux scissions récursives de `llm/split.rs` (`:121-149`, `:194-222`) → une `async fn` commune
+      (`Box::pin` si nécessaire). Le compteur et le log voisins restent en place.
+- [ ] L2-2. B5 : `extract_wolf_project` (`engines/wolf/extractor.rs:512-560`) réécrit comme aplatissement
+      d'`extract_all_wolf` (`:175`).
+- [ ] L2-3. B6 : `utils::time::civil_now()` commun à `unix_timestamp_to_date_str` (`core/report.rs:436-460`) et
+      `now_iso8601` (`utils/time.rs:4-26`), chacun gardant son `format!`. Ajouter un test du calcul de date (aucun).
+- [ ] L2-4. B11 (supposé) : `commands/coverage.rs:477-487` appelle `insert_source_file` (`commands/project.rs:996`),
+      seulement si les deux INSERT sont identiques.
+- [ ] L2-5. Gate complet.
+- **Preuves** : `test_response_format_triggers_split`, `test_split_partial_success` (`llm/pipeline.rs:1821`, `:1908`)
+  et les tests d'`extract_wolf_project` (`extractor.rs:785`, `:809`, `:1070`) verts sans changement ; solde de
+  production négatif (environ 100 lignes, estimation de l'audit sans B2).
+
+### L1 — Mise en page du texte commune, `TextBox` (back, PR 3 → L2, branche `refactor/dd-l1-text-box`)
+
+Référence : audit §2. Trois différences que l'adaptateur Wolf **préserve** (§2.3) : « tient déjà » (MZ teste le
+texte intact, Wolf recoupe toujours) ; `Overflow::Leave` (MZ rend le texte tel quel, Wolf recoupe quand même) ; quand
+réduire (MZ sur tout débordement, Wolf seulement sur trop de lignes).
+
+API appelée par des tests existants, donc gardée (ancien chemin, au besoin par `pub use` : DD-D3 ; nom ; signature) :
+`mv_mz::layout::fit::fit_message` et ses types ; `mv_mz::layout::plan::FitOverride` ; `mv_mz::layout::font` ;
+`wolf::layout::fit::{fit_message, measure_budget}` ;
+`core::text_fit::{TextFitSettings, load_settings_for_engine, enabled_kinds}`, avec `default_for(&str)` et
+`validate_wolf` (réexportés par `core/text_fit/mod.rs`). Un module de test suit son fichier déplacé sans changement.
+
+- [ ] L1-0. **Corpus de caractérisation**, commit séparé avant tout déplacement : `src-tauri/tests/text_fit_corpus.rs`
+      compare à un attendu versionné (`src-tauri/tests/fixtures/text_fit_corpus/*.json`) ce que rendent les commandes
+      (`open_project`, `update_segment`, `set_text_fit`, `scan_text_fit`, `preview_text_fit`, `export_project`) :
+      - MZ : fixture `tests/fixtures/mv_mz/mz_fit`, réglages `Reflow`/`Keep` × `Shrink`/`NewPage`/`Leave`, messages et
+        descriptions ; texte rendu et issue par `preview_text_fit` ;
+      - Wolf : jeu synthétique bâti comme `wolf_export_rewraps_messages_when_text_fitting_is_on`
+        (`tests/e2e_project_flow.rs:1102`), un message par carte, sans police, budget fixé (`wolf_width_em`,
+        `wolf_max_lines`, `wolf_base_font_size`). Cas : tient déjà, recoupe, réduction `\f[n]`, trop de lignes, mot
+        trop large, préfixe `@N⏎`, code de taille sans taille de base, codes de position, `Leave`. `preview_text_fit`
+        ne sert que MZ : texte rendu lu dans le `.mps` exporté ; issue lue dans les lignes du scan, qui omettent `Fits`
+        et `Rewrapped` (comparer alors texte exporté et traduction) ;
+      - le scan des deux moteurs : compteurs, lignes notables, caractères absents.
+      Aides privées de `tests/e2e_project_flow.rs` (`wolf_v2_map`, `write_wolf_v2_basic_data`, `mock_app`,
+      `zip_entries`) recopiées, sans toucher ce fichier ; UUID remplacés par un rang stable. L'attendu est écrit par le
+      test (variable d'environnement, par exemple `H2S_BLESS_CORPUS=1`) sur la base du lot, commité, puis figé.
+- [ ] L1-A. **Déplacements purs** vers `core/text_fit/` : `core/text_fit.rs` → `settings.rs` ; `font.rs` (C2),
+      `wrap.rs` (C3) ; dans `mod.rs`, `LineBreaks`, `Overflow`, `FitOutcome` (C1, `mv_mz/layout/fit.rs:23-106`) et
+      `FitCounts` (C12, `commands/text_fit.rs:392`) ; forme neutre des jetons (C4) dans `token.rs`. Les règles MZ des
+      jetons (`\{ \}` ±12, `mv_mz/layout/text.rs:280-287` ; `ICON_ADVANCE`, `:15`) restent dans
+      `engines/mv_mz/layout/`. Gate complet, corpus identique.
+- [ ] L1-B. **Trait et échelle commune** (`core/text_fit/fit.rs`) : trait `TextBox` (points d'adaptation de l'audit
+      §2.5 : `skip_reason`, `as_translated`, `rewrap`, `verdict`, `size_code`, `shrinkable`, `paginate`,
+      `leave_keeps_text`, avec des défauts) et une seule fonction d'échelle (C5, C6). Adaptateurs `MzTextBox`
+      (`engines/mv_mz/layout/`) et `WolfTextBox` (`engines/wolf/layout/`). Les signatures peuvent s'ajuster, pas les
+      points d'adaptation ni les trois différences. Les deux `fit_message` (`mv_mz/layout/fit.rs:731`,
+      `wolf/layout/fit.rs:272`) appellent l'échelle ; `fit_description` (`mv_mz/layout/fit.rs:879`) aussi si le corpus
+      ne change pas, sinon il reste tel quel (le noter). Gate complet, corpus identique.
+- [ ] L1-C. **`MeasuredTextBox`** : `measure_budget` (`engines/wolf/layout/fit.rs:94-119`) généralisé dans
+      `core/text_fit/measured.rs`, découpage en jetons fourni par le moteur ; Wolf l'utilise. Tests unitaires avec un
+      découpage factice, sans moteur.
+- [ ] L1-D. **Couche commande** : boucle de scan et résumé (C8, C12 ; une seule constante `MAX_ROWS`, aujourd'hui
+      `commands/text_fit.rs:447` et `commands/wolf_text_fit.rs:20`) ; chargement de la police (C9 ; seule la recherche
+      du fichier reste au moteur) ; drapeau « langue sans espaces » (C10) ; réglages reçus ou enregistrés (C11). Un
+      seul `match` sur le moteur remplace les `== "wolf"` de `get_text_fit`, `scan_text_fit`, `set_text_fit`
+      (`commands/text_fit.rs:344`, `:457`, `:580`) et le `!= "mv_mz"` de `:108`. Retirer de
+      `core/text_fit/settings.rs` le `if engine == "wolf"` de `default_for` (`:61`) et le `match` d'`enabled_kinds`
+      (`:355-356`) : défauts et catégories viennent de l'adaptateur. `MvTextBox` : **non** (aucun cas réel ; MV reste
+      refusé, `commands/text_fit.rs:131-135`).
+      - **Correspondance chaîne → adaptateur** (point tranché 2) : `default_for(&str)`, `load_settings_for_engine`
+        et `enabled_kinds` gardent leurs signatures (DD-D3) ; elles passent par **une seule** fonction documentée de
+        `core/text_fit/settings.rs` qui associe le nom de moteur stocké en base à l'adaptateur. Aucune autre chaîne
+        de moteur dans `core/text_fit/`. L5-4 la remplace par `Engine::from_db_str`.
+      - **Imports MZ hors du moteur MZ** (point tranché 1) : `FitOverride` et `StoredOverride`
+        (`mv_mz/layout/plan.rs`, données neutres faites de `LineBreaks`/`Overflow`) vont dans `core/text_fit/`, avec
+        `pub use` à l'ancien chemin (DD-D3) ; `core/report.rs` n'importe plus `is_fitted_segment` de MZ et passe par
+        l'adaptateur ; `state.rs` et `commands/wolf_text_fit.rs` n'importent plus que `core/text_fit/`.
+        `commands/text_fit.rs` (`:20-28`, géométrie, plan, aperçu MZ) et `commands/qa.rs:8` (`is_fitted_segment`)
+        gardent leurs imports MZ, qui relèvent de la couche commande MZ ; le journal les liste.
+- [ ] L1-E. **Docs** : `docs/adr/ADR-009.md` (base commune, adaptateurs, dispatch statique, lien avec ADR-006, ajout
+      d'un moteur) ; `CONTEXT.md` (module `core/text_fit/`) ; terme `TextBox` dans le vocabulaire de `CLAUDE.md` et
+      `CONTEXT.md`.
+- [ ] L1-F. Gate complet.
+- **Preuves** (depuis la racine du dépôt) :
+  - corpus identique au commit L1-0 ;
+  - `rg 'mv_mz::layout' src-tauri/src/core src-tauri/src/engines/wolf src-tauri/src/state.rs
+    src-tauri/src/commands/wolf_text_fit.rs` = 0, commentaires de doc compris (`engines/wolf/layout/text.rs:4`) ;
+    `rg -l 'mv_mz::layout' src-tauri/src --glob '!src-tauri/src/engines/mv_mz/**'` ne liste que
+    `commands/text_fit.rs` et `commands/qa.rs` (24 lignes dans 10 fichiers sur `1f2b841` ; point tranché 1) ;
+  - `rg 'engine ==|"wolf"|"mv_mz"' src-tauri/src/core/text_fit` ne trouve que la fonction de correspondance de
+    L1-D et les modules de test (point tranché 2) ;
+  - tests unitaires de `mv_mz/layout/`, `wolf/layout/`, `wolf/line_breaks.rs`, `core/text_fit` verts sans changement
+    hors DD-D3.
+
+### L5 — Contexte de projet et moteur typé (back, PR 4 → L1, branche `refactor/dd-l5-project-context`)
+
+- [ ] L5-1. Test de caractérisation des erreurs : projet inconnu, moteur inconnu en base. Messages renvoyés figés (le
+      front en lit, `src/lib/projectError.ts`).
+- [ ] L5-2. `Engine::from_db_str`, inverse d'`Engine::db_str` (`engines/detector.rs:28`), livré avec ses consommateurs
+      (retiré en Phase 8 faute d'usage). Un seul enum pour le moteur de projet ; celui de
+      `llm/tokenizer.rs:92` (variantes de tokenisation, dont `WolfMessage`) reste distinct s'il représente autre
+      chose, à justifier au journal.
+- [ ] L5-3. B7 : `ProjectContext::load(pool, project_id)` (projet, moteur typé, chemins, langues) remplace les
+      `… FROM projects WHERE id = ?` de `commands/` (24, recompté) et les copies de la liste des `source_files`. Les
+      requêtes de `core/` (5 selon l'audit) ne changent que si le gain est net. Le repli `"fr"` reste (DD-D6).
+- [ ] L5-4. B8 : les comparaisons de chaîne du moteur passent par l'enum quand la valeur vient du projet. Les
+      `file_type` restent sur `FileClass` (ADR-006). La fonction de correspondance de L1-D
+      (`core/text_fit/settings.rs`) passe par `Engine::from_db_str` ; signatures publiques inchangées (DD-D3).
+- [ ] L5-5. Gate complet.
+- **Preuves** : messages du test L5-1 identiques ;
+  `rg '(==|!=) "(wolf|mv_mz|vx_ace)"|"(wolf|mv_mz|vx_ace)" =>' src-tauri/src | wc -l` en forte baisse entre la base du
+  lot et la fin (37 sur `1f2b841`, tests en ligne compris ; le motif de l'audit en compte 33).
+
+### L3 — Parcours des commandes Wolf (back, PR 5 → L5, branche `refactor/dd-l3-wolf-sites`)
+
+- [ ] L3-1. Caractérisation, par de nouveaux tests : sur les jeux Wolf synthétiques des tests existants, segments
+      extraits (clé, source) et octets de l'injection d'une traduction connue.
+- [ ] L3-2. B4 : un itérateur de sites de message (commandes 101 et 102 ; clé `{préfixe}/{cmd}[/choices/{i}]`), pris
+      par `engines/wolf/extractor.rs:287-331`, `:451-494` et `engines/wolf/injector.rs:180-220`, `:477-515`, sur le
+      modèle de `engines/wolf/integrity.rs:33-50`. `integrity.rs` n'est pas modifié (contrôle indépendant).
+- [ ] L3-3. Gate complet.
+- **Preuves** : caractérisation L3-1 identique ; tests Wolf de `tests/e2e_project_flow.rs` verts.
+
+### L6 — Front, petits doublons (front, PR 6 → `main`, branche `refactor/dd-l6-front-small`)
+
+- [ ] L6-1. F1 (chemins de L6 relatifs à `src/`) : `String(err)` → `errorMessage` (`lib/utils.ts:9`) hors `lib/`.
+      24 sites : `rg 'String\((err|error|e)\)' src --glob '!src/lib/**' --glob '!*.test.*'` en trouve 25, dont
+      `hooks/useAppHandlers.ts:149`, qui analyse le texte (`integrityIssuesOf`) et reste tel quel. Changement voulu
+      (DD-D2) : à ces 24 sites, une erreur de type `Error` s'affiche sans « Error: » ; une chaîne reste identique.
+      Test de régression : le toast de `features/terminology/TerminologyWorkspace.tsx:230` ne commence plus par
+      « Error: ». Le journal liste les 24 sites.
+- [ ] L6-2. F5 : `openResyncDialog` et `applyResync` (`stores/resync.ts:28-57`) passent par un `runResync(projectId,
+      apply)` interne ; `components/ResyncDialog.test.tsx` inchangé.
+- [ ] L6-3. F6 : doublons locaux, en fonctions ou composants locaux au fichier (sauf usage dans plusieurs fichiers) :
+      section repliable (`components/TextCoverageDialog.tsx`), sélecteur de langue
+      (`components/settings/LanguageSettings.tsx`), bouton « ouvrir un jeu » (`components/editor/ProjectList.tsx`),
+      `components/AppDialogs.tsx:91-96` et `:132-137`, format `mm:ss` (`components/AppToolbar.tsx:72-73`, `:98-99`).
+- [ ] L6-4. F7 (supposé) : `ToolbarButton({ icon, busy })` local à `components/AppToolbar.tsx`.
+- [ ] L6-5. F8 (supposé) : supprimer `PipelineBatchMetrics` (`lib/types.ts:443`) s'il n'est importé nulle part ;
+      importer `CoverageCoreWarning` (`lib/types.ts:623`) au lieu de sa copie dans `TextCoverageDialog.tsx`.
+- [ ] L6-6. D9 : un alias pour `TerminologyScope | "both"` (`features/terminology/api.ts:85`,
+      `TermTranslateDialog.tsx:49`, `:162`).
+- [ ] L6-7. `CHANGELOG.md`, `[Unreleased]`, Fixed : les messages d'erreur affichés (toasts et bandeaux) ne
+      commencent plus par « Error: », par exemple dans la terminologie. Gate front.
+- **Preuves** : gate front vert ; test du toast ; tests existants inchangés.
+
+### L7 — Front, API typée et moteur typé (front, PR 7 → L6, branche `refactor/dd-l7-front-api`)
+
+- [ ] L7-1. F2 : modules d'API typée par domaine dans `src/lib/api/` (projet, export, couverture, mise en page,
+      réalignement, QA, LLM…), sur le modèle de `src/features/terminology/api.ts`, qui reste en place. Mêmes noms de
+      commandes et mêmes arguments : les tests qui simulent `invoke` passent sans changement.
+- [ ] L7-2. F3 : type `Engine` et un prédicat par capacité (couverture, mise en page, pilote) dans le nouveau fichier
+      `src/lib/engine.ts`, à la place des comparaisons `engine ===` / `!==`. Un test par prédicat, qui reproduit
+      exactement les conditions actuelles.
+- [ ] L7-3. F4 : hook `useCoalescedSegmentUpdates(apply)` pour `src/components/editor/SegmentGrid.tsx:224-236` et
+      `GlobalSearchResults.tsx:77-97`. `applySegmentUpdates` va dans `src/lib/` et reste exporté par
+      `SegmentGrid.tsx` (`SegmentGrid.test.tsx:48` l'importe de là). Chemin chaud de la grille : mesure réelle en V5.
+- [ ] L7-4. Gate front, puis gate complet (fin de la chaîne front).
+- **Preuves** (depuis la racine) : `rg 'invoke(<|\()' src --glob '!*.test.*' --glob '!src/test/**'
+  --glob '!src/lib/api/**' --glob '!src/features/*/api.ts'` = 0 (43 lignes dans 20 fichiers sur `1f2b841`) ;
+  `rg '(===|!==) "(wolf|mv_mz)"' src --glob '!*.test.*' --glob '!src/lib/engine.ts'` = 0, ou chaque reste justifié au
+  journal (16 lignes sur `1f2b841`, dont `lib/constants.ts:93` et `components/AppDialogs.tsx:170`, hors des trois
+  capacités).
+
+### V — Vérification locale (Claude, avec l'utilisateur, après la session cloud)
+
+- [ ] V1. Relire chaque PR : périmètre, diff, tests existants intacts (hors DD-D3), nombres du gate, journaux.
+      Renvoyer les écarts à la session cloud avant toute fusion.
+- [ ] V2. Exports de référence **avant**, depuis `main` : un jeu MZ de `test/` et un jeu Wolf déchiffré, mise en page
+      active, archives hors Git. Le binaire compilé par l'utilisateur sur `914d871` convient (code inchangé jusqu'à
+      `1f2b841`), après vérification (leçons des 2026-10-29 et 2026-10-30).
+- [ ] V3. Avec l'accord de l'utilisateur, une branche locale de test qui réunit les deux bouts de chaîne.
+      L'utilisateur compile quand il le décide (leçon du 2026-10-30) ; Claude ne lance l'app qu'ensuite.
+- [ ] V4. Exports **après**, mêmes jeux et réglages : fichiers identiques octet pour octet ; scan : mêmes compteurs.
+- [ ] V5. Grille : 12 423 segments, environ 19 ms par frame, aucune zone blanche, comme le 2026-10-30 (F4).
+- [ ] V6. Toast d'erreur de la terminologie sans « Error: » (F1) ; relire au diff de L6 les 23 autres sites.
+- [ ] V7. Suivi : cocher ce plan, `tasks/handoff.md`, journal de la vérification. Fusion par l'utilisateur dans l'ordre
+      des chaînes, chaque PR repointée vers `main` avant sa fusion.
+- [ ] V8. **Carte du code** (demandée par l'utilisateur le 2026-11-17) : Claude, en local, documentation seulement,
+      après les fusions, depuis `main` à jour ; branche `docs/dd-code-map`, PR avec l'accord de l'utilisateur.
+      `docs/architecture.md` réécrit en carte (pas de fichier concurrent) : rôle des modules (`commands/`, `core/`,
+      `llm/`, `engines/`, export, `src/stores/`, `src/lib/api/`, `src/features/`), parcours (ouvrir → extraire →
+      traduire : pipeline, TM, QA → exporter : intégrité, mise en page, réinjection), points d'entrée, « où changer
+      quoi » (moteur, règle QA, commande IPC, adaptateur `TextBox`), règles à ne jamais casser avec renvoi aux ADR ;
+      pas de liste de fonctions ; périmé retiré (système de licence, WolfX prévu). `CONTEXT.md` à jour (mise en page,
+      resync, terminologie, `WolfSources`, `ProjectContext`, API typée) et pointant vers la carte sans la recopier.
+      Carte pointée depuis `CLAUDE.md` et `AGENTS.md`, avec dans `AGENTS.md` la règle : tout lot qui déplace une
+      frontière de module met la carte à jour dans la même PR. Vérification : chaque chemin et nom cité existe (`rg`,
+      `ls`), relu contre `main`.
+
 ## Plan — FP : préfixe de visage Wolf `@N⏎` ancré en tête (2026-10-30, Claude) — VALIDÉ par l'utilisateur (« corrige @1 ») ; FP-1 à FP-6 faits en session cloud, PR #33 fusionnée (`914d871`) ; FP-7 vérifié le 2026-10-30 — TERMINÉ
 
 **Défaut constaté (2026-10-30, app réelle, トロイメライ `CommonEvent.dat`).** Un message Wolf v3 commence par

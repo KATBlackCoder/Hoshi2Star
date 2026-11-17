@@ -4,6 +4,17 @@
 **Objectif utilisateur :** optimiser le front-end (audit du 2026-10-29), puis corriger le préfixe Wolf `@N⏎`. Les deux sont faits.
 **Statut :** sur `origin`, il n'y a plus que `main`. PR #29 à #33 fusionnées le 2026-10-30. Toutes les autres branches sont supprimées.
 
+## Audit (2026-11-17, Claude, session locale) — doublons et répétitions, front et back
+
+- Rapport : `docs/audit/2026-11-17-audit-doublons.md`. Journal : `docs/journal/2026-11-17-audit-doublons.md`. Analyse statique sur `main` @ `1f2b841` : aucun code modifié, aucun test lancé, rien de commité (3 fichiers de suivi non commités).
+- Objectif utilisateur : remplacer le code répété par des fonctions communes. Un lot par PR, plan validé avant, sans changement de comportement, gate en session cloud.
+- 7 lots proposés (§6.2 du rapport). Premier lot : L1, mise en page du texte commune (`core/text_fit/`, trait `TextBox`, adaptateurs `MzTextBox`, `WolfTextBox`, `MeasuredTextBox` ; pas de `MvTextBox`, faute de cas réel).
+- **Décidé (utilisateur, 2026-11-17) :** `debug_inject_file` sera supprimée (lot L4). Aucun code touché pour l'instant.
+- **Plan DD écrit (2026-11-17, Claude, local)** en tête de `tasks/todo.md` : 7 lots, deux chaînes de PR (back L4 → L2 → L1 → L5 → L3 ; front L6 → L7), règles d'arrêt, vérification locale V1 à V7, puis V8 : carte du code (`docs/architecture.md` réécrit, `CONTEXT.md` à jour), demandée par l'utilisateur, faite en local après les fusions. Journal : `docs/journal/2026-11-17-plan-dd.md`. Recommandations DD-D1 à DD-D8 **validées par l'utilisateur le 2026-11-17** (autorisation Git DD-D7 comprise).
+- **Plan DD relu par Fable (2026-11-17)** : 18 corrections (journal du plan, « Relecture Fable »). Les 4 points à trancher sont **tranchés par l'utilisateur** (recommandations retenues) et intégrés au plan : imports MZ tolérés seulement dans `commands/text_fit.rs` et `commands/qa.rs` ; une seule correspondance chaîne → adaptateur dans `core/text_fit/settings.rs`, remplacée en L5-4 ; DD-D2 élargi aux 24 sites F1 (« Error: » retiré) ; DD-D3 sans exception, `pub use` aux anciens chemins.
+- Exécution prévue : une session cloud (Fable) enchaîne les lots jusqu'aux PR, sans fusion ; elle ne touche ni `tasks/todo.md` ni ce fichier, et écrit `docs/journal/2026-11-17-dd-back.md` et `-dd-front.md`. Une session cloud ne prévient pas à la fin : l'utilisateur le signale.
+- **Prochaine action :** audit, plan, brief et journaux commités et poussés sur `main` (2026-11-17). L'utilisateur lance la session cloud (Fable) avec le brief `docs/plans/2026-11-17-brief-cloud-dd.md`, puis signale la fin ; Claude fait alors V1 à V7.
+
 ## Audit (2026-10-29, Claude, session locale) — front-end : défilement, re-rendus, doublons
 
 - Rapport : `docs/audit/2026-10-29-audit-frontend.md`. Journal : `docs/journal/2026-10-29-audit-frontend.md`. Analyse statique seulement, sur `main` @ `b999c9b` : aucune mesure à l'exécution, aucun code modifié.
