@@ -32,8 +32,7 @@ use crate::{
         },
         vx_ace::injector as vx_injector,
         wolf::injector::{
-            inject_all_to_memory as wolf_to_memory,
-            injection_bucket, WolfTranslation,
+            inject_all_to_memory as wolf_to_memory, injection_bucket, WolfTranslation,
         },
     },
     state::AppState,
