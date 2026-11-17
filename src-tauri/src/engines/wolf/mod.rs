@@ -8,6 +8,8 @@ pub(crate) mod integrity;
 pub mod layout;
 pub mod line_breaks;
 pub(crate) mod placeholders;
+#[cfg(test)]
+mod sites_characterisation;
 pub mod sources;
 pub(crate) mod v3_format;
 
