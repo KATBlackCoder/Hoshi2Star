@@ -334,6 +334,9 @@ export interface TerminologyScanDone {
 /** Where a terminology translation is stored. */
 export type TerminologyScope = "project" | "global";
 
+/** Where an LLM terminology translation is written: one scope, or both. */
+export type TerminologyTranslateScope = TerminologyScope | "both";
+
 /** `h2s://terminology/translate-progress` */
 export interface TerminologyTranslateProgress {
   jobId: string;
@@ -438,15 +441,6 @@ export interface ProviderCallMetrics {
   durationMs: number;
   attempts: number;
   success: boolean;
-}
-
-export interface PipelineBatchMetrics {
-  responseFormatRetries: number;
-  placeholderRetries: number;
-  recursiveSplits: number;
-  semanticRejections: number;
-  semanticRetries: number;
-  semanticRecoveries: number;
 }
 
 export type PilotSampleCategory =
