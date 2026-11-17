@@ -11,20 +11,16 @@ use std::cell::OnceCell;
 use std::sync::LazyLock;
 
 use regex::Regex;
-use serde::Serialize;
 
 use super::text::{split_face_prefix, tokenize, WolfText, WolfTokenRules};
 use crate::core::text_fit::fit::{fit, TextBox, TooLong};
 use crate::core::text_fit::font::Metrics;
-use crate::core::text_fit::token::{font_size_after, raw_of, width_of, Token, TokenKind};
+use crate::core::text_fit::measured::{self, MeasuredTextBox};
+use crate::core::text_fit::token::{raw_of, Token, TokenKind};
 use crate::core::text_fit::wrap::{pieces, size_after, wrap};
 use crate::core::text_fit::{FitOutcome, LineBreaks, Overflow};
 
-/// Fewer original lines than this: no reliable measurement.
-pub const MIN_SAMPLE_LINES: usize = 20;
-/// Share of original lines that fit the measured width (the longest 1 % are
-/// taken as overflowing in the original game too, plan WR, K10).
-const WIDTH_PERCENTILE: f32 = 0.99;
+pub use crate::core::text_fit::measured::MIN_SAMPLE_LINES;
 /// Floating-point tolerance on widths.
 const EPSILON: f32 = 0.001;
 /// A speaker label line (`魚淫さん：`, `Gyoin:`) is at most this long.
@@ -34,14 +30,9 @@ const LABEL_MAX_CHARS: usize = 24;
 static RE_LEADING_SIZE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\\[fF]\[\d+\]").expect("RE_LEADING_SIZE must compile"));
 
-/// What a message window holds, measured on the game's original messages.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WolfBudget {
-    /// Line width in em of the game's default font size.
-    pub width_em: f32,
-    pub max_lines: usize,
-}
+/// What a message window holds, measured on the game's original messages
+/// (the shared [`MeasuredTextBox`]).
+pub type WolfBudget = MeasuredTextBox;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WolfFitSettings {
@@ -60,25 +51,7 @@ pub struct WolfFitSettings {
 
 /// Width of one line drawn from font size `start`.
 fn line_width(tokens: &[Token], metrics: &Metrics, start: f32) -> f32 {
-    let mut size = start;
-    let mut width = 0.0;
-    for token in tokens {
-        width += width_of(token, metrics, size, &WolfTokenRules);
-        size = font_size_after(&token.kind, size, &WolfTokenRules);
-    }
-    width
-}
-
-fn split_lines(tokens: Vec<Token>) -> Vec<Vec<Token>> {
-    let mut lines = vec![Vec::new()];
-    for token in tokens {
-        if token.kind == TokenKind::Newline {
-            lines.push(Vec::new());
-        } else if let Some(line) = lines.last_mut() {
-            line.push(token);
-        }
-    }
-    lines
+    measured::line_width(tokens, metrics, start, &WolfTokenRules)
 }
 
 fn has_size_code(tokens: &[Token]) -> bool {
@@ -95,27 +68,16 @@ pub fn measure_budget<'a>(
     sources: impl IntoIterator<Item = &'a str>,
     metrics: &Metrics,
 ) -> Option<WolfBudget> {
-    let mut widths: Vec<f32> = Vec::new();
-    let mut max_lines = 0;
-    for source in sources {
-        let (_, body) = split_face_prefix(source);
-        let parsed = tokenize(body);
-        if parsed.positioned || has_size_code(&parsed.tokens) {
-            continue;
-        }
-        let lines = split_lines(parsed.tokens);
-        max_lines = max_lines.max(lines.len());
-        widths.extend(lines.iter().map(|line| line_width(line, metrics, 1.0)));
-    }
-    if widths.len() < MIN_SAMPLE_LINES {
-        return None;
-    }
-    widths.sort_by(f32::total_cmp);
-    let index = ((widths.len() as f32 * WIDTH_PERCENTILE) as usize).min(widths.len() - 1);
-    Some(WolfBudget {
-        width_em: widths[index],
-        max_lines,
-    })
+    MeasuredTextBox::measure(
+        sources,
+        metrics,
+        |source| {
+            let (_, body) = split_face_prefix(source);
+            let parsed = tokenize(body);
+            (!parsed.positioned && !has_size_code(&parsed.tokens)).then_some(parsed.tokens)
+        },
+        &WolfTokenRules,
+    )
 }
 
 /// A speaker label alone on its line (`魚淫さん：`, `Gyoin:`).

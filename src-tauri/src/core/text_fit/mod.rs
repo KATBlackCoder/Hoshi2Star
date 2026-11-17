@@ -6,6 +6,7 @@
 
 pub mod fit;
 pub mod font;
+pub mod measured;
 pub mod settings;
 pub mod token;
 pub mod wrap;
