@@ -13,7 +13,7 @@ pub mod utils;
 use commands::app::updater_supported;
 use commands::coverage::{get_text_coverage_status, scan_text_coverage, set_text_categories};
 use commands::export::{
-    debug_inject_file, export_debug_json, export_debug_project, export_project, export_qa_report,
+    export_debug_json, export_debug_project, export_project, export_qa_report,
     export_tm, preflight_export, scan_font_status, strip_font_prefixes,
 };
 use commands::pack::{apply_h2s_import, export_h2s_pack, preview_h2s_import};
@@ -97,7 +97,6 @@ pub fn run() {
             translate_all_segments,
             cancel_translation,
             debug_dump_segments,
-            debug_inject_file,
             resync_project,
             scan_font_status,
             strip_font_prefixes,
