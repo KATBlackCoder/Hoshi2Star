@@ -7,6 +7,7 @@ use crate::core::qa::{self, QaError, QaSemanticContext};
 use crate::core::terminology::resolver;
 use crate::core::text_fit;
 use crate::domain::types::{QaReport, QaTerminologyIssue};
+use crate::engines::detector::Engine;
 use crate::llm::context::{self, PromptContextClass};
 use crate::utils::text::escape_xml;
 use crate::utils::time::{civil_now, CivilTime};
@@ -118,7 +119,7 @@ async fn evaluate_project(
     let mut variants =
         std::collections::HashMap::<(String, String), std::collections::HashSet<String>>::new();
     for row in &rows {
-        if engine == "mv_mz"
+        if Engine::from_db_str(engine) == Some(Engine::MvMz)
             && context::mv_mz_context_class(&row.segment_kind) == PromptContextClass::Canonical
             && !row.target_text.trim().is_empty()
         {

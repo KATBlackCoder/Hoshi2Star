@@ -2,6 +2,7 @@
 //! messages, plan WR), stored per project (`project_text_fit`,
 //! `text_fit_overrides`).
 
+use crate::engines::detector::Engine;
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -190,13 +191,13 @@ impl EngineFit {
 }
 
 /// The text fitting adapter of the engine stored in `projects.engine`
-/// (`None`: no text fitting). The only engine name read in
-/// `core::text_fit` (plan DD, L1-D); L5 reads it as an `Engine`.
+/// (`None`: no text fitting). The only place `core::text_fit` reads the
+/// engine (plan DD, L1-D), through [`Engine::from_db_str`] (L5-4).
 pub fn engine_fit(engine: &str) -> Option<EngineFit> {
-    match engine {
-        "mv_mz" => Some(EngineFit::of::<MzTextBox<'static>>()),
-        "wolf" => Some(EngineFit::of::<WolfTextBox<'static>>()),
-        _ => None,
+    match Engine::from_db_str(engine)? {
+        Engine::MvMz => Some(EngineFit::of::<MzTextBox<'static>>()),
+        Engine::Wolf => Some(EngineFit::of::<WolfTextBox<'static>>()),
+        Engine::VxAce => None,
     }
 }
 
