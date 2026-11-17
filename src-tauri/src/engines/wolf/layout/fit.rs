@@ -7,12 +7,14 @@
 //! structure never changes: a message too long for its window is shrunk with
 //! a leading `\f[m]` when allowed, or left and reported.
 
+use std::cell::OnceCell;
 use std::sync::LazyLock;
 
 use regex::Regex;
 use serde::Serialize;
 
-use super::text::{split_face_prefix, tokenize, WolfTokenRules};
+use super::text::{split_face_prefix, tokenize, WolfText, WolfTokenRules};
+use crate::core::text_fit::fit::{fit, TextBox, TooLong};
 use crate::core::text_fit::font::Metrics;
 use crate::core::text_fit::token::{font_size_after, raw_of, width_of, Token, TokenKind};
 use crate::core::text_fit::wrap::{pieces, size_after, wrap};
@@ -230,45 +232,6 @@ fn fits(lines: &[Vec<Token>], metrics: &Metrics, start: f32, width: f32, max_lin
     lines.len() <= max_lines && widest(lines, metrics, start) <= width + EPSILON
 }
 
-/// Shrink with a leading `\f[m]` (replacing a leading size code), from the
-/// size in effect down to `min_font_size` (R5). `None` when not allowed or
-/// when nothing fits.
-fn shrink(
-    prefix: &str,
-    blocks: &[String],
-    metrics: &Metrics,
-    base: u32,
-    width: f32,
-    budget: &WolfBudget,
-    settings: &WolfFitSettings,
-) -> Option<(String, u32)> {
-    let first = blocks.first()?;
-    let leading = RE_LEADING_SIZE.find(first);
-    let current: u32 = match leading {
-        Some(m) => m.as_str()[3..m.as_str().len() - 1].parse().ok()?,
-        None => base,
-    };
-    let rest = &first[leading.map_or(0, |m| m.end())..];
-    // A size code further on would override the shrink: left as is.
-    let further = blocks[1..]
-        .iter()
-        .map(String::as_str)
-        .chain(std::iter::once(rest))
-        .any(|block| has_size_code(&tokenize(block).tokens));
-    if further {
-        return None;
-    }
-    for size in (settings.min_font_size..current).rev() {
-        let mut shrunk = blocks.to_vec();
-        shrunk[0] = format!("\\f[{size}]{rest}");
-        let lines = layout(&shrunk, metrics, base as f32, width);
-        if fits(&lines, metrics, base as f32, width, budget.max_lines) {
-            return Some((render(prefix, &lines), size));
-        }
-    }
-    None
-}
-
 /// Fit one translated message (`target`, as exported: font prefix included)
 /// whose original is `source`. Returns the text to write and what happened.
 pub fn fit_message(
@@ -278,58 +241,184 @@ pub fn fit_message(
     metrics: &Metrics,
     settings: &WolfFitSettings,
 ) -> (String, FitOutcome) {
-    let skipped = |reason: &str| {
-        (
-            target.to_string(),
-            FitOutcome::Skipped {
-                reason: reason.to_string(),
-            },
-        )
-    };
-    let (prefix, body) = split_face_prefix(target);
-    let parsed = tokenize(body);
-    if parsed.positioned {
-        return skipped("positioning or alignment codes");
-    }
-    let (start, width) = match settings.base_font_size {
-        Some(base) => (base as f32, budget.width_em * base as f32),
-        None if has_size_code(&parsed.tokens) => {
-            return skipped("font size code, and the game's font size is not set")
+    fit(
+        &WolfTextBox::new(target, source, budget, metrics, settings),
+        settings.overflow,
+        settings.min_font_size,
+    )
+}
+
+/// One Wolf message as the shared fitting ladder sees it (plan DD, ADR-009).
+/// A message is always cleaned of stray line breaks and rewrapped, then
+/// compared with the translation (`Fits` or `Rewrapped`), even with
+/// [`Overflow::Leave`], which only rules out shrinking. It shrinks (R5) only
+/// with too many lines, never for a word wider than the window, and only
+/// when the game's font size is known.
+pub struct WolfTextBox<'a> {
+    target: &'a str,
+    /// The face prefix `@N\n` (possibly empty), kept in front.
+    prefix: &'a str,
+    body: &'a str,
+    source_body: &'a str,
+    parsed: WolfText,
+    budget: &'a WolfBudget,
+    metrics: &'a Metrics,
+    settings: &'a WolfFitSettings,
+    /// Font size the layout starts at, and the window width in its units.
+    start: f32,
+    width: f32,
+    blocks: OnceCell<Vec<String>>,
+    /// The size a shrink starts below, and the first block without its
+    /// leading size code (`None`: no shrink).
+    shrink: OnceCell<Option<(u32, String)>>,
+}
+
+impl<'a> WolfTextBox<'a> {
+    pub fn new(
+        target: &'a str,
+        source: &'a str,
+        budget: &'a WolfBudget,
+        metrics: &'a Metrics,
+        settings: &'a WolfFitSettings,
+    ) -> Self {
+        let (prefix, body) = split_face_prefix(target);
+        let (_, source_body) = split_face_prefix(source);
+        let parsed = tokenize(body);
+        let (start, width) = match settings.base_font_size {
+            Some(base) => (base as f32, budget.width_em * base as f32),
+            None => (1.0, budget.width_em),
+        };
+        Self {
+            target,
+            prefix,
+            body,
+            source_body,
+            parsed,
+            budget,
+            metrics,
+            settings,
+            start,
+            width,
+            blocks: OnceCell::new(),
+            shrink: OnceCell::new(),
         }
-        None => (1.0, budget.width_em),
-    };
-    let (_, source_body) = split_face_prefix(source);
-    let blocks = blocks(body, source_body, settings);
-    let lines = layout(&blocks, metrics, start, width);
-    if fits(&lines, metrics, start, width, budget.max_lines) {
-        let text = render(prefix, &lines);
-        let outcome = if text == target {
+    }
+
+    fn blocks(&self) -> &Vec<String> {
+        self.blocks
+            .get_or_init(|| blocks(self.body, self.source_body, self.settings))
+    }
+
+    /// The leading `\f[m]` replaced by a smaller one (R5): from the size in
+    /// effect. A size code further on would override the shrink: none.
+    fn shrink(&self) -> Option<&(u32, String)> {
+        self.shrink
+            .get_or_init(|| {
+                let base = self.settings.base_font_size?;
+                let blocks = self.blocks();
+                let first = blocks.first()?;
+                let leading = RE_LEADING_SIZE.find(first);
+                let current: u32 = match leading {
+                    Some(m) => m.as_str()[3..m.as_str().len() - 1].parse().ok()?,
+                    None => base,
+                };
+                let rest = &first[leading.map_or(0, |m| m.end())..];
+                let further = blocks[1..]
+                    .iter()
+                    .map(String::as_str)
+                    .chain(std::iter::once(rest))
+                    .any(|block| has_size_code(&tokenize(block).tokens));
+                (!further).then(|| (current, rest.to_string()))
+            })
+            .as_ref()
+    }
+}
+
+impl TextBox for WolfTextBox<'_> {
+    type Layout = Vec<Vec<Token>>;
+    type Fitted = (String, FitOutcome);
+
+    fn skip_reason(&self) -> Option<String> {
+        if self.parsed.positioned {
+            return Some("positioning or alignment codes".to_string());
+        }
+        if self.settings.base_font_size.is_none() && has_size_code(&self.parsed.tokens) {
+            return Some("font size code, and the game's font size is not set".to_string());
+        }
+        None
+    }
+
+    fn verdict(&self, lines: &Vec<Vec<Token>>) -> bool {
+        fits(
+            lines,
+            self.metrics,
+            self.start,
+            self.width,
+            self.budget.max_lines,
+        )
+    }
+
+    fn leave_keeps_text(&self) -> bool {
+        false
+    }
+
+    fn rewrap(&self) -> Option<Vec<Vec<Token>>> {
+        Some(layout(self.blocks(), self.metrics, self.start, self.width))
+    }
+
+    fn rewrapped_outcome(&self, lines: &Vec<Vec<Token>>) -> FitOutcome {
+        if render(self.prefix, lines) == self.target {
             FitOutcome::Fits
         } else {
             FitOutcome::Rewrapped
-        };
-        return (text, outcome);
-    }
-    let too_many = lines.len() > budget.max_lines;
-    if too_many && settings.overflow == Overflow::Shrink {
-        if let Some(base) = settings.base_font_size {
-            if let Some((text, size)) =
-                shrink(prefix, &blocks, metrics, base, width, budget, settings)
-            {
-                return (text, FitOutcome::Shrunk { size });
-            }
         }
     }
-    let reason = if too_many {
-        format!(
-            "{} lines, the window holds {}",
-            lines.len(),
-            budget.max_lines
-        )
-    } else {
-        "a word is wider than the window".to_string()
-    };
-    (render(prefix, &lines), FitOutcome::TooLong { reason })
+
+    /// Only for too many lines, with the game's font size known.
+    fn shrinkable(&self, overflow: Overflow, rewrapped: Option<&Vec<Vec<Token>>>) -> bool {
+        overflow == Overflow::Shrink
+            && self.settings.base_font_size.is_some()
+            && rewrapped.is_some_and(|lines| lines.len() > self.budget.max_lines)
+    }
+
+    fn shrink_from(&self) -> Option<u32> {
+        self.shrink().map(|(current, _)| *current)
+    }
+
+    fn size_code(&self, size: u32) -> Option<Vec<Vec<Token>>> {
+        let (_, rest) = self.shrink()?;
+        let mut shrunk = self.blocks().clone();
+        shrunk[0] = format!("\\f[{size}]{rest}");
+        Some(layout(&shrunk, self.metrics, self.start, self.width))
+    }
+
+    fn finish(&self, lines: Vec<Vec<Token>>, outcome: FitOutcome) -> (String, FitOutcome) {
+        (render(self.prefix, &lines), outcome)
+    }
+
+    fn skipped(&self, reason: String) -> (String, FitOutcome) {
+        (self.target.to_string(), FitOutcome::Skipped { reason })
+    }
+
+    fn too_long(&self, why: TooLong<Vec<Vec<Token>>>) -> (String, FitOutcome) {
+        let lines = match why {
+            TooLong::Unfitted(Some(lines)) => lines,
+            // Never reached: Wolf always rewraps, and Leave rewraps too.
+            TooLong::Unfitted(None) | TooLong::LeftAsTranslated => {
+                layout(self.blocks(), self.metrics, self.start, self.width)
+            }
+        };
+        let reason = if lines.len() > self.budget.max_lines {
+            format!(
+                "{} lines, the window holds {}",
+                lines.len(),
+                self.budget.max_lines
+            )
+        } else {
+            "a word is wider than the window".to_string()
+        };
+        (render(self.prefix, &lines), FitOutcome::TooLong { reason })
+    }
 }
 
 #[cfg(test)]

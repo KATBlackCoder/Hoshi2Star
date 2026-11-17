@@ -4,6 +4,7 @@
 //! Engines plug in their own rules (codes, window, verdict); this module
 //! knows no engine (see `docs/adr/ADR-009.md`).
 
+pub mod fit;
 pub mod font;
 pub mod settings;
 pub mod token;
