@@ -12,6 +12,7 @@
 //! sides ordered by extraction order) — never by segment UUIDs, which are
 //! local to each database.
 
+use crate::db::project_context::ProjectContext;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -69,12 +70,11 @@ async fn build_project_pack(
     lang_pair: &str,
     include_tm: bool,
 ) -> Result<H2sPack, String> {
-    let (game_title, engine): (String, String) =
-        sqlx::query_as("SELECT name, engine FROM projects WHERE id = ?")
-            .bind(project_id)
-            .fetch_one(db)
-            .await
-            .map_err(|e| e.to_string())?;
+    let ProjectContext {
+        name: game_title,
+        engine_name: engine,
+        ..
+    } = ProjectContext::load(db, project_id).await?;
 
     let file_stats: Vec<(String, String, i64, i64)> = sqlx::query_as(
         "SELECT sf.file_name, sf.file_type, COUNT(s.id), \
@@ -375,12 +375,11 @@ async fn validate_pack_against_project(
     lang_pair: &str,
     pack: &H2sPack,
 ) -> Result<(Option<ImportBlocker>, String), String> {
-    let (project_title, project_engine): (String, String) =
-        sqlx::query_as("SELECT name, engine FROM projects WHERE id = ?")
-            .bind(project_id)
-            .fetch_one(db)
-            .await
-            .map_err(|e| e.to_string())?;
+    let ProjectContext {
+        name: project_title,
+        engine_name: project_engine,
+        ..
+    } = ProjectContext::load(db, project_id).await?;
 
     let blocker = if pack.manifest.engine != project_engine {
         Some(ImportBlocker::EngineMismatch {

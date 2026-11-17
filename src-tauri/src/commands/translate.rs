@@ -1,5 +1,6 @@
 //! Tauri commands for LLM translation and provider discovery.
 
+use crate::db::project_context::ProjectContext;
 use std::sync::atomic::Ordering;
 
 use crate::{
@@ -277,15 +278,16 @@ pub async fn translate_all_segments(
         let mut cooldown =
             pipeline::CooldownState::new(cooldown_threshold_secs, cooldown_duration_secs);
 
-        let project_context: Option<(String, String, String)> = sqlx::query_as(
-            "SELECT engine, COALESCE(source_language, 'ja'), \
-                        COALESCE(target_language, 'en') FROM projects WHERE id = ?",
-        )
-        .bind(&project_id)
-        .fetch_optional(&db)
-        .await
-        .ok()
-        .flatten();
+        let project_context = ProjectContext::load(&db, &project_id)
+            .await
+            .ok()
+            .map(|project| {
+                (
+                    project.engine_name,
+                    project.source_language,
+                    project.target_language,
+                )
+            });
         let (project_engine, source_lang, target_lang) = project_context
             .unwrap_or_else(|| ("mv_mz".to_string(), "ja".to_string(), "fr".to_string()));
 

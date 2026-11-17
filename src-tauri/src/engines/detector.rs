@@ -16,7 +16,7 @@
 use std::path::Path;
 
 /// Supported game engines.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Engine {
     MvMz,
     VxAce,
@@ -30,6 +30,18 @@ impl Engine {
             Engine::MvMz => "mv_mz",
             Engine::VxAce => "vx_ace",
             Engine::Wolf => "wolf",
+        }
+    }
+
+    /// The engine stored as `value` in the `projects.engine` column, the
+    /// inverse of [`Engine::db_str`] (`None`: a name this build does not
+    /// know, such as a newer version's engine).
+    pub fn from_db_str(value: &str) -> Option<Self> {
+        match value {
+            "mv_mz" => Some(Engine::MvMz),
+            "vx_ace" => Some(Engine::VxAce),
+            "wolf" => Some(Engine::Wolf),
+            _ => None,
         }
     }
 

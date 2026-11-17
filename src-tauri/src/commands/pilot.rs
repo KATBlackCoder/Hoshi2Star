@@ -699,7 +699,7 @@ async fn seed_isolated_database(
 
     let mut transaction = pool.begin().await.map_err(|error| error.to_string())?;
     let (sender, mut receiver) = tokio::sync::mpsc::channel(2);
-    let worker_engine = engine.clone();
+    let worker_engine = *engine;
     let worker_game_dir = game_dir.to_path_buf();
     let worker_data_dir = data_dir.to_path_buf();
     let extraction_worker = tokio::task::spawn_blocking(move || {

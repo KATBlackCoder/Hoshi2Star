@@ -12,6 +12,7 @@ use crate::core::text_fit::scan::{FitRow, FitScan, ScanSummary};
 use crate::core::text_fit::writes_without_spaces;
 use crate::core::text_fit::FitCounts;
 use crate::core::text_fit::{FitOutcome, TextFitSettings};
+use crate::db::project_context::ProjectContext;
 use crate::engines::wolf::layout::{
     find_game_font, fit_message, is_budget_key, is_fitted_key, measure_budget, WolfBudget,
     WolfFitSettings,
@@ -88,13 +89,11 @@ pub async fn wolf_environment(
     project_id: &str,
     settings: &TextFitSettings,
 ) -> Result<WolfFitEnvironment, String> {
-    let (game_path, target_language): (String, String) = sqlx::query_as(
-        "SELECT game_path, COALESCE(target_language, 'en') FROM projects WHERE id = ?",
-    )
-    .bind(project_id)
-    .fetch_one(db)
-    .await
-    .map_err(|e| e.to_string())?;
+    let ProjectContext {
+        game_path,
+        target_language,
+        ..
+    } = ProjectContext::load(db, project_id).await?;
     let (metrics, font) = game_font(Path::new(&game_path), fonts);
     let sources: Vec<(String, String)> = sqlx::query_as(
         "SELECT s.json_key, s.source_text FROM segments s \

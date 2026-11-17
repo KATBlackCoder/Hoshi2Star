@@ -16,6 +16,8 @@ use sqlx::SqlitePool;
 
 use crate::commands::project::insert_source_file;
 use crate::core::{manifest, originals};
+use crate::db::project_context::ProjectContext;
+use crate::engines::detector::Engine;
 use crate::engines::filter::{classify_file_type, FileClass};
 use crate::engines::mv_mz::coverage::plugins::PLUGINS_FILE_NAME;
 use crate::engines::mv_mz::coverage::{
@@ -103,11 +105,7 @@ pub async fn get_text_coverage_status(
     project_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<CoverageStatus, String> {
-    let engine: String = sqlx::query_scalar("SELECT engine FROM projects WHERE id = ?")
-        .bind(&project_id)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|error| error.to_string())?;
+    let project = ProjectContext::load(&state.db, &project_id).await?;
     let decisions: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM project_text_categories WHERE project_id = ?")
             .bind(&project_id)
@@ -115,7 +113,7 @@ pub async fn get_text_coverage_status(
             .await
             .map_err(|error| error.to_string())?;
     Ok(CoverageStatus {
-        supported: engine == "mv_mz",
+        supported: project.is(Engine::MvMz),
         has_decisions: decisions > 0,
     })
 }
@@ -182,15 +180,11 @@ pub async fn scan_project(
     profiles: std::sync::Arc<ProfileSet>,
     project_id: &str,
 ) -> Result<Option<(CoverageReport, SnapshotStore)>, String> {
-    let (game_path, engine): (String, String) =
-        sqlx::query_as("SELECT game_path, engine FROM projects WHERE id = ?")
-            .bind(project_id)
-            .fetch_one(db)
-            .await
-            .map_err(|error| error.to_string())?;
-    if engine != "mv_mz" {
+    let project = ProjectContext::load(db, project_id).await?;
+    if !project.is(Engine::MvMz) {
         return Ok(None);
     }
+    let game_path = project.game_path;
 
     let mut store = originals::ensure_fresh_mv_mz_snapshot(db, data_dir, project_id).await?;
     let files: Vec<(String, String, String)> = sqlx::query_as(
@@ -443,11 +437,7 @@ async fn apply_changes(
     .map_err(|error| error.to_string())?
     .into_iter()
     .collect();
-    let game_path: String = sqlx::query_scalar("SELECT game_path FROM projects WHERE id = ?")
-        .bind(project_id)
-        .fetch_one(db)
-        .await
-        .map_err(|error| error.to_string())?;
+    let game_path = ProjectContext::load(db, project_id).await?.game_path;
 
     let mut tx = db.begin().await.map_err(|error| error.to_string())?;
     // js/plugins.js is not part of core extraction: register it on first use.

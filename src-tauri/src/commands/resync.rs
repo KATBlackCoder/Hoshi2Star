@@ -11,6 +11,8 @@
 //! extraction as `open_project` and the same candidates as enabling an
 //! optional category. Pairing rules: [`resync::align`].
 
+use crate::db::project_context::ProjectContext;
+use crate::engines::detector::Engine;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -150,16 +152,15 @@ struct NewFile {
 }
 
 async fn resync(state: &AppState, project_id: &str, apply: bool) -> Result<ResyncSummary, String> {
-    let (engine, game_path, source_language, target_language): (String, String, String, String) =
-        sqlx::query_as(
-            "SELECT engine, game_path, COALESCE(source_language, 'ja'), \
-                    COALESCE(target_language, 'en') FROM projects WHERE id = ?",
-        )
-        .bind(project_id)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|error| error.to_string())?;
-    if engine != "mv_mz" {
+    let ProjectContext {
+        engine,
+        engine_name,
+        game_path,
+        source_language,
+        target_language,
+        ..
+    } = ProjectContext::load(&state.db, project_id).await?;
+    if engine != Some(Engine::MvMz) {
         return Err(
             "Realignment after a game update is only available for RPG Maker MV/MZ.".into(),
         );
@@ -270,7 +271,7 @@ async fn resync(state: &AppState, project_id: &str, apply: bool) -> Result<Resyn
                 let _ = tm::insert_if_absent(
                     &row.line.source,
                     &row.target,
-                    &engine,
+                    &engine_name,
                     &lang_pair,
                     &state.db,
                 )

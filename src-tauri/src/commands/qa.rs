@@ -4,7 +4,9 @@ use sqlx::SqlitePool;
 
 use crate::{
     core::{qa, report, terminology::resolver, text_fit, tm},
+    db::project_context::ProjectContext,
     domain::types::QaReport,
+    engines::detector::Engine,
     engines::mv_mz::layout::message::is_fitted_segment,
     state::AppState,
 };
@@ -59,18 +61,13 @@ async fn check_segment_live(
     segment_id: Option<&str>,
 ) -> qa::QaResult {
     let db_context = match project_id {
-        Some(pid) => {
-            let project_context: Option<(String, String, String)> = sqlx::query_as(
-                "SELECT engine, COALESCE(source_language, 'ja'), \
-                        COALESCE(target_language, 'en') FROM projects WHERE id = ?",
+        Some(pid) => ProjectContext::load(db, pid).await.ok().map(|project| {
+            (
+                project.engine_name,
+                project.source_language,
+                project.target_language,
             )
-            .bind(pid)
-            .fetch_optional(db)
-            .await
-            .ok()
-            .flatten();
-            project_context
-        }
+        }),
         None => None,
     };
 
@@ -133,12 +130,13 @@ async fn check_segment_live(
     // Text fitting lays dialogue/descriptions out at export: their raw
     // line width does not matter.
     if let (Some(pid), Some((kind, _, key, file_name))) = (project_id, &segment_facts) {
-        if resolved_engine == "mv_mz" {
+        let resolved = Engine::from_db_str(&resolved_engine);
+        if resolved == Some(Engine::MvMz) {
             let (dialogue, descriptions) = text_fit::enabled_kinds(db, pid).await;
             if is_fitted_segment(file_name, key, kind, dialogue, descriptions) {
                 result.drop_line_width();
             }
-        } else if resolved_engine == "wolf" {
+        } else if resolved == Some(Engine::Wolf) {
             let (dialogue, _) = text_fit::enabled_kinds(db, pid).await;
             if dialogue && crate::engines::wolf::layout::is_fitted_key(key) {
                 result.drop_line_width();
