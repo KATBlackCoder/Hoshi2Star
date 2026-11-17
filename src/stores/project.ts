@@ -12,6 +12,7 @@ import { useSettingsStore } from "@/stores/settings";
 import { useUiStore } from "@/stores/ui";
 import { errorMessage } from "@/lib/utils";
 import { projectApi } from "@/lib/api/project";
+import { hasTextCoverage } from "@/lib/engine";
 
 interface ProjectState {
   projects: Project[];
@@ -123,7 +124,7 @@ export async function openProject(
     );
   }
 
-  if (project.engine === "mv_mz") {
+  if (hasTextCoverage(project.engine)) {
     // Optional plugin/system text: offered, never enabled behind the user's
     // back. Best-effort, never blocks opening.
     try {

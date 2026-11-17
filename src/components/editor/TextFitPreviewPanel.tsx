@@ -18,6 +18,7 @@ import {
 import { useActiveEngine, useProjectStore } from "@/stores/project";
 import { useTextFitStore, useTextFitVersion } from "@/stores/textFit";
 import { textFitApi } from "@/lib/api/textFit";
+import { hasTextFitPreview } from "@/lib/engine";
 
 /** RPG Maker MZ default text colours (`\C[n]`, Window.png). */
 const TEXT_COLORS = [
@@ -174,7 +175,8 @@ export function TextFitPreviewPanel() {
   const targetText = useActiveSegmentTargetText();
   const version = useTextFitVersion();
   const bump = useTextFitStore((s) => s.bump);
-  const ready = projectId !== null && segmentId !== null && engine === "mv_mz";
+  const ready =
+    projectId !== null && segmentId !== null && hasTextFitPreview(engine);
   const fontFamily = useGameFont(ready ? projectId : null);
 
   const { data: preview, isLoading } = useQuery({
@@ -214,7 +216,7 @@ export function TextFitPreviewPanel() {
       <div className="flex-1 space-y-3 overflow-y-auto p-2">
         {!ready ? (
           <p className="py-4 text-center text-xs text-muted-foreground">
-            {engine && engine !== "mv_mz"
+            {engine && !hasTextFitPreview(engine)
               ? t("textFit.preview.mzOnly")
               : t("textFit.preview.empty")}
           </p>

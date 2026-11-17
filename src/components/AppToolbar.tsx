@@ -47,6 +47,12 @@ import type { ImportPreview } from "@/lib/types";
 import { usePilotStore } from "@/stores/pilot";
 import { useSettingsStore } from "@/stores/settings";
 import { packApi } from "@/lib/api/pack";
+import {
+  hasDebugExport,
+  hasPilot,
+  hasTextCoverage,
+  hasTextFit,
+} from "@/lib/engine";
 
 /**
  * A toolbar button whose icon becomes a spinner while `busy`. Other props go
@@ -322,7 +328,7 @@ export function AppToolbar({
         </ToolbarButton>
       )}
 
-      {activeProjectId && activeProject?.engine === "mv_mz" && (
+      {activeProjectId && hasTextCoverage(activeProject?.engine) && (
         <Button
           size="sm"
           variant="outline"
@@ -336,23 +342,21 @@ export function AppToolbar({
         </Button>
       )}
 
-      {activeProjectId &&
-        (activeProject?.engine === "mv_mz" ||
-          activeProject?.engine === "wolf") && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 gap-1.5 text-xs"
-            title={t("textFit.toolbarHint")}
-            onClick={() => void openTextFitDialog(activeProjectId)}
-            disabled={isTranslating || isPilotRunning}
-          >
-            <WrapText className="h-3.5 w-3.5" />
-            {t("textFit.toolbar")}
-          </Button>
-        )}
+      {activeProjectId && hasTextFit(activeProject?.engine) && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 gap-1.5 text-xs"
+          title={t("textFit.toolbarHint")}
+          onClick={() => void openTextFitDialog(activeProjectId)}
+          disabled={isTranslating || isPilotRunning}
+        >
+          <WrapText className="h-3.5 w-3.5" />
+          {t("textFit.toolbar")}
+        </Button>
+      )}
 
-      {developerTools && activeProject?.engine === "mv_mz" && (
+      {developerTools && hasPilot(activeProject?.engine) && (
         <ToolbarButton
           icon={FlaskConical}
           busy={isPilotRunning}
@@ -369,8 +373,7 @@ export function AppToolbar({
 
       {developerTools &&
         activeProjectId &&
-        (activeProject?.engine === "mv_mz" ||
-          activeProject?.engine === "wolf") && (
+        hasDebugExport(activeProject?.engine) && (
           <Button
             size="sm"
             variant="outline"

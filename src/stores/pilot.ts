@@ -11,6 +11,7 @@ import type {
   ProviderConfig,
 } from "@/lib/types";
 import { llmApi } from "@/lib/api/llm";
+import { hasPilot } from "@/lib/engine";
 
 export type PilotCategoryFilter = "all" | PilotSampleCategory;
 export type PilotReviewDecision =
@@ -71,7 +72,7 @@ export const usePilotStore = create<PilotState>()((set, get) => ({
     }),
 
   runPilot: async (project, providerConfig) => {
-    if (get().isRunning || project.engine !== "mv_mz") return;
+    if (get().isRunning || !hasPilot(project.engine)) return;
 
     activeProgressUnlisten?.();
     activeProgressUnlisten = null;

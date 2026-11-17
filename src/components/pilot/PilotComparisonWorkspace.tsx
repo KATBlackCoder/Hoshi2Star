@@ -40,6 +40,7 @@ import {
   usePilotStore,
 } from "@/stores/pilot";
 import { useActiveProject } from "@/stores/project";
+import { hasPilot } from "@/lib/engine";
 
 const CATEGORIES: PilotSampleCategory[] = [
   "dialogue",
@@ -82,7 +83,7 @@ export function PilotComparisonWorkspace() {
     );
   }, [categoryFilter, report]);
 
-  if (!project || project.engine !== "mv_mz") {
+  if (!project || !hasPilot(project.engine)) {
     return (
       <div className="grid h-full place-items-center p-8">
         <div className="max-w-md rounded-2xl border bg-card p-6 text-center shadow-sm">
