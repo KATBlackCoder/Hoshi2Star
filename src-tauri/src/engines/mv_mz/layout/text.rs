@@ -10,64 +10,31 @@
 use std::collections::HashMap;
 
 use super::font::Metrics;
+use crate::core::text_fit::token::{font_size_after, width_of, TokenRules};
 
 /// `ImageManager.iconWidth + 4` (`processDrawIcon`).
 pub const ICON_ADVANCE: f32 = 36.0;
 /// U+000C: `Window_Message.processNewPage`.
 pub const PAGE_BREAK: char = '\u{000C}';
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum TokenKind {
-    /// Printable characters (no control characters).
-    Text,
-    Newline,
-    PageBreak,
-    /// `\C[n]` (colour index; `None` when the parameter is not a number).
-    Color(Option<u32>),
-    /// `\I[n]`.
-    Icon,
-    /// `\PX[n]` / `\PY[n]`: manual positioning.
-    Position,
-    /// `\FS[n]`.
-    FontSize(u32),
-    /// `\{`.
-    Bigger,
-    /// `\}`.
-    Smaller,
-    /// Text inserted by `convertEscapeCharacters`, measured as `sample`.
-    Inserted {
-        sample: String,
-    },
-    /// `\\`: prints a backslash.
-    Backslash,
-    /// `\$ \. \| \! \> \< \^`: no width; `code` is the character.
-    Control(char),
-    /// Any other code: no width (its `[...]`, if any, prints as text).
-    Unknown(String),
-}
+pub use crate::core::text_fit::token::{raw_of, Token, TokenKind};
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Token {
-    pub kind: TokenKind,
-    pub raw: String,
-}
+/// The MZ rules of relative font size codes and icons.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MzTokenRules;
 
-impl Token {
-    fn new(kind: TokenKind, raw: impl Into<String>) -> Self {
-        Self {
-            kind,
-            raw: raw.into(),
+impl TokenRules for MzTokenRules {
+    /// `makeFontBigger` / `makeFontSmaller`: ±12 px, within 24..=96 px.
+    fn relative_font_size(&self, bigger: bool, size: f32) -> f32 {
+        match bigger {
+            true if size <= 96.0 => size + 12.0,
+            false if size >= 24.0 => size - 12.0,
+            _ => size,
         }
     }
 
-    /// Whether the token draws something (text, icon, inserted text).
-    pub fn is_visible(&self) -> bool {
-        match &self.kind {
-            TokenKind::Text => self.raw.chars().any(|c| !c.is_whitespace()),
-            TokenKind::Icon | TokenKind::Backslash => true,
-            TokenKind::Inserted { sample } => !sample.is_empty(),
-            _ => false,
-        }
+    fn icon_advance(&self) -> f32 {
+        ICON_ADVANCE
     }
 }
 
@@ -278,28 +245,12 @@ fn escape(chars: &[char], inserts: &Inserts) -> (Token, usize) {
 
 /// `makeFontBigger` / `makeFontSmaller` / `\FS[n]` applied to `size`.
 pub fn apply_font_change(kind: &TokenKind, size: f32) -> f32 {
-    match kind {
-        TokenKind::FontSize(n) => *n as f32,
-        TokenKind::Bigger if size <= 96.0 => size + 12.0,
-        TokenKind::Smaller if size >= 24.0 => size - 12.0,
-        _ => size,
-    }
+    font_size_after(kind, size, &MzTokenRules)
 }
 
 /// Width of one token at font size `size` (per-character, as normal play draws).
 pub fn token_width(token: &Token, metrics: &Metrics, size: f32) -> f32 {
-    match &token.kind {
-        TokenKind::Text => metrics.text_width(&token.raw, size),
-        TokenKind::Icon => ICON_ADVANCE,
-        TokenKind::Inserted { sample } => metrics.text_width(sample, size),
-        TokenKind::Backslash => metrics.text_width("\\", size),
-        _ => 0.0,
-    }
-}
-
-/// Concatenate the raw text of tokens.
-pub fn raw_of(tokens: &[Token]) -> String {
-    tokens.iter().map(|t| t.raw.as_str()).collect()
+    width_of(token, metrics, size, &MzTokenRules)
 }
 
 #[cfg(test)]

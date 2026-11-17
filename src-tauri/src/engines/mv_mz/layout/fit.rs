@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use regex::Regex;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::font::Metrics;
 use super::geometry::Geometry;
@@ -19,27 +19,7 @@ use super::simulate::{simulate, BoxSpec, PageView};
 use super::text::{apply_font_change, raw_of, tokenize, Inserts, Token, TokenKind, PAGE_BREAK};
 use super::wrap::{pieces, size_after, wrap, Piece};
 
-/// How line breaks are chosen inside a message.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LineBreaks {
-    /// Join the lines of each block and rewrap them evenly.
-    Reflow,
-    /// Keep each translated line; split only the ones that are too wide.
-    Keep,
-}
-
-/// What happens when a message needs more lines than the box holds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Overflow {
-    /// Continue on a new page at a sentence boundary.
-    NewPage,
-    /// Shrink the font (down to the minimum); a new page if still too long.
-    Shrink,
-    /// Leave the text as translated and report it.
-    Leave,
-}
+pub use crate::core::text_fit::{FitOutcome, LineBreaks, Overflow};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FitSettings {
@@ -76,32 +56,6 @@ pub struct MessageInput {
     pub lines: Vec<MessageLine>,
     /// A portrait is shown (`101` parameter 0 set).
     pub face: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum FitOutcome {
-    /// Already fits as translated.
-    Fits,
-    /// Line breaks changed; same number of pages.
-    Rewrapped,
-    /// Continued on extra pages.
-    NewPage { pages: usize },
-    /// Font reduced to `size` px.
-    Shrunk { size: u32 },
-    /// Still does not fit with these settings (left as translated).
-    TooLong { reason: String },
-    /// Not fitted at all (left as translated).
-    Skipped { reason: String },
-}
-
-impl FitOutcome {
-    pub fn changed_layout(&self) -> bool {
-        matches!(
-            self,
-            FitOutcome::Rewrapped | FitOutcome::NewPage { .. } | FitOutcome::Shrunk { .. }
-        )
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::core::terminology::service::TerminologyService;
 use crate::core::terminology::Result;
-use crate::engines::mv_mz::layout::font::FontCache;
+use crate::core::text_fit::font::FontCache;
 use crate::engines::mv_mz::profiles::ProfileSet;
 
 /// Global application state managed by Tauri.

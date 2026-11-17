@@ -12,13 +12,11 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde::Serialize;
 
-use super::text::{split_face_prefix, tokenize};
-use crate::engines::mv_mz::layout::fit::{FitOutcome, LineBreaks, Overflow};
-use crate::engines::mv_mz::layout::font::Metrics;
-use crate::engines::mv_mz::layout::text::{
-    apply_font_change, raw_of, token_width, Token, TokenKind,
-};
-use crate::engines::mv_mz::layout::wrap::{pieces, size_after, wrap};
+use super::text::{split_face_prefix, tokenize, WolfTokenRules};
+use crate::core::text_fit::font::Metrics;
+use crate::core::text_fit::token::{font_size_after, raw_of, width_of, Token, TokenKind};
+use crate::core::text_fit::wrap::{pieces, size_after, wrap};
+use crate::core::text_fit::{FitOutcome, LineBreaks, Overflow};
 
 /// Fewer original lines than this: no reliable measurement.
 pub const MIN_SAMPLE_LINES: usize = 20;
@@ -63,8 +61,8 @@ fn line_width(tokens: &[Token], metrics: &Metrics, start: f32) -> f32 {
     let mut size = start;
     let mut width = 0.0;
     for token in tokens {
-        width += token_width(token, metrics, size);
-        size = apply_font_change(&token.kind, size);
+        width += width_of(token, metrics, size, &WolfTokenRules);
+        size = font_size_after(&token.kind, size, &WolfTokenRules);
     }
     width
 }
@@ -200,9 +198,13 @@ fn layout(blocks: &[String], metrics: &Metrics, start: f32, width: f32) -> Vec<V
             lines.push(Vec::new());
             continue;
         }
-        let wrapped = wrap(&pieces(&tokens, metrics, size), width, None)
-            .unwrap_or_else(|| vec![tokens.clone()]);
-        size = size_after(&tokens, size);
+        let wrapped = wrap(
+            &pieces(&tokens, metrics, size, &WolfTokenRules),
+            width,
+            None,
+        )
+        .unwrap_or_else(|| vec![tokens.clone()]);
+        size = size_after(&tokens, size, &WolfTokenRules);
         lines.extend(wrapped);
     }
     lines
@@ -214,7 +216,7 @@ fn widest(lines: &[Vec<Token>], metrics: &Metrics, start: f32) -> f32 {
     let mut widest: f32 = 0.0;
     for line in lines {
         widest = widest.max(line_width(line, metrics, size));
-        size = size_after(line, size);
+        size = size_after(line, size, &WolfTokenRules);
     }
     widest
 }

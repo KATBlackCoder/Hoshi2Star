@@ -7,7 +7,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
-use crate::engines::mv_mz::layout::fit::{FitSettings, LineBreaks, Overflow};
+use super::{LineBreaks, Overflow};
+use crate::engines::mv_mz::layout::fit::FitSettings;
 use crate::engines::mv_mz::layout::plan::{FitOverride, StoredOverride};
 
 /// Smallest font size the shrink strategy may use.

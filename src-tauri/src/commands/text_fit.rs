@@ -387,31 +387,7 @@ pub async fn get_text_fit(
     })
 }
 
-#[derive(Debug, Default, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FitCounts {
-    pub total: usize,
-    pub fits: usize,
-    pub rewrapped: usize,
-    pub new_page: usize,
-    pub shrunk: usize,
-    pub too_long: usize,
-    pub skipped: usize,
-}
-
-impl FitCounts {
-    pub(crate) fn add(&mut self, outcome: &FitOutcome) {
-        self.total += 1;
-        match outcome {
-            FitOutcome::Fits => self.fits += 1,
-            FitOutcome::Rewrapped => self.rewrapped += 1,
-            FitOutcome::NewPage { .. } => self.new_page += 1,
-            FitOutcome::Shrunk { .. } => self.shrunk += 1,
-            FitOutcome::TooLong { .. } => self.too_long += 1,
-            FitOutcome::Skipped { .. } => self.skipped += 1,
-        }
-    }
-}
+pub use crate::core::text_fit::FitCounts;
 
 /// A text worth reviewing (new page, shrunk, too long, skipped).
 #[derive(Debug, Clone, Serialize)]

@@ -8,9 +8,8 @@ use serde::Serialize;
 use sqlx::SqlitePool;
 
 use crate::commands::text_fit::{FitCounts, FitRow, FitScan, FontInfo, MissingChar};
-use crate::core::text_fit::TextFitSettings;
-use crate::engines::mv_mz::layout::fit::FitOutcome;
-use crate::engines::mv_mz::layout::font::{FontCache, Metrics};
+use crate::core::text_fit::font::{FontCache, Metrics};
+use crate::core::text_fit::{FitOutcome, TextFitSettings};
 use crate::engines::wolf::layout::{
     find_game_font, fit_message, is_budget_key, is_fitted_key, measure_budget, WolfBudget,
     WolfFitSettings,
