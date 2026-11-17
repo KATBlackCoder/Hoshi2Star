@@ -207,6 +207,7 @@ Use these exact terms in code, comments, and types:
 | `Patch` | Exportable diff for distributing translations |
 | `Pipeline` | LLM pass sequence: translate → review → tone → qa |
 | `Provider` | LLM backend (Ollama, OpenAI, DeepSeek, DeepL) |
+| `TextBox` | An engine's text-fitting adapter (`MzTextBox`, `WolfTextBox`) for the shared ladder in `core/text_fit/` (ADR-009) |
 
 ---
 

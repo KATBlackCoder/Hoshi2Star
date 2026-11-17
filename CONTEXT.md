@@ -78,7 +78,7 @@ hoshi2star/
 │   │   ├── lib.rs              ← entrée app (PAS main.rs — requis mobile)
 │   │   ├── commands/           ← tous les #[tauri::command]
 │   │   ├── engines/            ← parsers par moteur
-│   │   ├── core/               ← tm.rs, glossary.rs, qa.rs, diff.rs
+│   │   ├── core/               ← tm.rs, glossary.rs, qa.rs, diff.rs, text_fit/ (mise en page commune, ADR-009)
 │   │   ├── llm/                ← tokenizer.rs, provider.rs, pipeline.rs
 │   │   ├── export/             ← reinjector.rs, patch.rs
 │   │   ├── db/                 ← pool.rs, migrations/, queries/
@@ -141,6 +141,7 @@ Utiliser ces termes exactement dans le code, les commentaires et les ADRs :
 | `Patch` | Fichier de diff exportable pour distribuer la traduction |
 | `Pipeline` | Séquence de passes LLM (translate → review → tone → qa) |
 | `Provider` | Backend LLM (Ollama, OpenAI, DeepSeek, DeepL) |
+| `TextBox` | Adaptateur de mise en page d'un moteur (`MzTextBox`, `WolfTextBox`) pour l'échelle commune de `core/text_fit/` (ADR-009) |
 
 ---
 
@@ -306,6 +307,12 @@ Voir `docs/adr/` pour le détail. Résumé :
   lisible (`SysDatabase.dat`, `DataBase.dat`, `CDataBase.dat`), sinon refus `wolf_no_database` ; `Data.wolf`,
   `Data/MapData.wolf` ou `Data/BasicData.wolf` présent ⇒ refus `wolf_archive_present` (`engines/wolf/sources.rs`,
   `WolfSources`). Procédure : `docs/engines/wolf-uberwolf.md`
+- **ADR-009** : mise en page du texte commune dans `core/text_fit/` (réglages, police, jetons, découpe, échelle
+  `fit()`, `MeasuredTextBox`, scan), un adaptateur `TextBox` par moteur (`MzTextBox`, `WolfTextBox`) à dispatch
+  statique. Le moteur n'est lu qu'une fois par couche : `engine_fit()` (`core/text_fit/settings.rs`) et
+  `FitEngine::of()` (`commands/text_fit.rs`). Ne rien importer de `engines/mv_mz/layout/` hors du moteur MZ, sauf
+  la couche commande MZ (`commands/text_fit.rs`, `commands/qa.rs`). Preuve de non-régression : le corpus
+  `src-tauri/tests/text_fit_corpus.rs`
 - **Textes Wolf non traduisibles** (plan WF) : skippés à l'extraction, sans segment ; toutes les règles propres à
   Wolf sont dans `engines/wolf/filter.rs` (`extractor.rs` ne fait que les appeler). Règles et ajout d'une règle :
   `docs/engines/wolf-filter.md`
