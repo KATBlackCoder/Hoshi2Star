@@ -18,7 +18,7 @@ use crate::core::text_fit::font::Metrics;
 use crate::core::text_fit::measured::{self, MeasuredTextBox};
 use crate::core::text_fit::token::{raw_of, Token, TokenKind};
 use crate::core::text_fit::wrap::{pieces, size_after, wrap};
-use crate::core::text_fit::{FitOutcome, LineBreaks, Overflow};
+use crate::core::text_fit::{FitAdapter, FitOutcome, LineBreaks, Overflow};
 
 pub use crate::core::text_fit::measured::MIN_SAMPLE_LINES;
 /// Floating-point tolerance on widths.
@@ -293,6 +293,22 @@ impl<'a> WolfTextBox<'a> {
                 (!further).then(|| (current, rest.to_string()))
             })
             .as_ref()
+    }
+}
+
+impl FitAdapter for WolfTextBox<'_> {
+    const NEW_PAGE: bool = false;
+    const DESCRIPTIONS: bool = false;
+
+    /// Map and common-event messages, not choices ([`super::is_fitted_key`]).
+    fn is_fitted_segment(
+        _file_name: &str,
+        json_key: &str,
+        _segment_kind: &str,
+        dialogue: bool,
+        _descriptions: bool,
+    ) -> bool {
+        dialogue && super::is_fitted_key(json_key)
     }
 }
 

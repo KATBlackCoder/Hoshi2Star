@@ -12,3 +12,5 @@ pub mod plugins_js;
 pub mod profiles;
 pub mod resync;
 pub mod terminology;
+
+pub use layout::fit::MzTextBox;

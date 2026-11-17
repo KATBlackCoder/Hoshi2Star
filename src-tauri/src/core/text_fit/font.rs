@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
+use serde::Serialize;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -287,6 +288,49 @@ pub(crate) fn build_sfnt(flavor: u32, tables: &[([u8; 4], Vec<u8>)]) -> Vec<u8> 
         out.resize((out.len() + 3) & !3, 0);
     }
     out
+}
+
+/// The game font as used for layout.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FontInfo {
+    /// The font file, as the game names it.
+    pub file: Option<String>,
+    /// Widths come from the font file (otherwise they are estimated).
+    pub loaded: bool,
+    pub error: Option<String>,
+}
+
+/// The game font for layout: measured from `path` when it loads, estimated
+/// otherwise (`path` is `Err` with the reason when the engine found no file).
+/// `file` names the font for the user.
+pub fn load_game_font(
+    fonts: &FontCache,
+    path: Result<&Path, String>,
+    file: Option<String>,
+) -> (Metrics, FontInfo) {
+    let error = match path.map(|path| fonts.load(path)) {
+        Ok(Ok(font)) => {
+            return (
+                Metrics::Font(font),
+                FontInfo {
+                    file,
+                    loaded: true,
+                    error: None,
+                },
+            )
+        }
+        Ok(Err(error)) => error.to_string(),
+        Err(error) => error,
+    };
+    (
+        Metrics::Estimated,
+        FontInfo {
+            file,
+            loaded: false,
+            error: Some(error),
+        },
+    )
 }
 
 #[cfg(test)]

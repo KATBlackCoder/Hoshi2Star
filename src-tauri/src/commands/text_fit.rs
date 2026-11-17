@@ -3,7 +3,7 @@
 //! [`environment`] and [`fit_file`]. Wolf RPG messages (plan WR) share the
 //! settings, the dialog and the scan, through [`super::wolf_text_fit`].
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -13,12 +13,15 @@ use sqlx::SqlitePool;
 use crate::commands::coverage::enabled_plugin_sources;
 use crate::commands::wolf_text_fit::{self, WolfFitInfo};
 use crate::core::originals;
+use crate::core::text_fit::font::{load_game_font, FontCache, Metrics};
+use crate::core::text_fit::writes_without_spaces;
 use crate::core::text_fit::{self, TextFitSettings};
 use crate::domain::types::SourceFile;
 use crate::engines::filter::is_map_file;
 use crate::engines::mv_mz::coverage::plugins::PLUGINS_FILE_NAME;
-use crate::engines::mv_mz::layout::fit::{FitContext, FitOutcome, FitSettings};
-use crate::engines::mv_mz::layout::font::{FontCache, Metrics};
+use crate::engines::mv_mz::layout::fit::FitContext;
+/// MZ fitting settings, built from the project's (`FitSettings::from`).
+pub use crate::engines::mv_mz::layout::fit::FitSettings;
 use crate::engines::mv_mz::layout::geometry::{
     plugin_layout, Geometry, LayoutWarning, PluginLayout,
 };
@@ -30,16 +33,7 @@ use crate::engines::mv_mz::originals::SnapshotStore;
 use crate::engines::mv_mz::profiles::ProfileSet;
 use crate::state::AppState;
 
-/// The game font as used for layout.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FontInfo {
-    /// `fonts/<file>` named in System.json.
-    pub file: Option<String>,
-    /// Widths come from the font file (otherwise they are estimated).
-    pub loaded: bool,
-    pub error: Option<String>,
-}
+pub use crate::core::text_fit::font::FontInfo;
 
 /// Everything needed to fit an MZ project's texts.
 pub struct FitEnvironment {
@@ -105,7 +99,7 @@ pub async fn environment(
     .fetch_one(db)
     .await
     .map_err(|e| e.to_string())?;
-    if engine != "mv_mz" {
+    if FitEngine::of(&engine) != FitEngine::Mz {
         return Ok(Support::Unsupported(
             "Text fitting is available for RPG Maker MZ games.".into(),
         ));
@@ -144,34 +138,13 @@ pub async fn environment(
         .font_file
         .as_ref()
         .and_then(|name| js_dir.parent().map(|game| game.join("fonts").join(name)));
-    let (metrics, font) = match &font_path {
-        Some(path) => match fonts.load(path) {
-            Ok(font) => (
-                Metrics::Font(font),
-                FontInfo {
-                    file: geometry.font_file.clone(),
-                    loaded: true,
-                    error: None,
-                },
-            ),
-            Err(error) => (
-                Metrics::Estimated,
-                FontInfo {
-                    file: geometry.font_file.clone(),
-                    loaded: false,
-                    error: Some(error.to_string()),
-                },
-            ),
-        },
-        None => (
-            Metrics::Estimated,
-            FontInfo {
-                file: None,
-                loaded: false,
-                error: Some("System.json names no main font file.".into()),
-            },
-        ),
-    };
+    let (metrics, font) = load_game_font(
+        fonts,
+        font_path
+            .as_deref()
+            .ok_or_else(|| "System.json names no main font file.".to_string()),
+        font_path.as_ref().and(geometry.font_file.clone()),
+    );
 
     let plugins = match std::fs::read(js_dir.join(PLUGINS_FILE_NAME)) {
         Ok(bytes) => plugin_layout(
@@ -230,9 +203,7 @@ pub async fn environment(
         font_path,
         plugins,
         inserts,
-        no_space_join: ["zh", "ja", "ko"]
-            .iter()
-            .any(|code| target_language.starts_with(code)),
+        no_space_join: writes_without_spaces(&target_language),
         store,
         files,
         game_path,
@@ -316,12 +287,60 @@ pub struct TextFitView {
     pub wolf: Option<WolfFitInfo>,
 }
 
-async fn project_engine(db: &SqlitePool, project_id: &str) -> Result<String, String> {
-    sqlx::query_scalar("SELECT engine FROM projects WHERE id = ?")
+/// The text fitting adapter of a project's engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FitEngine {
+    /// RPG Maker MZ (`MzTextBox`; MV is refused by [`environment`]).
+    Mz,
+    /// Wolf RPG messages (`WolfTextBox`, plan WR).
+    Wolf,
+    /// No text fitting.
+    Other,
+}
+
+impl FitEngine {
+    /// The command layer's only reading of the engine stored in
+    /// `projects.engine` (plan DD, L1-D; L5 reads it as an `Engine`).
+    pub fn of(engine: &str) -> Self {
+        match engine {
+            "mv_mz" => Self::Mz,
+            "wolf" => Self::Wolf,
+            _ => Self::Other,
+        }
+    }
+}
+
+/// The project's engine as stored, and its text fitting adapter.
+async fn project_fit_engine(
+    db: &SqlitePool,
+    project_id: &str,
+) -> Result<(String, FitEngine), String> {
+    let engine: String = sqlx::query_scalar("SELECT engine FROM projects WHERE id = ?")
         .bind(project_id)
         .fetch_one(db)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    let fit_engine = FitEngine::of(&engine);
+    Ok((engine, fit_engine))
+}
+
+/// `settings` once validated, or the project's saved settings (with the
+/// defaults of `engine` when none are saved).
+async fn requested_or_saved(
+    db: &SqlitePool,
+    project_id: &str,
+    engine: &str,
+    settings: Option<TextFitSettings>,
+) -> Result<TextFitSettings, String> {
+    match settings {
+        Some(settings) => {
+            settings.validate()?;
+            Ok(settings)
+        }
+        None => text_fit::load_settings_for_engine(db, project_id, engine)
+            .await
+            .map_err(|e| e.to_string()),
+    }
 }
 
 async fn support(state: &AppState, project_id: &str) -> Result<Support, String> {
@@ -341,10 +360,9 @@ pub async fn get_text_fit(
     project_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<TextFitView, String> {
-    if project_engine(&state.db, &project_id).await? == "wolf" {
-        let settings = text_fit::load_settings_for_engine(&state.db, &project_id, "wolf")
-            .await
-            .map_err(|e| e.to_string())?;
+    let (engine, fit_engine) = project_fit_engine(&state.db, &project_id).await?;
+    let settings = requested_or_saved(&state.db, &project_id, &engine, None).await?;
+    if fit_engine == FitEngine::Wolf {
         let env =
             wolf_text_fit::wolf_environment(&state.db, &state.game_fonts, &project_id, &settings)
                 .await?;
@@ -360,9 +378,6 @@ pub async fn get_text_fit(
             wolf: Some(env.info),
         });
     }
-    let settings = text_fit::load_settings(&state.db, &project_id)
-        .await
-        .map_err(|e| e.to_string())?;
     Ok(match support(&state, &project_id).await? {
         Support::Ready(env) => TextFitView {
             supported: true,
@@ -389,38 +404,8 @@ pub async fn get_text_fit(
 
 pub use crate::core::text_fit::FitCounts;
 
-/// A text worth reviewing (new page, shrunk, too long, skipped).
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FitRow {
-    pub file_id: String,
-    pub file_name: String,
-    pub pointer: String,
-    pub description: bool,
-    /// First translated line (to open it in the editor).
-    pub segment_id: Option<String>,
-    pub outcome: FitOutcome,
-    pub sample: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MissingChar {
-    pub character: String,
-    pub count: usize,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FitScan {
-    pub dialogue: FitCounts,
-    pub descriptions: FitCounts,
-    pub rows: Vec<FitRow>,
-    /// Characters the game font lacks (drawn with a fallback font).
-    pub missing_chars: Vec<MissingChar>,
-}
-
-const MAX_ROWS: usize = 500;
+use crate::core::text_fit::scan::ScanSummary;
+pub use crate::core::text_fit::scan::{FitRow, FitScan, MissingChar};
 
 /// Fit every message and description with `settings` (the saved settings
 /// when `None`), whether or not fitting is enabled, and summarise.
@@ -430,30 +415,14 @@ pub async fn scan_text_fit(
     settings: Option<TextFitSettings>,
     state: tauri::State<'_, AppState>,
 ) -> Result<FitScan, String> {
-    if project_engine(&state.db, &project_id).await? == "wolf" {
-        let settings = match settings {
-            Some(settings) => {
-                settings.validate()?;
-                settings
-            }
-            None => text_fit::load_settings_for_engine(&state.db, &project_id, "wolf")
-                .await
-                .map_err(|e| e.to_string())?,
-        };
+    let (engine, fit_engine) = project_fit_engine(&state.db, &project_id).await?;
+    let settings = requested_or_saved(&state.db, &project_id, &engine, settings).await?;
+    if fit_engine == FitEngine::Wolf {
         let env =
             wolf_text_fit::wolf_environment(&state.db, &state.game_fonts, &project_id, &settings)
                 .await?;
         return wolf_text_fit::scan(&state.db, &project_id, env, &settings).await;
     }
-    let settings = match settings {
-        Some(settings) => {
-            settings.validate()?;
-            settings
-        }
-        None => text_fit::load_settings(&state.db, &project_id)
-            .await
-            .map_err(|e| e.to_string())?,
-    };
     let Support::Ready(env) = support(&state, &project_id).await? else {
         return Err("Text fitting is not available for this project.".into());
     };
@@ -474,10 +443,7 @@ fn scan(
 ) -> Result<FitScan, String> {
     let empty_targets = HashMap::new();
     let empty_overrides = HashMap::new();
-    let mut dialogue = FitCounts::default();
-    let mut descriptions = FitCounts::default();
-    let mut rows = Vec::new();
-    let mut missing: BTreeMap<char, usize> = BTreeMap::new();
+    let mut summary = ScanSummary::default();
     let mut files: Vec<&SourceFile> = env.files.iter().collect();
     files.sort_by(|a, b| a.file_name.cmp(&b.file_name));
     for file in files {
@@ -485,36 +451,24 @@ fn scan(
             env,
             file,
             targets.get(&file.file_name).unwrap_or(&empty_targets),
-            &settings.fit_settings(),
+            &FitSettings::from(settings),
             overrides.get(&file.file_name).unwrap_or(&empty_overrides),
             true,
             true,
         )?;
         for item in items {
-            let counts = if item.description {
-                &mut descriptions
-            } else {
-                &mut dialogue
-            };
-            counts.add(&item.fitted.outcome);
             for (text, id) in item.texts.iter().zip(&item.segment_ids) {
                 if id.is_some() {
-                    for c in env.metrics.missing_chars(text) {
-                        *missing.entry(c).or_default() += 1;
-                    }
+                    summary.add_missing_chars(&env.metrics, text);
                 }
             }
-            let notable = !matches!(
-                item.fitted.outcome,
-                FitOutcome::Fits | FitOutcome::Rewrapped
-            );
-            if notable && rows.len() < MAX_ROWS {
+            summary.add(item.description, &item.fitted.outcome, || {
                 let first = item
                     .segment_ids
                     .iter()
                     .position(Option::is_some)
                     .unwrap_or(0);
-                rows.push(FitRow {
+                FitRow {
                     file_id: file.id.clone(),
                     file_name: file.file_name.clone(),
                     pointer: item.pointer.clone(),
@@ -525,24 +479,11 @@ fn scan(
                         .texts
                         .get(first)
                         .map_or_else(String::new, |t| t.chars().take(80).collect()),
-                });
-            }
+                }
+            });
         }
     }
-    let mut missing_chars: Vec<MissingChar> = missing
-        .into_iter()
-        .map(|(c, count)| MissingChar {
-            character: c.to_string(),
-            count,
-        })
-        .collect();
-    missing_chars.sort_by_key(|m| std::cmp::Reverse(m.count));
-    Ok(FitScan {
-        dialogue,
-        descriptions,
-        rows,
-        missing_chars,
-    })
+    Ok(summary.finish())
 }
 
 /// Save the project's settings.
@@ -553,7 +494,7 @@ pub async fn set_text_fit(
     state: tauri::State<'_, AppState>,
 ) -> Result<TextFitSettings, String> {
     settings.validate()?;
-    if project_engine(&state.db, &project_id).await? == "wolf" {
+    if project_fit_engine(&state.db, &project_id).await?.1 == FitEngine::Wolf {
         settings.validate_wolf()?;
         // Never on where export cannot fit (see below): the window must be known.
         if settings.enabled_dialogue {
@@ -653,7 +594,7 @@ async fn preview_item(
             &env,
             file,
             &targets,
-            &settings.fit_settings(),
+            &FitSettings::from(&settings),
             &overrides,
             true,
             true,

@@ -7,6 +7,7 @@
 pub mod fit;
 pub mod font;
 pub mod measured;
+pub mod scan;
 pub mod settings;
 pub mod token;
 pub mod wrap;
@@ -61,6 +62,13 @@ impl FitOutcome {
             FitOutcome::Rewrapped | FitOutcome::NewPage { .. } | FitOutcome::Shrunk { .. }
         )
     }
+}
+
+/// The target language writes without spaces (zh/ja/ko): lines join directly.
+pub fn writes_without_spaces(target_language: &str) -> bool {
+    ["zh", "ja", "ko"]
+        .iter()
+        .any(|code| target_language.starts_with(code))
 }
 
 /// Outcomes counted by kind (scan and export summaries).

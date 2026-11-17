@@ -1,7 +1,7 @@
 //! Message text as layout tokens, independent of any engine.
 //!
-//! Each engine reads its own codes into these tokens (MZ:
-//! `engines::mv_mz::layout::text`, Wolf: `engines::wolf::layout::text`).
+//! Each engine reads its own codes into these tokens (the `text` module of
+//! each engine's `layout`).
 //! Every token keeps its raw text, so tokens re-assemble into the exact
 //! original string. What a relative font size code or an icon measures is an
 //! engine rule ([`TokenRules`]), not part of the token.

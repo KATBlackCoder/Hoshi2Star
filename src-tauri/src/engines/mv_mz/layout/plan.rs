@@ -5,13 +5,15 @@
 
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+#[cfg(test)]
+use super::fit::LineBreaks;
 use super::fit::{
     effective_text, fit_description, fit_message, help_box, message_box, FitContext, FitOutcome,
-    FitSettings, Fitted, LineBreaks, MessageInput, MessageLine, Overflow,
+    FitSettings, Fitted, MessageInput, MessageLine, Overflow,
 };
 use super::message::{descriptions_in, messages_in};
 use super::simulate::BoxSpec;
@@ -24,23 +26,7 @@ pub struct Target {
     pub text: String,
 }
 
-/// A per-message (or per-description) choice.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FitOverride {
-    pub line_breaks: Option<LineBreaks>,
-    pub overflow: Option<Overflow>,
-    /// Export this text exactly as translated.
-    #[serde(default)]
-    pub disabled: bool,
-}
-
-/// An override and the original text it was made for.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StoredOverride {
-    pub choice: FitOverride,
-    pub source_hash: String,
-}
+pub use crate::core::text_fit::{FitOverride, StoredOverride};
 
 /// Hash of the original text a message or description is made of.
 pub fn source_hash(texts: &[&str]) -> String {

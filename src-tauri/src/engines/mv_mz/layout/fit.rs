@@ -20,6 +20,7 @@ use super::simulate::{simulate, BoxSpec, PageView};
 use super::text::{apply_font_change, raw_of, tokenize, Inserts, Token, TokenKind, PAGE_BREAK};
 use super::wrap::{pieces, size_after, wrap, Piece};
 use crate::core::text_fit::fit::{fit, TextBox, TooLong};
+use crate::core::text_fit::{FitAdapter, TextFitSettings};
 
 pub use crate::core::text_fit::{FitOutcome, LineBreaks, Overflow};
 
@@ -34,6 +35,20 @@ pub struct FitSettings {
     /// export's prefix; the export's "replace existing" choice). Otherwise it
     /// is the translator's code and is kept.
     pub strip_stored_font_prefix: bool,
+}
+
+impl From<&TextFitSettings> for FitSettings {
+    /// The project's settings for MZ fitting (a stored export prefix is kept:
+    /// the export sets [`FitSettings::strip_stored_font_prefix`] itself).
+    fn from(settings: &TextFitSettings) -> Self {
+        Self {
+            line_breaks: settings.line_breaks,
+            overflow: settings.overflow,
+            min_font_size: settings.min_font_size,
+            dialogue_font_size: settings.dialogue_font_size,
+            strip_stored_font_prefix: false,
+        }
+    }
 }
 
 pub struct FitContext<'a> {
@@ -829,6 +844,21 @@ impl<'a> MzTextBox<'a> {
             values,
             pages: drawn,
         })
+    }
+}
+
+impl FitAdapter for MzTextBox<'_> {
+    const NEW_PAGE: bool = true;
+    const DESCRIPTIONS: bool = true;
+
+    fn is_fitted_segment(
+        file_name: &str,
+        json_key: &str,
+        segment_kind: &str,
+        dialogue: bool,
+        descriptions: bool,
+    ) -> bool {
+        super::message::is_fitted_segment(file_name, json_key, segment_kind, dialogue, descriptions)
     }
 }
 
