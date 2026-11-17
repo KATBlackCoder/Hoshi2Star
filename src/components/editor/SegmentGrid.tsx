@@ -27,7 +27,7 @@ import { invalidateAfterSegmentSave } from "@/lib/queryClient";
 import { cancelFrame, EVENTS, scheduleFrame } from "@/lib/events";
 import { qaScoreLevel } from "@/lib/qaScore";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
-import { cn } from "@/lib/utils";
+import { cn, errorMessage } from "@/lib/utils";
 import { Play, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -115,7 +115,7 @@ export function SegmentGrid() {
         } catch (error) {
           if (seq === loadSeqRef.current) {
             setSegments([]);
-            setLoadError(String(error));
+            setLoadError(errorMessage(error));
           }
         } finally {
           if (seq === loadSeqRef.current) {
@@ -270,7 +270,7 @@ export function SegmentGrid() {
       } catch (err) {
         // A failed save kept the row's old value — tell the user instead of
         // rejecting silently (callers fire-and-forget this promise).
-        toast.error(t("segmentGrid.saveError", { error: String(err) }));
+        toast.error(t("segmentGrid.saveError", { error: errorMessage(err) }));
       }
     },
     [setActiveSegment, t],

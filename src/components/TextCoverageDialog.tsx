@@ -47,6 +47,7 @@ import {
 import { refreshProjectData } from "@/stores/project";
 import { openResyncDialog } from "@/stores/resync";
 import { useIsTranslating } from "@/stores/llm";
+import { errorMessage } from "@/lib/utils";
 
 interface TextCoverageDialogProps {
   projectId: string | null;
@@ -132,7 +133,7 @@ export function TextCoverageDialog({ projectId }: TextCoverageDialogProps) {
       toast.success(t("coverage.saved"));
       setOpen(false);
     } catch (err) {
-      toast.error(t("coverage.saveError", { error: String(err) }));
+      toast.error(t("coverage.saveError", { error: errorMessage(err) }));
     }
   }
 

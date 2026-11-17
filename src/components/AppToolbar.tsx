@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, errorMessage } from "@/lib/utils";
 import { openProjectErrorKey, wolfReadErrorDetail } from "@/lib/projectError";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -227,7 +227,7 @@ export function AppToolbar({
       });
       setPackImport({ packPath: selected as string, preview });
     } catch (err) {
-      toast.error(t("pack.importError", { error: String(err) }));
+      toast.error(t("pack.importError", { error: errorMessage(err) }));
     } finally {
       setIsPreviewingPack(false);
     }

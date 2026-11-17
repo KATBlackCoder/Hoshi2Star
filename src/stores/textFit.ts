@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import type { FitScan, TextFitSettings, TextFitView } from "@/lib/types";
+import { errorMessage } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Text fitting (RPG Maker MZ): settings dialog state
@@ -46,7 +47,7 @@ export async function openTextFitDialog(projectId: string): Promise<void> {
     useTextFitStore.setState({ view, loading: false });
     if (view.supported) await rescanTextFit(projectId, null);
   } catch (err) {
-    useTextFitStore.setState({ loading: false, error: String(err) });
+    useTextFitStore.setState({ loading: false, error: errorMessage(err) });
   }
 }
 
@@ -63,7 +64,7 @@ export async function rescanTextFit(
     });
     useTextFitStore.setState({ scan, scanning: false, error: null });
   } catch (err) {
-    useTextFitStore.setState({ scanning: false, error: String(err) });
+    useTextFitStore.setState({ scanning: false, error: errorMessage(err) });
   }
 }
 

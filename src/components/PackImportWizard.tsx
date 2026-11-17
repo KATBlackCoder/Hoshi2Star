@@ -28,6 +28,7 @@ import type {
   ImportPreview,
   ImportReport,
 } from "@/lib/types";
+import { errorMessage } from "@/lib/utils";
 
 interface PackImportWizardProps {
   projectId: string;
@@ -114,7 +115,7 @@ export function PackImportWizard({
       // `h2s://project/import-done` refreshes the views.
       setReport(result);
     } catch (e) {
-      toast.error(t("pack.importError", { error: String(e) }));
+      toast.error(t("pack.importError", { error: errorMessage(e) }));
     } finally {
       setIsApplying(false);
     }

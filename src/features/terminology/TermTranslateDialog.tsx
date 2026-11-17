@@ -18,6 +18,7 @@ import type {
 } from "@/lib/types";
 import { terminologyApi } from "./api";
 import { TerminologySelect } from "./TerminologySelect";
+import { errorMessage } from "@/lib/utils";
 
 type SelectionMode = "selected" | "visible" | "untranslated";
 
@@ -103,7 +104,7 @@ export function TermTranslateDialog({
     } catch (error) {
       unlisten.forEach((fn) => fn());
       setRunning(false);
-      toast.error(String(error));
+      toast.error(errorMessage(error));
     }
   }
 

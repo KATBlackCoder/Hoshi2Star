@@ -5,6 +5,7 @@ import type {
   CoverageStatus,
   CoverageView,
 } from "@/lib/types";
+import { errorMessage } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Optional text coverage (MV/MZ plugin & system UI text)
@@ -37,7 +38,7 @@ export async function openCoverageDialog(projectId: string): Promise<void> {
     });
     useCoverageStore.setState({ view, loading: false });
   } catch (err) {
-    useCoverageStore.setState({ loading: false, error: String(err) });
+    useCoverageStore.setState({ loading: false, error: errorMessage(err) });
   }
 }
 
@@ -55,7 +56,7 @@ export async function applyCoverageChanges(
     useCoverageStore.setState({ view, loading: false });
     return view;
   } catch (err) {
-    useCoverageStore.setState({ loading: false, error: String(err) });
+    useCoverageStore.setState({ loading: false, error: errorMessage(err) });
     throw err;
   }
 }

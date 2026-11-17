@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import type { ResyncSummary } from "@/lib/types";
+import { errorMessage } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Realignment after a game update (MV/MZ)
@@ -38,7 +39,7 @@ export async function openResyncDialog(projectId: string): Promise<void> {
     });
     useResyncStore.setState({ summary, loading: false });
   } catch (err) {
-    useResyncStore.setState({ loading: false, error: String(err) });
+    useResyncStore.setState({ loading: false, error: errorMessage(err) });
   }
 }
 
@@ -53,6 +54,6 @@ export async function applyResync(projectId: string): Promise<void> {
     // The backend emits `h2s://project/resynced`: the views refresh from it.
     useResyncStore.setState({ summary, loading: false });
   } catch (err) {
-    useResyncStore.setState({ loading: false, error: String(err) });
+    useResyncStore.setState({ loading: false, error: errorMessage(err) });
   }
 }
