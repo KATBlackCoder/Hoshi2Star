@@ -34,6 +34,12 @@ interface AppDialogsProps {
   handlers: Handlers;
 }
 
+/** Give the focus back to the export button when an export dialog closes. */
+function focusExportButton(event: Event) {
+  event.preventDefault();
+  document.getElementById("patch-gate-export")?.focus();
+}
+
 export function AppDialogs({ handlers }: AppDialogsProps) {
   const { t } = useTranslation();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
@@ -89,10 +95,7 @@ export function AppDialogs({ handlers }: AppDialogsProps) {
       {/* Export All — confirmation (all translated) */}
       <AlertDialog open={exportDialog === "confirm"}>
         <AlertDialogContent
-          onCloseAutoFocus={(event) => {
-            event.preventDefault();
-            document.getElementById("patch-gate-export")?.focus();
-          }}
+          onCloseAutoFocus={focusExportButton}
         >
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -130,10 +133,7 @@ export function AppDialogs({ handlers }: AppDialogsProps) {
       {/* Export All — blocked (untranslated segments remain) */}
       <AlertDialog open={exportDialog === "blocked"}>
         <AlertDialogContent
-          onCloseAutoFocus={(event) => {
-            event.preventDefault();
-            document.getElementById("patch-gate-export")?.focus();
-          }}
+          onCloseAutoFocus={focusExportButton}
         >
           <AlertDialogHeader>
             <AlertDialogTitle>

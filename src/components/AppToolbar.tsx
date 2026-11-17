@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ComponentProps } from "react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -22,6 +22,7 @@ import {
   Snowflake,
   Square,
   WrapText,
+  type LucideIcon,
 } from "lucide-react";
 import {
   getProjectLangPair,
@@ -47,6 +48,40 @@ import type { ImportPreview } from "@/lib/types";
 import { usePilotStore } from "@/stores/pilot";
 import { useSettingsStore } from "@/stores/settings";
 
+/**
+ * A toolbar button whose icon becomes a spinner while `busy`. Other props go
+ * to the `Button`.
+ */
+function ToolbarButton({
+  icon: Icon,
+  busy,
+  spinClassName = "animate-spin",
+  children,
+  ...props
+}: ComponentProps<typeof Button> & {
+  icon: LucideIcon;
+  busy: boolean;
+  spinClassName?: string;
+}) {
+  return (
+    <Button {...props}>
+      {busy ? (
+        <Loader2 className={`h-3.5 w-3.5 ${spinClassName}`} />
+      ) : (
+        <Icon className="h-3.5 w-3.5" />
+      )}
+      {children}
+    </Button>
+  );
+}
+
+/** `seconds` as `mm:ss`. */
+function formatMinutesSeconds(seconds: number): string {
+  const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const ss = String(seconds % 60).padStart(2, "0");
+  return `${mm}:${ss}`;
+}
+
 // ---------------------------------------------------------------------------
 // Translation timer
 // ---------------------------------------------------------------------------
@@ -69,8 +104,6 @@ function TranslationTimer() {
 
   if (!startTime) return null;
 
-  const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
-  const ss = String(elapsed % 60).padStart(2, "0");
 
   return (
     <div
@@ -79,7 +112,7 @@ function TranslationTimer() {
       }`}
     >
       <Clock className="h-3 w-3 shrink-0" />
-      {mm}:{ss}
+      {formatMinutesSeconds(elapsed)}
     </div>
   );
 }
@@ -95,13 +128,11 @@ function CooldownBadge() {
 
   if (!isCooling) return null;
 
-  const mm = String(Math.floor(remaining / 60)).padStart(2, "0");
-  const ss = String(remaining % 60).padStart(2, "0");
 
   return (
     <div className="flex items-center gap-1 font-mono text-xs tabular-nums text-blue-400">
       <Snowflake className="h-3 w-3 shrink-0 animate-pulse" />
-      {t("toolbar.translateAllCooling", { remaining: `${mm}:${ss}` })}
+      {t("toolbar.translateAllCooling", { remaining: formatMinutesSeconds(remaining) })}
     </div>
   );
 }
@@ -235,58 +266,51 @@ export function AppToolbar({
 
   return (
     <div className="flex min-h-11 min-w-0 shrink-0 items-center gap-2 overflow-x-auto border-b px-2 [scrollbar-width:none] sm:px-3">
-      <Button
+      <ToolbarButton
+        icon={FolderOpen}
+        busy={isOpening}
         size="sm"
         variant="outline"
         className="h-7 gap-1.5 text-xs"
         onClick={() => void handleOpenGame()}
         disabled={isOpening}
       >
-        {isOpening ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <FolderOpen className="h-3.5 w-3.5" />
-        )}
         {t("toolbar.openGame")}
-      </Button>
+      </ToolbarButton>
 
       {activeProjectId && (
-        <Button
+        <ToolbarButton
+          icon={Play}
+          busy={isTranslating}
           size="sm"
           className="h-7 gap-1.5 text-xs shadow-[0_0_12px_oklch(0.65_0.18_285/35%)]"
           onClick={onTranslate}
           disabled={isTranslating || isPilotRunning}
         >
-          {isTranslating ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Play className="h-3.5 w-3.5" />
-          )}
           {isTranslating
             ? `${t("toolbar.translating")} ${progress > 0 ? `${progress}%` : ""}`
             : t("toolbar.translate")}
-        </Button>
+        </ToolbarButton>
       )}
 
       {activeProjectId && (
-        <Button
+        <ToolbarButton
+          icon={Languages}
+          busy={isTranslating}
           size="sm"
           variant="outline"
           className="h-7 gap-1.5 text-xs"
           onClick={onTranslateAll}
           disabled={isTranslating || isPilotRunning}
         >
-          {isTranslating ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Languages className="h-3.5 w-3.5" />
-          )}
           {t("toolbar.translateAll")}
-        </Button>
+        </ToolbarButton>
       )}
 
       {activeProjectId && (
-        <Button
+        <ToolbarButton
+          icon={Download}
+          busy={isExporting}
           id="toolbar-export-all"
           size="sm"
           variant="outline"
@@ -294,13 +318,8 @@ export function AppToolbar({
           onClick={onExportAll}
           disabled={isTranslating || isExporting || isPilotRunning}
         >
-          {isExporting ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Download className="h-3.5 w-3.5" />
-          )}
           {t("toolbar.exportAll")}
-        </Button>
+        </ToolbarButton>
       )}
 
       {activeProjectId && activeProject?.engine === "mv_mz" && (
@@ -334,20 +353,18 @@ export function AppToolbar({
         )}
 
       {developerTools && activeProject?.engine === "mv_mz" && (
-        <Button
+        <ToolbarButton
+          icon={FlaskConical}
+          busy={isPilotRunning}
+          spinClassName="motion-safe:animate-spin"
           size="sm"
           variant={isPilotOpen ? "secondary" : "outline"}
           className="h-7 gap-1.5 text-xs"
           onClick={onOpenPilot}
           disabled={isTranslating || isPilotRunning}
         >
-          {isPilotRunning ? (
-            <Loader2 className="h-3.5 w-3.5 motion-safe:animate-spin" />
-          ) : (
-            <FlaskConical className="h-3.5 w-3.5" />
-          )}
           {t("pilot.toolbar")}
-        </Button>
+        </ToolbarButton>
       )}
 
       {developerTools &&
@@ -380,7 +397,9 @@ export function AppToolbar({
           >
             <Share2 className="h-3.5 w-3.5" />
           </Button>
-          <Button
+          <ToolbarButton
+            icon={PackageOpen}
+            busy={isPreviewingPack}
             size="sm"
             variant="outline"
             className="hit-area-40 relative h-7 w-7 p-0"
@@ -389,19 +408,16 @@ export function AppToolbar({
             onClick={() => void handleImportPack()}
             disabled={isTranslating || isPreviewingPack || isPilotRunning}
           >
-            {isPreviewingPack ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <PackageOpen className="h-3.5 w-3.5" />
-            )}
-          </Button>
+          </ToolbarButton>
         </>
       )}
 
       {/* Progress bar + timer + cooldown */}
       {isTranslating && progress >= 0 && (
         <div className="ml-auto flex items-center gap-2 mr-2">
-          <Button
+          <ToolbarButton
+            icon={Square}
+            busy={isCancelling}
             id="toolbar-stop-translation"
             size="sm"
             variant="outline"
@@ -410,13 +426,8 @@ export function AppToolbar({
             disabled={isCancelling}
             title={t("llmRun.stopHint")}
           >
-            {isCancelling ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Square className="h-3.5 w-3.5" />
-            )}
             {isCancelling ? t("llmRun.stopping") : t("llmRun.stop")}
-          </Button>
+          </ToolbarButton>
           <TranslationTimer />
           <CooldownBadge />
           <ConstellationProgress progress={progress} />

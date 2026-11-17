@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -36,6 +36,7 @@ import type {
   CategoryChange,
   CategoryState,
   CoverageCategory,
+  CoverageCoreWarning,
   CoverageNotCovered,
   CoverageReference,
 } from "@/lib/types";
@@ -549,9 +550,40 @@ function Notices({
   );
 }
 
+/** A dashed section whose content opens from its title. */
+function CollapsibleSection({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint: string;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="rounded-lg border border-dashed p-3">
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 text-sm font-medium"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {open ? (
+          <ChevronDown className="h-3.5 w-3.5" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5" />
+        )}
+        {title}
+      </button>
+      <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
+      {open && children}
+    </section>
+  );
+}
+
 function NotCoveredList({ items }: { items: CoverageNotCovered[] }) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
   const byPlugin = useMemo(() => {
     const groups = new Map<string, CoverageNotCovered[]>();
     for (const item of items) {
@@ -562,92 +594,61 @@ function NotCoveredList({ items }: { items: CoverageNotCovered[] }) {
     return [...groups.entries()];
   }, [items]);
   return (
-    <section className="rounded-lg border border-dashed p-3">
-      <button
-        type="button"
-        className="inline-flex items-center gap-1 text-sm font-medium"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-      >
-        {open ? (
-          <ChevronDown className="h-3.5 w-3.5" />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5" />
-        )}
-        {t("coverage.notCoveredTitle", { count: items.length })}
-      </button>
-      <p className="mt-1 text-xs text-muted-foreground">
-        {t("coverage.notCoveredHint")}
-      </p>
-      {open && (
-        <ul className="mt-2 space-y-2 text-xs">
-          {byPlugin.map(([plugin, rows]) => (
-            <li key={plugin}>
-              <p className="font-mono font-medium">{plugin}</p>
-              <p className="text-muted-foreground">{rows[0].reason}</p>
-              <ul className="mt-1 space-y-1">
-                {rows.map((row, index) => (
-                  <li
-                    key={`${row.field}-${index}`}
-                    className="rounded bg-muted/50 px-2 py-1"
-                  >
-                    <span className="font-mono">{row.field}</span>
-                    {" — "}
-                    <span>{row.sample}</span>
-                    {row.hint && (
-                      <div className="text-muted-foreground">
-                        {t("coverage.notCoveredHintLabel")} {row.hint}
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    <CollapsibleSection
+      title={t("coverage.notCoveredTitle", { count: items.length })}
+      hint={t("coverage.notCoveredHint")}
+    >
+      <ul className="mt-2 space-y-2 text-xs">
+        {byPlugin.map(([plugin, rows]) => (
+          <li key={plugin}>
+            <p className="font-mono font-medium">{plugin}</p>
+            <p className="text-muted-foreground">{rows[0].reason}</p>
+            <ul className="mt-1 space-y-1">
+              {rows.map((row, index) => (
+                <li
+                  key={`${row.field}-${index}`}
+                  className="rounded bg-muted/50 px-2 py-1"
+                >
+                  <span className="font-mono">{row.field}</span>
+                  {" — "}
+                  <span>{row.sample}</span>
+                  {row.hint && (
+                    <div className="text-muted-foreground">
+                      {t("coverage.notCoveredHintLabel")} {row.hint}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </CollapsibleSection>
   );
 }
 
 function CoreWarnings({
   warnings,
 }: {
-  warnings: { segmentKind: string; source: string; references: CoverageReference[] }[];
+  warnings: CoverageCoreWarning[];
 }) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
   return (
-    <section className="rounded-lg border border-dashed p-3">
-      <button
-        type="button"
-        className="inline-flex items-center gap-1 text-sm font-medium"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-      >
-        {open ? (
-          <ChevronDown className="h-3.5 w-3.5" />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5" />
-        )}
-        {t("coverage.coreWarningsTitle", { count: warnings.length })}
-      </button>
-      <p className="mt-1 text-xs text-muted-foreground">
-        {t("coverage.coreWarningsHint")}
-      </p>
-      {open && (
-        <ul className="mt-2 space-y-2 text-xs">
-          {warnings.map((warning) => (
-            <li key={`${warning.segmentKind}-${warning.source}`}>
-              <span className="font-mono">{warning.source}</span>
-              <ReferenceList
-                references={warning.references}
-                total={warning.references.length}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    <CollapsibleSection
+      title={t("coverage.coreWarningsTitle", { count: warnings.length })}
+      hint={t("coverage.coreWarningsHint")}
+    >
+      <ul className="mt-2 space-y-2 text-xs">
+        {warnings.map((warning) => (
+          <li key={`${warning.segmentKind}-${warning.source}`}>
+            <span className="font-mono">{warning.source}</span>
+            <ReferenceList
+              references={warning.references}
+              total={warning.references.length}
+            />
+          </li>
+        ))}
+      </ul>
+    </CollapsibleSection>
   );
 }

@@ -193,18 +193,11 @@ export function ProjectList() {
             <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
               {t("projectList.emptyDescription")}
             </p>
-            <Button
+            <OpenGameButton
               className="mt-5 gap-2 shadow-[0_0_20px_color-mix(in_srgb,var(--star)_22%,transparent)]"
-              onClick={() => void handleOpenNew()}
-              disabled={openingNew}
-            >
-              {openingNew ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <FolderOpen className="h-3.5 w-3.5" />
-              )}
-              {t("toolbar.openGame")}
-            </Button>
+              opening={openingNew}
+              onOpen={handleOpenNew}
+            />
           </div>
         ) : (
           <section aria-label={t("projectList.activeProjects")} className="grid w-full gap-3 xl:grid-cols-2">
@@ -274,19 +267,12 @@ export function ProjectList() {
         )}
 
         {projects.length > 0 && (
-          <Button
+          <OpenGameButton
             size="sm"
             className="mt-6 gap-1.5 text-xs shadow-[0_0_16px_oklch(0.65_0.18_285/25%)]"
-            onClick={() => void handleOpenNew()}
-            disabled={openingNew}
-          >
-            {openingNew ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <FolderOpen className="h-3.5 w-3.5" />
-            )}
-            {t("toolbar.openGame")}
-          </Button>
+            opening={openingNew}
+            onOpen={handleOpenNew}
+          />
         )}
           <section className="mt-8 grid gap-3 md:grid-cols-3" aria-label={t("modes.navigation")}>
             <LibraryPortal
@@ -418,5 +404,35 @@ function LibraryPortal({
       <span className="mt-3 block text-sm font-semibold">{title}</span>
       <span className="mt-1 block text-pretty text-xs leading-5 text-muted-foreground">{description}</span>
     </button>
+  );
+}
+
+/** "Open a game" button, with a spinner while the folder is being opened. */
+function OpenGameButton({
+  className,
+  size,
+  opening,
+  onOpen,
+}: {
+  className: string;
+  size?: "sm";
+  opening: boolean;
+  onOpen: () => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Button
+      size={size}
+      className={className}
+      onClick={() => void onOpen()}
+      disabled={opening}
+    >
+      {opening ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <FolderOpen className="h-3.5 w-3.5" />
+      )}
+      {t("toolbar.openGame")}
+    </Button>
   );
 }
