@@ -1,0 +1,200 @@
+{
+  "unknown_project": {
+    "get_text_fit": {
+      "err": "no rows returned by a query that expected to return at least one row"
+    },
+    "scan_text_fit": {
+      "err": "no rows returned by a query that expected to return at least one row"
+    },
+    "set_text_fit": {
+      "err": "no rows returned by a query that expected to return at least one row"
+    },
+    "preview_text_fit": {
+      "ok": null
+    },
+    "get_game_font": {
+      "err": "no rows returned by a query that expected to return at least one row"
+    },
+    "preflight_export": {
+      "err": "no rows returned by a query that expected to return at least one row"
+    },
+    "export_project": {
+      "err": "no rows returned by a query that expected to return at least one row"
+    },
+    "scan_font_status": {
+      "err": "no rows returned by a query that expected to return at least one row"
+    },
+    "strip_font_prefixes": {
+      "ok": null
+    },
+    "export_debug_json": {
+      "err": "no rows returned by a query that expected to return at least one row"
+    },
+    "export_debug_project": {
+      "err": "Debug export: no translation without a critical QA error to export yet."
+    },
+    "export_qa_report": {
+      "err": "no rows returned by a query that expected to return at least one row"
+    },
+    "get_text_coverage_status": {
+      "err": "no rows returned by a query that expected to return at least one row"
+    },
+    "scan_text_coverage": {
+      "err": "no rows returned by a query that expected to return at least one row"
+    },
+    "set_text_categories": {
+      "err": "no rows returned by a query that expected to return at least one row"
+    },
+    "resync_project": {
+      "err": "no rows returned by a query that expected to return at least one row"
+    },
+    "export_h2s_pack": {
+      "err": "no rows returned by a query that expected to return at least one row"
+    },
+    "preview_h2s_import": {
+      "err": "No such file or directory (os error 2)"
+    },
+    "get_qa_report": {
+      "ok": {
+        "totalSegments": 0,
+        "okCount": 0,
+        "errorCount": 0,
+        "criticalCount": 0,
+        "errorsByType": {},
+        "terminologyIssues": []
+      }
+    },
+    "qa_check_segment": {
+      "ok": {
+        "score": 100,
+        "errors": []
+      }
+    }
+  },
+  "unknown_engine": {
+    "get_text_fit": {
+      "ok": {
+        "supported": false,
+        "reason": "Text fitting is available for RPG Maker MZ games.",
+        "settings": {
+          "enabledDialogue": false,
+          "enabledDescriptions": false,
+          "lineBreaks": "reflow",
+          "overflow": "new_page",
+          "minFontSize": 20,
+          "dialogueFontSize": null,
+          "wolfWidthEm": null,
+          "wolfMaxLines": null,
+          "wolfBaseFontSize": null
+        },
+        "geometry": null,
+        "font": null,
+        "warnings": [],
+        "notes": [],
+        "wolf": null
+      }
+    },
+    "scan_text_fit": {
+      "err": "Text fitting is not available for this project."
+    },
+    "set_text_fit": {
+      "ok": {
+        "enabledDialogue": false,
+        "enabledDescriptions": false,
+        "lineBreaks": "reflow",
+        "overflow": "new_page",
+        "minFontSize": 20,
+        "dialogueFontSize": null,
+        "wolfWidthEm": null,
+        "wolfMaxLines": null,
+        "wolfBaseFontSize": null
+      }
+    },
+    "preview_text_fit": {
+      "ok": null
+    },
+    "get_game_font": {
+      "err": "Text fitting is not available for this project."
+    },
+    "preflight_export": {
+      "ok": {
+        "locale": null,
+        "wolf": null
+      }
+    },
+    "export_project": {
+      "ok": "<tmp>/game/hoshi2star.zip"
+    },
+    "scan_font_status": {
+      "ok": {
+        "existingFontCount": 0,
+        "totalTranslated": 0,
+        "engine": "future_engine",
+        "gameFontSize": null
+      }
+    },
+    "strip_font_prefixes": {
+      "ok": null
+    },
+    "export_debug_json": {
+      "ok": "<tmp>/game/hoshi2star_debug.json"
+    },
+    "export_debug_project": {
+      "err": "Debug export: no translation without a critical QA error to export yet."
+    },
+    "export_qa_report": {
+      "ok": null
+    },
+    "get_text_coverage_status": {
+      "ok": {
+        "supported": false,
+        "hasDecisions": false
+      }
+    },
+    "scan_text_coverage": {
+      "ok": {
+        "supported": false,
+        "hasDecisions": false,
+        "reconstructed": false,
+        "driftedFiles": [],
+        "pluginsUnreadable": null,
+        "categories": [],
+        "coreWarnings": [],
+        "notCovered": []
+      }
+    },
+    "set_text_categories": {
+      "err": "This engine has no optional text categories."
+    },
+    "resync_project": {
+      "err": "Realignment after a game update is only available for RPG Maker MV/MZ."
+    },
+    "export_h2s_pack": {
+      "ok": {
+        "segmentCount": 0,
+        "fileCount": 0,
+        "terminologyCount": 0,
+        "tmCount": 0
+      }
+    },
+    "preview_h2s_import": {
+      "err": "No such file or directory (os error 2)"
+    },
+    "get_qa_report": {
+      "ok": {
+        "totalSegments": 0,
+        "okCount": 0,
+        "errorCount": 0,
+        "criticalCount": 0,
+        "errorsByType": {},
+        "terminologyIssues": []
+      }
+    },
+    "qa_check_segment": {
+      "ok": {
+        "score": 100,
+        "errors": []
+      }
+    }
+  }
+}
