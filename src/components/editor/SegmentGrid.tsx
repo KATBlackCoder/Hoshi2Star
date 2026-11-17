@@ -11,7 +11,6 @@ import {
   type RowSelectionState,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { invoke } from "@tauri-apps/api/core";
 import { useProjectStore } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import {
@@ -22,7 +21,7 @@ import {
   type RunSummary,
 } from "@/stores/llm";
 import { createSegmentColumns, StatusBadge } from "@/features/editor/columns";
-import type { PaginatedSegments, Segment, SegmentUpdate } from "@/lib/types";
+import type { Segment, SegmentUpdate } from "@/lib/types";
 import { invalidateAfterSegmentSave } from "@/lib/queryClient";
 import { cancelFrame, EVENTS, scheduleFrame } from "@/lib/events";
 import { qaScoreLevel } from "@/lib/qaScore";
@@ -32,6 +31,7 @@ import { Play, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useUiStore } from "@/stores/ui";
+import { projectApi } from "@/lib/api/project";
 
 /**
  * Patch LLM updates into a list of segments (or search hits). Returns the
@@ -96,7 +96,7 @@ export function SegmentGrid() {
           const pageSize = 2000;
           const all: Segment[] = [];
           for (let page = 0; ; page++) {
-            const result = await invoke<PaginatedSegments>("get_segments", {
+            const result = await projectApi.segments({
               projectId,
               fileId,
               page,
@@ -255,7 +255,7 @@ export function SegmentGrid() {
   const handleSave = useCallback(
     async (id: string, text: string) => {
       try {
-        const updated = await invoke<Segment>("update_segment", {
+        const updated = await projectApi.updateSegment({
           id,
           targetText: text,
         });

@@ -1,8 +1,8 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
 import { load } from "@tauri-apps/plugin-store";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { appApi } from "@/lib/api/app";
 
 // ---------------------------------------------------------------------------
 // State machine
@@ -56,9 +56,7 @@ export const useUpdaterStore = create<UpdaterState>()((set, get) => ({
   checkForUpdate: async () => {
     // Only self-updatable installs (Windows, or Linux AppImage). A deb/rpm
     // install or a dev build reports false → we never propose an update.
-    const supported = await invoke<boolean>("updater_supported").catch(
-      () => false,
-    );
+    const supported = await appApi.updaterSupported().catch(() => false);
     if (!supported) return;
 
     set({ status: "checking" });

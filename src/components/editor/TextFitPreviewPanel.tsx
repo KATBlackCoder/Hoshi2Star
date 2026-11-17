@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useGameFont } from "@/lib/gameFont";
@@ -18,6 +17,7 @@ import {
 } from "@/stores/editor";
 import { useActiveEngine, useProjectStore } from "@/stores/project";
 import { useTextFitStore, useTextFitVersion } from "@/stores/textFit";
+import { textFitApi } from "@/lib/api/textFit";
 
 /** RPG Maker MZ default text colours (`\C[n]`, Window.png). */
 const TEXT_COLORS = [
@@ -180,9 +180,9 @@ export function TextFitPreviewPanel() {
   const { data: preview, isLoading } = useQuery({
     queryKey: ["text-fit-preview", projectId, segmentId, targetText, version],
     queryFn: () =>
-      invoke<TextFitPreview | null>("preview_text_fit", {
-        projectId,
-        segmentId,
+      textFitApi.preview({
+        projectId: projectId!,
+        segmentId: segmentId!,
         draftTarget: null,
       }),
     enabled: ready,
@@ -193,9 +193,9 @@ export function TextFitPreviewPanel() {
   const setChoice = async (next: FitOverride) => {
     const isDefault =
       next.lineBreaks === null && next.overflow === null && !next.disabled;
-    await invoke("set_text_fit_override", {
-      projectId,
-      segmentId,
+    await textFitApi.setOverride({
+      projectId: projectId!,
+      segmentId: segmentId!,
       choice: isDefault ? null : next,
     });
     bump();

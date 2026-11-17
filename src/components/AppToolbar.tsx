@@ -5,7 +5,6 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { cn, errorMessage } from "@/lib/utils";
 import { openProjectErrorKey, wolfReadErrorDetail } from "@/lib/projectError";
-import { invoke } from "@tauri-apps/api/core";
 import {
   Bug,
   Clock,
@@ -47,6 +46,7 @@ import { PackImportWizard } from "@/components/PackImportWizard";
 import type { ImportPreview } from "@/lib/types";
 import { usePilotStore } from "@/stores/pilot";
 import { useSettingsStore } from "@/stores/settings";
+import { packApi } from "@/lib/api/pack";
 
 /**
  * A toolbar button whose icon becomes a spinner while `busy`. Other props go
@@ -251,7 +251,7 @@ export function AppToolbar({
     if (!selected) return;
     setIsPreviewingPack(true);
     try {
-      const preview = await invoke<ImportPreview>("preview_h2s_import", {
+      const preview = await packApi.previewImport({
         projectId: activeProjectId,
         packPath: selected as string,
         langPair: getProjectLangPair(activeProjectId),

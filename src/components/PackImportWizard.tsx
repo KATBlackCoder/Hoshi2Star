@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { getProjectLangPair } from "@/stores/project";
 import { useTranslation } from "react-i18next";
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import {
@@ -29,6 +28,7 @@ import type {
   ImportReport,
 } from "@/lib/types";
 import { errorMessage } from "@/lib/utils";
+import { packApi } from "@/lib/api/pack";
 
 interface PackImportWizardProps {
   projectId: string;
@@ -103,7 +103,7 @@ export function PackImportWizard({
   async function handleApply() {
     setIsApplying(true);
     try {
-      const result = await invoke<ImportReport>("apply_h2s_import", {
+      const result = await packApi.applyImport({
         projectId,
         packPath,
         policy,

@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { invoke } from "@tauri-apps/api/core";
 import { AlertTriangle, CheckCircle, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useExportToFile } from "@/hooks/useExportToFile";
@@ -14,6 +13,7 @@ import { queryKeys } from "@/lib/queryClient";
 import { qaScoreLevel } from "@/lib/qaScore";
 import type { QaErrorType, QaReport, QaResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { qaApi } from "@/lib/api/qa";
 
 // ---------------------------------------------------------------------------
 // Error row
@@ -234,7 +234,7 @@ export function QAPanel() {
       activeProjectId,
     ],
     queryFn: () =>
-      invoke<QaResult>("qa_check_segment", {
+      qaApi.checkSegment({
         sourceText: sourceText!,
         targetText: targetText ?? "",
         projectId: activeProjectId,
@@ -251,8 +251,7 @@ export function QAPanel() {
   // Project QA report badge
   const { data: qaReport } = useQuery<QaReport>({
     queryKey: [...queryKeys.qaReport, activeProjectId],
-    queryFn: () =>
-      invoke<QaReport>("get_qa_report", { projectId: activeProjectId! }),
+    queryFn: () => qaApi.report(activeProjectId!),
     enabled: !!activeProjectId,
     staleTime: 1000 * 10, // refresh every 10 s
   });

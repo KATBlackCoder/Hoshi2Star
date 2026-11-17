@@ -1,7 +1,7 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
 import type { ResyncSummary } from "@/lib/types";
 import { errorMessage } from "@/lib/utils";
+import { resyncApi } from "@/lib/api/resync";
 
 // ---------------------------------------------------------------------------
 // Realignment after a game update (MV/MZ)
@@ -27,10 +27,7 @@ export const useResyncStore = create<ResyncState>()((set) => ({
 /** Ask the backend for the realignment, applied or as a preview. */
 async function runResync(projectId: string, apply: boolean): Promise<void> {
   try {
-    const summary = await invoke<ResyncSummary>("resync_project", {
-      projectId,
-      apply,
-    });
+    const summary = await resyncApi.run({ projectId, apply });
     useResyncStore.setState({ summary, loading: false });
   } catch (err) {
     useResyncStore.setState({ loading: false, error: errorMessage(err) });

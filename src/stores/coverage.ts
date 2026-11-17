@@ -1,11 +1,10 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
 import type {
   CategoryChange,
-  CoverageStatus,
   CoverageView,
 } from "@/lib/types";
 import { errorMessage } from "@/lib/utils";
+import { coverageApi } from "@/lib/api/coverage";
 
 // ---------------------------------------------------------------------------
 // Optional text coverage (MV/MZ plugin & system UI text)
@@ -33,9 +32,7 @@ export const useCoverageStore = create<CoverageState>()((set) => ({
 export async function openCoverageDialog(projectId: string): Promise<void> {
   useCoverageStore.setState({ open: true, loading: true, error: null });
   try {
-    const view = await invoke<CoverageView>("scan_text_coverage", {
-      projectId,
-    });
+    const view = await coverageApi.scan(projectId);
     useCoverageStore.setState({ view, loading: false });
   } catch (err) {
     useCoverageStore.setState({ loading: false, error: errorMessage(err) });
@@ -49,10 +46,7 @@ export async function applyCoverageChanges(
 ): Promise<CoverageView> {
   useCoverageStore.setState({ loading: true, error: null });
   try {
-    const view = await invoke<CoverageView>("set_text_categories", {
-      projectId,
-      changes,
-    });
+    const view = await coverageApi.apply({ projectId, changes });
     useCoverageStore.setState({ view, loading: false });
     return view;
   } catch (err) {
@@ -82,14 +76,12 @@ export async function applyPostOpenCoverage(
   wasRestored: boolean,
 ): Promise<PostOpenCoverage> {
   if (wasRestored) {
-    const status = await invoke<CoverageStatus>("get_text_coverage_status", {
-      projectId,
-    });
+    const status = await coverageApi.status(projectId);
     return status.supported && !status.hasDecisions
       ? { kind: "undecided" }
       : { kind: "none" };
   }
-  const view = await invoke<CoverageView>("scan_text_coverage", { projectId });
+  const view = await coverageApi.scan(projectId);
   if (!view.supported || view.hasDecisions) return { kind: "none" };
   const offered = view.categories.filter(
     (category) => category.state !== "blocked",

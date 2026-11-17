@@ -1,11 +1,9 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
 import { t } from "i18next";
 import { toast } from "sonner";
 import type {
   OpenProjectResult,
   Project,
-  ProjectStats,
   SourceFile,
 } from "@/lib/types";
 import { invalidateSegmentViews } from "@/lib/queryClient";
@@ -13,6 +11,7 @@ import { applyPostOpenCoverage, openCoverageDialog } from "@/stores/coverage";
 import { useSettingsStore } from "@/stores/settings";
 import { useUiStore } from "@/stores/ui";
 import { errorMessage } from "@/lib/utils";
+import { projectApi } from "@/lib/api/project";
 
 interface ProjectState {
   projects: Project[];
@@ -93,7 +92,7 @@ export async function openProject(
 ): Promise<OpenProjectResult> {
   const { defaultSourceLang, defaultTargetLang } =
     useSettingsStore.getState().settings;
-  const result = await invoke<OpenProjectResult>("open_project", {
+  const result = await projectApi.open({
     path: gamePath,
     sourceLang: defaultSourceLang,
     targetLang: defaultTargetLang,
@@ -106,10 +105,10 @@ export async function openProject(
   invalidateSegmentViews();
   // The stats only feed the extraction notice: not fetched for a restore.
   const [files, stats] = await Promise.all([
-    invoke<SourceFile[]>("get_source_files", { projectId: project.id }),
+    projectApi.sourceFiles(project.id),
     wasRestored
       ? null
-      : invoke<ProjectStats>("get_project_stats", { projectId: project.id }),
+      : projectApi.stats(project.id),
   ]);
   useProjectStore.getState().setSourceFiles(files);
 
@@ -157,7 +156,7 @@ export async function openProject(
 export async function refreshProjectData(projectId: string): Promise<void> {
   invalidateSegmentViews();
   try {
-    const files = await invoke<SourceFile[]>("get_source_files", { projectId });
+    const files = await projectApi.sourceFiles(projectId);
     useProjectStore.getState().setSourceFiles(files);
   } catch {
     // silent — stale counters are acceptable, a toast here would be noise
@@ -166,7 +165,7 @@ export async function refreshProjectData(projectId: string): Promise<void> {
 
 // Thunk: load all known projects from the DB into the store.
 export async function loadAllProjects(): Promise<void> {
-  const projects = await invoke<Project[]>("list_projects");
+  const projects = await projectApi.list();
   // Merge: keep the active project unchanged, add any missing ones
   const existing = useProjectStore.getState().projects;
   const existingIds = new Set(existing.map((p) => p.id));
@@ -178,7 +177,7 @@ export async function loadAllProjects(): Promise<void> {
 
 // Thunk: delete a project from DB + manifest, remove from store.
 export async function deleteProject(projectId: string): Promise<void> {
-  await invoke("delete_project", { projectId });
+  await projectApi.remove(projectId);
   const state = useProjectStore.getState();
   state.removeProject(projectId);
   // If the deleted project was active, clear editor state

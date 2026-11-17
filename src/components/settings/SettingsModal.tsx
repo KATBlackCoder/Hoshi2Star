@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { invoke } from "@tauri-apps/api/core";
 import { BrainCircuit, Languages, Palette, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
@@ -25,6 +24,7 @@ import {
   useSettings,
   useSettingsStore,
 } from "@/stores/settings";
+import { llmApi } from "@/lib/api/llm";
 
 interface SettingsModalProps {
   open: boolean;
@@ -67,15 +67,13 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     setModelsLoading(true);
     setModelsError(null);
     try {
-      const list = await invoke<string[]>("get_provider_models", {
-        providerConfig: {
-          providerId: settings.providerId,
-          url: settings.ollamaUrl,
-          model: settings.ollamaModel,
-          apiKey: settings.apiKey.trim() || undefined,
-          batchSize: settings.batchSize,
-          resourceProfile: settings.resourceProfile,
-        },
+      const list = await llmApi.providerModels({
+        providerId: settings.providerId,
+        url: settings.ollamaUrl,
+        model: settings.ollamaModel,
+        apiKey: settings.apiKey.trim() || undefined,
+        batchSize: settings.batchSize,
+        resourceProfile: settings.resourceProfile,
       });
       setModels(list);
       if (list.length > 0 && !list.includes(settings.ollamaModel)) {

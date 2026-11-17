@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
+import { textFitApi } from "@/lib/api/textFit";
 
 /**
  * Load the game's main font (bytes from Rust) as a FontFace so previews are
@@ -15,7 +15,7 @@ export async function loadGameFont(projectId: string): Promise<string | null> {
   ) {
     return null;
   }
-  const bytes = await invoke<ArrayBuffer>("get_game_font", { projectId });
+  const bytes = await textFitApi.gameFont(projectId);
   const family = `h2s-game-font-${projectId}`;
   const face = new FontFace(family, bytes);
   await face.load();
