@@ -626,7 +626,8 @@ pub async fn inject_all_to_memory(
 /// Inject all translations into a Wolf RPG game directory as loose files
 /// (`Data/MapData/`, `Data/BasicData/`), read where the game reads them.
 ///
-/// Used by the debug single-file command only; the zip export is
+/// No production caller since the debug single-file command was removed
+/// (plan DD, L4); kept with its tests. The zip export is
 /// [`inject_all_to_memory`]. Refused like it, before any folder is created,
 /// while an archive holding text is in the game folder (plan UW, UW-D2).
 ///
