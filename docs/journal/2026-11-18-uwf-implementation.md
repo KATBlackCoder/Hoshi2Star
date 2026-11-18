@@ -2,7 +2,7 @@
 
 **Phase** : F5
 **Durée estimée** : session cloud
-**Statut** : 🔄 En cours
+**Statut** : ✅ Complété (UWF-1 à UWF-6, PR ouverte, non fusionnée)
 **Outil** : Claude (session cloud)
 **Branche et commit de départ** : `feat/wolf-unwolf` depuis `main` @ `76f3d5a` (« docs: code map in docs/architecture.md (DD V8) »)
 **Objectif / plan / story** : étapes UWF-1 à UWF-6 du « Plan — UWF » (en tête de `tasks/todo.md`), une PR vers
@@ -216,3 +216,65 @@ l'erreur). Aucun test existant modifié.
 
 **Non vérifié.** Rendu réel du dialogue dans l'app (pas de lancement de l'app dans cette session) : à voir en
 UWF-V.
+
+## UWF-6 — Documentation
+
+**Fait.**
+- `docs/adr/ADR-010.md` (nouveau) : « Jeu Wolf RPG déchiffré dans l'app par la crate unwolf », complète ADR-008
+  (lecture et export inchangés) ; décisions UWF-D1 à UWF-D8, frontière UWF-D11 et procédure de mise à jour
+  d'unwolf (`cargo update -p unwolf`, nouvelle version, seul module à adapter, avis de licence, gate).
+  `docs/adr/ADR-008.md` : une ligne de statut « Complété par ADR-010 ».
+- `docs/engines/wolf-uberwolf.md` réécrit : déchiffrement dans l'app (ce qui change, arrêt, remise en état à la
+  main), tableau des refus, UberWolf ou `unwolf` en ligne de commande en recours. Nom de fichier conservé (liens
+  existants).
+- `CONTEXT.md` : convention UWF-D11 (seul `engines/wolf/unpack.rs` importe unwolf, procédure de mise à jour) et
+  résumé d'ADR-010.
+- `docs/architecture.md` : `engines/wolf/unpack.rs`, `packed_state`, `commands/wolf_unpack.rs` (56 commandes),
+  drapeaux d'`AppState`, `lib/api/wolf.ts`, store `wolfUnpack` (`openGameFolder`), `WolfUnpackDialog`, parcours
+  « Ouvrir un jeu » et nouveau parcours « Déchiffrer un jeu Wolf », règle ADR-010, « Pas dans cette version » à
+  jour.
+- `ROADMAP.md` (ligne Wolf du tableau, tâche UWF en `[~]` jusqu'à UWF-V, UW-R renommé UWF-7, dernier ADR),
+  `BACKLOG.md` (lot police UWF-D6 ; UW-D5 : archives mises de côté comme base possible), `CHANGELOG.md` (Added).
+
+**Preuves attendues du plan (vérifiées).** `rg -l 'unwolf::' src-tauri/src` ⇒ `engines/wolf/unpack.rs` seul ;
+`src-tauri/Cargo.toml` : `unwolf = { version = "0.2", default-features = false }`, ni chemin ni Git ;
+`detect_engine` inchangé (aucune ligne de `detect_engine` dans le diff) ; aucune ligne retirée dans un fichier
+de test (`e2e_project_flow.rs` +50 −0, deux nouveaux fichiers de test front) ; « UberWolf » dans les locales
+seulement dans des phrases de recours (test `wolfUnpackError.test.ts`).
+
+**Hors périmètre, noté pour la suite.** `README.md:69` et `README.fr.md:69` disent encore qu'un jeu WolfX/Pro doit
+d'abord être déchiffré avec UberWolf : à mettre à jour après UWF-V (les README ne sont pas dans la liste UWF-6).
+
+**Gate (UWF-6, gate final de la PR).** fmt OK ; clippy `--all-targets -D warnings` OK ; `cargo test --locked
+--no-fail-fast` 867 réussis, 0 échec, 15 ignorés ; typecheck OK ; lint 0 erreur (10 avertissements, identiques
+à `main`) ; Vitest 44 + 2 fichiers, 210 tests réussis.
+
+## Bilan
+
+| Étape | Commit | `cargo test` | Vitest |
+|---|---|---|---|
+| Référence `main` @ `76f3d5a` | — | 850 / 0 échec / 15 ignorés | 201 |
+| UWF-1 dépendance | `2c14cfc` | 850 | 201 |
+| UWF-2 `unpack.rs` | `3a55bec` | 860 | 201 |
+| UWF-3 `wolf_packed` | `3f6d7d5` | 862 | 201 |
+| UWF-4 commandes | `c2affce` | 867 | 201 |
+| UWF-5 front | `2cdb0d5` | 867 | 210 |
+| UWF-6 documentation | ce commit | 867 | 210 |
+
+Aucune règle d'arrêt rencontrée : l'API publique d'unwolf 0.2.0 a suffi, rien n'a été contourné dans l'app.
+
+## Vérifications et limites
+
+- Tout a été vérifié par le gate en session cloud ; l'app n'a pas été lancée, aucun jeu réel n'a été déchiffré.
+- Non couvert par les tests : branches Pro (dérivation de clé, levée V35, refus V1/V2), remise en place après un
+  déplacement en échec, rendu réel du dialogue, comportement du jeu avec `Hoshi2Star-archives/` (UWF-D3).
+
+## Prochaine session
+
+- Utilisateur : relire et fusionner la PR `feat/wolf-unwolf` → `main`.
+- UWF-V (utilisateur + Claude) : sur des copies encore empaquetées de とのかじ (Pro 3.5, archives par dossier) et
+  離れでメイド (`Data.wolf` racine) : déchiffrement depuis l'app, annulation puis reprise, ouverture, quelques
+  segments traduits, export appliqué sur la copie, essai en jeu (UWF-D3).
+- Puis UWF-7 (retrait de `engines/wolf/decrypt/`, PR séparée) et mise à jour des README (ligne 69).
+- `tasks/todo.md` et `tasks/handoff.md` n'ont pas été modifiés par cette session (consigne) : à mettre à jour
+  par la session locale.

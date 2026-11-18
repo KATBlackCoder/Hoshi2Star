@@ -53,6 +53,13 @@ Repères qui changent la façon d'écrire du code :
 - **Mise en page du texte** : `core/text_fit/` (commun) + un adaptateur `TextBox` par moteur (ADR-009).
 - **Wolf** : lecture et export par `WolfSources` (`engines/wolf/sources.rs`), fichiers libres de `Data/` seulement
   (ADR-008) ; sites de texte des commandes 101/102 dans `engines/wolf/sites.rs`.
+- **unwolf** (ADR-010, UWF-D11) : la crate `unwolf` (déchiffrement des archives Wolf, clés et protection Pro) n'est
+  importée **que** par `engines/wolf/unpack.rs` (et ses tests) ; le reste de l'app ne voit que `unpack_game`,
+  `UnpackReport`, `UnpackProgress`, `UnpackError`. Dépendance crates.io `{ version = "0.2", default-features =
+  false }`, jamais un chemin, Git ni une copie du code. Un manque d'unwolf se corrige dans unwolf, jamais par un
+  contournement dans l'app. Mise à jour : `cargo update -p unwolf` (0.2.x) ou nouvelle version dans
+  `src-tauri/Cargo.toml` (0.3…), puis adapter ce seul module, avis de licence
+  `src-tauri/resources/licenses/unwolf-NOTICE.txt`, gate complet (procédure détaillée dans ADR-010).
 - **Resync et couverture** : MV/MZ seulement (`engines/mv_mz/resync.rs`, `engines/mv_mz/coverage/`).
 - **Terminologie** : `core/terminology/` ([architecture](docs/architecture/terminology.md)).
 - **Front** : tout appel à Rust passe par `src/lib/api/<domaine>.ts` (ou `src/features/terminology/api.ts`) ; une
@@ -277,6 +284,11 @@ Voir `docs/adr/` pour le détail. Résumé :
   lisible (`SysDatabase.dat`, `DataBase.dat`, `CDataBase.dat`), sinon refus `wolf_no_database` ; `Data.wolf`,
   `Data/MapData.wolf` ou `Data/BasicData.wolf` présent ⇒ refus `wolf_archive_present` (`engines/wolf/sources.rs`,
   `WolfSources`). Procédure : `docs/engines/wolf-uberwolf.md`
+- **ADR-010** : un jeu Wolf encore empaqueté est déchiffré dans l'app par la crate `unwolf` (seul importeur :
+  `engines/wolf/unpack.rs`) : archives de texte seulement, protection Pro 3.5 levée (V1/V2 refusées), jeu contrôlé
+  lisible, puis archives de texte **déplacées** (jamais supprimées) dans `<jeu>/Hoshi2Star-archives/`. Ouverture
+  d'un jeu empaqueté ⇒ marqueur `wolf_packed` ; commandes `unpack_wolf_game`, `cancel_wolf_unpack` ; dialogue
+  `WolfUnpackDialog`. Lecture et export inchangés (ADR-008)
 - **ADR-009** : mise en page du texte commune dans `core/text_fit/` (réglages, police, jetons, découpe, échelle
   `fit()`, `MeasuredTextBox`, scan), un adaptateur `TextBox` par moteur (`MzTextBox`, `WolfTextBox`) à dispatch
   statique. Le moteur n'est lu qu'une fois par couche : `engine_fit()` (`core/text_fit/settings.rs`) et
