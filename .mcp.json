@@ -2,11 +2,11 @@
   "mcpServers": {
     "filesystem": {
       "type": "stdio",
-      "command": "npx",
+      "command": "pnpm",
       "args": [
-        "-y",
+        "dlx",
         "@modelcontextprotocol/server-filesystem",
-        "/home/blackat/Bureau/Hoshi2Star"
+        "."
       ],
       "env": {}
     }

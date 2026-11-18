@@ -20,12 +20,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in *.rs) cargo fmt --manifest-path /home/blackat/project/Hoshi2Star/src-tauri/Cargo.toml 2>/dev/null || true;; esac",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in *.rs) cargo fmt --manifest-path \"$CLAUDE_PROJECT_DIR\"/src-tauri/Cargo.toml 2>/dev/null || true;; esac",
             "statusMessage": "cargo fmt..."
           },
           {
             "type": "command",
-            "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in *.ts|*.tsx) cd /home/blackat/project/Hoshi2Star && pnpm exec prettier --write \"$f\" 2>/dev/null || true;; esac",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in *.ts|*.tsx) cd \"$CLAUDE_PROJECT_DIR\" && pnpm exec prettier --write \"$f\" 2>/dev/null || true;; esac",
             "statusMessage": "prettier..."
           }
         ]
