@@ -6,7 +6,7 @@
 reprise, levée Pro 3.5, traduction, export et essai en jeu (UWF-D3) validés sur les deux jeux, en anglais
 (journal `docs/journal/2026-11-18-uwf-v.md`). Accents français absents en jeu sur 離れでメイド : hors UWF, à
 examiner à part. **UWF-7 en cours** (2026-11-18, branche `refactor/uwf-7-remove-wolf-decrypt`, journal
-`docs/journal/2026-11-18-uwf-7.md`) : module retiré, docs à jour, rien commité ; gate cloud à faire avant la PR. Branches `feat/wolf-unwolf` et `chore/uwf-tracking` supprimées (local et `origin`).
+`docs/journal/2026-11-18-uwf-7.md`) : module retiré, docs à jour, commité (`3326b2b`) ; **gate cloud vert le 2026-11-18** (`cargo test` 827 / 0 / 12, écart = 40 tests du module retiré ; Vitest 210) ; PR ouverte, non fusionnée : prochaine action, relecture et fusion par l'utilisateur. Branches `feat/wolf-unwolf` et `chore/uwf-tracking` supprimées (local et `origin`).
 
 ## Implémentation UWF (2026-11-18, Claude, session cloud) — UWF-1 à UWF-6 faits et fusionnés
 
