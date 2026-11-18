@@ -499,65 +499,18 @@ fn common_event_segments(common_events: &CommonEventsV3) -> Vec<WolfSegment> {
 // Project-level orchestrator
 // ---------------------------------------------------------------------------
 
-/// Extract ALL translatable segments from a Wolf RPG game directory.
-///
-/// Reads the loose files of the decrypted `Data/` ([`WolfSources`], plan UW):
-///   - `MapData/*.mps`        → `extract_map_segments`
-///   - `BasicData/*.dat`      → `extract_database_segments` (pairs with `.project`)
-///   - `BasicData/CommonEvent.dat` → `extract_common_events`
-///
-/// A `.dat` parse error is logged as a warning; an archive holding text still
-/// in the game folder, an unreadable map or `CommonEvent.dat` refuses the
-/// extraction.
+/// Extract ALL translatable segments from a Wolf RPG game directory, flat:
+/// [`extract_all_wolf`] without the grouping by file (same order, same
+/// refusals: an archive holding text still in the game folder, an unreadable
+/// map or `CommonEvent.dat`; a `.dat` parse error is a logged warning).
 pub fn extract_wolf_project(
     game_dir: &Path,
     version: &crate::engines::detector::WolfVersion,
 ) -> Result<Vec<WolfSegment>, ExtractorError> {
-    let mut segments = Vec::new();
-    let mut unreadable: Vec<String> = Vec::new();
-
-    let sources = WolfSources::load(game_dir)?;
-
-    // --- Common Events, read first: their names drive the database field
-    // rules (plan WF, WF-D5); their segments keep their place, last. ---
-    let common_events = sources
-        .common_events()
-        .map(|file| parse_common_events(&file.bytes));
-    let common_event_names = names_of(&common_events);
-
-    // --- Maps ---
-    for map in sources.maps() {
-        let name = map.stem();
-        match extract_map_segments(&name, &map.bytes, version) {
-            Ok(segs) => segments.extend(segs),
-            Err(e) => unreadable.push(format!("{name}.mps ({e})")),
-        }
-    }
-
-    // --- Databases ---
-    for (project, dat) in sources.databases() {
-        let name = dat.stem();
-        match extract_database_segments(
-            &name,
-            &project.bytes,
-            &dat.bytes,
-            &common_event_names,
-            version,
-        ) {
-            Ok(segs) => segments.extend(segs),
-            Err(e) => eprintln!("warn: skipping {name}.dat — {e}"),
-        }
-    }
-
-    // --- Common Events ---
-    match &common_events {
-        Some(Ok(parsed)) => segments.extend(common_event_segments(parsed)),
-        Some(Err(e)) => unreadable.push(format!("CommonEvent.dat ({e})")),
-        None => {}
-    }
-
-    reject_unreadable(unreadable)?;
-    Ok(segments)
+    Ok(extract_all_wolf(game_dir, version)?
+        .into_iter()
+        .flat_map(|(_, _, segments)| segments)
+        .collect())
 }
 
 // ---------------------------------------------------------------------------

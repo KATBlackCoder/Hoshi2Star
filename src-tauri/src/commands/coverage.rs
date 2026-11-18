@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::SqlitePool;
 
+use crate::commands::project::insert_source_file;
 use crate::core::{manifest, originals};
 use crate::engines::filter::{classify_file_type, FileClass};
 use crate::engines::mv_mz::coverage::plugins::PLUGINS_FILE_NAME;
@@ -474,15 +475,14 @@ async fn apply_changes(
             absolute.push(part);
         }
         let id = uuid::Uuid::new_v4().to_string();
-        sqlx::query(
-            "INSERT INTO source_files (id, project_id, file_name, file_path, file_type) \
-             VALUES (?, ?, ?, ?, 'plugins_js')",
+        insert_source_file(
+            &mut tx,
+            &id,
+            project_id,
+            PLUGINS_FILE_NAME,
+            &absolute.to_string_lossy(),
+            "plugins_js",
         )
-        .bind(&id)
-        .bind(project_id)
-        .bind(PLUGINS_FILE_NAME)
-        .bind(absolute.to_string_lossy().to_string())
-        .execute(&mut *tx)
         .await
         .map_err(|error| error.to_string())?;
         file_ids.insert(PLUGINS_FILE_NAME.to_string(), id);
