@@ -1,8 +1,32 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-10-30 — Claude (session locale).
-**Objectif utilisateur :** optimiser le front-end (audit du 2026-10-29), puis corriger le préfixe Wolf `@N⏎`. Les deux sont faits.
-**Statut :** sur `origin`, il n'y a plus que `main`. PR #29 à #33 fusionnées le 2026-10-30. Toutes les autres branches sont supprimées.
+**Mis à jour :** 2026-11-18 — Claude (session cloud).
+**Objectif utilisateur :** objectif 2, déchiffrer un jeu Wolf dans l'app avec unwolf (plan UWF, en tête de `tasks/todo.md`).
+**Statut :** UWF-1 à UWF-6 fusionnés dans `main` (PR #41, commit de fusion `2b6151925`) ; UWF-V (essai réel) à faire.
+
+## Implémentation UWF (2026-11-18, Claude, session cloud) — UWF-1 à UWF-6 faits et fusionnés
+
+- Journal : `docs/journal/2026-11-18-uwf-implementation.md` (une section par étape, gate, écarts au plan, limites).
+- PR [KATBlackCoder/Hoshi2Star#41](https://github.com/KATBlackCoder/Hoshi2Star/pull/41) : 6 commits sur
+  `feat/wolf-unwolf` (`2c14cfc` UWF-1 … `e7cd00f` UWF-6), **fusionnée le 2026-11-18** à la demande de
+  l'utilisateur (`main` @ `2b61519`, contenu identique à `e7cd00f`). Branche `feat/wolf-unwolf` encore présente
+  (locale et `origin`), à supprimer seulement avec l'accord de l'utilisateur.
+- Gate cloud sur `e7cd00f` : fmt OK, clippy `--all-targets -D warnings` OK, `cargo test` 867 réussis / 0 échec /
+  15 ignorés (850 sur `main` avant), typecheck OK, lint 0 erreur (10 avertissements inchangés), Vitest 210
+  (201 avant). Aucun test existant modifié.
+- Livré : `engines/wolf/unpack.rs` (seul importeur d'`unwolf` 0.2), marqueur `wolf_packed` à l'ouverture,
+  commandes `unpack_wolf_game` / `cancel_wolf_unpack`, `WolfUnpackDialog`, ADR-010, procédure
+  `docs/engines/wolf-uberwolf.md` réécrite, carte du code à jour.
+- **Non vérifié** (aucun lancement de l'app, aucun jeu réel) : branches Pro (clé, levée 3.5, refus V1/V2),
+  remise en place après un déplacement en échec, rendu du dialogue, UWF-D3 (le jeu ignore
+  `Hoshi2Star-archives/`).
+- Environnement cloud : bibliothèques système Tauri installées (`libwebkit2gtk-4.1-dev`…) ; disque de session
+  saturé une fois par `src-tauri/target` (29 Go) ⇒ compilation avec `CARGO_INCREMENTAL=0` et sans informations de
+  débogage.
+- **Prochaine action :** UWF-V (l'utilisateur compile quand il le décide, `CARGO_BUILD_JOBS=2 pnpm tauri:linux`,
+  après `git pull` : du Rust a changé ; Claude pilote par le MCP Tauri) sur des copies encore empaquetées de
+  とのかじ et 離れでメイド. Puis UWF-7 (retrait de `engines/wolf/decrypt/`, PR séparée) et ligne 69 de
+  `README.md` / `README.fr.md` (renvoie encore vers UberWolf).
 
 ## Analyse (2026-11-18, Claude, session locale) — intégrer unwolf (objectif 2)
 
