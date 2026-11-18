@@ -1,6 +1,6 @@
 # Tasks — Hoshi2Star
 
-## Plan — UWF : déchiffrer un jeu Wolf dans l'app avec unwolf (2026-11-18, Claude ; relu par Fable le 2026-11-18) — VALIDÉ par l'utilisateur le 2026-11-18 (UWF-D1 à UWF-D10 telles que recommandées ; UWF-D5, UWF-D8 et UWF-D11 ajustés le même jour à sa demande : unwolf reste une crate indépendante) ; UWF-0 en cours
+## Plan — UWF : déchiffrer un jeu Wolf dans l'app avec unwolf (2026-11-18, Claude ; relu par Fable le 2026-11-18) — VALIDÉ par l'utilisateur le 2026-11-18 (UWF-D1 à UWF-D10 telles que recommandées ; UWF-D5, UWF-D8 et UWF-D11 ajustés le même jour à sa demande : unwolf reste une crate indépendante) ; UWF-1 à UWF-6 faits en session cloud, PR #41 fusionnée le 2026-11-18 (`2b61519`) ; UWF-V puis UWF-7 à faire
 
 **Objectif.** Ouvrir un jeu Wolf RPG encore empaqueté (archives `.wolf`) sans passer par UberWolf : l'app
 extrait les archives de texte avec la bibliothèque `unwolf`, lève si besoin la protection Pro, met de côté ces
@@ -165,11 +165,11 @@ l'app ; reconstruction d'archive à l'export (`pack_data`, expérimental) ; `Evt
       publication de la 0.2.0 avant UWF-1. **2026-11-18 : U-1 à U-6 faits, PR
       [KATBlackCoder/unwolf#1](https://github.com/KATBlackCoder/unwolf/pull/1) ouverte (CI verte sur le code,
       79 tests) ; PR fusionnée (`4d4e396`), tag `v0.2.0`, **publiée sur crates.io le 2026-11-18** par l'utilisateur.**
-- [ ] **UWF-1 — Dépendance.** `rustc --version` (≥ 1.85) ; vérifier la publication de la 0.2.0 (`cargo search
+- [x] **UWF-1 — Dépendance.** **Fait le 2026-11-18** (`2c14cfc`) : avis de licence dans `src-tauri/resources/licenses/unwolf-NOTICE.txt` (mécanisme existant de lindera), pas de `THIRD_PARTY_NOTICES.md`. `rustc --version` (≥ 1.85) ; vérifier la publication de la 0.2.0 (`cargo search
       unwolf` ou `cargo info unwolf`) ; ajouter la ligne de UWF-D8 ; `Cargo.lock` à jour. Copyright MIT d'unwolf et
       `NOTICE` dans les mentions de licences tierces : chercher d'abord où elles vivent
       (`rg -i 'third.party|NOTICE|licen'`) ; à défaut, `THIRD_PARTY_NOTICES.md` à la racine. Gate.
-- [ ] **UWF-2 — Module `engines/wolf/unpack.rs`**, seul point d'entrée vers unwolf (UWF-D11).
+- [x] **UWF-2 — Module `engines/wolf/unpack.rs`**, seul point d'entrée vers unwolf (UWF-D11). **Fait le 2026-11-18** (`3a55bec`, 10 tests) ; avertissements par `Arc<Mutex<…>>` (rappel `Send` en 0.2), état Pro par `protection_status()`.
   - Interface : `unpack_game(game_dir, config_path, on_progress, cancel: &AtomicBool) -> Result<UnpackReport,
     UnpackError>` (`UnpackError` en `thiserror`, enveloppe `unwolf::Error`) ; `UnpackReport` sérialisable
     (`serde`, `camelCase`) : archives extraites, déjà extraites, ignorées, en échec ; version Pro ; fichiers
@@ -192,19 +192,19 @@ l'app ; reconstruction d'archive à l'export (`pack_data`, expérimental) ; `Evt
     déplacé ; destination déjà présente ⇒ refus avant extraction ; fichier libre préexistant intact
     (`overwrite` faux) ; deuxième passage sur un jeu déjà traité ⇒ `Loose`, rien à faire. Branches Pro : non
     fabricables, couvertes par UWF-0 et UWF-V seulement (à écrire dans le journal). Gate.
-- [ ] **UWF-3 — Détection de l'état empaqueté** (UWF-D7). `packed_state` et `WOLF_PACKED = "wolf_packed"` dans
+- [x] **UWF-3 — Détection de l'état empaqueté** (UWF-D7). **Fait le 2026-11-18** (`3f6d7d5`). `packed_state` et `WOLF_PACKED = "wolf_packed"` dans
       `engines/wolf/sources.rs` ; appel dans `open_project`. Avant de coder : toutes les fixtures qui fabriquent
       un jeu Wolf (`rg 'Game\.ini|Game\.exe|GamePro|MapData|BasicData' src-tauri/tests src-tauri/src`, leçon
       du 2026-10-28) ; aucun test existant modifié. Tests : `Packed` ; jeu non Wolf ⇒ `UnknownEngine`
       inchangé ; `open_project` sur un jeu empaqueté rend `wolf_packed`. Gate.
-- [ ] **UWF-4 — Commandes.** `unpack_wolf_game(game_path) -> Result<UnpackReport, String>` et
+- [x] **UWF-4 — Commandes.** **Fait le 2026-11-18** (`c2affce`, 5 tests). `unpack_wolf_game(game_path) -> Result<UnpackReport, String>` et
       `cancel_wolf_unpack()`, sur le modèle de `translation_cancel` : `AppState.wolf_unpack_cancel:
       Arc<AtomicBool>` et `AppState.wolf_unpack_running: Arc<AtomicBool>` (un seul déchiffrement à la fois ; un
       second appel est refusé), remis à zéro au début. Travail dans un `spawn_blocking` qui crée la `Session`.
       Événement `h2s://wolf/unpack-progress` (archive, fichier n / total), émis au plus toutes les 100 ms ;
       constante à côté de la commande. Le rapport est la valeur de retour (pas d'événement de fin). `config_path`
       de UWF-D8. Enregistrement dans l'unique `generate_handler!` de `lib.rs`. Gate.
-- [ ] **UWF-5 — Front.**
+- [x] **UWF-5 — Front.** **Fait le 2026-11-18** (`2cdb0d5`, 9 tests ; API en objet `wolfApi`, aiguillage dans `stores/wolfUnpack.openGameFolder`).
   - `src/lib/api/wolf.ts` : `unpackWolfGame`, `cancelWolfUnpack` ; type `UnpackReport` dans `src/lib/types.ts` ;
     nom d'événement dans `src/lib/events.ts`.
   - `src/lib/projectError.ts` reconnaît `wolf_packed`.
@@ -215,7 +215,7 @@ l'app ; reconstruction d'archive à l'export (`pack_data`, expérimental) ; `Evt
   - Clés i18n en/fr sous `wolfUnpack.*` ; `projectList.engineNotFound` inchangé (garde UberWolf, test
     `projectError.test.ts:64`).
   - Tests Vitest du dialogue et de `projectError`. Gate.
-- [ ] **UWF-6 — Documentation.** ADR-010 « Wolf déchiffré dans l'app par unwolf » (complète ADR-008 : lecture
+- [x] **UWF-6 — Documentation.** **Fait le 2026-11-18** (`e7cd00f`) ; détails et gate de chaque étape : `docs/journal/2026-11-18-uwf-implementation.md`. ADR-010 « Wolf déchiffré dans l'app par unwolf » (complète ADR-008 : lecture
       et export inchangés) ; `docs/engines/wolf-uberwolf.md` réécrit (déchiffrement dans l'app ; UberWolf ou
       unwolf en ligne de commande en recours) ; `ROADMAP.md` ; `BACKLOG.md` (lot police UWF-D6 ; UW-D5 : archives
       mises de côté) ; `CONTEXT.md` (convention UWF-D11 : unwolf importé seulement par `engines/wolf/unpack.rs`, procédure de
