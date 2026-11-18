@@ -1,0 +1,1607 @@
+[
+  {
+    "settings": "Reflow/Shrink/min8/dialogueNone/widthSome(10.0)/linesSome(3)/baseSome(12)",
+    "view": {
+      "supported": true,
+      "reason": null,
+      "settings": {
+        "enabledDialogue": true,
+        "enabledDescriptions": false,
+        "lineBreaks": "reflow",
+        "overflow": "shrink",
+        "minFontSize": 8,
+        "dialogueFontSize": null,
+        "wolfWidthEm": 10.0,
+        "wolfMaxLines": 3,
+        "wolfBaseFontSize": 12
+      },
+      "geometry": null,
+      "font": {
+        "file": null,
+        "loaded": false,
+        "error": "no font file in the game folder"
+      },
+      "warnings": [],
+      "notes": [],
+      "wolf": {
+        "measured": null,
+        "budget": {
+          "widthEm": 10.0,
+          "maxLines": 3
+        },
+        "baseFontSize": 12
+      }
+    },
+    "scan": {
+      "dialogue": {
+        "total": 11,
+        "fits": 1,
+        "rewrapped": 2,
+        "newPage": 0,
+        "shrunk": 3,
+        "tooLong": 4,
+        "skipped": 1
+      },
+      "descriptions": {
+        "total": 0,
+        "fits": 0,
+        "rewrapped": 0,
+        "newPage": 0,
+        "shrunk": 0,
+        "tooLong": 0,
+        "skipped": 0
+      },
+      "rows": [
+        {
+          "fileId": "<file Map003.mps>",
+          "fileName": "Map003.mps",
+          "pointer": "MapData/Map003/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map003.mps#MapData/Map003/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "6 lines, the window holds 3"
+          },
+          "sample": "This message is long enough to need more than three lines in the window, so it m"
+        },
+        {
+          "fileId": "<file Map004.mps>",
+          "fileName": "Map004.mps",
+          "pointer": "MapData/Map004/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map004.mps#MapData/Map004/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "a word is wider than the window"
+          },
+          "sample": "Supercalifragilisticexpialidocious word here."
+        },
+        {
+          "fileId": "<file Map006.mps>",
+          "fileName": "Map006.mps",
+          "pointer": "MapData/Map006/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map006.mps#MapData/Map006/events/0/pages/0/0",
+          "outcome": {
+            "kind": "shrunk",
+            "size": 12
+          },
+          "sample": "\\f[16]Big letters that will probably need to be wrapped twice."
+        },
+        {
+          "fileId": "<file Map007.mps>",
+          "fileName": "Map007.mps",
+          "pointer": "MapData/Map007/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map007.mps#MapData/Map007/events/0/pages/0/0",
+          "outcome": {
+            "kind": "skipped",
+            "reason": "positioning or alignment codes"
+          },
+          "sample": "\\ax[10]A positioned line that is long enough to need wrapping."
+        },
+        {
+          "fileId": "<file Map008.mps>",
+          "fileName": "Map008.mps",
+          "pointer": "MapData/Map008/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map008.mps#MapData/Map008/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "4 lines, the window holds 3"
+          },
+          "sample": "Gyoin:\nWelcome to the shop, traveller, take a good look around."
+        },
+        {
+          "fileId": "<file Map009.mps>",
+          "fileName": "Map009.mps",
+          "pointer": "MapData/Map009/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map009.mps#MapData/Map009/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "6 lines, the window holds 3"
+          },
+          "sample": "First part of the text.\n\nThird part, after a blank line, also long."
+        },
+        {
+          "fileId": "<file Map010.mps>",
+          "fileName": "Map010.mps",
+          "pointer": "MapData/Map010/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map010.mps#MapData/Map010/events/0/pages/0/0",
+          "outcome": {
+            "kind": "shrunk",
+            "size": 10
+          },
+          "sample": "A heading line here.\n　An indented line that is fairly long too."
+        },
+        {
+          "fileId": "<file Map011.mps>",
+          "fileName": "Map011.mps",
+          "pointer": "MapData/Map011/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map011.mps#MapData/Map011/events/0/pages/0/0",
+          "outcome": {
+            "kind": "shrunk",
+            "size": 11
+          },
+          "sample": "\\c[2]Coloured\\c[0] words inside a sentence that wraps somewhere."
+        }
+      ],
+      "missingChars": []
+    },
+    "exports": {
+      "fontNone/replacefalse": {
+        "entries": {
+          "Data/MapData/Map001.mps": "0feb8e11fdd270131e2520553ecf8095579188403feff59a8c82cb1b80ad6332",
+          "Data/MapData/Map002.mps": "33cc148b7036331c726657569a77c3c3e10a25c0d8c85e643f1d648335430ed0",
+          "Data/MapData/Map003.mps": "a37866268b95dabb053115433c9dfef27457e76cc7645f5797da0add05c579bf",
+          "Data/MapData/Map004.mps": "2ba54e1166a65871e56165604dcd73e7782b9639164d73350d09e56fe8c09bae",
+          "Data/MapData/Map005.mps": "2b8e4b8e4ef60ad8b30946991b27f7b8e4faf9c22953c01ef0ee91e3e92eaad6",
+          "Data/MapData/Map006.mps": "73406a51f47422db7122718fe3466bc294507f28c2a81f5ee1b614854f836515",
+          "Data/MapData/Map007.mps": "bf730dc61ce3e4f15ecd8dd5d4787e5497ff3a29c28de1eddbb188f99809b0b5",
+          "Data/MapData/Map008.mps": "b0301cef0a72e24194cd15e3f4753ad1d4a1f1783e3187cf6565f0f408e1d8c8",
+          "Data/MapData/Map009.mps": "5f22eb615d654516aa0dc5b89ee194c9c922fc1622fd53ab8eedb883de12b240",
+          "Data/MapData/Map010.mps": "28e8ac71eb3cfe44c91b63a0acf767c78ac7bdc20fba2e5e28daf1a11018f077",
+          "Data/MapData/Map011.mps": "c8fce2868ea91155e929a7582ad32fd9fe8318169cf4102a34bfde2dd1b4dec9"
+        },
+        "maps": {
+          "Data/MapData/Map001.mps": {
+            "sha256": "0feb8e11fdd270131e2520553ecf8095579188403feff59a8c82cb1b80ad6332",
+            "messages": [
+              "Hello there."
+            ]
+          },
+          "Data/MapData/Map002.mps": {
+            "sha256": "33cc148b7036331c726657569a77c3c3e10a25c0d8c85e643f1d648335430ed0",
+            "messages": [
+              "aaaa bbbb cccc\ndddd eeee."
+            ]
+          },
+          "Data/MapData/Map003.mps": {
+            "sha256": "a37866268b95dabb053115433c9dfef27457e76cc7645f5797da0add05c579bf",
+            "messages": [
+              "This message is\nlong enough to need\nmore than three\nlines in the window,\nso it must shrink\nor stay too long."
+            ]
+          },
+          "Data/MapData/Map004.mps": {
+            "sha256": "2ba54e1166a65871e56165604dcd73e7782b9639164d73350d09e56fe8c09bae",
+            "messages": [
+              "Supercalifragilisticexpialidocious\nword here."
+            ]
+          },
+          "Data/MapData/Map005.mps": {
+            "sha256": "2b8e4b8e4ef60ad8b30946991b27f7b8e4faf9c22953c01ef0ee91e3e92eaad6",
+            "messages": [
+              "@1\nA line spoken with a\nface graphic that is\nlong enough to wrap."
+            ]
+          },
+          "Data/MapData/Map006.mps": {
+            "sha256": "73406a51f47422db7122718fe3466bc294507f28c2a81f5ee1b614854f836515",
+            "messages": [
+              "\\f[12]Big letters that\nwill probably need\nto be wrapped twice."
+            ]
+          },
+          "Data/MapData/Map007.mps": {
+            "sha256": "bf730dc61ce3e4f15ecd8dd5d4787e5497ff3a29c28de1eddbb188f99809b0b5",
+            "messages": [
+              "\\ax[10]A positioned line that is long enough to need wrapping."
+            ]
+          },
+          "Data/MapData/Map008.mps": {
+            "sha256": "b0301cef0a72e24194cd15e3f4753ad1d4a1f1783e3187cf6565f0f408e1d8c8",
+            "messages": [
+              "Gyoin:\nWelcome to the shop,\ntraveller, take a\ngood look around."
+            ]
+          },
+          "Data/MapData/Map009.mps": {
+            "sha256": "5f22eb615d654516aa0dc5b89ee194c9c922fc1622fd53ab8eedb883de12b240",
+            "messages": [
+              "First part\nof the text.\n\nThird part,\nafter a blank\nline, also long."
+            ]
+          },
+          "Data/MapData/Map010.mps": {
+            "sha256": "28e8ac71eb3cfe44c91b63a0acf767c78ac7bdc20fba2e5e28daf1a11018f077",
+            "messages": [
+              "\\f[10]A heading line here.\n　An indented line that\nis fairly long too."
+            ]
+          },
+          "Data/MapData/Map011.mps": {
+            "sha256": "c8fce2868ea91155e929a7582ad32fd9fe8318169cf4102a34bfde2dd1b4dec9",
+            "messages": [
+              "\\f[11]\\c[2]Coloured\\c[0] words inside\na sentence that\nwraps somewhere."
+            ]
+          }
+        }
+      },
+      "fontSome(12)/replacetrue": {
+        "entries": {
+          "Data/MapData/Map001.mps": "46b562c2f96557767ff2a91d119ce874e85e145e5001c0c0b1b341fb697870cd",
+          "Data/MapData/Map002.mps": "8ce1abd2f13d6baa61f66c1c97116bd87b7d66620b97b1aebd254533fd0d45f3",
+          "Data/MapData/Map003.mps": "84b71fd944e69231dd084aa5a4adf5017b4fd0d488762db20d3aa4878fcf529e",
+          "Data/MapData/Map004.mps": "6fda5c1f8473254b40b1be0b9ed160fab713065e9d9ccc0c46c85d1206622420",
+          "Data/MapData/Map005.mps": "bcc3a6fdfea03a8886cfe5824c95a432559eb01c5392c3e4722378ec204858af",
+          "Data/MapData/Map006.mps": "73406a51f47422db7122718fe3466bc294507f28c2a81f5ee1b614854f836515",
+          "Data/MapData/Map007.mps": "b1b7a23dd15a8d578aa2ecb1c83c6acee73db8fa58594227c23d3b1a8b41999e",
+          "Data/MapData/Map008.mps": "ae12b45db4b09f30a0e915343cd1eed11e18abbfd2185283a90dafb815d12e88",
+          "Data/MapData/Map009.mps": "b1d0620dbbcda4ffc2d0f83191c239f88b5a22bb9e2934474b93c9941cc467c3",
+          "Data/MapData/Map010.mps": "28e8ac71eb3cfe44c91b63a0acf767c78ac7bdc20fba2e5e28daf1a11018f077",
+          "Data/MapData/Map011.mps": "c8fce2868ea91155e929a7582ad32fd9fe8318169cf4102a34bfde2dd1b4dec9"
+        },
+        "maps": {
+          "Data/MapData/Map001.mps": {
+            "sha256": "46b562c2f96557767ff2a91d119ce874e85e145e5001c0c0b1b341fb697870cd",
+            "messages": [
+              "\\f[12]Hello there."
+            ]
+          },
+          "Data/MapData/Map002.mps": {
+            "sha256": "8ce1abd2f13d6baa61f66c1c97116bd87b7d66620b97b1aebd254533fd0d45f3",
+            "messages": [
+              "\\f[12]aaaa bbbb cccc\ndddd eeee."
+            ]
+          },
+          "Data/MapData/Map003.mps": {
+            "sha256": "84b71fd944e69231dd084aa5a4adf5017b4fd0d488762db20d3aa4878fcf529e",
+            "messages": [
+              "\\f[12]This message is\nlong enough to need\nmore than three\nlines in the window,\nso it must shrink\nor stay too long."
+            ]
+          },
+          "Data/MapData/Map004.mps": {
+            "sha256": "6fda5c1f8473254b40b1be0b9ed160fab713065e9d9ccc0c46c85d1206622420",
+            "messages": [
+              "\\f[12]Supercalifragilisticexpialidocious\nword here."
+            ]
+          },
+          "Data/MapData/Map005.mps": {
+            "sha256": "bcc3a6fdfea03a8886cfe5824c95a432559eb01c5392c3e4722378ec204858af",
+            "messages": [
+              "@1\n\\f[12]A line spoken with a\nface graphic that is\nlong enough to wrap."
+            ]
+          },
+          "Data/MapData/Map006.mps": {
+            "sha256": "73406a51f47422db7122718fe3466bc294507f28c2a81f5ee1b614854f836515",
+            "messages": [
+              "\\f[12]Big letters that\nwill probably need\nto be wrapped twice."
+            ]
+          },
+          "Data/MapData/Map007.mps": {
+            "sha256": "b1b7a23dd15a8d578aa2ecb1c83c6acee73db8fa58594227c23d3b1a8b41999e",
+            "messages": [
+              "\\f[12]\\ax[10]A positioned line that is long enough to need wrapping."
+            ]
+          },
+          "Data/MapData/Map008.mps": {
+            "sha256": "ae12b45db4b09f30a0e915343cd1eed11e18abbfd2185283a90dafb815d12e88",
+            "messages": [
+              "\\f[12]Gyoin:\nWelcome to the shop,\ntraveller, take a\ngood look around."
+            ]
+          },
+          "Data/MapData/Map009.mps": {
+            "sha256": "b1d0620dbbcda4ffc2d0f83191c239f88b5a22bb9e2934474b93c9941cc467c3",
+            "messages": [
+              "\\f[12]First part\nof the text.\n\nThird part,\nafter a blank\nline, also long."
+            ]
+          },
+          "Data/MapData/Map010.mps": {
+            "sha256": "28e8ac71eb3cfe44c91b63a0acf767c78ac7bdc20fba2e5e28daf1a11018f077",
+            "messages": [
+              "\\f[10]A heading line here.\n　An indented line that\nis fairly long too."
+            ]
+          },
+          "Data/MapData/Map011.mps": {
+            "sha256": "c8fce2868ea91155e929a7582ad32fd9fe8318169cf4102a34bfde2dd1b4dec9",
+            "messages": [
+              "\\f[11]\\c[2]Coloured\\c[0] words inside\na sentence that\nwraps somewhere."
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "settings": "Keep/Shrink/min8/dialogueNone/widthSome(10.0)/linesSome(3)/baseSome(12)",
+    "view": {
+      "supported": true,
+      "reason": null,
+      "settings": {
+        "enabledDialogue": true,
+        "enabledDescriptions": false,
+        "lineBreaks": "keep",
+        "overflow": "shrink",
+        "minFontSize": 8,
+        "dialogueFontSize": null,
+        "wolfWidthEm": 10.0,
+        "wolfMaxLines": 3,
+        "wolfBaseFontSize": 12
+      },
+      "geometry": null,
+      "font": {
+        "file": null,
+        "loaded": false,
+        "error": "no font file in the game folder"
+      },
+      "warnings": [],
+      "notes": [],
+      "wolf": {
+        "measured": null,
+        "budget": {
+          "widthEm": 10.0,
+          "maxLines": 3
+        },
+        "baseFontSize": 12
+      }
+    },
+    "scan": {
+      "dialogue": {
+        "total": 11,
+        "fits": 1,
+        "rewrapped": 2,
+        "newPage": 0,
+        "shrunk": 3,
+        "tooLong": 4,
+        "skipped": 1
+      },
+      "descriptions": {
+        "total": 0,
+        "fits": 0,
+        "rewrapped": 0,
+        "newPage": 0,
+        "shrunk": 0,
+        "tooLong": 0,
+        "skipped": 0
+      },
+      "rows": [
+        {
+          "fileId": "<file Map003.mps>",
+          "fileName": "Map003.mps",
+          "pointer": "MapData/Map003/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map003.mps#MapData/Map003/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "6 lines, the window holds 3"
+          },
+          "sample": "This message is long enough to need more than three lines in the window, so it m"
+        },
+        {
+          "fileId": "<file Map004.mps>",
+          "fileName": "Map004.mps",
+          "pointer": "MapData/Map004/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map004.mps#MapData/Map004/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "a word is wider than the window"
+          },
+          "sample": "Supercalifragilisticexpialidocious word here."
+        },
+        {
+          "fileId": "<file Map006.mps>",
+          "fileName": "Map006.mps",
+          "pointer": "MapData/Map006/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map006.mps#MapData/Map006/events/0/pages/0/0",
+          "outcome": {
+            "kind": "shrunk",
+            "size": 12
+          },
+          "sample": "\\f[16]Big letters that will probably need to be wrapped twice."
+        },
+        {
+          "fileId": "<file Map007.mps>",
+          "fileName": "Map007.mps",
+          "pointer": "MapData/Map007/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map007.mps#MapData/Map007/events/0/pages/0/0",
+          "outcome": {
+            "kind": "skipped",
+            "reason": "positioning or alignment codes"
+          },
+          "sample": "\\ax[10]A positioned line that is long enough to need wrapping."
+        },
+        {
+          "fileId": "<file Map008.mps>",
+          "fileName": "Map008.mps",
+          "pointer": "MapData/Map008/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map008.mps#MapData/Map008/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "4 lines, the window holds 3"
+          },
+          "sample": "Gyoin:\nWelcome to the shop, traveller, take a good look around."
+        },
+        {
+          "fileId": "<file Map009.mps>",
+          "fileName": "Map009.mps",
+          "pointer": "MapData/Map009/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map009.mps#MapData/Map009/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "6 lines, the window holds 3"
+          },
+          "sample": "First part of the text.\n\nThird part, after a blank line, also long."
+        },
+        {
+          "fileId": "<file Map010.mps>",
+          "fileName": "Map010.mps",
+          "pointer": "MapData/Map010/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map010.mps#MapData/Map010/events/0/pages/0/0",
+          "outcome": {
+            "kind": "shrunk",
+            "size": 10
+          },
+          "sample": "A heading line here.\n　An indented line that is fairly long too."
+        },
+        {
+          "fileId": "<file Map011.mps>",
+          "fileName": "Map011.mps",
+          "pointer": "MapData/Map011/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map011.mps#MapData/Map011/events/0/pages/0/0",
+          "outcome": {
+            "kind": "shrunk",
+            "size": 11
+          },
+          "sample": "\\c[2]Coloured\\c[0] words inside a sentence that wraps somewhere."
+        }
+      ],
+      "missingChars": []
+    },
+    "exports": {
+      "fontNone/replacefalse": {
+        "entries": {
+          "Data/MapData/Map001.mps": "0feb8e11fdd270131e2520553ecf8095579188403feff59a8c82cb1b80ad6332",
+          "Data/MapData/Map002.mps": "33cc148b7036331c726657569a77c3c3e10a25c0d8c85e643f1d648335430ed0",
+          "Data/MapData/Map003.mps": "a37866268b95dabb053115433c9dfef27457e76cc7645f5797da0add05c579bf",
+          "Data/MapData/Map004.mps": "2ba54e1166a65871e56165604dcd73e7782b9639164d73350d09e56fe8c09bae",
+          "Data/MapData/Map005.mps": "2b8e4b8e4ef60ad8b30946991b27f7b8e4faf9c22953c01ef0ee91e3e92eaad6",
+          "Data/MapData/Map006.mps": "73406a51f47422db7122718fe3466bc294507f28c2a81f5ee1b614854f836515",
+          "Data/MapData/Map007.mps": "bf730dc61ce3e4f15ecd8dd5d4787e5497ff3a29c28de1eddbb188f99809b0b5",
+          "Data/MapData/Map008.mps": "b0301cef0a72e24194cd15e3f4753ad1d4a1f1783e3187cf6565f0f408e1d8c8",
+          "Data/MapData/Map009.mps": "5f22eb615d654516aa0dc5b89ee194c9c922fc1622fd53ab8eedb883de12b240",
+          "Data/MapData/Map010.mps": "28e8ac71eb3cfe44c91b63a0acf767c78ac7bdc20fba2e5e28daf1a11018f077",
+          "Data/MapData/Map011.mps": "c8fce2868ea91155e929a7582ad32fd9fe8318169cf4102a34bfde2dd1b4dec9"
+        },
+        "maps": {
+          "Data/MapData/Map001.mps": {
+            "sha256": "0feb8e11fdd270131e2520553ecf8095579188403feff59a8c82cb1b80ad6332",
+            "messages": [
+              "Hello there."
+            ]
+          },
+          "Data/MapData/Map002.mps": {
+            "sha256": "33cc148b7036331c726657569a77c3c3e10a25c0d8c85e643f1d648335430ed0",
+            "messages": [
+              "aaaa bbbb cccc\ndddd eeee."
+            ]
+          },
+          "Data/MapData/Map003.mps": {
+            "sha256": "a37866268b95dabb053115433c9dfef27457e76cc7645f5797da0add05c579bf",
+            "messages": [
+              "This message is\nlong enough to need\nmore than three\nlines in the window,\nso it must shrink\nor stay too long."
+            ]
+          },
+          "Data/MapData/Map004.mps": {
+            "sha256": "2ba54e1166a65871e56165604dcd73e7782b9639164d73350d09e56fe8c09bae",
+            "messages": [
+              "Supercalifragilisticexpialidocious\nword here."
+            ]
+          },
+          "Data/MapData/Map005.mps": {
+            "sha256": "2b8e4b8e4ef60ad8b30946991b27f7b8e4faf9c22953c01ef0ee91e3e92eaad6",
+            "messages": [
+              "@1\nA line spoken with a\nface graphic that is\nlong enough to wrap."
+            ]
+          },
+          "Data/MapData/Map006.mps": {
+            "sha256": "73406a51f47422db7122718fe3466bc294507f28c2a81f5ee1b614854f836515",
+            "messages": [
+              "\\f[12]Big letters that\nwill probably need\nto be wrapped twice."
+            ]
+          },
+          "Data/MapData/Map007.mps": {
+            "sha256": "bf730dc61ce3e4f15ecd8dd5d4787e5497ff3a29c28de1eddbb188f99809b0b5",
+            "messages": [
+              "\\ax[10]A positioned line that is long enough to need wrapping."
+            ]
+          },
+          "Data/MapData/Map008.mps": {
+            "sha256": "b0301cef0a72e24194cd15e3f4753ad1d4a1f1783e3187cf6565f0f408e1d8c8",
+            "messages": [
+              "Gyoin:\nWelcome to the shop,\ntraveller, take a\ngood look around."
+            ]
+          },
+          "Data/MapData/Map009.mps": {
+            "sha256": "5f22eb615d654516aa0dc5b89ee194c9c922fc1622fd53ab8eedb883de12b240",
+            "messages": [
+              "First part\nof the text.\n\nThird part,\nafter a blank\nline, also long."
+            ]
+          },
+          "Data/MapData/Map010.mps": {
+            "sha256": "28e8ac71eb3cfe44c91b63a0acf767c78ac7bdc20fba2e5e28daf1a11018f077",
+            "messages": [
+              "\\f[10]A heading line here.\n　An indented line that\nis fairly long too."
+            ]
+          },
+          "Data/MapData/Map011.mps": {
+            "sha256": "c8fce2868ea91155e929a7582ad32fd9fe8318169cf4102a34bfde2dd1b4dec9",
+            "messages": [
+              "\\f[11]\\c[2]Coloured\\c[0] words inside\na sentence that\nwraps somewhere."
+            ]
+          }
+        }
+      },
+      "fontSome(12)/replacetrue": {
+        "entries": {
+          "Data/MapData/Map001.mps": "46b562c2f96557767ff2a91d119ce874e85e145e5001c0c0b1b341fb697870cd",
+          "Data/MapData/Map002.mps": "8ce1abd2f13d6baa61f66c1c97116bd87b7d66620b97b1aebd254533fd0d45f3",
+          "Data/MapData/Map003.mps": "84b71fd944e69231dd084aa5a4adf5017b4fd0d488762db20d3aa4878fcf529e",
+          "Data/MapData/Map004.mps": "6fda5c1f8473254b40b1be0b9ed160fab713065e9d9ccc0c46c85d1206622420",
+          "Data/MapData/Map005.mps": "bcc3a6fdfea03a8886cfe5824c95a432559eb01c5392c3e4722378ec204858af",
+          "Data/MapData/Map006.mps": "73406a51f47422db7122718fe3466bc294507f28c2a81f5ee1b614854f836515",
+          "Data/MapData/Map007.mps": "b1b7a23dd15a8d578aa2ecb1c83c6acee73db8fa58594227c23d3b1a8b41999e",
+          "Data/MapData/Map008.mps": "ae12b45db4b09f30a0e915343cd1eed11e18abbfd2185283a90dafb815d12e88",
+          "Data/MapData/Map009.mps": "b1d0620dbbcda4ffc2d0f83191c239f88b5a22bb9e2934474b93c9941cc467c3",
+          "Data/MapData/Map010.mps": "28e8ac71eb3cfe44c91b63a0acf767c78ac7bdc20fba2e5e28daf1a11018f077",
+          "Data/MapData/Map011.mps": "c8fce2868ea91155e929a7582ad32fd9fe8318169cf4102a34bfde2dd1b4dec9"
+        },
+        "maps": {
+          "Data/MapData/Map001.mps": {
+            "sha256": "46b562c2f96557767ff2a91d119ce874e85e145e5001c0c0b1b341fb697870cd",
+            "messages": [
+              "\\f[12]Hello there."
+            ]
+          },
+          "Data/MapData/Map002.mps": {
+            "sha256": "8ce1abd2f13d6baa61f66c1c97116bd87b7d66620b97b1aebd254533fd0d45f3",
+            "messages": [
+              "\\f[12]aaaa bbbb cccc\ndddd eeee."
+            ]
+          },
+          "Data/MapData/Map003.mps": {
+            "sha256": "84b71fd944e69231dd084aa5a4adf5017b4fd0d488762db20d3aa4878fcf529e",
+            "messages": [
+              "\\f[12]This message is\nlong enough to need\nmore than three\nlines in the window,\nso it must shrink\nor stay too long."
+            ]
+          },
+          "Data/MapData/Map004.mps": {
+            "sha256": "6fda5c1f8473254b40b1be0b9ed160fab713065e9d9ccc0c46c85d1206622420",
+            "messages": [
+              "\\f[12]Supercalifragilisticexpialidocious\nword here."
+            ]
+          },
+          "Data/MapData/Map005.mps": {
+            "sha256": "bcc3a6fdfea03a8886cfe5824c95a432559eb01c5392c3e4722378ec204858af",
+            "messages": [
+              "@1\n\\f[12]A line spoken with a\nface graphic that is\nlong enough to wrap."
+            ]
+          },
+          "Data/MapData/Map006.mps": {
+            "sha256": "73406a51f47422db7122718fe3466bc294507f28c2a81f5ee1b614854f836515",
+            "messages": [
+              "\\f[12]Big letters that\nwill probably need\nto be wrapped twice."
+            ]
+          },
+          "Data/MapData/Map007.mps": {
+            "sha256": "b1b7a23dd15a8d578aa2ecb1c83c6acee73db8fa58594227c23d3b1a8b41999e",
+            "messages": [
+              "\\f[12]\\ax[10]A positioned line that is long enough to need wrapping."
+            ]
+          },
+          "Data/MapData/Map008.mps": {
+            "sha256": "ae12b45db4b09f30a0e915343cd1eed11e18abbfd2185283a90dafb815d12e88",
+            "messages": [
+              "\\f[12]Gyoin:\nWelcome to the shop,\ntraveller, take a\ngood look around."
+            ]
+          },
+          "Data/MapData/Map009.mps": {
+            "sha256": "b1d0620dbbcda4ffc2d0f83191c239f88b5a22bb9e2934474b93c9941cc467c3",
+            "messages": [
+              "\\f[12]First part\nof the text.\n\nThird part,\nafter a blank\nline, also long."
+            ]
+          },
+          "Data/MapData/Map010.mps": {
+            "sha256": "28e8ac71eb3cfe44c91b63a0acf767c78ac7bdc20fba2e5e28daf1a11018f077",
+            "messages": [
+              "\\f[10]A heading line here.\n　An indented line that\nis fairly long too."
+            ]
+          },
+          "Data/MapData/Map011.mps": {
+            "sha256": "c8fce2868ea91155e929a7582ad32fd9fe8318169cf4102a34bfde2dd1b4dec9",
+            "messages": [
+              "\\f[11]\\c[2]Coloured\\c[0] words inside\na sentence that\nwraps somewhere."
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "settings": "Reflow/Leave/min8/dialogueNone/widthSome(10.0)/linesSome(3)/baseSome(12)",
+    "view": {
+      "supported": true,
+      "reason": null,
+      "settings": {
+        "enabledDialogue": true,
+        "enabledDescriptions": false,
+        "lineBreaks": "reflow",
+        "overflow": "leave",
+        "minFontSize": 8,
+        "dialogueFontSize": null,
+        "wolfWidthEm": 10.0,
+        "wolfMaxLines": 3,
+        "wolfBaseFontSize": 12
+      },
+      "geometry": null,
+      "font": {
+        "file": null,
+        "loaded": false,
+        "error": "no font file in the game folder"
+      },
+      "warnings": [],
+      "notes": [],
+      "wolf": {
+        "measured": null,
+        "budget": {
+          "widthEm": 10.0,
+          "maxLines": 3
+        },
+        "baseFontSize": 12
+      }
+    },
+    "scan": {
+      "dialogue": {
+        "total": 11,
+        "fits": 1,
+        "rewrapped": 2,
+        "newPage": 0,
+        "shrunk": 0,
+        "tooLong": 7,
+        "skipped": 1
+      },
+      "descriptions": {
+        "total": 0,
+        "fits": 0,
+        "rewrapped": 0,
+        "newPage": 0,
+        "shrunk": 0,
+        "tooLong": 0,
+        "skipped": 0
+      },
+      "rows": [
+        {
+          "fileId": "<file Map003.mps>",
+          "fileName": "Map003.mps",
+          "pointer": "MapData/Map003/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map003.mps#MapData/Map003/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "6 lines, the window holds 3"
+          },
+          "sample": "This message is long enough to need more than three lines in the window, so it m"
+        },
+        {
+          "fileId": "<file Map004.mps>",
+          "fileName": "Map004.mps",
+          "pointer": "MapData/Map004/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map004.mps#MapData/Map004/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "a word is wider than the window"
+          },
+          "sample": "Supercalifragilisticexpialidocious word here."
+        },
+        {
+          "fileId": "<file Map006.mps>",
+          "fileName": "Map006.mps",
+          "pointer": "MapData/Map006/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map006.mps#MapData/Map006/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "5 lines, the window holds 3"
+          },
+          "sample": "\\f[16]Big letters that will probably need to be wrapped twice."
+        },
+        {
+          "fileId": "<file Map007.mps>",
+          "fileName": "Map007.mps",
+          "pointer": "MapData/Map007/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map007.mps#MapData/Map007/events/0/pages/0/0",
+          "outcome": {
+            "kind": "skipped",
+            "reason": "positioning or alignment codes"
+          },
+          "sample": "\\ax[10]A positioned line that is long enough to need wrapping."
+        },
+        {
+          "fileId": "<file Map008.mps>",
+          "fileName": "Map008.mps",
+          "pointer": "MapData/Map008/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map008.mps#MapData/Map008/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "4 lines, the window holds 3"
+          },
+          "sample": "Gyoin:\nWelcome to the shop, traveller, take a good look around."
+        },
+        {
+          "fileId": "<file Map009.mps>",
+          "fileName": "Map009.mps",
+          "pointer": "MapData/Map009/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map009.mps#MapData/Map009/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "6 lines, the window holds 3"
+          },
+          "sample": "First part of the text.\n\nThird part, after a blank line, also long."
+        },
+        {
+          "fileId": "<file Map010.mps>",
+          "fileName": "Map010.mps",
+          "pointer": "MapData/Map010/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map010.mps#MapData/Map010/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "4 lines, the window holds 3"
+          },
+          "sample": "A heading line here.\n　An indented line that is fairly long too."
+        },
+        {
+          "fileId": "<file Map011.mps>",
+          "fileName": "Map011.mps",
+          "pointer": "MapData/Map011/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map011.mps#MapData/Map011/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "4 lines, the window holds 3"
+          },
+          "sample": "\\c[2]Coloured\\c[0] words inside a sentence that wraps somewhere."
+        }
+      ],
+      "missingChars": []
+    },
+    "exports": {
+      "fontNone/replacefalse": {
+        "entries": {
+          "Data/MapData/Map001.mps": "0feb8e11fdd270131e2520553ecf8095579188403feff59a8c82cb1b80ad6332",
+          "Data/MapData/Map002.mps": "33cc148b7036331c726657569a77c3c3e10a25c0d8c85e643f1d648335430ed0",
+          "Data/MapData/Map003.mps": "a37866268b95dabb053115433c9dfef27457e76cc7645f5797da0add05c579bf",
+          "Data/MapData/Map004.mps": "2ba54e1166a65871e56165604dcd73e7782b9639164d73350d09e56fe8c09bae",
+          "Data/MapData/Map005.mps": "2b8e4b8e4ef60ad8b30946991b27f7b8e4faf9c22953c01ef0ee91e3e92eaad6",
+          "Data/MapData/Map006.mps": "3bda0db15d3b200e3ef02630361d8f5cdc7d7eab91232922b74c493dde0e1743",
+          "Data/MapData/Map007.mps": "bf730dc61ce3e4f15ecd8dd5d4787e5497ff3a29c28de1eddbb188f99809b0b5",
+          "Data/MapData/Map008.mps": "b0301cef0a72e24194cd15e3f4753ad1d4a1f1783e3187cf6565f0f408e1d8c8",
+          "Data/MapData/Map009.mps": "5f22eb615d654516aa0dc5b89ee194c9c922fc1622fd53ab8eedb883de12b240",
+          "Data/MapData/Map010.mps": "868af5538a880893efa8c18c0cf00f01f5b935378dc08e4c387767bd8b394921",
+          "Data/MapData/Map011.mps": "f3fc146f601ffaf4cb95f32879e464c20b1d8e416064cf7cae534fe60286a0ec"
+        },
+        "maps": {
+          "Data/MapData/Map001.mps": {
+            "sha256": "0feb8e11fdd270131e2520553ecf8095579188403feff59a8c82cb1b80ad6332",
+            "messages": [
+              "Hello there."
+            ]
+          },
+          "Data/MapData/Map002.mps": {
+            "sha256": "33cc148b7036331c726657569a77c3c3e10a25c0d8c85e643f1d648335430ed0",
+            "messages": [
+              "aaaa bbbb cccc\ndddd eeee."
+            ]
+          },
+          "Data/MapData/Map003.mps": {
+            "sha256": "a37866268b95dabb053115433c9dfef27457e76cc7645f5797da0add05c579bf",
+            "messages": [
+              "This message is\nlong enough to need\nmore than three\nlines in the window,\nso it must shrink\nor stay too long."
+            ]
+          },
+          "Data/MapData/Map004.mps": {
+            "sha256": "2ba54e1166a65871e56165604dcd73e7782b9639164d73350d09e56fe8c09bae",
+            "messages": [
+              "Supercalifragilisticexpialidocious\nword here."
+            ]
+          },
+          "Data/MapData/Map005.mps": {
+            "sha256": "2b8e4b8e4ef60ad8b30946991b27f7b8e4faf9c22953c01ef0ee91e3e92eaad6",
+            "messages": [
+              "@1\nA line spoken with a\nface graphic that is\nlong enough to wrap."
+            ]
+          },
+          "Data/MapData/Map006.mps": {
+            "sha256": "3bda0db15d3b200e3ef02630361d8f5cdc7d7eab91232922b74c493dde0e1743",
+            "messages": [
+              "\\f[16]Big letters\nthat will\nprobably\nneed to be\nwrapped twice."
+            ]
+          },
+          "Data/MapData/Map007.mps": {
+            "sha256": "bf730dc61ce3e4f15ecd8dd5d4787e5497ff3a29c28de1eddbb188f99809b0b5",
+            "messages": [
+              "\\ax[10]A positioned line that is long enough to need wrapping."
+            ]
+          },
+          "Data/MapData/Map008.mps": {
+            "sha256": "b0301cef0a72e24194cd15e3f4753ad1d4a1f1783e3187cf6565f0f408e1d8c8",
+            "messages": [
+              "Gyoin:\nWelcome to the shop,\ntraveller, take a\ngood look around."
+            ]
+          },
+          "Data/MapData/Map009.mps": {
+            "sha256": "5f22eb615d654516aa0dc5b89ee194c9c922fc1622fd53ab8eedb883de12b240",
+            "messages": [
+              "First part\nof the text.\n\nThird part,\nafter a blank\nline, also long."
+            ]
+          },
+          "Data/MapData/Map010.mps": {
+            "sha256": "868af5538a880893efa8c18c0cf00f01f5b935378dc08e4c387767bd8b394921",
+            "messages": [
+              "A heading line here.\n　An indented\nline that is\nfairly long too."
+            ]
+          },
+          "Data/MapData/Map011.mps": {
+            "sha256": "f3fc146f601ffaf4cb95f32879e464c20b1d8e416064cf7cae534fe60286a0ec",
+            "messages": [
+              "\\c[2]Coloured\\c[0] words\ninside a sentence\nthat wraps\nsomewhere."
+            ]
+          }
+        }
+      },
+      "fontSome(12)/replacetrue": {
+        "entries": {
+          "Data/MapData/Map001.mps": "46b562c2f96557767ff2a91d119ce874e85e145e5001c0c0b1b341fb697870cd",
+          "Data/MapData/Map002.mps": "8ce1abd2f13d6baa61f66c1c97116bd87b7d66620b97b1aebd254533fd0d45f3",
+          "Data/MapData/Map003.mps": "84b71fd944e69231dd084aa5a4adf5017b4fd0d488762db20d3aa4878fcf529e",
+          "Data/MapData/Map004.mps": "6fda5c1f8473254b40b1be0b9ed160fab713065e9d9ccc0c46c85d1206622420",
+          "Data/MapData/Map005.mps": "bcc3a6fdfea03a8886cfe5824c95a432559eb01c5392c3e4722378ec204858af",
+          "Data/MapData/Map006.mps": "73406a51f47422db7122718fe3466bc294507f28c2a81f5ee1b614854f836515",
+          "Data/MapData/Map007.mps": "b1b7a23dd15a8d578aa2ecb1c83c6acee73db8fa58594227c23d3b1a8b41999e",
+          "Data/MapData/Map008.mps": "ae12b45db4b09f30a0e915343cd1eed11e18abbfd2185283a90dafb815d12e88",
+          "Data/MapData/Map009.mps": "b1d0620dbbcda4ffc2d0f83191c239f88b5a22bb9e2934474b93c9941cc467c3",
+          "Data/MapData/Map010.mps": "19d8184e90a5697e3b0e8abe13da0c18bfdf83a6de131ee6c8eaa40ea2e099e7",
+          "Data/MapData/Map011.mps": "4d5cf0c8d34a25d83151edd41df4253537b70e33352168a55c91decb26ac26f7"
+        },
+        "maps": {
+          "Data/MapData/Map001.mps": {
+            "sha256": "46b562c2f96557767ff2a91d119ce874e85e145e5001c0c0b1b341fb697870cd",
+            "messages": [
+              "\\f[12]Hello there."
+            ]
+          },
+          "Data/MapData/Map002.mps": {
+            "sha256": "8ce1abd2f13d6baa61f66c1c97116bd87b7d66620b97b1aebd254533fd0d45f3",
+            "messages": [
+              "\\f[12]aaaa bbbb cccc\ndddd eeee."
+            ]
+          },
+          "Data/MapData/Map003.mps": {
+            "sha256": "84b71fd944e69231dd084aa5a4adf5017b4fd0d488762db20d3aa4878fcf529e",
+            "messages": [
+              "\\f[12]This message is\nlong enough to need\nmore than three\nlines in the window,\nso it must shrink\nor stay too long."
+            ]
+          },
+          "Data/MapData/Map004.mps": {
+            "sha256": "6fda5c1f8473254b40b1be0b9ed160fab713065e9d9ccc0c46c85d1206622420",
+            "messages": [
+              "\\f[12]Supercalifragilisticexpialidocious\nword here."
+            ]
+          },
+          "Data/MapData/Map005.mps": {
+            "sha256": "bcc3a6fdfea03a8886cfe5824c95a432559eb01c5392c3e4722378ec204858af",
+            "messages": [
+              "@1\n\\f[12]A line spoken with a\nface graphic that is\nlong enough to wrap."
+            ]
+          },
+          "Data/MapData/Map006.mps": {
+            "sha256": "73406a51f47422db7122718fe3466bc294507f28c2a81f5ee1b614854f836515",
+            "messages": [
+              "\\f[12]Big letters that\nwill probably need\nto be wrapped twice."
+            ]
+          },
+          "Data/MapData/Map007.mps": {
+            "sha256": "b1b7a23dd15a8d578aa2ecb1c83c6acee73db8fa58594227c23d3b1a8b41999e",
+            "messages": [
+              "\\f[12]\\ax[10]A positioned line that is long enough to need wrapping."
+            ]
+          },
+          "Data/MapData/Map008.mps": {
+            "sha256": "ae12b45db4b09f30a0e915343cd1eed11e18abbfd2185283a90dafb815d12e88",
+            "messages": [
+              "\\f[12]Gyoin:\nWelcome to the shop,\ntraveller, take a\ngood look around."
+            ]
+          },
+          "Data/MapData/Map009.mps": {
+            "sha256": "b1d0620dbbcda4ffc2d0f83191c239f88b5a22bb9e2934474b93c9941cc467c3",
+            "messages": [
+              "\\f[12]First part\nof the text.\n\nThird part,\nafter a blank\nline, also long."
+            ]
+          },
+          "Data/MapData/Map010.mps": {
+            "sha256": "19d8184e90a5697e3b0e8abe13da0c18bfdf83a6de131ee6c8eaa40ea2e099e7",
+            "messages": [
+              "\\f[12]A heading line here.\n　An indented\nline that is\nfairly long too."
+            ]
+          },
+          "Data/MapData/Map011.mps": {
+            "sha256": "4d5cf0c8d34a25d83151edd41df4253537b70e33352168a55c91decb26ac26f7",
+            "messages": [
+              "\\f[12]\\c[2]Coloured\\c[0] words\ninside a sentence\nthat wraps\nsomewhere."
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "settings": "Reflow/Shrink/min8/dialogueNone/widthSome(10.0)/linesSome(3)/baseNone",
+    "view": {
+      "supported": true,
+      "reason": null,
+      "settings": {
+        "enabledDialogue": true,
+        "enabledDescriptions": false,
+        "lineBreaks": "reflow",
+        "overflow": "shrink",
+        "minFontSize": 8,
+        "dialogueFontSize": null,
+        "wolfWidthEm": 10.0,
+        "wolfMaxLines": 3,
+        "wolfBaseFontSize": null
+      },
+      "geometry": null,
+      "font": {
+        "file": null,
+        "loaded": false,
+        "error": "no font file in the game folder"
+      },
+      "warnings": [],
+      "notes": [],
+      "wolf": {
+        "measured": null,
+        "budget": {
+          "widthEm": 10.0,
+          "maxLines": 3
+        },
+        "baseFontSize": null
+      }
+    },
+    "scan": {
+      "dialogue": {
+        "total": 11,
+        "fits": 1,
+        "rewrapped": 2,
+        "newPage": 0,
+        "shrunk": 0,
+        "tooLong": 6,
+        "skipped": 2
+      },
+      "descriptions": {
+        "total": 0,
+        "fits": 0,
+        "rewrapped": 0,
+        "newPage": 0,
+        "shrunk": 0,
+        "tooLong": 0,
+        "skipped": 0
+      },
+      "rows": [
+        {
+          "fileId": "<file Map003.mps>",
+          "fileName": "Map003.mps",
+          "pointer": "MapData/Map003/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map003.mps#MapData/Map003/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "6 lines, the window holds 3"
+          },
+          "sample": "This message is long enough to need more than three lines in the window, so it m"
+        },
+        {
+          "fileId": "<file Map004.mps>",
+          "fileName": "Map004.mps",
+          "pointer": "MapData/Map004/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map004.mps#MapData/Map004/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "a word is wider than the window"
+          },
+          "sample": "Supercalifragilisticexpialidocious word here."
+        },
+        {
+          "fileId": "<file Map006.mps>",
+          "fileName": "Map006.mps",
+          "pointer": "MapData/Map006/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map006.mps#MapData/Map006/events/0/pages/0/0",
+          "outcome": {
+            "kind": "skipped",
+            "reason": "font size code, and the game's font size is not set"
+          },
+          "sample": "\\f[16]Big letters that will probably need to be wrapped twice."
+        },
+        {
+          "fileId": "<file Map007.mps>",
+          "fileName": "Map007.mps",
+          "pointer": "MapData/Map007/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map007.mps#MapData/Map007/events/0/pages/0/0",
+          "outcome": {
+            "kind": "skipped",
+            "reason": "positioning or alignment codes"
+          },
+          "sample": "\\ax[10]A positioned line that is long enough to need wrapping."
+        },
+        {
+          "fileId": "<file Map008.mps>",
+          "fileName": "Map008.mps",
+          "pointer": "MapData/Map008/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map008.mps#MapData/Map008/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "4 lines, the window holds 3"
+          },
+          "sample": "Gyoin:\nWelcome to the shop, traveller, take a good look around."
+        },
+        {
+          "fileId": "<file Map009.mps>",
+          "fileName": "Map009.mps",
+          "pointer": "MapData/Map009/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map009.mps#MapData/Map009/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "6 lines, the window holds 3"
+          },
+          "sample": "First part of the text.\n\nThird part, after a blank line, also long."
+        },
+        {
+          "fileId": "<file Map010.mps>",
+          "fileName": "Map010.mps",
+          "pointer": "MapData/Map010/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map010.mps#MapData/Map010/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "4 lines, the window holds 3"
+          },
+          "sample": "A heading line here.\n　An indented line that is fairly long too."
+        },
+        {
+          "fileId": "<file Map011.mps>",
+          "fileName": "Map011.mps",
+          "pointer": "MapData/Map011/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map011.mps#MapData/Map011/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "4 lines, the window holds 3"
+          },
+          "sample": "\\c[2]Coloured\\c[0] words inside a sentence that wraps somewhere."
+        }
+      ],
+      "missingChars": []
+    },
+    "exports": {
+      "fontNone/replacefalse": {
+        "entries": {
+          "Data/MapData/Map001.mps": "0feb8e11fdd270131e2520553ecf8095579188403feff59a8c82cb1b80ad6332",
+          "Data/MapData/Map002.mps": "33cc148b7036331c726657569a77c3c3e10a25c0d8c85e643f1d648335430ed0",
+          "Data/MapData/Map003.mps": "a37866268b95dabb053115433c9dfef27457e76cc7645f5797da0add05c579bf",
+          "Data/MapData/Map004.mps": "2ba54e1166a65871e56165604dcd73e7782b9639164d73350d09e56fe8c09bae",
+          "Data/MapData/Map005.mps": "2b8e4b8e4ef60ad8b30946991b27f7b8e4faf9c22953c01ef0ee91e3e92eaad6",
+          "Data/MapData/Map006.mps": "dd3d9f79b87b48a3d2a700bd8c8d3a271cb43142bd6d0eef58ae36aa6dfdc9df",
+          "Data/MapData/Map007.mps": "bf730dc61ce3e4f15ecd8dd5d4787e5497ff3a29c28de1eddbb188f99809b0b5",
+          "Data/MapData/Map008.mps": "b0301cef0a72e24194cd15e3f4753ad1d4a1f1783e3187cf6565f0f408e1d8c8",
+          "Data/MapData/Map009.mps": "5f22eb615d654516aa0dc5b89ee194c9c922fc1622fd53ab8eedb883de12b240",
+          "Data/MapData/Map010.mps": "868af5538a880893efa8c18c0cf00f01f5b935378dc08e4c387767bd8b394921",
+          "Data/MapData/Map011.mps": "f3fc146f601ffaf4cb95f32879e464c20b1d8e416064cf7cae534fe60286a0ec"
+        },
+        "maps": {
+          "Data/MapData/Map001.mps": {
+            "sha256": "0feb8e11fdd270131e2520553ecf8095579188403feff59a8c82cb1b80ad6332",
+            "messages": [
+              "Hello there."
+            ]
+          },
+          "Data/MapData/Map002.mps": {
+            "sha256": "33cc148b7036331c726657569a77c3c3e10a25c0d8c85e643f1d648335430ed0",
+            "messages": [
+              "aaaa bbbb cccc\ndddd eeee."
+            ]
+          },
+          "Data/MapData/Map003.mps": {
+            "sha256": "a37866268b95dabb053115433c9dfef27457e76cc7645f5797da0add05c579bf",
+            "messages": [
+              "This message is\nlong enough to need\nmore than three\nlines in the window,\nso it must shrink\nor stay too long."
+            ]
+          },
+          "Data/MapData/Map004.mps": {
+            "sha256": "2ba54e1166a65871e56165604dcd73e7782b9639164d73350d09e56fe8c09bae",
+            "messages": [
+              "Supercalifragilisticexpialidocious\nword here."
+            ]
+          },
+          "Data/MapData/Map005.mps": {
+            "sha256": "2b8e4b8e4ef60ad8b30946991b27f7b8e4faf9c22953c01ef0ee91e3e92eaad6",
+            "messages": [
+              "@1\nA line spoken with a\nface graphic that is\nlong enough to wrap."
+            ]
+          },
+          "Data/MapData/Map006.mps": {
+            "sha256": "dd3d9f79b87b48a3d2a700bd8c8d3a271cb43142bd6d0eef58ae36aa6dfdc9df",
+            "messages": [
+              "\\f[16]Big letters that will probably need to be wrapped twice."
+            ]
+          },
+          "Data/MapData/Map007.mps": {
+            "sha256": "bf730dc61ce3e4f15ecd8dd5d4787e5497ff3a29c28de1eddbb188f99809b0b5",
+            "messages": [
+              "\\ax[10]A positioned line that is long enough to need wrapping."
+            ]
+          },
+          "Data/MapData/Map008.mps": {
+            "sha256": "b0301cef0a72e24194cd15e3f4753ad1d4a1f1783e3187cf6565f0f408e1d8c8",
+            "messages": [
+              "Gyoin:\nWelcome to the shop,\ntraveller, take a\ngood look around."
+            ]
+          },
+          "Data/MapData/Map009.mps": {
+            "sha256": "5f22eb615d654516aa0dc5b89ee194c9c922fc1622fd53ab8eedb883de12b240",
+            "messages": [
+              "First part\nof the text.\n\nThird part,\nafter a blank\nline, also long."
+            ]
+          },
+          "Data/MapData/Map010.mps": {
+            "sha256": "868af5538a880893efa8c18c0cf00f01f5b935378dc08e4c387767bd8b394921",
+            "messages": [
+              "A heading line here.\n　An indented\nline that is\nfairly long too."
+            ]
+          },
+          "Data/MapData/Map011.mps": {
+            "sha256": "f3fc146f601ffaf4cb95f32879e464c20b1d8e416064cf7cae534fe60286a0ec",
+            "messages": [
+              "\\c[2]Coloured\\c[0] words\ninside a sentence\nthat wraps\nsomewhere."
+            ]
+          }
+        }
+      },
+      "fontSome(12)/replacetrue": {
+        "entries": {
+          "Data/MapData/Map001.mps": "46b562c2f96557767ff2a91d119ce874e85e145e5001c0c0b1b341fb697870cd",
+          "Data/MapData/Map002.mps": "9ecab67824c85b0e58bb5c618af106a762aca35ce60c44687cdb7c1b425cfb55",
+          "Data/MapData/Map003.mps": "fe663f47bee40ddc582700da3fcaa67a21f88c43a0eba6399ecce12e8ec2c4b8",
+          "Data/MapData/Map004.mps": "dcc421f3021e2cd3a6cdd99d504d4247a312752445df4a7d293231d580ad946d",
+          "Data/MapData/Map005.mps": "8f48e5fbb024b08efc3c59c068a892c68309e43015c9e526383d8796ef68db1d",
+          "Data/MapData/Map006.mps": "e6e0bf5c4120aa49101f9968a02c69f6757edf062433ecb9ab1211aa290f4430",
+          "Data/MapData/Map007.mps": "b1b7a23dd15a8d578aa2ecb1c83c6acee73db8fa58594227c23d3b1a8b41999e",
+          "Data/MapData/Map008.mps": "3279a5d60571148436cc7df7536a8f05d55a8347eeb70012470b0c3d7e7334b6",
+          "Data/MapData/Map009.mps": "bbfc6ae8cd16d9438acf0644dd17d4982279c5d2b26d8304c267bf5cfb130ae9",
+          "Data/MapData/Map010.mps": "cf05795763350882b6629b93bf00563f8baa6d89f3080e1e72329093824369eb",
+          "Data/MapData/Map011.mps": "e5e2ebfb99d1f1cbb9ea7c3f03f8766312cc9017e346f63e83861f9d42fa0117"
+        },
+        "maps": {
+          "Data/MapData/Map001.mps": {
+            "sha256": "46b562c2f96557767ff2a91d119ce874e85e145e5001c0c0b1b341fb697870cd",
+            "messages": [
+              "\\f[12]Hello there."
+            ]
+          },
+          "Data/MapData/Map002.mps": {
+            "sha256": "9ecab67824c85b0e58bb5c618af106a762aca35ce60c44687cdb7c1b425cfb55",
+            "messages": [
+              "\\f[12]aaaa bbbb cccc dddd eeee \n."
+            ]
+          },
+          "Data/MapData/Map003.mps": {
+            "sha256": "fe663f47bee40ddc582700da3fcaa67a21f88c43a0eba6399ecce12e8ec2c4b8",
+            "messages": [
+              "\\f[12]This message is long enough to need more than three lines in the window, so it must shrink or stay too long."
+            ]
+          },
+          "Data/MapData/Map004.mps": {
+            "sha256": "dcc421f3021e2cd3a6cdd99d504d4247a312752445df4a7d293231d580ad946d",
+            "messages": [
+              "\\f[12]Supercalifragilisticexpialidocious word here."
+            ]
+          },
+          "Data/MapData/Map005.mps": {
+            "sha256": "8f48e5fbb024b08efc3c59c068a892c68309e43015c9e526383d8796ef68db1d",
+            "messages": [
+              "@1\n\\f[12]A line spoken with a face graphic that is long enough to wrap."
+            ]
+          },
+          "Data/MapData/Map006.mps": {
+            "sha256": "e6e0bf5c4120aa49101f9968a02c69f6757edf062433ecb9ab1211aa290f4430",
+            "messages": [
+              "\\f[12]Big letters that will probably need to be wrapped twice."
+            ]
+          },
+          "Data/MapData/Map007.mps": {
+            "sha256": "b1b7a23dd15a8d578aa2ecb1c83c6acee73db8fa58594227c23d3b1a8b41999e",
+            "messages": [
+              "\\f[12]\\ax[10]A positioned line that is long enough to need wrapping."
+            ]
+          },
+          "Data/MapData/Map008.mps": {
+            "sha256": "3279a5d60571148436cc7df7536a8f05d55a8347eeb70012470b0c3d7e7334b6",
+            "messages": [
+              "\\f[12]Gyoin:\nWelcome to the shop, traveller, take a good look around."
+            ]
+          },
+          "Data/MapData/Map009.mps": {
+            "sha256": "bbfc6ae8cd16d9438acf0644dd17d4982279c5d2b26d8304c267bf5cfb130ae9",
+            "messages": [
+              "\\f[12]First part of the text.\n\nThird part, after a blank line, also long."
+            ]
+          },
+          "Data/MapData/Map010.mps": {
+            "sha256": "cf05795763350882b6629b93bf00563f8baa6d89f3080e1e72329093824369eb",
+            "messages": [
+              "\\f[12]A heading line here.\n　An indented line that is fairly long too."
+            ]
+          },
+          "Data/MapData/Map011.mps": {
+            "sha256": "e5e2ebfb99d1f1cbb9ea7c3f03f8766312cc9017e346f63e83861f9d42fa0117",
+            "messages": [
+              "\\f[12]\\c[2]Coloured\\c[0] words inside a sentence that wraps somewhere."
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "settings": "Reflow/Shrink/min11/dialogueNone/widthSome(10.0)/linesSome(3)/baseSome(12)",
+    "view": {
+      "supported": true,
+      "reason": null,
+      "settings": {
+        "enabledDialogue": true,
+        "enabledDescriptions": false,
+        "lineBreaks": "reflow",
+        "overflow": "shrink",
+        "minFontSize": 11,
+        "dialogueFontSize": null,
+        "wolfWidthEm": 10.0,
+        "wolfMaxLines": 3,
+        "wolfBaseFontSize": 12
+      },
+      "geometry": null,
+      "font": {
+        "file": null,
+        "loaded": false,
+        "error": "no font file in the game folder"
+      },
+      "warnings": [],
+      "notes": [],
+      "wolf": {
+        "measured": null,
+        "budget": {
+          "widthEm": 10.0,
+          "maxLines": 3
+        },
+        "baseFontSize": 12
+      }
+    },
+    "scan": {
+      "dialogue": {
+        "total": 11,
+        "fits": 1,
+        "rewrapped": 2,
+        "newPage": 0,
+        "shrunk": 2,
+        "tooLong": 5,
+        "skipped": 1
+      },
+      "descriptions": {
+        "total": 0,
+        "fits": 0,
+        "rewrapped": 0,
+        "newPage": 0,
+        "shrunk": 0,
+        "tooLong": 0,
+        "skipped": 0
+      },
+      "rows": [
+        {
+          "fileId": "<file Map003.mps>",
+          "fileName": "Map003.mps",
+          "pointer": "MapData/Map003/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map003.mps#MapData/Map003/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "6 lines, the window holds 3"
+          },
+          "sample": "This message is long enough to need more than three lines in the window, so it m"
+        },
+        {
+          "fileId": "<file Map004.mps>",
+          "fileName": "Map004.mps",
+          "pointer": "MapData/Map004/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map004.mps#MapData/Map004/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "a word is wider than the window"
+          },
+          "sample": "Supercalifragilisticexpialidocious word here."
+        },
+        {
+          "fileId": "<file Map006.mps>",
+          "fileName": "Map006.mps",
+          "pointer": "MapData/Map006/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map006.mps#MapData/Map006/events/0/pages/0/0",
+          "outcome": {
+            "kind": "shrunk",
+            "size": 12
+          },
+          "sample": "\\f[16]Big letters that will probably need to be wrapped twice."
+        },
+        {
+          "fileId": "<file Map007.mps>",
+          "fileName": "Map007.mps",
+          "pointer": "MapData/Map007/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map007.mps#MapData/Map007/events/0/pages/0/0",
+          "outcome": {
+            "kind": "skipped",
+            "reason": "positioning or alignment codes"
+          },
+          "sample": "\\ax[10]A positioned line that is long enough to need wrapping."
+        },
+        {
+          "fileId": "<file Map008.mps>",
+          "fileName": "Map008.mps",
+          "pointer": "MapData/Map008/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map008.mps#MapData/Map008/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "4 lines, the window holds 3"
+          },
+          "sample": "Gyoin:\nWelcome to the shop, traveller, take a good look around."
+        },
+        {
+          "fileId": "<file Map009.mps>",
+          "fileName": "Map009.mps",
+          "pointer": "MapData/Map009/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map009.mps#MapData/Map009/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "6 lines, the window holds 3"
+          },
+          "sample": "First part of the text.\n\nThird part, after a blank line, also long."
+        },
+        {
+          "fileId": "<file Map010.mps>",
+          "fileName": "Map010.mps",
+          "pointer": "MapData/Map010/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map010.mps#MapData/Map010/events/0/pages/0/0",
+          "outcome": {
+            "kind": "tooLong",
+            "reason": "4 lines, the window holds 3"
+          },
+          "sample": "A heading line here.\n　An indented line that is fairly long too."
+        },
+        {
+          "fileId": "<file Map011.mps>",
+          "fileName": "Map011.mps",
+          "pointer": "MapData/Map011/events/0/pages/0/0",
+          "description": false,
+          "segmentId": "Map011.mps#MapData/Map011/events/0/pages/0/0",
+          "outcome": {
+            "kind": "shrunk",
+            "size": 11
+          },
+          "sample": "\\c[2]Coloured\\c[0] words inside a sentence that wraps somewhere."
+        }
+      ],
+      "missingChars": []
+    },
+    "exports": {
+      "fontNone/replacefalse": {
+        "entries": {
+          "Data/MapData/Map001.mps": "0feb8e11fdd270131e2520553ecf8095579188403feff59a8c82cb1b80ad6332",
+          "Data/MapData/Map002.mps": "33cc148b7036331c726657569a77c3c3e10a25c0d8c85e643f1d648335430ed0",
+          "Data/MapData/Map003.mps": "a37866268b95dabb053115433c9dfef27457e76cc7645f5797da0add05c579bf",
+          "Data/MapData/Map004.mps": "2ba54e1166a65871e56165604dcd73e7782b9639164d73350d09e56fe8c09bae",
+          "Data/MapData/Map005.mps": "2b8e4b8e4ef60ad8b30946991b27f7b8e4faf9c22953c01ef0ee91e3e92eaad6",
+          "Data/MapData/Map006.mps": "73406a51f47422db7122718fe3466bc294507f28c2a81f5ee1b614854f836515",
+          "Data/MapData/Map007.mps": "bf730dc61ce3e4f15ecd8dd5d4787e5497ff3a29c28de1eddbb188f99809b0b5",
+          "Data/MapData/Map008.mps": "b0301cef0a72e24194cd15e3f4753ad1d4a1f1783e3187cf6565f0f408e1d8c8",
+          "Data/MapData/Map009.mps": "5f22eb615d654516aa0dc5b89ee194c9c922fc1622fd53ab8eedb883de12b240",
+          "Data/MapData/Map010.mps": "868af5538a880893efa8c18c0cf00f01f5b935378dc08e4c387767bd8b394921",
+          "Data/MapData/Map011.mps": "c8fce2868ea91155e929a7582ad32fd9fe8318169cf4102a34bfde2dd1b4dec9"
+        },
+        "maps": {
+          "Data/MapData/Map001.mps": {
+            "sha256": "0feb8e11fdd270131e2520553ecf8095579188403feff59a8c82cb1b80ad6332",
+            "messages": [
+              "Hello there."
+            ]
+          },
+          "Data/MapData/Map002.mps": {
+            "sha256": "33cc148b7036331c726657569a77c3c3e10a25c0d8c85e643f1d648335430ed0",
+            "messages": [
+              "aaaa bbbb cccc\ndddd eeee."
+            ]
+          },
+          "Data/MapData/Map003.mps": {
+            "sha256": "a37866268b95dabb053115433c9dfef27457e76cc7645f5797da0add05c579bf",
+            "messages": [
+              "This message is\nlong enough to need\nmore than three\nlines in the window,\nso it must shrink\nor stay too long."
+            ]
+          },
+          "Data/MapData/Map004.mps": {
+            "sha256": "2ba54e1166a65871e56165604dcd73e7782b9639164d73350d09e56fe8c09bae",
+            "messages": [
+              "Supercalifragilisticexpialidocious\nword here."
+            ]
+          },
+          "Data/MapData/Map005.mps": {
+            "sha256": "2b8e4b8e4ef60ad8b30946991b27f7b8e4faf9c22953c01ef0ee91e3e92eaad6",
+            "messages": [
+              "@1\nA line spoken with a\nface graphic that is\nlong enough to wrap."
+            ]
+          },
+          "Data/MapData/Map006.mps": {
+            "sha256": "73406a51f47422db7122718fe3466bc294507f28c2a81f5ee1b614854f836515",
+            "messages": [
+              "\\f[12]Big letters that\nwill probably need\nto be wrapped twice."
+            ]
+          },
+          "Data/MapData/Map007.mps": {
+            "sha256": "bf730dc61ce3e4f15ecd8dd5d4787e5497ff3a29c28de1eddbb188f99809b0b5",
+            "messages": [
+              "\\ax[10]A positioned line that is long enough to need wrapping."
+            ]
+          },
+          "Data/MapData/Map008.mps": {
+            "sha256": "b0301cef0a72e24194cd15e3f4753ad1d4a1f1783e3187cf6565f0f408e1d8c8",
+            "messages": [
+              "Gyoin:\nWelcome to the shop,\ntraveller, take a\ngood look around."
+            ]
+          },
+          "Data/MapData/Map009.mps": {
+            "sha256": "5f22eb615d654516aa0dc5b89ee194c9c922fc1622fd53ab8eedb883de12b240",
+            "messages": [
+              "First part\nof the text.\n\nThird part,\nafter a blank\nline, also long."
+            ]
+          },
+          "Data/MapData/Map010.mps": {
+            "sha256": "868af5538a880893efa8c18c0cf00f01f5b935378dc08e4c387767bd8b394921",
+            "messages": [
+              "A heading line here.\n　An indented\nline that is\nfairly long too."
+            ]
+          },
+          "Data/MapData/Map011.mps": {
+            "sha256": "c8fce2868ea91155e929a7582ad32fd9fe8318169cf4102a34bfde2dd1b4dec9",
+            "messages": [
+              "\\f[11]\\c[2]Coloured\\c[0] words inside\na sentence that\nwraps somewhere."
+            ]
+          }
+        }
+      },
+      "fontSome(12)/replacetrue": {
+        "entries": {
+          "Data/MapData/Map001.mps": "46b562c2f96557767ff2a91d119ce874e85e145e5001c0c0b1b341fb697870cd",
+          "Data/MapData/Map002.mps": "8ce1abd2f13d6baa61f66c1c97116bd87b7d66620b97b1aebd254533fd0d45f3",
+          "Data/MapData/Map003.mps": "84b71fd944e69231dd084aa5a4adf5017b4fd0d488762db20d3aa4878fcf529e",
+          "Data/MapData/Map004.mps": "6fda5c1f8473254b40b1be0b9ed160fab713065e9d9ccc0c46c85d1206622420",
+          "Data/MapData/Map005.mps": "bcc3a6fdfea03a8886cfe5824c95a432559eb01c5392c3e4722378ec204858af",
+          "Data/MapData/Map006.mps": "73406a51f47422db7122718fe3466bc294507f28c2a81f5ee1b614854f836515",
+          "Data/MapData/Map007.mps": "b1b7a23dd15a8d578aa2ecb1c83c6acee73db8fa58594227c23d3b1a8b41999e",
+          "Data/MapData/Map008.mps": "ae12b45db4b09f30a0e915343cd1eed11e18abbfd2185283a90dafb815d12e88",
+          "Data/MapData/Map009.mps": "b1d0620dbbcda4ffc2d0f83191c239f88b5a22bb9e2934474b93c9941cc467c3",
+          "Data/MapData/Map010.mps": "19d8184e90a5697e3b0e8abe13da0c18bfdf83a6de131ee6c8eaa40ea2e099e7",
+          "Data/MapData/Map011.mps": "c8fce2868ea91155e929a7582ad32fd9fe8318169cf4102a34bfde2dd1b4dec9"
+        },
+        "maps": {
+          "Data/MapData/Map001.mps": {
+            "sha256": "46b562c2f96557767ff2a91d119ce874e85e145e5001c0c0b1b341fb697870cd",
+            "messages": [
+              "\\f[12]Hello there."
+            ]
+          },
+          "Data/MapData/Map002.mps": {
+            "sha256": "8ce1abd2f13d6baa61f66c1c97116bd87b7d66620b97b1aebd254533fd0d45f3",
+            "messages": [
+              "\\f[12]aaaa bbbb cccc\ndddd eeee."
+            ]
+          },
+          "Data/MapData/Map003.mps": {
+            "sha256": "84b71fd944e69231dd084aa5a4adf5017b4fd0d488762db20d3aa4878fcf529e",
+            "messages": [
+              "\\f[12]This message is\nlong enough to need\nmore than three\nlines in the window,\nso it must shrink\nor stay too long."
+            ]
+          },
+          "Data/MapData/Map004.mps": {
+            "sha256": "6fda5c1f8473254b40b1be0b9ed160fab713065e9d9ccc0c46c85d1206622420",
+            "messages": [
+              "\\f[12]Supercalifragilisticexpialidocious\nword here."
+            ]
+          },
+          "Data/MapData/Map005.mps": {
+            "sha256": "bcc3a6fdfea03a8886cfe5824c95a432559eb01c5392c3e4722378ec204858af",
+            "messages": [
+              "@1\n\\f[12]A line spoken with a\nface graphic that is\nlong enough to wrap."
+            ]
+          },
+          "Data/MapData/Map006.mps": {
+            "sha256": "73406a51f47422db7122718fe3466bc294507f28c2a81f5ee1b614854f836515",
+            "messages": [
+              "\\f[12]Big letters that\nwill probably need\nto be wrapped twice."
+            ]
+          },
+          "Data/MapData/Map007.mps": {
+            "sha256": "b1b7a23dd15a8d578aa2ecb1c83c6acee73db8fa58594227c23d3b1a8b41999e",
+            "messages": [
+              "\\f[12]\\ax[10]A positioned line that is long enough to need wrapping."
+            ]
+          },
+          "Data/MapData/Map008.mps": {
+            "sha256": "ae12b45db4b09f30a0e915343cd1eed11e18abbfd2185283a90dafb815d12e88",
+            "messages": [
+              "\\f[12]Gyoin:\nWelcome to the shop,\ntraveller, take a\ngood look around."
+            ]
+          },
+          "Data/MapData/Map009.mps": {
+            "sha256": "b1d0620dbbcda4ffc2d0f83191c239f88b5a22bb9e2934474b93c9941cc467c3",
+            "messages": [
+              "\\f[12]First part\nof the text.\n\nThird part,\nafter a blank\nline, also long."
+            ]
+          },
+          "Data/MapData/Map010.mps": {
+            "sha256": "19d8184e90a5697e3b0e8abe13da0c18bfdf83a6de131ee6c8eaa40ea2e099e7",
+            "messages": [
+              "\\f[12]A heading line here.\n　An indented\nline that is\nfairly long too."
+            ]
+          },
+          "Data/MapData/Map011.mps": {
+            "sha256": "c8fce2868ea91155e929a7582ad32fd9fe8318169cf4102a34bfde2dd1b4dec9",
+            "messages": [
+              "\\f[11]\\c[2]Coloured\\c[0] words inside\na sentence that\nwraps somewhere."
+            ]
+          }
+        }
+      }
+    }
+  }
+]

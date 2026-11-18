@@ -7,8 +7,9 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
-use crate::engines::mv_mz::layout::fit::{FitSettings, LineBreaks, Overflow};
-use crate::engines::mv_mz::layout::plan::{FitOverride, StoredOverride};
+use super::{LineBreaks, Overflow};
+use crate::engines::mv_mz::MzTextBox;
+use crate::engines::wolf::WolfTextBox;
 
 /// Smallest font size the shrink strategy may use.
 pub const MIN_FONT_FLOOR: u32 = 8;
@@ -55,28 +56,9 @@ impl TextFitSettings {
         self.enabled_dialogue || self.enabled_descriptions
     }
 
-    /// Defaults for an engine: Wolf has no new page (plan WR, E3) and draws
-    /// at about 12 by default, so it shrinks down to 8.
+    /// Defaults for an engine, from its adapter ([`EngineFit::default_settings`]).
     pub fn default_for(engine: &str) -> Self {
-        if engine == "wolf" {
-            Self {
-                overflow: Overflow::Shrink,
-                min_font_size: MIN_FONT_FLOOR,
-                ..Self::default()
-            }
-        } else {
-            Self::default()
-        }
-    }
-
-    pub fn fit_settings(&self) -> FitSettings {
-        FitSettings {
-            line_breaks: self.line_breaks,
-            overflow: self.overflow,
-            min_font_size: self.min_font_size,
-            dialogue_font_size: self.dialogue_font_size,
-            strip_stored_font_prefix: false,
-        }
+        engine_fit(engine).map_or_else(Self::default, EngineFit::default_settings)
     }
 
     /// Reject sizes the engine could not draw sensibly.
@@ -122,6 +104,99 @@ impl TextFitSettings {
             );
         }
         Ok(())
+    }
+}
+
+/// A per-message (or per-description) choice.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FitOverride {
+    pub line_breaks: Option<LineBreaks>,
+    pub overflow: Option<Overflow>,
+    /// Export this text exactly as translated.
+    #[serde(default)]
+    pub disabled: bool,
+}
+
+/// An override and the original text it was made for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredOverride {
+    pub choice: FitOverride,
+    pub source_hash: String,
+}
+
+/// What an engine's text fitting covers, as the settings and QA see it:
+/// implemented by its adapter type (`MzTextBox`, `WolfTextBox`).
+pub trait FitAdapter {
+    /// A long text may continue on a new page. Otherwise, as Wolf RPG
+    /// (plan WR, E3, drawing at about 12 by default), it shrinks by default
+    /// down to [`MIN_FONT_FLOOR`].
+    const NEW_PAGE: bool;
+    /// Descriptions are fitted (otherwise messages only).
+    const DESCRIPTIONS: bool;
+
+    /// The segment is laid out at export when fitting is on for `dialogue` /
+    /// `descriptions`: its raw line width then does not matter.
+    fn is_fitted_segment(
+        file_name: &str,
+        json_key: &str,
+        segment_kind: &str,
+        dialogue: bool,
+        descriptions: bool,
+    ) -> bool;
+}
+
+/// One engine's [`FitAdapter`], as a value.
+#[derive(Debug, Clone, Copy)]
+pub struct EngineFit {
+    new_page: bool,
+    descriptions: bool,
+    is_fitted: fn(&str, &str, &str, bool, bool) -> bool,
+}
+
+impl EngineFit {
+    fn of<A: FitAdapter>() -> Self {
+        Self {
+            new_page: A::NEW_PAGE,
+            descriptions: A::DESCRIPTIONS,
+            is_fitted: A::is_fitted_segment,
+        }
+    }
+
+    /// The settings of a project that saved none.
+    pub fn default_settings(self) -> TextFitSettings {
+        if self.new_page {
+            TextFitSettings::default()
+        } else {
+            TextFitSettings {
+                overflow: Overflow::Shrink,
+                min_font_size: MIN_FONT_FLOOR,
+                ..TextFitSettings::default()
+            }
+        }
+    }
+
+    /// See [`FitAdapter::is_fitted_segment`].
+    pub fn is_fitted_segment(
+        self,
+        file_name: &str,
+        json_key: &str,
+        segment_kind: &str,
+        dialogue: bool,
+        descriptions: bool,
+    ) -> bool {
+        (self.is_fitted)(file_name, json_key, segment_kind, dialogue, descriptions)
+    }
+}
+
+/// The text fitting adapter of the engine stored in `projects.engine`
+/// (`None`: no text fitting). The only engine name read in
+/// `core::text_fit` (plan DD, L1-D); L5 reads it as an `Engine`.
+pub fn engine_fit(engine: &str) -> Option<EngineFit> {
+    match engine {
+        "mv_mz" => Some(EngineFit::of::<MzTextBox<'static>>()),
+        "wolf" => Some(EngineFit::of::<WolfTextBox<'static>>()),
+        _ => None,
     }
 }
 
@@ -351,15 +426,13 @@ pub async fn enabled_kinds(db: &SqlitePool, project_id: &str) -> (bool, bool) {
         .await
         .ok()
         .flatten();
-    let wolf = match engine.as_deref() {
-        Some("mv_mz") => false,
-        Some("wolf") => true,
-        _ => return (false, false),
+    let Some(fit) = engine.as_deref().and_then(engine_fit) else {
+        return (false, false);
     };
     match load_settings(db, project_id).await {
         Ok(settings) => (
             settings.enabled_dialogue,
-            settings.enabled_descriptions && !wolf,
+            settings.enabled_descriptions && fit.descriptions,
         ),
         Err(_) => (false, false),
     }

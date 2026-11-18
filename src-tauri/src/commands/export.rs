@@ -15,7 +15,9 @@ use std::io::Write as _;
 use crate::{
     commands::{
         coverage::enabled_plugin_sources,
-        text_fit::{environment as fit_environment, fit_file, project_targets, Support},
+        text_fit::{
+            environment as fit_environment, fit_file, project_targets, FitSettings, Support,
+        },
         wolf_text_fit::WolfExportFit,
     },
     core::{originals, report, text_fit, tm},
@@ -913,7 +915,7 @@ async fn fitted_lines(
     if let Some(size) = font_size {
         settings.dialogue_font_size = Some(size);
     }
-    let mut fit = settings.fit_settings();
+    let mut fit = FitSettings::from(&settings);
     fit.strip_stored_font_prefix = font_size.is_some() && replace_existing;
     let Support::Ready(env) = fit_environment(
         &state.db,

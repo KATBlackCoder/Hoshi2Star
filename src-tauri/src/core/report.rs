@@ -7,7 +7,6 @@ use crate::core::qa::{self, QaError, QaSemanticContext};
 use crate::core::terminology::resolver;
 use crate::core::text_fit;
 use crate::domain::types::{QaReport, QaTerminologyIssue};
-use crate::engines::mv_mz::layout::message::is_fitted_segment;
 use crate::llm::context::{self, PromptContextClass};
 use crate::utils::text::escape_xml;
 use crate::utils::time::{civil_now, CivilTime};
@@ -115,7 +114,7 @@ async fn evaluate_project(
         .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
 
     let (fit_dialogue, fit_descriptions) = text_fit::enabled_kinds(pool, project_id).await;
-    let fit_mv_mz = engine == "mv_mz";
+    let engine_fit = text_fit::engine_fit(engine);
     let mut variants =
         std::collections::HashMap::<(String, String), std::collections::HashSet<String>>::new();
     for row in &rows {
@@ -175,18 +174,15 @@ async fn evaluate_project(
             &semantic_context,
         );
         // Text fitting lays these out at export: raw line width does not matter.
-        let fitted = if fit_mv_mz {
-            is_fitted_segment(
+        let fitted = engine_fit.is_some_and(|fit| {
+            fit.is_fitted_segment(
                 &row.file_name,
                 &row.json_key,
                 &row.segment_kind,
                 fit_dialogue,
                 fit_descriptions,
             )
-        } else {
-            // Wolf RPG messages (plan WR); `fit_dialogue` is false elsewhere.
-            fit_dialogue && crate::engines::wolf::layout::is_fitted_key(&row.json_key)
-        };
+        });
         if fitted {
             result.drop_line_width();
         }

@@ -8,10 +8,10 @@
 //! as evenly as possible. The window width stays the export layout's business.
 
 use super::layout::fit::is_label;
-use super::layout::text::{split_face_prefix, tokenize};
-use crate::engines::mv_mz::layout::font::{is_wide, Metrics};
-use crate::engines::mv_mz::layout::text::{raw_of, TokenKind};
-use crate::engines::mv_mz::layout::wrap::{pieces, wrap};
+use super::layout::text::{split_face_prefix, tokenize, WolfTokenRules};
+use crate::core::text_fit::font::{is_wide, Metrics};
+use crate::core::text_fit::token::{raw_of, TokenKind};
+use crate::core::text_fit::wrap::{pieces, wrap};
 
 /// Source lines of each block of a message (blocks are separated by its
 /// structural breaks).
@@ -157,7 +157,7 @@ fn balance(block: &str, count: usize) -> String {
             token
         })
         .collect();
-    let parts = pieces(&tokens, &Metrics::Estimated, 1.0);
+    let parts = pieces(&tokens, &Metrics::Estimated, 1.0, &WolfTokenRules);
     let width: f32 = parts.iter().map(|part| part.width + part.space).sum();
     (2..=count)
         .rev()

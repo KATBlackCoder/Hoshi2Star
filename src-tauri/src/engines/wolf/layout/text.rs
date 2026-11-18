@@ -1,14 +1,14 @@
 //! Wolf RPG message text as layout tokens (plan WR, rule R1).
 //!
-//! Produces the MZ layout [`Token`]s so the shared line breaking
-//! ([`crate::engines::mv_mz::layout::wrap`]) applies unchanged. Every token
+//! Produces the shared layout [`Token`]s so the shared line breaking
+//! ([`crate::core::text_fit::wrap`]) applies unchanged. Every token
 //! keeps its raw text: tokens re-assemble into the exact original string.
 
 use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::engines::mv_mz::layout::text::{Token, TokenKind};
+use crate::core::text_fit::token::{Token, TokenKind, TokenRules};
 
 /// `\v[n]`, `\self[n]`… print a number: assumed up to four digits.
 const NUMBER_SAMPLE: &str = "0000";
@@ -18,6 +18,23 @@ const STRING_SAMPLE: &str = "\u{3000}\u{3000}\u{3000}\u{3000}\u{3000}\u{3000}";
 /// `\i[n]`: an icon is 20 px at the default size of the calibrated game
 /// (≈ 0.78 em, plan WR, WR-1); one full-width space (1 em) is a safe estimate.
 const ICON_SAMPLE: &str = "\u{3000}";
+
+/// Wolf token rules. Wolf has no relative font size code and no icon token
+/// (`\i[n]` is measured as inserted text, [`ICON_SAMPLE`]): this tokenizer
+/// never produces [`TokenKind::Bigger`], [`TokenKind::Smaller`] or
+/// [`TokenKind::Icon`], so these rules never apply.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WolfTokenRules;
+
+impl TokenRules for WolfTokenRules {
+    fn relative_font_size(&self, _bigger: bool, size: f32) -> f32 {
+        size
+    }
+
+    fn icon_advance(&self) -> f32 {
+        0.0
+    }
+}
 
 /// Leading `@N\n`: face / speaker graphic of the base system.
 static RE_FACE_PREFIX: LazyLock<Regex> =

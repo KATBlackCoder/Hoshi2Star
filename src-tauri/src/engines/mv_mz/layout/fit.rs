@@ -7,39 +7,22 @@
 //! changes. Messages that already fit are left as they are.
 
 use std::borrow::Cow;
+use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use regex::Regex;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::font::Metrics;
 use super::geometry::Geometry;
 use super::simulate::{simulate, BoxSpec, PageView};
 use super::text::{apply_font_change, raw_of, tokenize, Inserts, Token, TokenKind, PAGE_BREAK};
 use super::wrap::{pieces, size_after, wrap, Piece};
+use crate::core::text_fit::fit::{fit, TextBox, TooLong};
+use crate::core::text_fit::{FitAdapter, TextFitSettings};
 
-/// How line breaks are chosen inside a message.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LineBreaks {
-    /// Join the lines of each block and rewrap them evenly.
-    Reflow,
-    /// Keep each translated line; split only the ones that are too wide.
-    Keep,
-}
-
-/// What happens when a message needs more lines than the box holds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Overflow {
-    /// Continue on a new page at a sentence boundary.
-    NewPage,
-    /// Shrink the font (down to the minimum); a new page if still too long.
-    Shrink,
-    /// Leave the text as translated and report it.
-    Leave,
-}
+pub use crate::core::text_fit::{FitOutcome, LineBreaks, Overflow};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FitSettings {
@@ -52,6 +35,20 @@ pub struct FitSettings {
     /// export's prefix; the export's "replace existing" choice). Otherwise it
     /// is the translator's code and is kept.
     pub strip_stored_font_prefix: bool,
+}
+
+impl From<&TextFitSettings> for FitSettings {
+    /// The project's settings for MZ fitting (a stored export prefix is kept:
+    /// the export sets [`FitSettings::strip_stored_font_prefix`] itself).
+    fn from(settings: &TextFitSettings) -> Self {
+        Self {
+            line_breaks: settings.line_breaks,
+            overflow: settings.overflow,
+            min_font_size: settings.min_font_size,
+            dialogue_font_size: settings.dialogue_font_size,
+            strip_stored_font_prefix: false,
+        }
+    }
 }
 
 pub struct FitContext<'a> {
@@ -76,32 +73,6 @@ pub struct MessageInput {
     pub lines: Vec<MessageLine>,
     /// A portrait is shown (`101` parameter 0 set).
     pub face: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum FitOutcome {
-    /// Already fits as translated.
-    Fits,
-    /// Line breaks changed; same number of pages.
-    Rewrapped,
-    /// Continued on extra pages.
-    NewPage { pages: usize },
-    /// Font reduced to `size` px.
-    Shrunk { size: u32 },
-    /// Still does not fit with these settings (left as translated).
-    TooLong { reason: String },
-    /// Not fitted at all (left as translated).
-    Skipped { reason: String },
-}
-
-impl FitOutcome {
-    pub fn changed_layout(&self) -> bool {
-        matches!(
-            self,
-            FitOutcome::Rewrapped | FitOutcome::NewPage { .. } | FitOutcome::Shrunk { .. }
-        )
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -729,144 +700,262 @@ fn as_is(
 
 /// Fit one message.
 pub fn fit_message(input: &MessageInput, ctx: &FitContext, settings: &FitSettings) -> Fitted {
-    let spec = message_box(ctx, input.face);
-    let width = spec.limit - spec.text_x;
-    let all_text = assembled(input, &vec![None; input.lines.len()]);
-    let tokens = tokenize(&all_text, ctx.inserts);
-    let skip = |reason: &str| {
-        unchanged(
+    fit(
+        &MzTextBox::new(input, ctx, settings),
+        settings.overflow,
+        settings.min_font_size,
+    )
+}
+
+/// A message laid out one way: new text per input line, and how it is drawn.
+#[derive(Debug, Clone)]
+pub struct MzLayout {
+    values: Vec<Option<String>>,
+    pages: Vec<PageView>,
+}
+
+/// One Show Text message as the shared fitting ladder sees it (plan DD,
+/// ADR-009). "Already fits" is judged on the text as translated, which
+/// [`Overflow::Leave`] keeps; any overflow, in width or height, may shrink
+/// (`\FS[n]` at every page start), and a message continues on new pages at
+/// sentence ends unless it is timed or auto-closing (`\^`, `\|`).
+pub struct MzTextBox<'a> {
+    input: &'a MessageInput,
+    ctx: &'a FitContext<'a>,
+    settings: &'a FitSettings,
+    spec: BoxSpec,
+    width: f32,
+    all_text: String,
+    tokens: Vec<Token>,
+    /// A page adds a key press: never for auto-closing or timed messages.
+    locked: bool,
+    base_font: Option<u32>,
+    base: f32,
+    as_is: OnceCell<MzLayout>,
+    blocks: OnceCell<(Vec<Block>, Vec<Vec<usize>>)>,
+}
+
+impl<'a> MzTextBox<'a> {
+    pub fn new(
+        input: &'a MessageInput,
+        ctx: &'a FitContext<'a>,
+        settings: &'a FitSettings,
+    ) -> Self {
+        let spec = message_box(ctx, input.face);
+        let width = spec.limit - spec.text_x;
+        let all_text = assembled(input, &vec![None; input.lines.len()]);
+        let tokens = tokenize(&all_text, ctx.inserts);
+        let locked = tokens
+            .iter()
+            .any(|t| matches!(t.kind, TokenKind::Control('^') | TokenKind::Control('|')));
+        let base_font = settings.dialogue_font_size;
+        let base = base_font.map_or(ctx.geometry.font_size, |n| n as f32);
+        Self {
             input,
             ctx,
-            &spec,
-            FitOutcome::Skipped {
-                reason: reason.to_string(),
-            },
-        )
-    };
-    if tokens.iter().any(|t| t.kind == TokenKind::Position) {
-        return skip("uses manual text positioning (\\PX/\\PY)");
+            settings,
+            spec,
+            width,
+            all_text,
+            tokens,
+            locked,
+            base_font,
+            base,
+            as_is: OnceCell::new(),
+            blocks: OnceCell::new(),
+        }
     }
-    if is_rtl(&all_text) {
-        return skip("right-to-left text");
-    }
-    if tokens.iter().any(|t| t.kind == TokenKind::PageBreak) {
-        return skip("already contains page breaks");
-    }
-    // A page adds a key press: never for auto-closing or timed messages.
-    let locked = tokens
-        .iter()
-        .any(|t| matches!(t.kind, TokenKind::Control('^') | TokenKind::Control('|')));
 
-    let (as_is_values, as_is_pages) = as_is(input, ctx, &spec, settings);
-    if !overflows(&as_is_pages) {
-        return Fitted {
-            outcome: FitOutcome::Fits,
-            values: as_is_values,
-            pages: as_is_pages,
-        };
+    /// The as-translated lines (see [`as_is`]).
+    fn as_is(&self) -> &MzLayout {
+        self.as_is.get_or_init(|| {
+            let (values, pages) = as_is(self.input, self.ctx, &self.spec, self.settings);
+            MzLayout { values, pages }
+        })
     }
-    let too_long = |reason: &str| Fitted {
-        outcome: FitOutcome::TooLong {
-            reason: reason.to_string(),
-        },
-        values: as_is_values.clone(),
-        pages: as_is_pages.clone(),
-    };
-    if settings.overflow == Overflow::Leave {
-        return too_long("left as translated");
-    }
-    // The original number of pages (same line count as the source).
-    let target_pages = as_is_pages.len().max(1);
-    let (blocks, runs) = blocks(input, settings, ctx);
-    let base_font = settings.dialogue_font_size;
-    let base = base_font.map_or(ctx.geometry.font_size, |n| n as f32);
 
-    let attempt =
-        |size: f32, page_font: Option<u32>, allow_pages: bool| -> Option<Vec<Vec<OutLine>>> {
-            if let Some(flow) = lay_out_flow(&blocks, &runs, ctx, size, width) {
-                let rendered = render(std::slice::from_ref(&flow), ctx, page_font);
-                let drawn = simulate(&joined(&rendered), &spec, ctx.metrics, ctx.inserts);
-                if !overflows(&drawn)
-                    && drawn.iter().all(PageView::is_visible)
-                    && drawn.len() <= target_pages
-                {
-                    return Some(split_pages(flow, &drawn));
-                }
-            }
-            if !allow_pages {
-                return None;
-            }
-            paginate(
-                &units(&blocks, ctx, size, false, width),
-                width,
-                ctx,
-                &spec,
-                page_font,
-            )
-            .or_else(|| {
-                paginate(
-                    &units(&blocks, ctx, size, true, width),
-                    width,
-                    ctx,
-                    &spec,
-                    page_font,
-                )
-            })
-        };
-    let finish =
-        |pages: Vec<Vec<OutLine>>, page_font: Option<u32>, outcome: FitOutcome| -> Option<Fitted> {
-            let rendered = render(&pages, ctx, page_font);
-            let values = distribute(&rendered, &runs, input.lines.len())?;
-            let drawn = simulate(&assembled(input, &values), &spec, ctx.metrics, ctx.inserts);
-            if overflows(&drawn) || !drawn.iter().all(PageView::is_visible) {
-                return None;
-            }
-            Some(Fitted {
-                outcome,
-                values,
-                pages: drawn,
-            })
-        };
-    let shrink = || -> Option<Fitted> {
-        for size in (settings.min_font_size..base as u32).rev() {
-            if let Some(pages) = attempt(size as f32, Some(size), false) {
-                if let Some(fitted) = finish(pages, Some(size), FitOutcome::Shrunk { size }) {
-                    return Some(fitted);
-                }
+    fn blocks(&self) -> &(Vec<Block>, Vec<Vec<usize>>) {
+        self.blocks
+            .get_or_init(|| blocks(self.input, self.settings, self.ctx))
+    }
+
+    /// The original number of pages (same line count as the source).
+    fn target_pages(&self) -> usize {
+        self.as_is().pages.len().max(1)
+    }
+
+    /// Pages at font `size` with the page prefix `page_font`: one flow
+    /// within the original number of pages, else (`allow_pages`) paginated.
+    fn attempt(
+        &self,
+        size: f32,
+        page_font: Option<u32>,
+        allow_pages: bool,
+    ) -> Option<Vec<Vec<OutLine>>> {
+        let (blocks, runs) = self.blocks();
+        let (ctx, spec, width) = (self.ctx, &self.spec, self.width);
+        if let Some(flow) = lay_out_flow(blocks, runs, ctx, size, width) {
+            let rendered = render(std::slice::from_ref(&flow), ctx, page_font);
+            let drawn = simulate(&joined(&rendered), spec, ctx.metrics, ctx.inserts);
+            if !overflows(&drawn)
+                && drawn.iter().all(PageView::is_visible)
+                && drawn.len() <= self.target_pages()
+            {
+                return Some(split_pages(flow, &drawn));
             }
         }
+        if !allow_pages {
+            return None;
+        }
+        paginate(
+            &units(blocks, ctx, size, false, width),
+            width,
+            ctx,
+            spec,
+            page_font,
+        )
+        .or_else(|| {
+            paginate(
+                &units(blocks, ctx, size, true, width),
+                width,
+                ctx,
+                spec,
+                page_font,
+            )
+        })
+    }
+
+    /// `pages` written back into the message's lines, if they are drawn
+    /// without overflow.
+    fn written(&self, pages: Vec<Vec<OutLine>>, page_font: Option<u32>) -> Option<MzLayout> {
+        let (_, runs) = self.blocks();
+        let rendered = render(&pages, self.ctx, page_font);
+        let values = distribute(&rendered, runs, self.input.lines.len())?;
+        let drawn = simulate(
+            &assembled(self.input, &values),
+            &self.spec,
+            self.ctx.metrics,
+            self.ctx.inserts,
+        );
+        if overflows(&drawn) || !drawn.iter().all(PageView::is_visible) {
+            return None;
+        }
+        Some(MzLayout {
+            values,
+            pages: drawn,
+        })
+    }
+}
+
+impl FitAdapter for MzTextBox<'_> {
+    const NEW_PAGE: bool = true;
+    const DESCRIPTIONS: bool = true;
+
+    fn is_fitted_segment(
+        file_name: &str,
+        json_key: &str,
+        segment_kind: &str,
+        dialogue: bool,
+        descriptions: bool,
+    ) -> bool {
+        super::message::is_fitted_segment(file_name, json_key, segment_kind, dialogue, descriptions)
+    }
+}
+
+impl TextBox for MzTextBox<'_> {
+    type Layout = MzLayout;
+    type Fitted = Fitted;
+
+    fn skip_reason(&self) -> Option<String> {
+        if self.tokens.iter().any(|t| t.kind == TokenKind::Position) {
+            return Some("uses manual text positioning (\\PX/\\PY)".to_string());
+        }
+        if is_rtl(&self.all_text) {
+            return Some("right-to-left text".to_string());
+        }
+        if self.tokens.iter().any(|t| t.kind == TokenKind::PageBreak) {
+            return Some("already contains page breaks".to_string());
+        }
         None
-    };
-    let new_page = || -> Option<Fitted> {
-        let pages = attempt(base, base_font, true)?;
+    }
+
+    fn as_translated(&self) -> Option<MzLayout> {
+        Some(self.as_is().clone())
+    }
+
+    fn verdict(&self, layout: &MzLayout) -> bool {
+        !overflows(&layout.pages)
+    }
+
+    fn rewrap(&self) -> Option<MzLayout> {
+        // Rewrap within the original number of pages first.
+        self.attempt(self.base, self.base_font, false)
+            .and_then(|pages| self.written(pages, self.base_font))
+    }
+
+    /// Locked messages may only shrink.
+    fn shrinkable(&self, overflow: Overflow, _rewrapped: Option<&MzLayout>) -> bool {
+        self.locked || overflow == Overflow::Shrink
+    }
+
+    fn shrink_from(&self) -> Option<u32> {
+        Some(self.base as u32)
+    }
+
+    fn size_code(&self, size: u32) -> Option<MzLayout> {
+        self.attempt(size as f32, Some(size), false)
+            .and_then(|pages| self.written(pages, Some(size)))
+    }
+
+    fn paginate(&self, _overflow: Overflow) -> Option<(MzLayout, FitOutcome)> {
+        if self.locked {
+            return None;
+        }
+        let pages = self.attempt(self.base, self.base_font, true)?;
         let count = pages.len();
-        let outcome = if count > target_pages {
+        let outcome = if count > self.target_pages() {
             FitOutcome::NewPage { pages: count }
         } else {
             FitOutcome::Rewrapped
         };
-        finish(pages, base_font, outcome)
-    };
-
-    // Rewrap within the original number of pages first.
-    if let Some(fitted) = attempt(base, base_font, false)
-        .and_then(|pages| finish(pages, base_font, FitOutcome::Rewrapped))
-    {
-        return fitted;
+        self.written(pages, self.base_font)
+            .map(|layout| (layout, outcome))
     }
-    let result = match (settings.overflow, locked) {
-        // Locked messages may only shrink.
-        (_, true) => shrink(),
-        (Overflow::Shrink, false) => shrink().or_else(new_page),
-        (Overflow::NewPage | Overflow::Leave, false) => new_page(),
-    };
-    result.unwrap_or_else(|| {
-        too_long(if locked {
-            "does not fit and cannot take a new page (\\^ or \\| code)"
-        } else {
-            "does not fit even after rewrapping"
-        })
-    })
+
+    fn finish(&self, layout: MzLayout, outcome: FitOutcome) -> Fitted {
+        Fitted {
+            outcome,
+            values: layout.values,
+            pages: layout.pages,
+        }
+    }
+
+    fn skipped(&self, reason: String) -> Fitted {
+        unchanged(
+            self.input,
+            self.ctx,
+            &self.spec,
+            FitOutcome::Skipped { reason },
+        )
+    }
+
+    fn too_long(&self, why: TooLong<MzLayout>) -> Fitted {
+        let reason = match why {
+            TooLong::LeftAsTranslated => "left as translated",
+            TooLong::Unfitted(_) if self.locked => {
+                "does not fit and cannot take a new page (\\^ or \\| code)"
+            }
+            TooLong::Unfitted(_) => "does not fit even after rewrapping",
+        };
+        let as_is = self.as_is().clone();
+        Fitted {
+            outcome: FitOutcome::TooLong {
+                reason: reason.to_string(),
+            },
+            values: as_is.values,
+            pages: as_is.pages,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

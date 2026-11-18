@@ -1,23 +1,21 @@
 //! Text fitting for Wolf RPG messages (plan WR): the measured window, the
 //! scan behind the text fitting dialog, and the fitting the export applies.
 
-use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::Serialize;
 use sqlx::SqlitePool;
 
-use crate::commands::text_fit::{FitCounts, FitRow, FitScan, FontInfo, MissingChar};
-use crate::core::text_fit::TextFitSettings;
-use crate::engines::mv_mz::layout::fit::FitOutcome;
-use crate::engines::mv_mz::layout::font::{FontCache, Metrics};
+use crate::core::text_fit::font::FontInfo;
+use crate::core::text_fit::font::{load_game_font, FontCache, Metrics};
+use crate::core::text_fit::scan::{FitRow, FitScan, ScanSummary};
+use crate::core::text_fit::writes_without_spaces;
+use crate::core::text_fit::FitCounts;
+use crate::core::text_fit::{FitOutcome, TextFitSettings};
 use crate::engines::wolf::layout::{
     find_game_font, fit_message, is_budget_key, is_fitted_key, measure_budget, WolfBudget,
     WolfFitSettings,
 };
-
-/// Rows listed for review in the dialog.
-const MAX_ROWS: usize = 500;
 
 /// The Wolf message window as fitting sees it.
 #[derive(Debug, Clone, Serialize)]
@@ -74,40 +72,12 @@ impl WolfFitEnvironment {
 }
 
 fn game_font(game_dir: &Path, fonts: &FontCache) -> (Metrics, FontInfo) {
-    let path = match find_game_font(game_dir) {
-        Ok(path) => path,
-        Err(error) => {
-            return (
-                Metrics::Estimated,
-                FontInfo {
-                    file: None,
-                    loaded: false,
-                    error: Some(error),
-                },
-            )
-        }
-    };
-    let file = path
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned());
-    match fonts.load(&path) {
-        Ok(font) => (
-            Metrics::Font(font),
-            FontInfo {
-                file,
-                loaded: true,
-                error: None,
-            },
-        ),
-        Err(error) => (
-            Metrics::Estimated,
-            FontInfo {
-                file,
-                loaded: false,
-                error: Some(error.to_string()),
-            },
-        ),
-    }
+    let path = find_game_font(game_dir);
+    let file = path.as_ref().ok().and_then(|path| {
+        path.file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+    });
+    load_game_font(fonts, path.as_deref().map_err(Clone::clone), file)
 }
 
 /// Load the game font and measure the window on the original map messages;
@@ -160,9 +130,7 @@ pub async fn wolf_environment(
             budget,
             base_font_size: settings.wolf_base_font_size,
         },
-        no_space_join: ["zh", "ja", "ko"]
-            .iter()
-            .any(|code| target_language.starts_with(code)),
+        no_space_join: writes_without_spaces(&target_language),
         space_before_marks: target_language.starts_with("fr"),
     })
 }
@@ -201,46 +169,25 @@ fn fit_rows(
     fit: Option<&(WolfBudget, WolfFitSettings)>,
     segments: Vec<ScanRow>,
 ) -> FitScan {
-    let mut dialogue = FitCounts::default();
-    let mut rows = Vec::new();
-    let mut missing: BTreeMap<char, usize> = BTreeMap::new();
+    let mut summary = ScanSummary::default();
     if let Some(fit) = fit {
         for (id, key, source, target, file_id, file_name) in segments {
             let Some((_, outcome)) = env.fit(fit, &key, &target, &source) else {
                 continue;
             };
-            dialogue.add(&outcome);
-            for c in env.metrics.missing_chars(&target) {
-                *missing.entry(c).or_default() += 1;
-            }
-            let notable = !matches!(outcome, FitOutcome::Fits | FitOutcome::Rewrapped);
-            if notable && rows.len() < MAX_ROWS {
-                rows.push(FitRow {
-                    file_id,
-                    file_name,
-                    pointer: key,
-                    description: false,
-                    segment_id: Some(id),
-                    outcome,
-                    sample: target.chars().take(80).collect(),
-                });
-            }
+            summary.add_missing_chars(&env.metrics, &target);
+            summary.add(false, &outcome, || FitRow {
+                file_id,
+                file_name,
+                pointer: key,
+                description: false,
+                segment_id: Some(id),
+                outcome: outcome.clone(),
+                sample: target.chars().take(80).collect(),
+            });
         }
     }
-    let mut missing_chars: Vec<MissingChar> = missing
-        .into_iter()
-        .map(|(c, count)| MissingChar {
-            character: c.to_string(),
-            count,
-        })
-        .collect();
-    missing_chars.sort_by_key(|m| std::cmp::Reverse(m.count));
-    FitScan {
-        dialogue,
-        descriptions: FitCounts::default(),
-        rows,
-        missing_chars,
-    }
+    summary.finish()
 }
 
 /// Fitting as the export applies it: on when the project enables dialogue

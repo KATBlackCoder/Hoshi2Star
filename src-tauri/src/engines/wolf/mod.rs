@@ -10,3 +10,5 @@ pub mod line_breaks;
 pub(crate) mod placeholders;
 pub mod sources;
 pub(crate) mod v3_format;
+
+pub use layout::fit::WolfTextBox;
