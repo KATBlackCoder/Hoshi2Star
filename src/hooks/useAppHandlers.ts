@@ -1,20 +1,20 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { useProjectStore } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import { ensureModelConfigured, useLlmStore } from "@/stores/llm";
 import type {
-  DebugExport,
   ExportPreflight,
   FitScan,
   FontScanResult,
   ProjectStats,
-  TextFitView,
 } from "@/lib/types";
 import { wolfReadErrorDetail, wolfReadErrorKey } from "@/lib/projectError";
 import { errorMessage } from "@/lib/utils";
+import { exportApi } from "@/lib/api/export";
+import { projectApi } from "@/lib/api/project";
+import { textFitApi } from "@/lib/api/textFit";
 
 const INTEGRITY_ERROR_PREFIX = "Export blocked: the integrity check found";
 
@@ -65,9 +65,7 @@ export function useAppHandlers() {
   async function handleExportAll() {
     if (!activeProjectId) return;
     try {
-      const stats = await invoke<ProjectStats>("get_project_stats", {
-        projectId: activeProjectId,
-      });
+      const stats = await projectApi.stats(activeProjectId);
       setExportStats(stats);
       if (stats.untranslatedCount > 0) {
         setExportDialog("blocked");
@@ -87,7 +85,7 @@ export function useAppHandlers() {
     projectId: string,
   ): Promise<ExportPreflight | null> {
     try {
-      return await invoke<ExportPreflight>("preflight_export", { projectId });
+      return await exportApi.preflight(projectId);
     } catch {
       // Non-fatal: the optional switches are simply not offered.
       return null;
@@ -97,14 +95,11 @@ export function useAppHandlers() {
   /** What text fitting will do at export (only when it is enabled). */
   async function loadFitSummary(projectId: string): Promise<FitScan | null> {
     try {
-      const view = await invoke<TextFitView>("get_text_fit", { projectId });
+      const view = await textFitApi.get(projectId);
       const { enabledDialogue, enabledDescriptions } = view.settings;
       if (!view.supported || !(enabledDialogue || enabledDescriptions))
         return null;
-      return await invoke<FitScan>("scan_text_fit", {
-        projectId,
-        settings: null,
-      });
+      return await textFitApi.scan({ projectId, settings: null });
     } catch {
       return null;
     }
@@ -114,9 +109,7 @@ export function useAppHandlers() {
     setExportDialog(null);
     if (!activeProjectId) return;
     try {
-      const scan = await invoke<FontScanResult>("scan_font_status", {
-        projectId: activeProjectId,
-      });
+      const scan = await exportApi.scanFontStatus(activeProjectId);
       if (scan.engine === "wolf" || scan.engine === "mv_mz") {
         setFontScanResult(scan);
         setShowFontDialog(true);
@@ -132,7 +125,7 @@ export function useAppHandlers() {
     if (!activeProjectId) return;
     setIsExporting(true);
     try {
-      const zipPath = await invoke<string>("export_project", {
+      const zipPath = await exportApi.exportProject({
         projectId: activeProjectId,
         fontSize,
         replaceExisting,
@@ -165,9 +158,7 @@ export function useAppHandlers() {
     if (!activeProjectId) return;
     setIsExporting(true);
     try {
-      const result = await invoke<DebugExport>("export_debug_project", {
-        projectId: activeProjectId,
-      });
+      const result = await exportApi.exportDebug(activeProjectId);
       toast.success(t("debugExport.success"), {
         description: t("debugExport.successDesc", {
           path: result.zipPath,
@@ -197,7 +188,7 @@ export function useAppHandlers() {
     try {
       // Strip any prefix already in the DB (written by a previous export before the fix).
       if (activeProjectId && scan && scan.existingFontCount > 0) {
-        await invoke("strip_font_prefixes", { projectId: activeProjectId });
+        await exportApi.stripFontPrefixes(activeProjectId);
       }
       await doExport(null, false);
     } finally {
@@ -212,9 +203,7 @@ export function useAppHandlers() {
       return;
     }
     try {
-      const stats = await invoke<ProjectStats>("get_project_stats", {
-        projectId: activeProjectId,
-      });
+      const stats = await projectApi.stats(activeProjectId);
       setTranslateAllStats(stats);
       setShowTranslateAll(true);
     } catch (err) {

@@ -1,13 +1,12 @@
-import { invoke } from "@tauri-apps/api/core";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRight, BookMarked } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useTerminologyUiStore } from "@/features/terminology/terminologyUiStore";
-import type { SegmentTerminologyRule } from "@/lib/types";
 import { useActiveSegmentId } from "@/stores/editor";
 import { useUiStore } from "@/stores/ui";
+import { qaApi } from "@/lib/api/qa";
 
 export function TerminologyInspector({
   projectId,
@@ -26,7 +25,7 @@ export function TerminologyInspector({
   const rules = useQuery({
     queryKey: ["segment-terminology", segmentId, targetLanguage],
     queryFn: () =>
-      invoke<SegmentTerminologyRule[]>("get_segment_terminology", {
+      qaApi.segmentTerminology({
         segmentId: segmentId!,
         targetLanguage,
       }),

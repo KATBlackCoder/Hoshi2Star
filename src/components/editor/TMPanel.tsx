@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { invoke } from "@tauri-apps/api/core";
 import { BookOpen, Download } from "lucide-react";
 import { useExportToFile } from "@/hooks/useExportToFile";
 import {
@@ -11,6 +10,7 @@ import type { TmSuggestion } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useActiveLangPair } from "@/stores/project";
 import { queryKeys } from "@/lib/queryClient";
+import { tmApi } from "@/lib/api/tm";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -62,7 +62,7 @@ export function TMPanel({ onApply }: TMPanelProps) {
   const { data: suggestions = [], isLoading } = useQuery<TmSuggestion[]>({
     queryKey: [...queryKeys.tmSuggestions, langPair, sourceText],
     queryFn: () =>
-      invoke<TmSuggestion[]>("get_tm_suggestions", {
+      tmApi.suggestions({
         sourceText: sourceText!,
         langPair,
       }),

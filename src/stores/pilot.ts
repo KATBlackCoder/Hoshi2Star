@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import { errorMessage } from "@/lib/utils";
@@ -11,6 +10,8 @@ import type {
   Project,
   ProviderConfig,
 } from "@/lib/types";
+import { llmApi } from "@/lib/api/llm";
+import { hasPilot } from "@/lib/engine";
 
 export type PilotCategoryFilter = "all" | PilotSampleCategory;
 export type PilotReviewDecision =
@@ -71,7 +72,7 @@ export const usePilotStore = create<PilotState>()((set, get) => ({
     }),
 
   runPilot: async (project, providerConfig) => {
-    if (get().isRunning || project.engine !== "mv_mz") return;
+    if (get().isRunning || !hasPilot(project.engine)) return;
 
     activeProgressUnlisten?.();
     activeProgressUnlisten = null;
@@ -90,7 +91,7 @@ export const usePilotStore = create<PilotState>()((set, get) => ({
         EVENTS.pilotProgress,
         (event) => set({ progress: event.payload }),
       );
-      const report = await invoke<PilotRunReport>("run_mv_mz_pilot", {
+      const report = await llmApi.runPilot({
         gamePath: project.gamePath,
         sourceLang: project.sourceLang,
         targetLang: project.targetLang,

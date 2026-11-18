@@ -11,7 +11,6 @@ import {
   type RowSelectionState,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { invoke } from "@tauri-apps/api/core";
 import { useProjectStore } from "@/stores/project";
 import { useEditorStore } from "@/stores/editor";
 import {
@@ -22,35 +21,21 @@ import {
   type RunSummary,
 } from "@/stores/llm";
 import { createSegmentColumns, StatusBadge } from "@/features/editor/columns";
-import type { PaginatedSegments, Segment, SegmentUpdate } from "@/lib/types";
+import type { Segment } from "@/lib/types";
 import { invalidateAfterSegmentSave } from "@/lib/queryClient";
-import { cancelFrame, EVENTS, scheduleFrame } from "@/lib/events";
+import { EVENTS } from "@/lib/events";
 import { qaScoreLevel } from "@/lib/qaScore";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
+import { useCoalescedSegmentUpdates } from "@/hooks/useCoalescedSegmentUpdates";
+import { applySegmentUpdates } from "@/lib/segmentUpdates";
 import { cn, errorMessage } from "@/lib/utils";
 import { Play, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useUiStore } from "@/stores/ui";
+import { projectApi } from "@/lib/api/project";
 
-/**
- * Patch LLM updates into a list of segments (or search hits). Returns the
- * same array when no row is touched, so callers can skip the state update.
- */
-export function applySegmentUpdates<T extends Segment>(
-  segments: T[],
-  updates: ReadonlyMap<string, SegmentUpdate>,
-): T[] {
-  if (updates.size === 0) return segments;
-  let touched = false;
-  const next = segments.map((segment) => {
-    const update = updates.get(segment.id);
-    if (!update) return segment;
-    touched = true;
-    return { ...segment, targetText: update.targetText, status: update.status };
-  });
-  return touched ? next : segments;
-}
+export { applySegmentUpdates };
 
 export function SegmentGrid() {
   const { t, i18n } = useTranslation();
@@ -78,8 +63,6 @@ export function SegmentGrid() {
   const loadSeqRef = useRef(0);
   // Rows saved while a load is in flight: its snapshot may predate them.
   const savedDuringLoadRef = useRef<Map<string, Segment> | null>(null);
-  const pendingUpdatesRef = useRef(new Map<string, SegmentUpdate>());
-  const updateFrameRef = useRef<number | null>(null);
 
   /** `inPlace`: keep the list on screen while it re-syncs (no loading state). */
   const loadSegments = useCallback(
@@ -96,7 +79,7 @@ export function SegmentGrid() {
           const pageSize = 2000;
           const all: Segment[] = [];
           for (let page = 0; ; page++) {
-            const result = await invoke<PaginatedSegments>("get_segments", {
+            const result = await projectApi.segments({
               projectId,
               fileId,
               page,
@@ -137,13 +120,12 @@ export function SegmentGrid() {
   }, [activeProjectId, activeFileId, loadSegments]);
 
   /** Drop the LLM updates not applied yet (file switch, unmount). */
-  const dropPendingUpdates = useCallback(() => {
-    pendingUpdatesRef.current.clear();
-    if (updateFrameRef.current !== null) {
-      cancelFrame(updateFrameRef.current);
-      updateFrameRef.current = null;
-    }
-  }, []);
+  // Patch translated segments into the in-memory list as each batch is
+  // persisted, so the table updates progressively during long translations
+  // instead of waiting for the whole project to finish (once per frame).
+  const dropPendingUpdates = useCoalescedSegmentUpdates((batch) =>
+    setSegments((previous) => applySegmentUpdates(previous, batch)),
+  );
 
   // A segment opened by id only (text-fit dialog: it has no texts) gets its
   // texts once its row is loaded, for the QA and TM panels.
@@ -218,22 +200,6 @@ export function SegmentGrid() {
     return counts;
   }, [segments]);
 
-  // Patch translated segments into the in-memory list as each batch is
-  // persisted, so the table updates progressively during long translations
-  // instead of waiting for the whole project to finish (once per frame).
-  useTauriEvent<SegmentUpdate[]>(EVENTS.llmSegmentsUpdated, (updates) => {
-    const pending = pendingUpdatesRef.current;
-    for (const update of updates) pending.set(update.id, update);
-    if (updateFrameRef.current !== null) return;
-    updateFrameRef.current = scheduleFrame(() => {
-      updateFrameRef.current = null;
-      if (pending.size === 0) return;
-      const batch = new Map(pending);
-      pending.clear();
-      setSegments((previous) => applySegmentUpdates(previous, batch));
-    });
-  });
-  useEffect(() => dropPendingUpdates, [dropPendingUpdates]);
 
   // Re-fetch the segments when a .h2s pack import rewrites them across the
   // project or the project is realigned after a game update. After a run,
@@ -255,7 +221,7 @@ export function SegmentGrid() {
   const handleSave = useCallback(
     async (id: string, text: string) => {
       try {
-        const updated = await invoke<Segment>("update_segment", {
+        const updated = await projectApi.updateSegment({
           id,
           targetText: text,
         });

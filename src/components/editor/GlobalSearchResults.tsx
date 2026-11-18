@@ -10,7 +10,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { applySegmentUpdates } from "@/components/editor/SegmentGrid";
+import { applySegmentUpdates } from "@/lib/segmentUpdates";
+import { useCoalescedSegmentUpdates } from "@/hooks/useCoalescedSegmentUpdates";
 import { StatusBadge } from "@/features/editor/columns";
 import { useEditorStore } from "@/stores/editor";
 import {
@@ -22,10 +23,10 @@ import {
 } from "@/stores/llm";
 import { useProjectStore } from "@/stores/project";
 import { useSearchStore } from "@/stores/search";
-import { cancelFrame, EVENTS, scheduleFrame } from "@/lib/events";
+import { EVENTS } from "@/lib/events";
 import { qaScoreLevel } from "@/lib/qaScore";
 import { useTauriEvent } from "@/hooks/useTauriEvent";
-import type { SegmentSearchHit, SegmentUpdate } from "@/lib/types";
+import type { SegmentSearchHit } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /** One row of the results list: a file separator or an actual hit. */
@@ -74,28 +75,11 @@ export function GlobalSearchResults() {
   // SegmentGrid is unmounted while this view is shown, so mirror its LLM
   // listeners here: progressive in-memory patch (coalesced per frame, and
   // skipped when no hit is touched), then a fresh search once a run wrote.
-  const pendingRef = useRef(new Map<string, SegmentUpdate>());
-  const frameRef = useRef<number | null>(null);
-  useTauriEvent<SegmentUpdate[]>(EVENTS.llmSegmentsUpdated, (updates) => {
-    const pending = pendingRef.current;
-    for (const update of updates) pending.set(update.id, update);
-    if (frameRef.current !== null || pending.size === 0) return;
-    frameRef.current = scheduleFrame(() => {
-      frameRef.current = null;
-      const batch = new Map(pending);
-      pending.clear();
-      const { results: current } = useSearchStore.getState();
-      const next = applySegmentUpdates(current, batch);
-      if (next !== current) useSearchStore.setState({ results: next });
-    });
+  useCoalescedSegmentUpdates((batch) => {
+    const { results: current } = useSearchStore.getState();
+    const next = applySegmentUpdates(current, batch);
+    if (next !== current) useSearchStore.setState({ results: next });
   });
-  useEffect(() => {
-    const pending = pendingRef.current;
-    return () => {
-      if (frameRef.current !== null) cancelFrame(frameRef.current);
-      pending.clear();
-    };
-  }, []);
 
   useTauriEvent<RunSummary>(EVENTS.llmCompleted, (summary) => {
     if (activeProjectId && runWroteSegments(summary)) {

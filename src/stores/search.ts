@@ -1,10 +1,9 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
 import type {
   SearchScope,
   SegmentSearchHit,
-  SegmentSearchResult,
 } from "@/lib/types";
+import { projectApi } from "@/lib/api/project";
 
 /** Per-request batch size — mirrored from Rust `SEARCH_BATCH_SIZE`. */
 export const SEARCH_LIMIT = 500;
@@ -69,7 +68,7 @@ export const useSearchStore = create<SearchState>()((set, get) => ({
       // immediately, the rest append in the background.
       let all: SegmentSearchHit[] = [];
       for (;;) {
-        const result = await invoke<SegmentSearchResult>("search_segments", {
+        const result = await projectApi.search({
           projectId,
           query: q,
           scope,

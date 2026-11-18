@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { save, type SaveDialogOptions } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { errorMessage } from "@/lib/utils";
+import { exportApi } from "@/lib/api/export";
 
 interface ExportToFileConfig<R> {
   /** Options passed to the native save dialog (filters, defaultPath, …). */
@@ -52,7 +52,7 @@ export function useExportToFile() {
     if (!path) return false;
     setIsExporting(true);
     try {
-      const result = await invoke<R>(command, { ...args, outputPath: path });
+      const result = await exportApi.toFile<R>(command, { ...args, outputPath: path });
       toast.success(t(successKey, successParams?.(result)));
       return true;
     } catch (e) {

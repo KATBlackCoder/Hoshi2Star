@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useGameFont } from "@/lib/gameFont";
@@ -18,6 +17,8 @@ import {
 } from "@/stores/editor";
 import { useActiveEngine, useProjectStore } from "@/stores/project";
 import { useTextFitStore, useTextFitVersion } from "@/stores/textFit";
+import { textFitApi } from "@/lib/api/textFit";
+import { hasTextFitPreview } from "@/lib/engine";
 
 /** RPG Maker MZ default text colours (`\C[n]`, Window.png). */
 const TEXT_COLORS = [
@@ -174,15 +175,16 @@ export function TextFitPreviewPanel() {
   const targetText = useActiveSegmentTargetText();
   const version = useTextFitVersion();
   const bump = useTextFitStore((s) => s.bump);
-  const ready = projectId !== null && segmentId !== null && engine === "mv_mz";
+  const ready =
+    projectId !== null && segmentId !== null && hasTextFitPreview(engine);
   const fontFamily = useGameFont(ready ? projectId : null);
 
   const { data: preview, isLoading } = useQuery({
     queryKey: ["text-fit-preview", projectId, segmentId, targetText, version],
     queryFn: () =>
-      invoke<TextFitPreview | null>("preview_text_fit", {
-        projectId,
-        segmentId,
+      textFitApi.preview({
+        projectId: projectId!,
+        segmentId: segmentId!,
         draftTarget: null,
       }),
     enabled: ready,
@@ -193,9 +195,9 @@ export function TextFitPreviewPanel() {
   const setChoice = async (next: FitOverride) => {
     const isDefault =
       next.lineBreaks === null && next.overflow === null && !next.disabled;
-    await invoke("set_text_fit_override", {
-      projectId,
-      segmentId,
+    await textFitApi.setOverride({
+      projectId: projectId!,
+      segmentId: segmentId!,
       choice: isDefault ? null : next,
     });
     bump();
@@ -214,7 +216,7 @@ export function TextFitPreviewPanel() {
       <div className="flex-1 space-y-3 overflow-y-auto p-2">
         {!ready ? (
           <p className="py-4 text-center text-xs text-muted-foreground">
-            {engine && engine !== "mv_mz"
+            {engine && !hasTextFitPreview(engine)
               ? t("textFit.preview.mzOnly")
               : t("textFit.preview.empty")}
           </p>

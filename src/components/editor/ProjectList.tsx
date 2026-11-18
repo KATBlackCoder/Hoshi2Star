@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
 import {
   BookOpenText,
   FolderOpen,
@@ -37,6 +36,7 @@ import { STATUS_SUMMARY } from "@/lib/statusSummary";
 import { queryKeys } from "@/lib/queryClient";
 import { toast } from "sonner";
 import { useUiStore } from "@/stores/ui";
+import { projectApi } from "@/lib/api/project";
 
 /**
  * Stats of every listed project, in one result. allSettled: one failing
@@ -46,9 +46,7 @@ async function loadProjectStats(
   projectIds: string[],
 ): Promise<Record<string, ProjectStats>> {
   const results = await Promise.allSettled(
-    projectIds.map((projectId) =>
-      invoke<ProjectStats>("get_project_stats", { projectId }),
-    ),
+    projectIds.map((projectId) => projectApi.stats(projectId)),
   );
   const stats: Record<string, ProjectStats> = {};
   results.forEach((result, index) => {

@@ -1,7 +1,7 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
 import type { FitScan, TextFitSettings, TextFitView } from "@/lib/types";
 import { errorMessage } from "@/lib/utils";
+import { textFitApi } from "@/lib/api/textFit";
 
 // ---------------------------------------------------------------------------
 // Text fitting (RPG Maker MZ): settings dialog state
@@ -43,7 +43,7 @@ export async function openTextFitDialog(projectId: string): Promise<void> {
     scan: null,
   });
   try {
-    const view = await invoke<TextFitView>("get_text_fit", { projectId });
+    const view = await textFitApi.get(projectId);
     useTextFitStore.setState({ view, loading: false });
     if (view.supported) await rescanTextFit(projectId, null);
   } catch (err) {
@@ -58,10 +58,7 @@ export async function rescanTextFit(
 ): Promise<void> {
   useTextFitStore.setState({ scanning: true });
   try {
-    const scan = await invoke<FitScan>("scan_text_fit", {
-      projectId,
-      settings,
-    });
+    const scan = await textFitApi.scan({ projectId, settings });
     useTextFitStore.setState({ scan, scanning: false, error: null });
   } catch (err) {
     useTextFitStore.setState({ scanning: false, error: errorMessage(err) });
@@ -72,10 +69,7 @@ export async function saveTextFit(
   projectId: string,
   settings: TextFitSettings,
 ): Promise<void> {
-  const saved = await invoke<TextFitSettings>("set_text_fit", {
-    projectId,
-    settings,
-  });
+  const saved = await textFitApi.save({ projectId, settings });
   useTextFitStore.setState((state) => ({
     view: state.view ? { ...state.view, settings: saved } : state.view,
     version: state.version + 1,

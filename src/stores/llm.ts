@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { t } from "i18next";
@@ -11,6 +10,7 @@ import {
 } from "@/lib/constants";
 import { errorMessage } from "@/lib/utils";
 import { EVENTS } from "@/lib/events";
+import { llmApi } from "@/lib/api/llm";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -293,7 +293,10 @@ export const useLlmStore = create<LlmState>()((set, get) => {
     });
 
     try {
-      await invoke(command, { ...args, providerConfig: get().providerConfig });
+      await llmApi.run(command, {
+        ...args,
+        providerConfig: get().providerConfig,
+      });
     } catch (err) {
       set({ ...idle, translationProgress: -1, error: errorMessage(err) });
       activeTeardown?.();
@@ -340,7 +343,7 @@ export const useLlmStore = create<LlmState>()((set, get) => {
       if (!get().isTranslating || get().isCancelling) return;
       set({ isCancelling: true });
       try {
-        await invoke("cancel_translation");
+        await llmApi.cancel();
       } catch (err) {
         set({ isCancelling: false });
         toast.error(errorMessage(err), { id: RUN_TOAST_ID });
