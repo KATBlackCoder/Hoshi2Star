@@ -54,3 +54,63 @@
 **Gate (UWF-1).** `cargo fmt --check` OK ; `cargo clippy --all-targets --locked -D warnings` OK ;
 `cargo test --locked --no-fail-fast` 850 réussis, 0 échec, 15 ignorés ; `pnpm typecheck` OK ; `pnpm lint`
 0 erreur (10 avertissements, inchangés) ; Vitest 201/201.
+
+## UWF-2 — Module `engines/wolf/unpack.rs`
+
+**Fait.**
+- `src-tauri/src/engines/wolf/unpack.rs` (nouveau), seul fichier de l'app qui importe `unwolf::`
+  (`rg 'unwolf::' src-tauri/src` : ce seul fichier). Interface : `unpack_game(game_dir, config_path,
+  on_progress, cancel) -> Result<UnpackReport, UnpackError>`. `UnpackReport` (`serde`, `camelCase`) : archives
+  extraites, déjà extraites, ignorées par unwolf, en échec (archives sans texte seulement), état Pro
+  (`notPro`, `alreadyUnprotected`, `removedV35`), fichiers déprotégés, archives déplacées, avertissements.
+  `UnpackError` (`thiserror`) : chaque message commence par un marqueur stable `wolf_unpack_<cas>`
+  (`cancelled`, `no_launcher`, `not_writable`, `data_folder_present`, `destination_exists`, `pro_unsupported`,
+  `extraction_failed`, `protection_failed`, `unprotect_failed`, `not_readable`, `move_failed`) pour le front.
+- Ordre : archives de texte (`sources::text_archives`, inchangé) ; préalables sans extraction (écriture possible,
+  destinations libres dans `Hoshi2Star-archives/`, `Data.wolf` + `Data/` non vide ⇒ refus) ; premier lanceur de
+  `WOLF_LAUNCHERS` (passé en `pub(crate)`) donné à `init_game` ; extraction des archives contenant `BasicData`
+  (`Data/BasicData.wolf`, ou `Data.wolf` entier par `unpack_data_with_progress`) ; état Pro par
+  `session.protection_status()` ; extraction du reste ; levée V35 ; `Session` relâchée ; contrôle « lisible par
+  l'app » (`is_wolf_game_dir`, une base qui déclare l'encodage, au moins un `.mps` dans `Data/MapData/`) ;
+  déplacement un à un par `rename`, avec remise en place des archives déjà déplacées si l'un échoue.
+- `engines/detector.rs` : la lecture de l'encodage de `guess_wolf_version_from_structure` est sortie dans
+  `wolf_database_version(game_dir) -> Option<WolfVersion>` (`pub(crate)`), pour contrôler le jeu tant que les
+  archives sont encore là ; `guess_wolf_version_from_structure` = refus des archives puis cette fonction :
+  comportement identique (tests existants inchangés et verts).
+- 10 tests unitaires (archives fabriquées par `unwolf::dxa::pack_directory` et `default_modes()[3]`) : jeu par
+  dossiers lisible, archives déplacées, archive d'images ni extraite ni déplacée, `refuse_text_archives` vide,
+  `detect_engine` = Wolf, aucun dossier temporaire laissé ; `Data.wolf` racine extrait en entier puis déplacé ;
+  `Data.wolf` + `Data/` non vide ⇒ refus sans aucune écriture (arborescence identique) ; archive de texte
+  corrompue ⇒ erreur, rien déplacé ; annulation au premier fichier ⇒ `Cancelled`, rien déplacé, pas de sortie
+  partielle ; destination déjà prise ⇒ refus avant extraction ; fichier libre préexistant intact
+  (`AlreadyUnpacked`) ; jeu sans carte après extraction ⇒ `NotReadable`, archives en place ; jeu sans lanceur ⇒
+  refus ; deuxième passage ⇒ rapport vide, arborescence inchangée.
+
+**Écarts au plan (la 0.2 fait foi).**
+- Avertissements collectés par `Arc<Mutex<Vec<String>>>`, pas `Rc<RefCell<…>>` : le gestionnaire
+  d'événements d'unwolf 0.2 doit être `Send` (`EventHandler`).
+- État Pro lu par `session.protection_status()` (`NotPro`, `Unprotected`, `Protected(V35)` ⇒ levée,
+  `Protected(_)` et toute valeur future ⇒ refus) ; aucun test `pro_generation` refait dans l'app (UWF-D5).
+- `Event`, `Outcome`, `ProtectionStatus`, `ProVersion`, `FileStatus` sont `#[non_exhaustive]` : chaque `match`
+  a un bras générique (refus ou échec, jamais « succès par défaut »).
+- Précision de UWF-D4 : le refus `Data.wolf` + `Data/` ne vaut que si `Data/` contient quelque chose. Un `Data/`
+  vide est extrait normalement ; c'est aussi la règle d'unwolf (`AlreadyUnpacked` = dossier de sortie non vide).
+- Les chemins sont comparés après `std::path::absolute(game_dir)` : unwolf rend les archives en chemin absolu
+  (son `init_game` fait de même).
+
+**Limites (non testables par archives fabriquées, à voir en UWF-V).**
+- Branches Pro (dérivation de clé, levée V35, refus V1/V2) : unwolf ne permet pas de fabriquer ces cas ;
+  couvertes par UWF-0 (partie Claude) et à vérifier en UWF-V.
+- Remise en place après un déplacement en échec : non testée (un `rename` ne peut pas être mis en échec de façon
+  fiable sous Linux en root ; le cas visé est un fichier verrouillé sous Windows).
+- Après un refus Pro V1/V2, le `Data/BasicData/` extrait pour lire `Game.dat` reste dans le dossier du jeu ; les
+  archives ne bougent pas, le jeu continue donc de lire ses archives. Rien n'est supprimé par l'app.
+
+**Gate (UWF-2).** Premier passage : clippy rouge (`drop` d'une fermeture, lint `drop_non_drop`), ligne retirée ;
+tests déjà verts. Second passage : `cargo fmt --check` OK ; clippy OK ; `cargo test` 860 réussis (+10), 0 échec,
+15 ignorés ; typecheck OK ; lint 0 erreur (10 avertissements) ; Vitest 201/201.
+
+**Incident d'environnement.** Disque de session plein pendant la compilation (`src-tauri/target` à 29 Go) :
+`target` supprimé, puis compilation sans cache incrémental ni informations de débogage
+(`CARGO_INCREMENTAL=0`, `CARGO_PROFILE_DEV_DEBUG=0`, `CARGO_PROFILE_TEST_DEBUG=0`). Sans effet sur le code ni sur
+les résultats des tests.
