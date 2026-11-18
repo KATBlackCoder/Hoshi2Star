@@ -52,6 +52,9 @@ unicode-normalization = "0.1"
 ttf-parser = { version = "0.25", default-features = false, features = ["std"] }
 flate2 = "1"
 unicode-linebreak = "0.1"
+# Wolf RPG archives, Pro keys and Pro protection (plan UWF). Imported only by
+# engines/wolf/unpack.rs (UWF-D11); the library only, without the CLI.
+unwolf = { version = "0.2", default-features = false }
 
 [[bench]]
 name = "terminology_analyzer"
