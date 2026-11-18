@@ -1,5 +1,241 @@
 # Tasks — Hoshi2Star
 
+## Plan — UWF : déchiffrer un jeu Wolf dans l'app avec unwolf (2026-11-18, Claude ; relu par Fable le 2026-11-18) — VALIDÉ par l'utilisateur le 2026-11-18 (UWF-D1 à UWF-D10 telles que recommandées ; UWF-D5, UWF-D8 et UWF-D11 ajustés le même jour à sa demande : unwolf reste une crate indépendante) ; UWF-0 en cours
+
+**Objectif.** Ouvrir un jeu Wolf RPG encore empaqueté (archives `.wolf`) sans passer par UberWolf : l'app
+extrait les archives de texte avec la bibliothèque `unwolf`, lève si besoin la protection Pro, met de côté ces
+archives, puis suit le chemin actuel (ADR-008 : fichiers libres de `Data/MapData/` et `Data/BasicData/`). La
+lecture et l'export ne changent pas ; seule la façon d'obtenir les fichiers libres change. Retirer ensuite le
+module mort `engines/wolf/decrypt/`.
+
+**Sources** (vérifiées le 2026-11-18 sur `main` @ `00b9269` et `../unwolf` @ `dc663b5` = tag `v0.1.2`, lecture
+seule, puis relues par Fable ; chemins Rust relatifs à `src-tauri/src/`, ceux d'unwolf à
+`../unwolf/crates/unwolf/src/`).
+- **unwolf** 0.1.2 (crate de l'utilisateur, MIT, portage d'UberWolf, `NOTICE` : Sinflower, Takumi Yamada).
+  Bibliothèque sans CLI avec `default-features = false`. Entrée : `game::Session`.
+  - `init_game(fichier)` accepte tout fichier et garde son dossier ; `data.<ext>` à la racine ⇒ `data_as_file`,
+    sinon dossier `Data/` ; renseigne `pro_key_file` (`game.rs:187-209`). 8 extensions d'archive acceptées
+    (`pro.rs:13`).
+  - `unpack_data_with_progress` extrait **toutes** les archives du dossier de données ;
+    `unpack_files_with_progress(&[chemins], …)` (`game.rs:288`, public) seulement celles données. Sortie :
+    `X.wolf` → `X/` à côté (`game.rs:714`) ; `Data.wolf` → `Data/`. Dossier temporaire `.<nom>.unwolf-tmp` puis
+    renommage (`game.rs:750-781`). **Les archives ne sont jamais modifiées ni déplacées.** Dossier de sortie non
+    vide ⇒ `AlreadyUnpacked`, **sans contrôle de complétude** (`game.rs:718-735`). `Options.overwrite = true`
+    fusionnerait par-dessus l'existant (`fsutil.rs:48`). `Game`, `List`, `Data2`, `GameFile`, `BasicData2` jamais
+    extraits.
+  - Pro : `protection_key()` extrait au besoin `BasicData` seul (`game.rs:647-671`) et rend une clé dont
+    `version()` vient de `detect_version` (`protkey.rs:50-56`) : `pro_generation(Game.dat)`
+    (`crypto/datadecrypt.rs:28`, octet 1 = `0x50`) `0x55` ⇒ V2, `>= 0x57` ⇒ V35, **tout le reste ⇒ V1, y compris
+    un `Game.dat` déjà en clair** (commence par `00 57`, `unprotect.rs:169`). `unprotect` V35 : `BasicData`
+    déchiffré sur place, originaux dans `BasicData/backup/` (`unprotect.rs:51`), et rend `Ok` même si un fichier
+    échoue (`FileStatus::Failed`, `unprotect.rs:54-63`). V1 : copies dans `<data>/unprotected/`. V2 : non pris en
+    charge.
+  - WolfX : `decrypt_wolfx` traite tous les `*.wolfx` du jeu, sans annulation, écrase un fichier homonyme
+    (`wolfx.rs:377-402`).
+  - `Session` n'est pas `Send` et son rappel doit être `'static` (`Box<dyn FnMut>`, `game.rs:158-162`) ⇒ créée et
+    utilisée dans un seul `spawn_blocking`. `config_path` par défaut **relatif** (`UberWolfConfig.json`,
+    `game.rs:59`), où sont écrites les clés Pro ⇒ toujours un chemin absolu.
+  - Annulation : le rappel rend `ControlFlow`, testé après chaque fichier ; dossier temporaire retiré, archives
+    suivantes non ouvertes (`game.rs:250-287`). Archive en `mmap` (relâcher la `Session` avant de déplacer
+    l'archive) ; pic mémoire ≈ 2 à 3 × le plus gros fichier.
+  - Erreurs (`error.rs:5-35`) : `Io`, `Format`, `NotDxArchive`, `Unsupported`, `NoMatchingMode`, `Config`,
+    `UnsafePath`, `Game`. Comparé à UberWolfCli sur de vrais jeux 2.20, 3.14, 3.31, 3.50, Pro 3.7
+    (`docs/details.md:18-25`) ; v5 et ChaCha20 sur données synthétiques seulement.
+  - Tests : `dxa::pack_directory(dir, out, &CryptMode)` (`dxa/write.rs:122`) avec
+    `modes::default_modes()[3]` (« Wolf RPG v2.225 », DXA v8) fabrique une archive ; les cas Pro et WolfX ne
+    peuvent pas être fabriqués.
+  - Dépendances déjà dans Hoshi2Star : `thiserror` 2, `encoding_rs`, `lz4_flex` 0.11, `serde_json`
+    (`preserve_order` déjà actif), `log`, et `memmap2` (déjà dans `Cargo.lock`, 0.9.11). Édition 2024, Rust ≥ 1.85.
+    Publication sur crates.io : supposée (README : `cargo install unwolf`), **à vérifier** (UWF-1).
+- **Hoshi2Star.**
+  - Un jeu entièrement empaqueté n'est pas détecté : `is_wolf_game_dir` (`engines/detector.rs:301`) exige un
+    `BasicData` libre ⇒ `DetectionError::UnknownEngine` ⇒ `projectList.engineNotFound`, qui cite UberWolf (exigé
+    par `src/lib/projectError.test.ts:64`). Test : `test_detect_wolf_packed_game_is_not_detected`
+    (`detector.rs:524`). `WOLF_LAUNCHERS` est privé (`detector.rs:289`) ; `find_wolf_data_dir` ne connaît que
+    `Data` et `data` (`:203`).
+  - `wolf_archive_present` (`engines/wolf/sources.rs:24` ; `text_archives` `:86` : `Data.wolf`,
+    `Data/MapData.wolf`, `Data/BasicData.wolf`, casse ignorée, extension `.wolf` seule) n'est pas rendu par
+    `detect_engine` mais par `guess_wolf_version_from_structure` (`detector.rs:239`), pendant l'extraction
+    (`commands/project.rs:937`), donc seulement si fichiers libres et archives coexistent.
+  - Ouverture : `open_project` (`commands/project.rs:52`), détection dans un `spawn_blocking` (`:109-123`),
+    branche Wolf `:935-970`. Front : `stores/project.ts:90`, appelé par `AppToolbar.tsx:201`,
+    `ProjectList.tsx:85` et `:124` ; erreurs via `src/lib/projectError.ts:12`, `:27-29` ; textes
+    `src/locales/{en,fr}.json` (`projectList.*` `:505-513`, `toasts.wolf*` `:465-467`).
+  - `WolfSources::load` (`sources.rs:124`) lit `MapData/` et `BasicData/` sans sous-dossiers : `BasicData/backup/`
+    (Pro V35) n'est pas lu.
+  - Police : `find_game_font` (`engines/wolf/layout/mod.rs:29`) ne regarde que la racine du jeu et exige une seule
+    police (`:44-50`). とのかじ a **deux** polices chiffrées (`Data/Font00.otf.wolfx`, `Data/Font01.otf.wolfx`) :
+    les déchiffrer ne suffirait pas.
+  - `engines/wolf/decrypt/` (3 577 lignes) : seule référence extérieure `extractor.rs:19-20` (variante
+    `ExtractorError::Decryptor`) ; tests internes seulement (`writer.rs:433` `H2S_WOLF_ARCHIVES`,
+    `legacy_xor.rs:2854`, `:2877`). Aucune dépendance libérée. Ne pas confondre avec
+    `engines/mv_mz/decryptor.rs` (`DecryptorError` MV/MZ, à garder).
+  - Annulation simple existante : `AppState.translation_cancel: Arc<AtomicBool>` (`state.rs:19`). Dossier de
+    l'app : `AppState.data_dir` (`app_data_dir`, `lib.rs:54`). Aucune capacité Tauri à ajouter (écriture par
+    `std::fs`, choix du dossier par `dialog:default`).
+  - ADR libre : ADR-010 (ADR-009 est ajouté par la PR L1 du plan DD).
+
+### Décisions (UWF-D1 à UWF-D11 : recommandations validées par l'utilisateur le 2026-11-18)
+
+- **UWF-D1 — Où déchiffrer.** **Dans le dossier du jeu choisi**, après une confirmation qui liste ce qui va
+  changer et conseille de travailler sur une copie (procédure actuelle). Alternative rejetée : copie gérée par
+  l'app (jeu `Data.wolf` extrait en entier, export appliqué au dossier du jeu de toute façon).
+- **UWF-D2 — Archives extraites.** **Seulement les archives de texte.** Jeu à archives par dossier :
+  `unpack_files_with_progress` sur `Data/BasicData.wolf` et `Data/MapData.wolf` ; les archives d'images et de
+  sons restent en place, non extraites. Jeu à `Data.wolf` racine : extraction complète (`unpack_data_with_progress`),
+  le jeu devant tout lire en fichiers libres. `Options.overwrite` toujours `false`.
+- **UWF-D3 — Mise de côté.** Les archives de texte sont **déplacées** (jamais supprimées) dans
+  `<jeu>/Hoshi2Star-archives/`, chemin relatif conservé (`Data/BasicData.wolf` →
+  `Hoshi2Star-archives/Data/BasicData.wolf`), une fois toutes extraites, la protection levée sans échec et le
+  dossier vérifié lisible par l'app. Hypothèse « le jeu ignore ce dossier » **prouvée en jeu dès UWF-0**.
+- **UWF-D4 — Jeu déjà partiellement extrait (`AlreadyUnpacked`).** unwolf ne contrôle pas la complétude.
+  **Archives par dossier** : déplacement seulement si `is_wolf_game_dir`, une base lisible et au moins un `.mps`
+  sont présents. **`Data.wolf` racine avec un `Data/` déjà présent : refus** (`wolf_archive_present` avec
+  explication), jamais de déplacement automatique : un `Data/` partiel ferait perdre au jeu ses images et ses sons.
+- **UWF-D5 — Wolf Pro.** L'état de protection vient d'**unwolf**, pas d'un test refait dans l'app : la 0.2.0
+  (UWF-U) distingue « non Pro », « Pro déjà déprotégé », V1, V2 et V35. Non Pro ou déjà déprotégé ⇒ rien à
+  faire ; V35 ⇒ levée ; V1 et V2 ⇒ refus. Refus **avant** l'extraction du reste. Un `FileStatus::Failed` ⇒
+  erreur, rien n'est déplacé ; `NotProtected` accepté. Levée V35 **confirmée nécessaire par UWF-0** (sans elle,
+  bases et `.project` de とのかじ restent chiffrés).
+- **UWF-D6 — Polices WolfX et police d'ajustement : hors plan.** Pas de `decrypt_wolfx` (aucun consommateur :
+  とのかじ a deux polices et `find_game_font` en exige une). Lot séparé noté dans `BACKLOG.md` : choisir la
+  police d'après le nom lu dans le jeu, puis déchiffrer celle-là.
+- **UWF-D7 — Détection.** **`detect_engine` ne change pas** (test `detector.rs:524` toujours vrai). Nouvelle
+  fonction `engines::wolf::sources::packed_state(game_dir)`, appelée seulement sur `Err(UnknownEngine)` dans le
+  `spawn_blocking` de `commands/project.rs:109-123` : `Packed` = un lanceur + au moins une entrée de
+  `text_archives` + `is_wolf_game_dir` faux ⇒ erreur avec le marqueur stable `wolf_packed` ; sinon l'erreur reste
+  `UnknownEngine`. Le cas « fichiers libres + archives » reste `wolf_archive_present`, comme aujourd'hui ; le
+  front y propose la mise de côté (UWF-D4). `projectList.engineNotFound` garde UberWolf comme recours manuel.
+- **UWF-D8 — Dépendance et clés Pro.** **`unwolf = { version = "0.2", default-features = false }`** depuis
+  crates.io, jamais un chemin (`../unwolf`) ni une copie du code. Exigence de version au sens de Cargo : les
+  correctifs 0.2.x arrivent par `cargo update -p unwolf`, une 0.3 demande de changer la ligne à la main ;
+  `Cargo.lock` fige la version entre deux mises à jour. `config_path` = `<data_dir>/unwolf/UberWolfConfig.json`.
+- **UWF-D11 — Frontière entre unwolf et l'app.** unwolf reste un projet indépendant (dépôt, versions, tests,
+  publication à part). **Tout ce qui relève du format Wolf** (archives, clés, protection Pro, WolfX) vit dans
+  unwolf, derrière son API publique ; un manque ou un défaut d'unwolf se corrige dans unwolf, puis l'app monte
+  de version (exemple : UWF-U), sans contournement dans l'app. **L'app ne garde que ses règles** : quelles
+  archives extraire, où les mettre de côté, quand refuser, commandes, interface. **Un seul module de l'app
+  importe unwolf** : `engines/wolf/unpack.rs` (et ses tests) ; le reste ne voit que `UnpackReport` et
+  `UnpackError`. Mettre à jour unwolf = changer la version dans `src-tauri/Cargo.toml`, `cargo update -p unwolf`,
+  adapter ce seul module, gate complet. Procédure écrite dans ADR-010 et `CONTEXT.md` (UWF-6).
+- **UWF-D9 — Retrait de `decrypt/`.** **Lot séparé UWF-7**, PR empilée, après l'essai réel UWF-V (reprend UW-R).
+- **UWF-D10 — Exécution.** **Après la fusion des PR DD** (#34 à #40), qui touchent `detector.rs`,
+  `engines/wolf/extractor.rs`, `commands/wolf_text_fit.rs` et créent `src/lib/api/`. Si `src/lib/api/` est absent
+  de `main`, la session s'arrête. Une session cloud fait UWF-1 à UWF-6 sur `feat/wolf-unwolf` (une PR), puis
+  UWF-7 sur `refactor/wolf-remove-decrypt` (PR empilée), sans fusion ; Claude vérifie en local ; l'utilisateur
+  fusionne. Aucun build local par Claude (leçons des 2026-10-25 et 2026-10-30). En validant ce plan,
+  l'utilisateur autorise ces branches, commits, push et PR ; pas de fusion ni de push forcé, rien sur `main`.
+
+**Hors périmètre.** Polices WolfX et choix de la police (UWF-D6) ; instantané d'origine Wolf (UW-D5,
+`BACKLOG.md:74-77`, les archives mises de côté en sont une base possible) ; restauration des archives depuis
+l'app ; reconstruction d'archive à l'export (`pack_data`, expérimental) ; `Evtext/*.txt` (UW-D8) ; jeux Bakin.
+
+### Étapes
+
+- [ ] **UWF-0 — Essai préalable, avant tout code** (Claude sans compilation, binaire déjà compilé
+      `../unwolf/target/release/unwolf` ; lancement du jeu par l'utilisateur, sous Wine ou Windows). Copies hors
+      dépôt dans `../Hoshi2Star-essais/` de とのかじ (Pro, archives par dossier) et de 離れでメイドと療養性活
+      (`Data.wolf` racine).
+  - Extraire les seules archives de texte (`unwolf <archives>` ; `Data.wolf` entier pour le second), relever
+    l'arborescence et `pro_generation` de `BasicData/Game.dat`.
+  - とのかじ, deux copies : sans `-u` et avec `-u`. Pour chacune, vérifier à la main les règles de l'app
+    (lanceur, `Data/BasicData/*.project` ou `CommonEvent.dat`, base lisible, cartes `.mps` lisibles).
+  - Déplacer à la main les archives de texte dans `Hoshi2Star-archives/`, marquer un texte (prototype
+    `wolf_v3.py` s'il existe encore, sinon un octet de texte d'une carte en clair), puis l'utilisateur lance le jeu
+    et vérifie l'affichage.
+  - Conclure : UWF-D3 confirmée ou non ; UWF-D5 « lever » ou « ne pas lever » V35. Un écart ⇒ corriger ce plan
+    avant l'implémentation. Résultats au journal. Ces copies servent aussi aux essais V2 à V5 du plan DD.
+  - **Partie Claude faite le 2026-11-18** (journal `docs/journal/2026-11-18-plan-uwf.md`) : とのかじ = Pro V35
+    (`Game.dat` octets 1 et 5 = `0x50`, `0x57`) ; **sans `-u`, bases et `.project` restent chiffrés** (en-tête
+    `57 50 …`, pas `DB_MAGIC_UTF8`) ⇒ l'app refuserait (`wolf_no_database`) ; avec `-u`, magie UTF-8 et
+    `pro_generation(Game.dat)` = `None` ⇒ **UWF-D5 « lever V35 » confirmée**. Cartes `.mps` en clair dans les
+    deux cas (`WOLFM`, `0x55`). 離れでメイド : `Data.wolf` (Wolf 3.50, non Pro) → `Data/` complet, bases UTF-8
+    lisibles. Les deux ont deux polices (UWF-D6 confirmée). Copies prêtes pour l'essai en jeu : 「。」 remplacé par
+    « ★ » (même longueur UTF-8) dans les `.mps` et `CommonEvent.dat`, archives de texte déplacées dans
+    `Hoshi2Star-archives/`. Copies supprimées le 2026-11-18 à la demande de l'utilisateur ; **essai en jeu non exécuté**
+    (aucun résultat communiqué) : UWF-D3 reste à prouver en jeu, au plus tard en UWF-V.
+- [x] **UWF-U — unwolf 0.2.0, préparé pour être utilisé comme bibliothèque, dans le dépôt unwolf** (UWF-D11 ;
+      avant UWF-1 ; plan détaillé dans `../unwolf/docs/plans/2026-11-18-0.2.0.md`, à valider à part ;
+      publication sur crates.io par l'utilisateur). Une seule version incompatible, faite maintenant, pour que les
+      évolutions suivantes soient de simples ajouts : `#[non_exhaustive]` sur les enums et structures de résultat
+      publics (`Error`, `Event`, `Outcome`, `ProVersion`, `FileStatus`… ; aujourd'hui seul `FileProgress`
+      l'a, `game.rs:114`) ; état de protection qui distingue « non Pro », « Pro déjà déprotégé » (`detect_version`
+      rend aujourd'hui V1, `protkey.rs:50-56`), V1, V2, V35 ; rappel de progression `Send` ; CI GitHub Actions
+      (aucun workflow aujourd'hui) avec `cargo-semver-checks` ; `CHANGELOG.md`. Hoshi2Star attend la
+      publication de la 0.2.0 avant UWF-1. **2026-11-18 : U-1 à U-6 faits, PR
+      [KATBlackCoder/unwolf#1](https://github.com/KATBlackCoder/unwolf/pull/1) ouverte (CI verte sur le code,
+      79 tests) ; PR fusionnée (`4d4e396`), tag `v0.2.0`, **publiée sur crates.io le 2026-11-18** par l'utilisateur.**
+- [ ] **UWF-1 — Dépendance.** `rustc --version` (≥ 1.85) ; vérifier la publication de la 0.2.0 (`cargo search
+      unwolf` ou `cargo info unwolf`) ; ajouter la ligne de UWF-D8 ; `Cargo.lock` à jour. Copyright MIT d'unwolf et
+      `NOTICE` dans les mentions de licences tierces : chercher d'abord où elles vivent
+      (`rg -i 'third.party|NOTICE|licen'`) ; à défaut, `THIRD_PARTY_NOTICES.md` à la racine. Gate.
+- [ ] **UWF-2 — Module `engines/wolf/unpack.rs`**, seul point d'entrée vers unwolf (UWF-D11).
+  - Interface : `unpack_game(game_dir, config_path, on_progress, cancel: &AtomicBool) -> Result<UnpackReport,
+    UnpackError>` (`UnpackError` en `thiserror`, enveloppe `unwolf::Error`) ; `UnpackReport` sérialisable
+    (`serde`, `camelCase`) : archives extraites, déjà extraites, ignorées, en échec ; version Pro ; fichiers
+    déprotégés ; archives déplacées ; avertissements.
+  - Préalables, avant toute écriture : dossier accessible en écriture ; destinations dans
+    `Hoshi2Star-archives/` absentes ; cas UWF-D4 (`Data.wolf` + `Data/` ⇒ refus).
+  - Ordre : `WOLF_LAUNCHERS` passé en `pub(crate)`, premier lanceur trouvé donné à `init_game` ; extraction de
+    `BasicData` si besoin ; contrôle Pro UWF-D5 (refus V1/V2 ici) ; extraction des archives de texte (UWF-D2) ;
+    levée V35 si retenue ; contrôle « lisible par l'app » (`is_wolf_game_dir`, base lisible, au moins un `.mps`) ;
+    `Session` relâchée ; déplacement des archives. Les avertissements sont collectés dans le rappel `'static`
+    (partagé par `Rc<RefCell<…>>` dans le même fil). Archive non `.wolf` en échec (`.bin` racine) ⇒
+    avertissement seulement.
+  - Déplacement : `rename` un à un ; si l'un échoue (fichier verrouillé sous Windows, jeu lancé), remettre en
+    place ceux déjà déplacés et rendre l'erreur.
+  - Annulation : vérifiée par le rappel de progression ; après annulation, rien n'est déplacé.
+  - Tests, archives fabriquées avec `pack_directory` et `default_modes()[3]` depuis une fixture
+    `Data/BasicData` + `Data/MapData` : archives par dossier ⇒ jeu lisible, `refuse_text_archives` vide,
+    archives dans `Hoshi2Star-archives/`, archive d'images non extraite ; `Data.wolf` racine ⇒ idem ;
+    `Data.wolf` + `Data/` ⇒ refus sans écriture ; archive de texte corrompue ⇒ rien déplacé ; annulation ⇒ rien
+    déplacé ; destination déjà présente ⇒ refus avant extraction ; fichier libre préexistant intact
+    (`overwrite` faux) ; deuxième passage sur un jeu déjà traité ⇒ `Loose`, rien à faire. Branches Pro : non
+    fabricables, couvertes par UWF-0 et UWF-V seulement (à écrire dans le journal). Gate.
+- [ ] **UWF-3 — Détection de l'état empaqueté** (UWF-D7). `packed_state` et `WOLF_PACKED = "wolf_packed"` dans
+      `engines/wolf/sources.rs` ; appel dans `open_project`. Avant de coder : toutes les fixtures qui fabriquent
+      un jeu Wolf (`rg 'Game\.ini|Game\.exe|GamePro|MapData|BasicData' src-tauri/tests src-tauri/src`, leçon
+      du 2026-10-28) ; aucun test existant modifié. Tests : `Packed` ; jeu non Wolf ⇒ `UnknownEngine`
+      inchangé ; `open_project` sur un jeu empaqueté rend `wolf_packed`. Gate.
+- [ ] **UWF-4 — Commandes.** `unpack_wolf_game(game_path) -> Result<UnpackReport, String>` et
+      `cancel_wolf_unpack()`, sur le modèle de `translation_cancel` : `AppState.wolf_unpack_cancel:
+      Arc<AtomicBool>` et `AppState.wolf_unpack_running: Arc<AtomicBool>` (un seul déchiffrement à la fois ; un
+      second appel est refusé), remis à zéro au début. Travail dans un `spawn_blocking` qui crée la `Session`.
+      Événement `h2s://wolf/unpack-progress` (archive, fichier n / total), émis au plus toutes les 100 ms ;
+      constante à côté de la commande. Le rapport est la valeur de retour (pas d'événement de fin). `config_path`
+      de UWF-D8. Enregistrement dans l'unique `generate_handler!` de `lib.rs`. Gate.
+- [ ] **UWF-5 — Front.**
+  - `src/lib/api/wolf.ts` : `unpackWolfGame`, `cancelWolfUnpack` ; type `UnpackReport` dans `src/lib/types.ts` ;
+    nom d'événement dans `src/lib/events.ts`.
+  - `src/lib/projectError.ts` reconnaît `wolf_packed`.
+  - `src/components/WolfUnpackDialog.tsx` (à côté des autres dialogues de `AppDialogs.tsx`) : confirmation
+    (ce qui change dans le dossier, conseil de copie), progression, annulation, rapport. Ouvert à l'ouverture
+    d'un jeu (`AppToolbar.tsx:201`, `ProjectList.tsx:124`) sur `wolf_packed` ou `wolf_archive_present` au lieu du
+    toast ; après succès, l'ouverture est relancée avec le même chemin.
+  - Clés i18n en/fr sous `wolfUnpack.*` ; `projectList.engineNotFound` inchangé (garde UberWolf, test
+    `projectError.test.ts:64`).
+  - Tests Vitest du dialogue et de `projectError`. Gate.
+- [ ] **UWF-6 — Documentation.** ADR-010 « Wolf déchiffré dans l'app par unwolf » (complète ADR-008 : lecture
+      et export inchangés) ; `docs/engines/wolf-uberwolf.md` réécrit (déchiffrement dans l'app ; UberWolf ou
+      unwolf en ligne de commande en recours) ; `ROADMAP.md` ; `BACKLOG.md` (lot police UWF-D6 ; UW-D5 : archives
+      mises de côté) ; `CONTEXT.md` (convention UWF-D11 : unwolf importé seulement par `engines/wolf/unpack.rs`, procédure de
+      mise à jour) ; ADR-010 décrit aussi cette procédure ; `CHANGELOG.md` (Added). Gate complet, PR décrite
+      en français.
+- [ ] **UWF-7 — Retrait de `engines/wolf/decrypt/`** (UWF-D9, PR séparée après UWF-V) : module, déclaration
+      `engines/wolf/mod.rs:2`, variante `ExtractorError::Decryptor` (`extractor.rs:19-20`), mentions dans
+      `docs/`. Vérifier avant : `rg 'wolf::decrypt|decrypt::legacy_xor|H2S_WOLF_ARCHIVES'` (ne pas toucher
+      `engines/mv_mz/decryptor.rs`). Gate ; solde attendu ≈ −3 577 lignes.
+- [ ] **UWF-V — Vérification réelle** (après UWF-6, utilisateur + Claude). L'utilisateur compile et lance l'app
+      en dev (`CARGO_BUILD_JOBS=2 pnpm tauri:linux`) ; Claude la pilote par le MCP Tauri sur des copies encore
+      empaquetées de とのかじ et 離れでメイド : déchiffrement depuis l'app, annulation puis reprise, ouverture,
+      quelques segments traduits, export appliqué sur la copie. L'utilisateur vérifie en jeu que la traduction
+      s'affiche. Résultats au journal.
+
+**Preuves attendues.** Gate complet vert à chaque étape (nombres au journal) ; aucun test existant modifié ;
+`detect_engine` inchangé ; `rg 'unwolf::' src-tauri/src` ne rend que `engines/wolf/unpack.rs` ; aucune
+dépendance par chemin ou Git vers unwolf dans `src-tauri/Cargo.toml` ; `rg UberWolf src/locales` ne rend que des phrases de recours ; UWF-0 et UWF-V
+consignés.
+
 ## Plan — DD : mise en commun des doublons, front et back (2026-11-17, Claude ; relu par Fable le 2026-11-17) — VALIDÉ par l'utilisateur le 2026-11-17 (DD-D1 à DD-D8 et points tranchés) ; exécution confiée à une session cloud
 
 **Source.** Audit `docs/audit/2026-11-17-audit-doublons.md` sur `main` @ `1f2b841` (numéros B*, C*, P*, F*, D*). Les
@@ -247,8 +483,9 @@ API appelée par des tests existants, donc gardée (ancien chemin, au besoin par
 
 ### V — Vérification locale (Claude, avec l'utilisateur, après la session cloud)
 
-- [ ] V1. Relire chaque PR : périmètre, diff, tests existants intacts (hors DD-D3), nombres du gate, journaux.
-      Renvoyer les écarts à la session cloud avant toute fusion.
+- [x] V1. Relire chaque PR : périmètre, diff, tests existants intacts (hors DD-D3), nombres du gate, journaux.
+      Renvoyer les écarts à la session cloud avant toute fusion. Fait le 2026-11-17 (PR #34 à #40) : aucun changement
+      de comportement trouvé ; constats de qualité et trous du corpus dans `docs/journal/2026-11-17-dd-verification.md`.
 - [ ] V2. Exports de référence **avant**, depuis `main` : un jeu MZ de `test/` et un jeu Wolf déchiffré, mise en page
       active, archives hors Git. Le binaire compilé par l'utilisateur sur `914d871` convient (code inchangé jusqu'à
       `1f2b841`), après vérification (leçons des 2026-10-29 et 2026-10-30).

@@ -4,6 +4,30 @@
 **Objectif utilisateur :** optimiser le front-end (audit du 2026-10-29), puis corriger le préfixe Wolf `@N⏎`. Les deux sont faits.
 **Statut :** sur `origin`, il n'y a plus que `main`. PR #29 à #33 fusionnées le 2026-10-30. Toutes les autres branches sont supprimées.
 
+## Analyse (2026-11-18, Claude, session locale) — intégrer unwolf (objectif 2)
+
+- unwolf = crate de l'utilisateur (`../unwolf`, MIT, 0.1.2 sur crates.io, portage Rust d'UberWolf), bibliothèque
+  `game::Session` (déchiffrement, clé Pro, `unprotect`, WolfX) sans dépendance CLI (`default-features = false`).
+- Constats : l'app refuse un jeu Wolf encore empaqueté (ADR-008) ; `engines/wolf/decrypt/` (3 577 lignes) n'a plus
+  d'appelant hors une variante d'erreur d'`extractor.rs` ; `find_game_font` ne cherche qu'à la racine (la police
+  de とのかじ est `Data/Font00.otf.wolfx`). Binaire déjà compilé : `../unwolf/target/release/unwolf`.
+- Les 3 jeux Wolf de `Beta-Games/` sont chiffrés (DXA v8). `Beta-Games/` n'est pas ignoré par Git.
+- Recommandation donnée à l'utilisateur, aucun code écrit : intégrer après la fusion DD (zones communes :
+  `detector.rs`, `engines/wolf/`).
+- **Plan UWF écrit puis relu par Fable et corrigé** (en tête de `tasks/todo.md`, journal
+  `docs/journal/2026-11-18-plan-uwf.md`) : UWF-D1 à UWF-D10 **validées le 2026-11-18**. UWF-0, partie Claude faite : levée V35 nécessaire (confirmée),
+  copies marquées « ★ » préparées puis supprimées (essai en jeu non exécuté). Polices WolfX sorties du plan
+  (とのかじ a deux polices) ; extraction limitée aux archives de texte ; essai en jeu avancé à UWF-0.
+  Ajusté le 2026-11-18 (utilisateur) : unwolf reste indépendant (UWF-D11, seul `engines/wolf/unpack.rs`
+  l'importe) ; étape UWF-U = **unwolf 0.2.0** dans son propre dépôt (enums extensibles, état « Pro déjà déprotégé »,
+  `Send`, CI, CHANGELOG), avant UWF-1 ; plan **validé** le 2026-11-18 :
+  `../unwolf/docs/plans/2026-11-18-0.2.0.md` ; U-1 à U-6 faits (branche `release/0.2.0` : `181eb64` plan, `7a5675c` CI,
+  `16c8747` API, `844e807` doc et version 0.2.0) ; CI verte sur `16c8747` (79 tests) ; PR
+  [KATBlackCoder/unwolf#1](https://github.com/KATBlackCoder/unwolf/pull/1) ouverte, CI du dernier commit en cours.
+  **unwolf 0.2.0 publié sur crates.io le 2026-11-18** (PR fusionnée `4d4e396`, tag `v0.2.0`). UWF-U terminé.
+  Prochaine action : fusion des PR DD par l'utilisateur, puis UWF-1 dans Hoshi2Star (`unwolf = "0.2"`).
+  Copies d'essai `../Hoshi2Star-essais/` supprimées (demande utilisateur) ; essai en jeu UWF-0 non exécuté (UWF-D3 à prouver en UWF-V).
+
 ## Audit (2026-11-17, Claude, session locale) — doublons et répétitions, front et back
 
 - Rapport : `docs/audit/2026-11-17-audit-doublons.md`. Journal : `docs/journal/2026-11-17-audit-doublons.md`. Analyse statique sur `main` @ `1f2b841` : aucun code modifié, aucun test lancé, rien de commité (3 fichiers de suivi non commités).
@@ -13,7 +37,9 @@
 - **Plan DD écrit (2026-11-17, Claude, local)** en tête de `tasks/todo.md` : 7 lots, deux chaînes de PR (back L4 → L2 → L1 → L5 → L3 ; front L6 → L7), règles d'arrêt, vérification locale V1 à V7, puis V8 : carte du code (`docs/architecture.md` réécrit, `CONTEXT.md` à jour), demandée par l'utilisateur, faite en local après les fusions. Journal : `docs/journal/2026-11-17-plan-dd.md`. Recommandations DD-D1 à DD-D8 **validées par l'utilisateur le 2026-11-17** (autorisation Git DD-D7 comprise).
 - **Plan DD relu par Fable (2026-11-17)** : 18 corrections (journal du plan, « Relecture Fable »). Les 4 points à trancher sont **tranchés par l'utilisateur** (recommandations retenues) et intégrés au plan : imports MZ tolérés seulement dans `commands/text_fit.rs` et `commands/qa.rs` ; une seule correspondance chaîne → adaptateur dans `core/text_fit/settings.rs`, remplacée en L5-4 ; DD-D2 élargi aux 24 sites F1 (« Error: » retiré) ; DD-D3 sans exception, `pub use` aux anciens chemins.
 - Exécution prévue : une session cloud (Fable) enchaîne les lots jusqu'aux PR, sans fusion ; elle ne touche ni `tasks/todo.md` ni ce fichier, et écrit `docs/journal/2026-11-17-dd-back.md` et `-dd-front.md`. Une session cloud ne prévient pas à la fin : l'utilisateur le signale.
-- **Prochaine action :** audit, plan, brief et journaux commités et poussés sur `main` (2026-11-17). L'utilisateur lance la session cloud (Fable) avec le brief `docs/plans/2026-11-17-brief-cloud-dd.md`, puis signale la fin ; Claude fait alors V1 à V7.
+- **Session cloud DD terminée (2026-11-17)** : 7 PR ouvertes, non fusionnées (back #34 L4 → `main`, #36 L2, #37 L1, #38 L5, #39 L3 ; front #35 L6 → `main`, #40 L7), gate cloud vert, aucune règle d'arrêt. Journaux : `docs/journal/2026-11-17-dd-back.md` et `-dd-front.md` (sur les branches).
+- **V1 fait (2026-11-17, Claude, local, sans compilation)** : tests existants intacts, caractérisations figées avant chaque refactor, relecture du code en 4 sous-agents : aucun changement de comportement. Constats de qualité mineurs et trous du corpus : `docs/journal/2026-11-17-dd-verification.md`.
+- **Prochaine action :** décisions de l'utilisateur : nettoyage des constats (avant ou après fusion), corpus complété ou non, V2 à V5 (ce dossier n'a ni `test/` ni binaire : jeux et compilation par l'utilisateur). Puis fusion par l'utilisateur dans l'ordre des chaînes (V7) et V8.
 
 ## Audit (2026-10-29, Claude, session locale) — front-end : défilement, re-rendus, doublons
 
@@ -405,6 +431,17 @@ Journal : `docs/journal/2026-10-25-analyse-session-2.md`.
 
 - MCP : `filesystem` (chemin corrigé dans `.mcp.json`), `tauri` = `@hypothesi/tauri-mcp-server@0.13.2`
   (version fixée), `context7` (doc à jour), `rea` (rétro-ingénierie).
+  - Machine actuelle (`/home/kounadyat/Desktop/Project/Hoshi2Star`, 2026-11-17, Claude) : seul `tauri` est
+    réinstallé, en config locale Claude (`~/.claude.json`, entrée du projet), lancé par
+    `pnpm dlx @hypothesi/tauri-mcp-server@0.13.2` car `npx` est absent. Démarrage vérifié (`initialize` et
+    `tools/list` répondent, `mcp-server-tauri` 0.13.2) ; actif après redémarrage de la session Claude. Ne pilote
+    l'app qu'en dev (pont `tauri-plugin-mcp-bridge`, `lib.rs:130`).
+  - Même jour, à la demande de l'utilisateur : `.mcp.json` (`filesystem`) passe à `pnpm dlx … .` (chemin relatif
+    au projet, `npx` absent ici) ; les hooks `cargo fmt` et `prettier` de `.claude/settings.json` utilisent
+    `$CLAUDE_PROJECT_DIR` au lieu de `/home/blackat/...`. Vérifié : le serveur répond et autorise la racine du
+    projet ; le hook `cargo fmt` tourne (code 0, aucun fichier modifié, `cargo fmt --check` vert sur `main`).
+    Attention : `prettier --list-different` signale 29 fichiers `src/` sur 139 (ex. `src/lib/utils.ts` sans
+    points-virgules) ; le hook réactivé reformatera en entier ceux que Claude modifie. Non commité.
 - Skills Tauri/Rust de Codex rendus disponibles à Claude par liens dans `.claude/skills/` (ignorés par Git).
 - Skill utilisateur `ambition` (`~/.claude/skills/ambition/`, lien pour Codex dans `~/.codex/skills/`) :
   méthode « deeper, not bigger » de Felix Rieseberg, avec exemples bon/à éviter.
