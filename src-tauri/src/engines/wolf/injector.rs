@@ -14,6 +14,7 @@ use super::dat_parser::{self, DatFile, DatType};
 use super::dat_parser::{DAT_TYPE_SEPARATOR, DB_MAGIC_SJIS, DB_MAGIC_UTF8};
 use super::encoding;
 use super::integrity;
+use super::sites;
 use super::sources::{SourcesError, WolfSources};
 use super::v3_format::{self, V3FormatError};
 use crate::engines::detector::WolfVersion;
@@ -178,43 +179,11 @@ fn inject_map_v3(
 
     for (event_idx, event) in map.events.iter_mut().enumerate() {
         for (page_idx, page) in event.pages.iter_mut().enumerate() {
+            let prefix = format!("MapData/{map_name}/events/{event_idx}/pages/{page_idx}");
             for (cmd_idx, command) in page.commands.iter_mut().enumerate() {
-                match command.cid {
-                    v3_format::command::CID_MESSAGE => {
-                        if let Some(text) = command.string_args.first_mut() {
-                            if text.trim().is_empty() {
-                                continue;
-                            }
-                            let key = format!(
-                                "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}"
-                            );
-                            if let Some(&t) = translations.get(key.as_str()) {
-                                let t = text_for_file(t, is_utf8, folded);
-                                if t != text.as_str() {
-                                    *updated += 1;
-                                    *text = t.into_owned();
-                                }
-                            }
-                        }
-                    }
-                    v3_format::command::CID_CHOICES => {
-                        for (choice_idx, choice) in command.string_args.iter_mut().enumerate() {
-                            if choice.trim().is_empty() {
-                                continue;
-                            }
-                            let key = format!(
-                                "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}/choices/{choice_idx}"
-                            );
-                            if let Some(&t) = translations.get(key.as_str()) {
-                                let t = text_for_file(t, is_utf8, folded);
-                                if t != choice.as_str() {
-                                    *updated += 1;
-                                    *choice = t.into_owned();
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
+                for (site, text) in sites::texts_mut(command) {
+                    let key = sites::key(&prefix, cmd_idx, site);
+                    replace_text(text, &key, translations, is_utf8, updated, folded);
                 }
             }
         }
@@ -460,6 +429,28 @@ pub fn inject_common_events(
     ))
 }
 
+/// Replace a non-blank map or common-event `text` by the translation of
+/// `key`, if any, as the file encodes it; counts the texts that changed.
+fn replace_text(
+    text: &mut String,
+    key: &str,
+    translations: &HashMap<&str, &str>,
+    is_utf8: bool,
+    updated: &mut usize,
+    folded: &mut usize,
+) {
+    if text.trim().is_empty() {
+        return;
+    }
+    if let Some(&t) = translations.get(key) {
+        let t = text_for_file(t, is_utf8, folded);
+        if t != text.as_str() {
+            *updated += 1;
+            *text = t.into_owned();
+        }
+    }
+}
+
 /// Inject translations into a `CommonEvent.dat` using the in-house
 /// [`v3_format`] parser — mirrors [`inject_map_v3`] with the flat
 /// common-event command list.
@@ -474,42 +465,11 @@ fn inject_common_events_v3(
     let is_utf8 = common_events.is_utf8();
 
     for (event_idx, event) in common_events.events.iter_mut().enumerate() {
-        let event_name = event.name.clone();
+        let prefix = format!("CommonEvents/{}/{event_idx}", event.name);
         for (cmd_idx, command) in event.commands.iter_mut().enumerate() {
-            match command.cid {
-                v3_format::command::CID_MESSAGE => {
-                    if let Some(text) = command.string_args.first_mut() {
-                        if text.trim().is_empty() {
-                            continue;
-                        }
-                        let key = format!("CommonEvents/{event_name}/{event_idx}/{cmd_idx}");
-                        if let Some(&t) = translations.get(key.as_str()) {
-                            let t = text_for_file(t, is_utf8, folded);
-                            if t != text.as_str() {
-                                *updated += 1;
-                                *text = t.into_owned();
-                            }
-                        }
-                    }
-                }
-                v3_format::command::CID_CHOICES => {
-                    for (choice_idx, choice) in command.string_args.iter_mut().enumerate() {
-                        if choice.trim().is_empty() {
-                            continue;
-                        }
-                        let key = format!(
-                            "CommonEvents/{event_name}/{event_idx}/{cmd_idx}/choices/{choice_idx}"
-                        );
-                        if let Some(&t) = translations.get(key.as_str()) {
-                            let t = text_for_file(t, is_utf8, folded);
-                            if t != choice.as_str() {
-                                *updated += 1;
-                                *choice = t.into_owned();
-                            }
-                        }
-                    }
-                }
-                _ => {}
+            for (site, text) in sites::texts_mut(command) {
+                let key = sites::key(&prefix, cmd_idx, site);
+                replace_text(text, &key, translations, is_utf8, updated, folded);
             }
         }
     }

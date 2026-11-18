@@ -2,6 +2,7 @@
 
 use super::dat_parser;
 use super::filter;
+use super::sites;
 use super::sources::{SourcesError, WolfSources};
 use super::v3_format;
 use super::v3_format::common_events::CommonEventsV3;
@@ -286,45 +287,21 @@ pub fn extract_map_segments(
 
     for (event_idx, event) in map.events.iter().enumerate() {
         for (page_idx, page) in event.pages.iter().enumerate() {
+            let prefix = format!("MapData/{map_name}/events/{event_idx}/pages/{page_idx}");
             for (cmd_idx, command) in page.commands.iter().enumerate() {
-                match command.cid {
-                    v3_format::command::CID_MESSAGE => {
-                        if let Some(text) = command.string_args.first() {
-                            if !filter::skip_message(text) {
-                                segments.push(WolfSegment {
-                                    key: format!(
-                                        "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}"
-                                    ),
-                                    source_text: text.clone(),
-                                    kind: WolfSegmentKind::MapMessage {
-                                        map_name: map_name.to_owned(),
-                                        event_idx,
-                                        page_idx,
-                                        cmd_idx,
-                                    },
-                                });
-                            }
-                        }
+                for (site, text) in sites::texts(command) {
+                    if !filter::skip_message(text) {
+                        segments.push(WolfSegment {
+                            key: sites::key(&prefix, cmd_idx, site),
+                            source_text: text.clone(),
+                            kind: WolfSegmentKind::MapMessage {
+                                map_name: map_name.to_owned(),
+                                event_idx,
+                                page_idx,
+                                cmd_idx,
+                            },
+                        });
                     }
-                    v3_format::command::CID_CHOICES => {
-                        for (choice_idx, choice) in command.string_args.iter().enumerate() {
-                            if !filter::skip_message(choice) {
-                                segments.push(WolfSegment {
-                                    key: format!(
-                                        "MapData/{map_name}/events/{event_idx}/pages/{page_idx}/{cmd_idx}/choices/{choice_idx}"
-                                    ),
-                                    source_text: choice.clone(),
-                                    kind: WolfSegmentKind::MapMessage {
-                                        map_name: map_name.to_owned(),
-                                        event_idx,
-                                        page_idx,
-                                        cmd_idx,
-                                    },
-                                });
-                            }
-                        }
-                    }
-                    _ => {}
                 }
             }
         }
@@ -453,41 +430,20 @@ fn common_event_segments(common_events: &CommonEventsV3) -> Vec<WolfSegment> {
         if filter::skip_common_event(event_name) {
             continue;
         }
+        let prefix = format!("CommonEvents/{event_name}/{event_idx}");
         for (cmd_idx, command) in event.commands.iter().enumerate() {
-            match command.cid {
-                v3_format::command::CID_MESSAGE => {
-                    if let Some(text) = command.string_args.first() {
-                        if !filter::skip_message(text) {
-                            segments.push(WolfSegment {
-                                key: format!("CommonEvents/{event_name}/{event_idx}/{cmd_idx}"),
-                                source_text: text.clone(),
-                                kind: WolfSegmentKind::CommonEventMessage {
-                                    event_name: event_name.clone(),
-                                    event_idx,
-                                    cmd_idx,
-                                },
-                            });
-                        }
-                    }
+            for (site, text) in sites::texts(command) {
+                if !filter::skip_message(text) {
+                    segments.push(WolfSegment {
+                        key: sites::key(&prefix, cmd_idx, site),
+                        source_text: text.clone(),
+                        kind: WolfSegmentKind::CommonEventMessage {
+                            event_name: event_name.clone(),
+                            event_idx,
+                            cmd_idx,
+                        },
+                    });
                 }
-                v3_format::command::CID_CHOICES => {
-                    for (choice_idx, choice) in command.string_args.iter().enumerate() {
-                        if !filter::skip_message(choice) {
-                            segments.push(WolfSegment {
-                                key: format!(
-                                    "CommonEvents/{event_name}/{event_idx}/{cmd_idx}/choices/{choice_idx}"
-                                ),
-                                source_text: choice.clone(),
-                                kind: WolfSegmentKind::CommonEventMessage {
-                                    event_name: event_name.clone(),
-                                    event_idx,
-                                    cmd_idx,
-                                },
-                            });
-                        }
-                    }
-                }
-                _ => {}
             }
         }
     }
