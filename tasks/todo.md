@@ -500,7 +500,7 @@ API appelée par des tests existants, donc gardée (ancien chemin, au besoin par
       (`97099d0`), #38 (`3aa1a3d`), #39 (`b421543`) ; front #35 (`5ac3426`), #40 (`e7fe775`) ; fusions sans conflit,
       `CHANGELOG.md` réunit les deux chaînes. V2 à V6 **non exécutées** avant fusion (essais réels) ; les branches
       DD sont gardées (suppression avec l'accord de l'utilisateur).
-- [ ] V8. **Carte du code** (demandée par l'utilisateur le 2026-11-17) : Claude, en local, documentation seulement,
+- [x] V8. **Carte du code** (demandée par l'utilisateur le 2026-11-17) : Claude, en local, documentation seulement,
       après les fusions, depuis `main` à jour ; branche `docs/dd-code-map`, PR avec l'accord de l'utilisateur.
       `docs/architecture.md` réécrit en carte (pas de fichier concurrent) : rôle des modules (`commands/`, `core/`,
       `llm/`, `engines/`, export, `src/stores/`, `src/lib/api/`, `src/features/`), parcours (ouvrir → extraire →
@@ -510,7 +510,10 @@ API appelée par des tests existants, donc gardée (ancien chemin, au besoin par
       resync, terminologie, `WolfSources`, `ProjectContext`, API typée) et pointant vers la carte sans la recopier.
       Carte pointée depuis `CLAUDE.md` et `AGENTS.md`, avec dans `AGENTS.md` la règle : tout lot qui déplace une
       frontière de module met la carte à jour dans la même PR. Vérification : chaque chemin et nom cité existe (`rg`,
-      `ls`), relu contre `main`.
+      `ls`), relu contre `main`. **Fait le 2026-11-18** (Claude, branche `docs/dd-code-map`) : `docs/architecture.md`
+      réécrit en carte (deux cartographies en lecture seule puis vérification de chaque chemin et symbole cités :
+      aucun manquant) ; `CONTEXT.md` (section Architecture remplacée par un renvoi et des repères ; ADR-006 et
+      ADR-007 ajoutés au résumé) ; renvois dans `CLAUDE.md` et `AGENTS.md`, règle de mise à jour dans `AGENTS.md`.
 
 ## Plan — FP : préfixe de visage Wolf `@N⏎` ancré en tête (2026-10-30, Claude) — VALIDÉ par l'utilisateur (« corrige @1 ») ; FP-1 à FP-6 faits en session cloud, PR #33 fusionnée (`914d871`) ; FP-7 vérifié le 2026-10-30 — TERMINÉ
 

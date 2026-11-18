@@ -114,26 +114,13 @@ Use **pnpm only** — never `npm install` or `yarn add`.
 
 ## Architecture
 
-5-layer Rust backend, React frontend, all communication via Tauri IPC `invoke()`:
+**Code map: [`docs/architecture.md`](docs/architecture.md)** — read it before working in an unfamiliar area: role of
+each folder, main flows (open, translate, QA, export), "where to change what", rules not to break. Any change that
+moves a module boundary updates it in the same PR.
 
-```
-┌─────────────────────────────────────────────┐
-│  CAT UI (React)   src/                      │
-│  Zustand stores · TanStack Table · shadcn   │
-├─────────────────────────────────────────────┤
-│  LLM Layer        src-tauri/src/llm/        │
-│  tokenizer · provider router · pipeline     │
-├─────────────────────────────────────────────┤
-│  Core Layer       src-tauri/src/core/       │
-│  tm.rs · glossary.rs · qa.rs · diff.rs     │
-├─────────────────────────────────────────────┤
-│  Engine Layer     src-tauri/src/engines/    │
-│  mv_mz/ · vx_ace/ · wolf/ · bakin/         │
-├─────────────────────────────────────────────┤
-│  Export Layer     src-tauri/src/export/     │
-│  reinjector · patch diff · .h2s format     │
-└─────────────────────────────────────────────┘
-```
+React frontend (`src/`, Rust calls only through `src/lib/api/`) → IPC layer (`src-tauri/src/commands/`) → business
+logic (`core/`) and LLM pipeline (`llm/`) → engines (`engines/`: `mv_mz/`, `wolf/`, `vx_ace/` disabled) → SQLite
+(`db/`). There is no `export/` folder: export is orchestrated by `commands/export.rs`.
 
 **Key boundaries:**
 - All data access from TypeScript goes through `invoke()` — no direct DB access from JS

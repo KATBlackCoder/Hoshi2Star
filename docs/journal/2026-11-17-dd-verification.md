@@ -89,6 +89,19 @@
   `debug_inject_file` absent de `src/` et `src-tauri/src/`, ADR-009 et journaux cloud présents, aucun marqueur de
   conflit. V2 à V6 (exports réels, grille, toast) non exécutées.
 
+## V8 — carte du code (2026-11-18)
+
+- Branche `docs/dd-code-map` depuis `main` @ `0727452`. Deux sous-agents en lecture seule ont cartographié le back
+  et le front ; `docs/architecture.md` réécrit en carte (vue d'ensemble, rôle des dossiers, parcours, où changer
+  quoi, règles à ne pas casser, tests, hors périmètre). Retirés car faux : `debug_inject_file`, lecture des archives
+  Wolf et `wolf/decrypt`, `OllamaProvider`, ordre de détection avec VX Ace, migrations « jusqu'à 0008 », système de
+  licence. Vérifié : chaque fichier, dossier et symbole cité existe sur `main` (script `[ -e ]` et `rg`).
+- `CONTEXT.md` : section Architecture (schéma à 5 couches avec `export/`, `glossary.rs`, `diff.rs`, `bakin/`
+  inexistants) remplacée par un renvoi et des repères (`ProjectContext`, `Engine::from_db_str`, `core/text_fit`,
+  `WolfSources`, `sites.rs`, resync et couverture MV/MZ, `src/lib/api/`, `engine.ts`, `errorMessage`) ;
+  ADR-006 et ADR-007 ajoutés. `CLAUDE.md` et `AGENTS.md` pointent vers la carte ; `AGENTS.md` porte la règle de
+  mise à jour. Documentation seulement, aucun test applicatif concerné.
+
 ## Prochaine session
 
 - Décisions utilisateur : nettoyage des constats de qualité (avant ou après fusion) ; compléter ou non le corpus ;

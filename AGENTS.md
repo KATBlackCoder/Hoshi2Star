@@ -31,6 +31,7 @@ les tests concernés, puis corriger le suivi dans le périmètre de la tâche.
 | Point de reprise immédiat, travail interrompu, prochaine action | `tasks/handoff.md` |
 | Historique daté des changements, corrections et vérifications | `docs/journal/` |
 | Erreurs à éviter, approches abandonnées et raison | `tasks/lessons.md` |
+| Carte du code (rôle des dossiers, parcours, où changer quoi) | `docs/architecture.md` |
 | Conventions techniques et références d'architecture | `CONTEXT.md`, `docs/adr/` |
 | Tâches détaillées et plans | `tasks/todo.md`, `docs/plans/`, `docs/superpowers/plans/` |
 | Orientation et idées futures | `ROADMAP.md`, `BACKLOG.md` |
@@ -61,6 +62,9 @@ Une idée de backlog ou une recommandation d'audit n'autorise pas son implément
 - Lire les conventions de `CONTEXT.md` avant toute modification applicative.
   Utiliser pnpm pour JavaScript. Respecter Tauri v2 et les identifiants de
   compatibilité existants : un changement de nom affiché n'est pas une migration.
+  Avant de travailler dans une zone peu connue, lire la carte du code `docs/architecture.md`.
+- Tout lot qui crée, déplace ou supprime une frontière de module (dossier, module, couche, point d'entrée)
+  met `docs/architecture.md` à jour dans la même PR.
 - Pour une implémentation non triviale, écrire un plan vérifiable dans
   `tasks/todo.md` ou dans le plan/story actif avant de modifier le code.
 - Pour du code applicatif, vérifier TypeScript, les tests frontend et Rust et

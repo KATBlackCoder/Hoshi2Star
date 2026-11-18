@@ -37,61 +37,27 @@ Template : `docs/journal/TEMPLATE.md`.
 
 ---
 
-## Architecture — 5 couches
+## Architecture
 
-```
-┌─────────────────────────────────────────────┐
-│  CAT UI (React)   src/                      │
-│  Zustand stores · TanStack Table · shadcn   │
-├─────────────────────────────────────────────┤
-│  LLM Layer        src-tauri/src/llm/        │
-│  Tokenizer · Provider router · Prompt chain │
-├─────────────────────────────────────────────┤
-│  Core Layer       src-tauri/src/core/       │
-│  SQLite TM · Glossaire · QA engine · Diff   │
-├─────────────────────────────────────────────┤
-│  Engine Layer     src-tauri/src/engines/    │
-│  mv_mz/ · wolf/ (priorité F4) · vx_ace/ (désactivé) · bakin/ │
-├─────────────────────────────────────────────┤
-│  Export Layer     src-tauri/src/export/     │
-│  Re-injector · Patch diff · Format .h2s     │
-└─────────────────────────────────────────────┘
-```
+**Carte du code : [`docs/architecture.md`](docs/architecture.md)** — rôle de chaque dossier, parcours (ouvrir,
+traduire, contrôler, exporter), « où changer quoi » et règles à ne pas casser. Elle n'est pas recopiée ici ; tout
+lot qui déplace une frontière de module la met à jour dans la même PR.
 
-### Structure dossiers
+En bref : interface React (`src/`) → IPC (`src-tauri/src/commands/`, un seul `generate_handler!` dans `lib.rs`) →
+métier (`core/`) et LLM (`llm/`) → moteurs (`engines/`) → SQLite (`db/`). Il n'y a pas de dossier `export/` :
+l'export est orchestré par `commands/export.rs`.
 
-```
-hoshi2star/
-├── CONTEXT.md                  ← ce fichier
-├── docs/
-│   ├── adr/                    ← Architecture Decision Records
-│   ├── engines.md              ← formats par moteur RPG
-│   └── llm-pipeline.md        ← détail des passes LLM
-├── src/                        ← Frontend React
-│   ├── components/ui/          ← shadcn (NE PAS ÉDITER MANUELLEMENT)
-│   ├── components/editor/      ← composants CAT (SegmentGrid, TMPanel, etc.)
-│   ├── features/               ← features verticales (project/, translate/, qa/)
-│   ├── stores/                 ← Zustand slices (editor.ts, project.ts, llm.ts)
-│   └── lib/                    ← utils, types partagés
-├── src-tauri/
-│   ├── src/
-│   │   ├── lib.rs              ← entrée app (PAS main.rs — requis mobile)
-│   │   ├── commands/           ← tous les #[tauri::command]
-│   │   ├── engines/            ← parsers par moteur
-│   │   ├── core/               ← tm.rs, glossary.rs, qa.rs, diff.rs, text_fit/ (mise en page commune, ADR-009)
-│   │   ├── llm/                ← tokenizer.rs, provider.rs, pipeline.rs
-│   │   ├── export/             ← reinjector.rs, patch.rs
-│   │   ├── db/                 ← pool.rs, migrations/, queries/
-│   │   └── state.rs            ← AppState (SqlitePool + config)
-│   ├── capabilities/           ← ACL JSON (PAS allowlist dans tauri.conf.json)
-│   ├── migrations/             ← sqlx migrate! files
-│   └── Cargo.toml
-├── .cargo/
-│   └── config.toml             ← rustflags target-cpu=native (requis par marshal-rs/gxhash)
-├── .claude/
-│   └── settings.json           ← hooks PreToolUse / PostToolUse
-└── .mcp.json                   ← MCP servers (scope project)
-```
+Repères qui changent la façon d'écrire du code :
+- **Contexte projet** : `db/project_context.rs` (`ProjectContext::load`) lit une fois le projet ; le moteur est un
+  `Engine` typé (`Engine::from_db_str`, `engines/detector.rs`), jamais une chaîne comparée à la main.
+- **Mise en page du texte** : `core/text_fit/` (commun) + un adaptateur `TextBox` par moteur (ADR-009).
+- **Wolf** : lecture et export par `WolfSources` (`engines/wolf/sources.rs`), fichiers libres de `Data/` seulement
+  (ADR-008) ; sites de texte des commandes 101/102 dans `engines/wolf/sites.rs`.
+- **Resync et couverture** : MV/MZ seulement (`engines/mv_mz/resync.rs`, `engines/mv_mz/coverage/`).
+- **Terminologie** : `core/terminology/` ([architecture](docs/architecture/terminology.md)).
+- **Front** : tout appel à Rust passe par `src/lib/api/<domaine>.ts` (ou `src/features/terminology/api.ts`) ; une
+  différence entre moteurs passe par un prédicat de `src/lib/engine.ts` ; une erreur s'affiche avec
+  `errorMessage()` (`src/lib/utils.ts`).
 
 ---
 
@@ -302,6 +268,10 @@ Voir `docs/adr/` pour le détail. Résumé :
 - **ADR-003** : TM globale à l'installation (pas par projet) — fuzzy matching cross-projet = différenciateur clé vs Translator++
 - **ADR-004** : MVP limité à RPG Maker MV/MZ (JSON natif) — VX Ace ajouté en F3 via marshal-rs (Ruby Marshal binary)
 - **ADR-005** : `lib.rs` comme entrée (pas `main.rs`) — requis pour les builds mobiles futurs Tauri
+- **ADR-006** : dispatch moteur par `match` sur l'enum `Engine` (pas d'objets-traits) — le compilateur signale tout
+  `match` oublié quand un moteur est ajouté
+- **ADR-007** : mise à jour automatique par `tauri-plugin-updater` (GitHub Releases, signature obligatoire), limitée
+  aux installations qui la supportent
 - **ADR-008** : Wolf RPG lu et exporté depuis le `Data/` déchiffré par UberWolf, jamais depuis une archive `.wolf`.
   Détection : `Game.exe` / `GamePro.exe` / `Game.ini` + `Data/BasicData/` en clair ; encodage par la première base
   lisible (`SysDatabase.dat`, `DataBase.dat`, `CDataBase.dat`), sinon refus `wolf_no_database` ; `Data.wolf`,
