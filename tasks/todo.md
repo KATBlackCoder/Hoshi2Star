@@ -494,8 +494,12 @@ API appelée par des tests existants, donc gardée (ancien chemin, au besoin par
 - [ ] V4. Exports **après**, mêmes jeux et réglages : fichiers identiques octet pour octet ; scan : mêmes compteurs.
 - [ ] V5. Grille : 12 423 segments, environ 19 ms par frame, aucune zone blanche, comme le 2026-10-30 (F4).
 - [ ] V6. Toast d'erreur de la terminologie sans « Error: » (F1) ; relire au diff de L6 les 23 autres sites.
-- [ ] V7. Suivi : cocher ce plan, `tasks/handoff.md`, journal de la vérification. Fusion par l'utilisateur dans l'ordre
-      des chaînes, chaque PR repointée vers `main` avant sa fusion.
+- [x] V7. Suivi : cocher ce plan, `tasks/handoff.md`, journal de la vérification. Fusion par l'utilisateur dans l'ordre
+      des chaînes, chaque PR repointée vers `main` avant sa fusion. **Fait le 2026-11-18** à la demande de
+      l'utilisateur (« fusionne les PR DD dans l'ordre »), par Claude : back #34 (`524fb46`), #36 (`a450f83`), #37
+      (`97099d0`), #38 (`3aa1a3d`), #39 (`b421543`) ; front #35 (`5ac3426`), #40 (`e7fe775`) ; fusions sans conflit,
+      `CHANGELOG.md` réunit les deux chaînes. V2 à V6 **non exécutées** avant fusion (essais réels) ; les branches
+      DD sont gardées (suppression avec l'accord de l'utilisateur).
 - [ ] V8. **Carte du code** (demandée par l'utilisateur le 2026-11-17) : Claude, en local, documentation seulement,
       après les fusions, depuis `main` à jour ; branche `docs/dd-code-map`, PR avec l'accord de l'utilisateur.
       `docs/architecture.md` réécrit en carte (pas de fichier concurrent) : rôle des modules (`commands/`, `core/`,

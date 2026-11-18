@@ -25,7 +25,8 @@
   `16c8747` API, `844e807` doc et version 0.2.0) ; CI verte sur `16c8747` (79 tests) ; PR
   [KATBlackCoder/unwolf#1](https://github.com/KATBlackCoder/unwolf/pull/1) ouverte, CI du dernier commit en cours.
   **unwolf 0.2.0 publié sur crates.io le 2026-11-18** (PR fusionnée `4d4e396`, tag `v0.2.0`). UWF-U terminé.
-  Prochaine action : fusion des PR DD par l'utilisateur, puis UWF-1 dans Hoshi2Star (`unwolf = "0.2"`).
+  **PR DD fusionnées le 2026-11-18** (7 PR, `main` @ `e7fe775`, sans conflit ; V2 à V6
+  non exécutées). Prochaine action : V8 (carte du code) et UWF-1 à UWF-6 (`unwolf = "0.2"`, session cloud).
   Copies d'essai `../Hoshi2Star-essais/` supprimées (demande utilisateur) ; essai en jeu UWF-0 non exécuté (UWF-D3 à prouver en UWF-V).
 
 ## Audit (2026-11-17, Claude, session locale) — doublons et répétitions, front et back

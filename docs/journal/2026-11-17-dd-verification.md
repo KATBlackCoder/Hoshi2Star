@@ -80,6 +80,15 @@
 - V2 à V5 impossibles dans ce dossier en l'état : ni `test/` (jeux d'essai), ni `src-tauri/target/` (binaire).
   Il faut les jeux MZ et Wolf, et une compilation lancée par l'utilisateur.
 
+## Fusion (2026-11-18)
+
+- À la demande de l'utilisateur, Claude a fusionné les 7 PR dans l'ordre des chaînes (merge commits), chaque PR
+  repointée vers `main` juste avant : #34 `524fb46`, #36 `a450f83`, #37 `97099d0`, #38 `3aa1a3d`, #39 `b421543`,
+  #35 `5ac3426`, #40 `e7fe775`. Aucun conflit ; `CHANGELOG.md` contient « Removed » (L4) et « Fixed » (L6).
+- Contrôles après fusion (lecture seule, sans compilation) : `core/text_fit/` et `src/lib/api/` présents,
+  `debug_inject_file` absent de `src/` et `src-tauri/src/`, ADR-009 et journaux cloud présents, aucun marqueur de
+  conflit. V2 à V6 (exports réels, grille, toast) non exécutées.
+
 ## Prochaine session
 
 - Décisions utilisateur : nettoyage des constats de qualité (avant ou après fusion) ; compléter ou non le corpus ;
