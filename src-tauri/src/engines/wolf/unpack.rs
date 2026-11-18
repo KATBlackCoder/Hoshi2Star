@@ -469,7 +469,7 @@ fn relative(game_dir: &Path, path: &Path) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     //! Archives are made with `unwolf::dxa::pack_directory` and the
     //! "Wolf RPG v2.225" mode (DXA v8). The Pro branches (key derivation,
     //! protection removal, refusal of v1 and v2) cannot be fabricated: they
@@ -511,7 +511,7 @@ mod tests {
 
     /// A game packed per folder: `Data/BasicData.wolf`, `Data/MapData.wolf`
     /// and `Data/Picture.wolf`.
-    fn split_game() -> tempfile::TempDir {
+    pub(crate) fn split_game() -> tempfile::TempDir {
         let game = tempfile::tempdir().unwrap();
         std::fs::write(game.path().join("Game.exe"), b"mock").unwrap();
         let data = game.path().join("Data");

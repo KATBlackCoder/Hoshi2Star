@@ -25,6 +25,11 @@ pub struct AppState {
     pub plugin_profiles: Arc<ProfileSet>,
     /// The last game font decoded for text fitting.
     pub game_fonts: FontCache,
+    /// Set by `cancel_wolf_unpack`; the running Wolf decryption stops at its
+    /// next file. Reset when a decryption starts (plan UWF, UWF-4).
+    pub wolf_unpack_cancel: Arc<AtomicBool>,
+    /// `true` while a Wolf decryption runs: a second one is refused.
+    pub wolf_unpack_running: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -36,6 +41,8 @@ impl AppState {
             data_dir,
             plugin_profiles: Arc::new(ProfileSet::embedded().clone()),
             game_fonts: FontCache::default(),
+            wolf_unpack_cancel: Arc::default(),
+            wolf_unpack_running: Arc::default(),
         })
     }
 
@@ -51,6 +58,8 @@ impl AppState {
             data_dir,
             plugin_profiles: Arc::new(ProfileSet::embedded().clone()),
             game_fonts: FontCache::default(),
+            wolf_unpack_cancel: Arc::default(),
+            wolf_unpack_running: Arc::default(),
         }
     }
 }

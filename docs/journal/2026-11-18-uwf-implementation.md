@@ -145,3 +145,31 @@ l'erreur). Aucun test existant modifié.
 
 **Gate (UWF-3).** fmt OK ; clippy OK ; `cargo test` 862 réussis (+2), 0 échec, 15 ignorés ; typecheck OK ; lint
 0 erreur (10 avertissements) ; Vitest 201/201.
+
+## UWF-4 — Commandes
+
+**Fait.**
+- `src-tauri/src/commands/wolf_unpack.rs` (nouveau) : `unpack_wolf_game(game_path) -> Result<UnpackReport,
+  String>` et `cancel_wolf_unpack()`, sur le modèle de `translation_cancel` ; la commande délègue à
+  `unpack_wolf_game_with_app<R: Runtime>` (modèle de `start_terminology_scan_with_app`, pour les tests au
+  runtime simulé). Un seul déchiffrement à la fois (`compare_exchange` sur `wolf_unpack_running`, second appel
+  refusé avec le marqueur `wolf_unpack_busy`, drapeau remis à `false` par un garde à la fin, quelle que soit
+  l'issue) ; drapeau d'annulation remis à zéro au début. Travail dans un `spawn_blocking` (la `Session` d'unwolf
+  y est créée). Événement `h2s://wolf/unpack-progress` (`WOLF_UNPACK_PROGRESS_EVENT`, charge `UnpackProgress` :
+  archive, fichier n, total), au plus un toutes les 100 ms (`PROGRESS_INTERVAL`, constante à côté de la
+  commande) ; le rapport est la valeur de retour. `config_path` = `<data_dir>/unwolf/UberWolfConfig.json`
+  (`unwolf_config_path`, UWF-D8).
+- `state.rs` : `AppState.wolf_unpack_cancel` et `AppState.wolf_unpack_running` (`Arc<AtomicBool>`), dans les deux
+  constructeurs. `lib.rs` : les deux commandes ajoutées à l'unique `generate_handler!`. `commands/mod.rs` :
+  `pub mod wolf_unpack`.
+- `engines/wolf/unpack.rs` : module de tests `pub(crate)` et fixture `split_game` `pub(crate)`, pour que les tests
+  de la commande réutilisent les archives fabriquées sans importer unwolf ailleurs (UWF-D11 tenu :
+  `rg 'unwolf::' src-tauri/src` ne rend que `engines/wolf/unpack.rs`).
+- 5 tests : déchiffrement complet par la commande avec événements reçus (le premier fichier est toujours émis)
+  et drapeau remis à zéro ; second appel refusé pendant un déchiffrement ; ancienne demande d'annulation effacée
+  au démarrage ; `cancel_wolf_unpack` lève le drapeau ; chemin de configuration.
+
+**Écart au plan.** Aucun.
+
+**Gate (UWF-4).** fmt OK ; clippy OK ; `cargo test` 867 réussis (+5), 0 échec, 15 ignorés ; typecheck OK ; lint
+0 erreur (10 avertissements) ; Vitest 201/201.
