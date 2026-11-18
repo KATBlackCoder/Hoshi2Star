@@ -12,6 +12,7 @@ export const EVENTS = {
   terminologyScanDone: "h2s://terminology/scan-done",
   terminologyTranslateProgress: "h2s://terminology/translate-progress",
   terminologyTranslateDone: "h2s://terminology/translate-done",
+  wolfUnpackProgress: "h2s://wolf/unpack-progress",
 } as const;
 
 /** Run `callback` on the next frame (a 16 ms timer where frames are missing). */

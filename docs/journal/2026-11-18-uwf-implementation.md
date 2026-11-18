@@ -173,3 +173,46 @@ l'erreur). Aucun test existant modifié.
 
 **Gate (UWF-4).** fmt OK ; clippy OK ; `cargo test` 867 réussis (+5), 0 échec, 15 ignorés ; typecheck OK ; lint
 0 erreur (10 avertissements) ; Vitest 201/201.
+
+## UWF-5 — Front
+
+**Fait.**
+- `src/lib/api/wolf.ts` (nouveau) : `wolfApi.unpackGame(gamePath)` et `wolfApi.cancelUnpack()`. Types
+  `UnpackReport`, `UnpackProgress`, `ArchiveFailure`, `ProProtection` dans `src/lib/types.ts` ; événement
+  `EVENTS.wolfUnpackProgress` (`h2s://wolf/unpack-progress`) dans `src/lib/events.ts`.
+- `src/lib/projectError.ts` : `WOLF_PACKED` reconnu (clés `projectList.wolfPacked`, `toasts.wolfPacked`) ;
+  `wolfUnpackErrorKey` / `wolfUnpackErrorDetail` traduisent les marqueurs `wolf_unpack_<cas>` du back en
+  `wolfUnpack.errors.*` (repli `generic`) et gardent le détail.
+- `src/stores/wolfUnpack.ts` (nouveau, petit store sur le modèle de `stores/resync.ts`) : `openGameFolder(path)`
+  ouvre le jeu et, sur `wolf_packed` ou `wolf_archive_present`, ouvre le dialogue au lieu du toast (toute autre
+  erreur garde le toast d'avant) ; `startWolfUnpack` lance le déchiffrement puis relance l'ouverture avec le même
+  chemin après succès ; `cancelWolfUnpack` ; fermeture refusée pendant le déchiffrement.
+- `src/components/WolfUnpackDialog.tsx` (nouveau), monté dans `AppDialogs.tsx` : confirmation (archives citées,
+  ce qui change dans le dossier, levée Pro 3.5 et `Data/BasicData/backup/`, archives déplacées jamais
+  supprimées, conseil de copie), progression (archive, fichier n sur total, barre `progressbar`), bouton
+  « Arrêter », rapport (extraites, déjà extraites, protection, mises de côté, échecs sans texte,
+  avertissements), erreur traduite avec le détail du back. Échap et clic extérieur sans effet pendant le travail.
+- `AppToolbar.tsx` (« Ouvrir un jeu ») et `ProjectList.tsx` (ouvrir un nouveau jeu) passent par
+  `openGameFolder`. La reprise d'un projet connu (`ProjectList.handleResume`) n'est pas touchée.
+- Locales en/fr (mêmes clés) : bloc `wolfUnpack.*` ; `projectList.wolfPacked`, `toasts.wolfPacked` ;
+  `projectList.wolfArchivePresent` réécrit pour proposer d'abord le déchiffrement par l'app, UberWolf en recours.
+  `projectList.engineNotFound` inchangé (garde UberWolf, test `projectError.test.ts:64`).
+- Tests (nouveaux fichiers, aucun test existant modifié) : `src/components/WolfUnpackDialog.test.tsx` (5 :
+  parcours complet jusqu'à la réouverture, cas `wolf_archive_present`, autre erreur ⇒ toast, progression +
+  arrêt + message d'annulation, refus Pro traduit) et `src/lib/wolfUnpackError.test.ts` (4 : `wolf_packed`
+  ⇒ `projectList.wolfPacked`, traduction des marqueurs, messages présents en/fr avec les mêmes clés, UberWolf
+  cité seulement dans des phrases de recours).
+
+**Écarts au plan.**
+- Fonctions d'API regroupées dans l'objet `wolfApi` (`unpackGame`, `cancelUnpack`) au lieu de fonctions
+  `unpackWolfGame` / `cancelWolfUnpack` : convention de `src/lib/api/` depuis DD (un objet par domaine).
+- L'aiguillage erreur → dialogue est dans `openGameFolder` (store), partagé par les deux points d'ouverture, au
+  lieu d'être recopié dans chaque composant.
+- Nouveaux tests dans de nouveaux fichiers plutôt que dans `projectError.test.ts`, pour ne modifier aucun fichier
+  de test existant.
+
+**Gate (UWF-5).** fmt OK ; clippy OK ; `cargo test` 867 réussis, 0 échec, 15 ignorés ; typecheck OK ; lint
+0 erreur (10 avertissements, les mêmes qu'avant) ; Vitest 210 réussis (+9).
+
+**Non vérifié.** Rendu réel du dialogue dans l'app (pas de lancement de l'app dans cette session) : à voir en
+UWF-V.
