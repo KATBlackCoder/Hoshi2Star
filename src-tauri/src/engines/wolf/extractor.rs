@@ -17,8 +17,6 @@ use std::sync::LazyLock;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ExtractorError {
-    #[error("decryptor error: {0}")]
-    Decryptor(#[from] super::decrypt::legacy_xor::DecryptorError),
     #[error("map parser error: {0}")]
     MapParser(String),
     #[error("dat parse error in {file}: {reason}")]

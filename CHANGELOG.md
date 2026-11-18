@@ -86,6 +86,7 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - Remove reading Wolf RPG `.wolf` archives and delivering them rebuilt at export: Wolf 2.x and 3.x games up to 3.30 no longer open straight from their `Data.wolf` and must be decrypted with UberWolf first, like every other Wolf game.
 - Remove the `wolfrpg-map-parser` dependency (and its git fork, no longer on GitHub, which prevented any fresh clone from building). Wolf RPG v2 maps and common events are no longer read: a v2 game is refused at open with a clear message instead of opening without its dialogue, and exporting an existing v2 project stops with the same message without writing anything. Wolf RPG v3 (LZ4) maps, common events and `.dat` databases are unchanged. A new reader is planned.
 - Remove the internal `debug_inject_file` command (single-file injection into the game folder). It had no interface and nothing called it; the export and the debug export are unchanged.
+- Remove the old built-in Wolf RPG archive reader and writer (`engines/wolf/decrypt/`, about 3,600 lines). Nothing used it since archives stopped being read; packed games are now decrypted by the unwolf library. No behaviour change.
 
 ## [0.4.10] — 2026-07-07
 

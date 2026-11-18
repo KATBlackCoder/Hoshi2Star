@@ -103,7 +103,7 @@ Une commande valide ses arguments, charge le contexte et délègue ; elle rend `
 | `detector.rs` | Enum `Engine` (`db_str` / `from_db_str`), détection : MV/MZ puis Wolf ; VX Ace désactivé. |
 | `filter.rs`, `terminology.rs` | Filtre commun « à traduire » ; adaptateurs terminologiques par moteur (MV/MZ seulement). |
 | `mv_mz/` | Extracteur, injecteur, garde d'intégrité, instantanés, déchiffrement des assets, `plugins.js`, locale, resync, `coverage/`, `layout/` (adaptateur `MzTextBox` et simulation de la fenêtre). |
-| `wolf/` | Fichiers libres de `Data/` seulement (ADR-008) : `sources.rs` (`WolfSources`, refuse les archives de texte ; `packed_state` repère un jeu encore empaqueté, marqueur `wolf_packed`), `unpack.rs` (déchiffrement d'un jeu empaqueté par la crate `unwolf`, **seul module qui importe unwolf**, ADR-010), `sites.rs` (sites de texte des commandes 101/102 communs à l'extracteur et à l'injecteur), extracteur, injecteur, garde d'intégrité, filtre, `dat_parser.rs`, `encoding.rs`, `v3_format/`, `layout/` (adaptateur `WolfTextBox`). `decrypt/` est du code mort (retrait prévu, plan UWF, UWF-7). |
+| `wolf/` | Fichiers libres de `Data/` seulement (ADR-008) : `sources.rs` (`WolfSources`, refuse les archives de texte ; `packed_state` repère un jeu encore empaqueté, marqueur `wolf_packed`), `unpack.rs` (déchiffrement d'un jeu empaqueté par la crate `unwolf`, **seul module qui importe unwolf**, ADR-010), `sites.rs` (sites de texte des commandes 101/102 communs à l'extracteur et à l'injecteur), extracteur, injecteur, garde d'intégrité, filtre, `dat_parser.rs`, `encoding.rs`, `v3_format/`, `layout/` (adaptateur `WolfTextBox`). |
 | `vx_ace/` | Extracteur et injecteur conservés, inatteignables tant que la détection est désactivée. |
 
 ### `db/`
