@@ -1508,3 +1508,53 @@ async fn wolf_export_preflight_announces_folding() {
     assert_eq!(wolf.accented_texts, 1);
     assert!(wolf.path_warning.is_none());
 }
+
+/// A Wolf RPG game still packed in its archives is refused at open with the
+/// `wolf_packed` marker (plan UWF, UWF-D7), so that the frontend offers to
+/// decrypt it; a folder that is no game keeps the "engine not found" error.
+#[tokio::test]
+async fn wolf_packed_game_is_refused_at_open_with_the_packed_marker() {
+    use hoshi2star_lib::engines::wolf::sources::WOLF_PACKED;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let game_root = tmp.path().join("game");
+    let data = game_root.join("Data");
+    std::fs::create_dir_all(&data).unwrap();
+    std::fs::write(game_root.join("Game.exe"), b"").unwrap();
+    std::fs::write(data.join("BasicData.wolf"), b"packed").unwrap();
+    std::fs::write(data.join("MapData.wolf"), b"packed").unwrap();
+    let not_a_game = tmp.path().join("photos");
+    std::fs::create_dir_all(&not_a_game).unwrap();
+
+    let db_file = tmp.path().join("h2s.db");
+    let app = mock_app(db_file.to_str().unwrap()).await;
+    let state = app.state::<AppState>();
+
+    let error = open_project(
+        game_root.to_str().unwrap().to_string(),
+        None,
+        None,
+        app.state(),
+    )
+    .await
+    .expect_err("a packed Wolf game cannot be opened before its decryption");
+    assert!(error.starts_with(WOLF_PACKED), "{error}");
+    assert!(error.contains("Data/MapData.wolf"), "{error}");
+    assert!(!error.contains("could not identify game engine"), "{error}");
+
+    let error = open_project(
+        not_a_game.to_str().unwrap().to_string(),
+        None,
+        None,
+        app.state(),
+    )
+    .await
+    .expect_err("a folder without a game is refused");
+    assert!(error.contains("could not identify game engine"), "{error}");
+
+    let projects: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects")
+        .fetch_one(&state.db)
+        .await
+        .unwrap();
+    assert_eq!(projects, 0, "no project may be created");
+}

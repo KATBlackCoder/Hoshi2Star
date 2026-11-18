@@ -114,3 +114,34 @@ tests déjà verts. Second passage : `cargo fmt --check` OK ; clippy OK ; `cargo
 `target` supprimé, puis compilation sans cache incrémental ni informations de débogage
 (`CARGO_INCREMENTAL=0`, `CARGO_PROFILE_DEV_DEBUG=0`, `CARGO_PROFILE_TEST_DEBUG=0`). Sans effet sur le code ni sur
 les résultats des tests.
+
+## UWF-3 — Détection de l'état empaqueté
+
+**Avant de coder (leçon du 2026-10-28).** `rg -l 'Game\.ini|Game\.exe|GamePro|MapData|BasicData'
+src-tauri/tests src-tauri/src` : 23 fichiers. Ceux qui fabriquent un jeu avec une archive `.wolf` puis appellent
+la détection ou l'ouverture (`detector.rs` `test_detect_wolf_packed_game_is_not_detected` et
+`test_guess_wolf_version_reports_text_archives_first`, `sources.rs`, `injector.rs`, `extractor.rs`
+`test_real_honoka_archive_is_refused`, `e2e_project_flow.rs` `wolf_game_with_a_text_archive_is_refused_at_open`)
+passent par `detect_engine`, `guess_wolf_version_from_structure`, `WolfSources` ou l'injecteur, que UWF-3 ne
+change pas : seul le message d'erreur d'`open_project` sur `UnknownEngine` change, et aucun test ne l'attendait
+pour un jeu empaqueté (`rg 'could not identify game engine'` : seulement le front et ses tests, qui simulent
+l'erreur). Aucun test existant modifié.
+
+**Fait.**
+- `engines/wolf/sources.rs` : `WOLF_PACKED = "wolf_packed"`, variante `SourcesError::Packed { archives }`
+  (message `wolf_packed: <archives>: …`), `PackedState { Packed, Loose, NotWolf }`, `packed_state(game_dir)`
+  (lanceur + au moins une entrée de `text_archives` + `is_wolf_game_dir` faux ⇒ `Packed` ; noms de fichiers
+  seulement, aucune archive ouverte) et `packed_error(game_dir)`.
+- `commands/project.rs` `open_project` : dans le `spawn_blocking` de détection, `UnknownEngine` devient
+  l'erreur `wolf_packed` quand `packed_state` vaut `Packed` ; sinon le message reste celui d'`UnknownEngine`.
+  `detect_engine` inchangé (`test_detect_wolf_packed_game_is_not_detected` toujours vert). Le cas « fichiers
+  libres + archives » reste `wolf_archive_present`.
+- Tests : `sources::tests::test_packed_state` (par dossiers, `Data.wolf` racine avec `GamePro.exe`, sans lanceur,
+  archive d'images seule, jeu déchiffré, jeu déchiffré + archive) ; e2e
+  `wolf_packed_game_is_refused_at_open_with_the_packed_marker` (marqueur `wolf_packed`, archives citées, pas de
+  « could not identify game engine », dossier sans jeu ⇒ message inchangé, aucun projet créé).
+
+**Écart au plan.** `packed_error` ajouté à côté de `packed_state` pour garder le message dans `sources.rs`.
+
+**Gate (UWF-3).** fmt OK ; clippy OK ; `cargo test` 862 réussis (+2), 0 échec, 15 ignorés ; typecheck OK ; lint
+0 erreur (10 avertissements) ; Vitest 201/201.
