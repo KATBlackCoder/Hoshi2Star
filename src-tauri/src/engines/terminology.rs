@@ -1,4 +1,5 @@
 use crate::core::terminology::types::PartOfSpeech;
+use crate::engines::detector::Engine;
 
 #[derive(Debug, Clone, Copy)]
 pub struct EngineSegmentContext<'a> {
@@ -26,9 +27,9 @@ pub trait EngineTerminologyAdapter: Send + Sync {
 }
 
 pub fn adapter_for(engine: &str) -> Option<&'static dyn EngineTerminologyAdapter> {
-    match engine {
-        "mv_mz" => Some(&crate::engines::mv_mz::terminology::MV_MZ_TERMINOLOGY_ADAPTER),
-        _ => None,
+    match Engine::from_db_str(engine) {
+        Some(Engine::MvMz) => Some(&crate::engines::mv_mz::terminology::MV_MZ_TERMINOLOGY_ADAPTER),
+        Some(Engine::VxAce | Engine::Wolf) | None => None,
     }
 }
 

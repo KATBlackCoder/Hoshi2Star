@@ -6,6 +6,7 @@
 mod mv_mz;
 mod wolf;
 
+use crate::engines::detector::Engine;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
@@ -108,10 +109,10 @@ pub async fn build_context_bundles(
     engine: &str,
     segment_ids: &[String],
 ) -> Result<Vec<SegmentContextBundle>, sqlx::Error> {
-    match engine {
-        "mv_mz" => mv_mz::build(db, segment_ids).await,
-        "wolf" => wolf::build(db, segment_ids).await,
-        _ => Ok(vec![SegmentContextBundle::default(); segment_ids.len()]),
+    match Engine::from_db_str(engine) {
+        Some(Engine::MvMz) => mv_mz::build(db, segment_ids).await,
+        Some(Engine::Wolf) => wolf::build(db, segment_ids).await,
+        Some(Engine::VxAce) | None => Ok(vec![SegmentContextBundle::default(); segment_ids.len()]),
     }
 }
 

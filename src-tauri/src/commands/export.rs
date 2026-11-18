@@ -12,6 +12,7 @@ use serde::Serialize;
 
 use std::io::Write as _;
 
+use crate::db::project_context::ProjectContext;
 use crate::{
     commands::{
         coverage::enabled_plugin_sources,
@@ -23,7 +24,7 @@ use crate::{
     core::{originals, report, text_fit, tm},
     domain::types::SourceFile,
     engines::{
-        detector::guess_wolf_version_from_structure,
+        detector::{guess_wolf_version_from_structure, Engine},
         filter::{classify_file_type, is_map_file, FileClass},
         mv_mz::{
             coverage::plugins::{context_is_fill_in, for_each_command, PLUGINS_FILE_NAME},
@@ -70,16 +71,16 @@ fn split_wolf_speaker_prefix(text: &str) -> (&str, &str) {
     }
 }
 
-fn font_prefix_code(engine: &str, n: u32) -> String {
-    if engine == "wolf" {
+fn font_prefix_code(engine: Option<Engine>, n: u32) -> String {
+    if engine == Some(Engine::Wolf) {
         format!("\\f[{n}]")
     } else {
         format!("\\FS[{n}]")
     }
 }
 
-fn font_prefix_re(engine: &str) -> &'static Regex {
-    if engine == "wolf" {
+fn font_prefix_re(engine: Option<Engine>) -> &'static Regex {
+    if engine == Some(Engine::Wolf) {
         &RE_FONT_PREFIX_WOLF
     } else {
         &RE_FONT_PREFIX_MVMZ
@@ -90,7 +91,8 @@ fn font_prefix_re(engine: &str) -> &'static Regex {
 /// speaker prefix, see [`RE_WOLF_SPEAKER_PREFIX`]), or replace the existing
 /// prefix when `replace_existing` is true.
 fn apply_font_prefix(text: &str, n: u32, replace_existing: bool, engine: &str) -> String {
-    let (speaker_prefix, rest) = if engine == "wolf" {
+    let engine = Engine::from_db_str(engine);
+    let (speaker_prefix, rest) = if engine == Some(Engine::Wolf) {
         split_wolf_speaker_prefix(text)
     } else {
         ("", text)
@@ -168,11 +170,10 @@ pub async fn scan_font_status(
             .fetch_one(&state.db)
             .await
             .map_err(|e| e.to_string())?,
-            (_, Some(pid)) => sqlx::query_as("SELECT id, engine FROM projects WHERE id = ?")
-                .bind(pid)
-                .fetch_one(&state.db)
-                .await
-                .map_err(|e| e.to_string())?,
+            (_, Some(pid)) => {
+                let project = ProjectContext::load(&state.db, pid).await?;
+                (project.id, project.engine_name)
+            }
             _ => return Err("source_file_id or project_id required".to_string()),
         };
 
@@ -202,7 +203,7 @@ pub async fn scan_font_status(
     // For mv_mz: prefix applies to Map files only.
     let texts: Vec<&str> = rows
         .iter()
-        .filter(|(ft, _)| engine != "mv_mz" || ft == "map")
+        .filter(|(ft, _)| Engine::from_db_str(&engine) != Some(Engine::MvMz) || ft == "map")
         .map(|(_, t)| t.as_str())
         .collect();
 
@@ -218,7 +219,7 @@ pub async fn scan_font_status(
         })
         .count() as i64;
 
-    let game_font_size = if engine == "wolf" {
+    let game_font_size = if Engine::from_db_str(&engine) == Some(Engine::Wolf) {
         text_fit::load_settings_for_engine(&state.db, &resolved_pid, "wolf")
             .await
             .map_err(|e| e.to_string())?
@@ -441,30 +442,24 @@ async fn write_export(
         zip_name,
         zip_comment,
     } = options;
-    let (game_path, engine, target_language): (String, String, String) =
-        sqlx::query_as("SELECT game_path, engine, target_language FROM projects WHERE id = ?")
-            .bind(project_id)
-            .fetch_one(&state.db)
-            .await
-            .map_err(|e| e.to_string())?;
+    let project = ProjectContext::load(&state.db, project_id).await?;
+    let files = project.source_files(&state.db).await?;
+    let mv_mz = project.is(Engine::MvMz);
+    let ProjectContext {
+        game_path,
+        engine_name: engine,
+        target_language,
+        ..
+    } = project;
 
     let game_dir = Path::new(&game_path);
-
-    let files = sqlx::query_as::<_, SourceFile>(
-        "SELECT id, project_id, file_name, file_path, file_type, translation_secs \
-         FROM source_files WHERE project_id = ?",
-    )
-    .bind(project_id)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| e.to_string())?;
 
     let mut entries: Vec<(String, Vec<u8>)> = Vec::new();
 
     // MV/MZ exports always start from the pristine originals, never from the
     // game folder (which may already hold a previous export, or a game update
     // the snapshot then follows).
-    let mut snapshot = if engine == "mv_mz" {
+    let mut snapshot = if mv_mz {
         Some(originals::ensure_fresh_mv_mz_snapshot(&state.db, &state.data_dir, project_id).await?)
     } else {
         None
@@ -510,14 +505,14 @@ async fn write_export(
         integrity_issues.extend(wolf_issues);
     } else {
         // Skill types renamed inside battle-command note tags (linked category).
-        let renames = if engine == "mv_mz" {
+        let renames = if mv_mz {
             linked_skill_type_renames(&state.db, project_id, scope).await?
         } else {
             HashMap::new()
         };
         // Text fitting (MZ): laid-out dialogue and descriptions replace their
         // rows; every other row is exported as before.
-        let fitted = if engine == "mv_mz" {
+        let fitted = if mv_mz {
             fitted_lines(state, project_id, font_size, replace_existing, scope).await?
         } else {
             HashMap::new()
@@ -535,7 +530,7 @@ async fn write_export(
                 .await
                 .map_err(|e| e.to_string())?;
 
-            let note_file = engine == "mv_mz" && NOTE_FILE_TYPES.contains(&file.file_type.as_str());
+            let note_file = mv_mz && NOTE_FILE_TYPES.contains(&file.file_type.as_str());
             let locale_here = locale_edit
                 .as_deref()
                 .filter(|_| file.file_name == "System.json");
@@ -556,7 +551,7 @@ async fn write_export(
             // For mv_mz: apply prefix to core Map segments only (optional
             // categories such as map display names are drawn without escape
             // codes, so a prefix would show up literally).
-            let should_prefix = engine != "mv_mz" || file.file_type == "map";
+            let should_prefix = !mv_mz || file.file_type == "map";
             let mut translations = with_font_prefix(
                 rows.into_iter()
                     .map(|(key, target, is_core, _)| (key, target, is_core))
@@ -747,20 +742,16 @@ pub async fn preflight_export(
     project_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<ExportPreflight, String> {
-    let (game_path, engine, target_language): (String, String, String) =
-        sqlx::query_as("SELECT game_path, engine, target_language FROM projects WHERE id = ?")
-            .bind(&project_id)
-            .fetch_one(&state.db)
-            .await
-            .map_err(|e| e.to_string())?;
-    if engine == "wolf" {
-        let wolf = wolf_preflight(&state.db, &project_id, &game_path).await?;
+    let project = ProjectContext::load(&state.db, &project_id).await?;
+    let engine = project.engine;
+    if engine == Some(Engine::Wolf) {
+        let wolf = wolf_preflight(&state.db, &project_id, &project.game_path).await?;
         return Ok(ExportPreflight {
             locale: None,
             wolf: Some(wolf),
         });
     }
-    if engine != "mv_mz" {
+    if engine != Some(Engine::MvMz) {
         return Ok(ExportPreflight {
             locale: None,
             wolf: None,
@@ -768,14 +759,12 @@ pub async fn preflight_export(
     }
     let store =
         originals::ensure_fresh_mv_mz_snapshot(&state.db, &state.data_dir, &project_id).await?;
-    let files = sqlx::query_as::<_, SourceFile>(
-        "SELECT id, project_id, file_name, file_path, file_type, translation_secs \
-         FROM source_files WHERE project_id = ?",
-    )
-    .bind(&project_id)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e| e.to_string())?;
+    let files = project.source_files(&state.db).await?;
+    let ProjectContext {
+        game_path,
+        target_language,
+        ..
+    } = project;
     let target = locale::target_locale(&target_language);
     let locale =
         tokio::task::spawn_blocking(move || locale_option(&store, &files, &game_path, &target))
@@ -1287,11 +1276,7 @@ pub async fn export_qa_report(
     lang: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    let project_title: String = sqlx::query_scalar("SELECT name FROM projects WHERE id = ?")
-        .bind(&project_id)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| e.to_string())?;
+    let project_title = ProjectContext::load(&state.db, &project_id).await?.name;
 
     let (total_checked, details) = report::collect_qa_details(&state.db, &project_id)
         .await
@@ -1355,11 +1340,9 @@ pub async fn export_debug_json(
         status: String,
     }
 
-    let game_path: String = sqlx::query_scalar("SELECT game_path FROM projects WHERE id = ?")
-        .bind(&project_id)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| e.to_string())?;
+    let game_path = ProjectContext::load(&state.db, &project_id)
+        .await?
+        .game_path;
 
     let rows: Vec<(String, String, String, String, String)> = sqlx::query_as(
         "SELECT sf.file_name, s.json_key, s.source_text, s.target_text, s.status \

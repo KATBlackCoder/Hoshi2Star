@@ -26,6 +26,7 @@ use crate::core::terminology::{
     resolver::QaTerminologyRule,
     types::{Enforcement, PartOfSpeech},
 };
+use crate::engines::detector::Engine;
 use crate::engines::wolf::layout::text::split_face_prefix;
 use crate::llm::tokenizer::{Engine as TokEngine, Tokenizer};
 use regex::Regex;
@@ -446,7 +447,7 @@ fn check_with_rules(
 ) -> QaResult {
     let mut errors: Vec<QaError> = Vec::new();
 
-    let line_config = if engine == "wolf" {
+    let line_config = if Engine::from_db_str(engine) == Some(Engine::Wolf) {
         LineWidthConfig::wolf_default()
     } else {
         LineWidthConfig::default()

@@ -16,7 +16,9 @@ use crate::core::originals;
 use crate::core::text_fit::font::{load_game_font, FontCache, Metrics};
 use crate::core::text_fit::writes_without_spaces;
 use crate::core::text_fit::{self, TextFitSettings};
+use crate::db::project_context::ProjectContext;
 use crate::domain::types::SourceFile;
+use crate::engines::detector::Engine;
 use crate::engines::filter::is_map_file;
 use crate::engines::mv_mz::coverage::plugins::PLUGINS_FILE_NAME;
 use crate::engines::mv_mz::layout::fit::FitContext;
@@ -92,27 +94,14 @@ pub async fn environment(
     fonts: &FontCache,
     project_id: &str,
 ) -> Result<Support, String> {
-    let (game_path, engine, target_language): (String, String, String) = sqlx::query_as(
-        "SELECT game_path, engine, COALESCE(target_language, 'en') FROM projects WHERE id = ?",
-    )
-    .bind(project_id)
-    .fetch_one(db)
-    .await
-    .map_err(|e| e.to_string())?;
-    if FitEngine::of(&engine) != FitEngine::Mz {
+    let project = ProjectContext::load(db, project_id).await?;
+    if FitEngine::of(project.engine) != FitEngine::Mz {
         return Ok(Support::Unsupported(
             "Text fitting is available for RPG Maker MZ games.".into(),
         ));
     }
     let store = originals::ensure_mv_mz_snapshot(db, data_dir, project_id).await?;
-    let files = sqlx::query_as::<_, SourceFile>(
-        "SELECT id, project_id, file_name, file_path, file_type, translation_secs \
-         FROM source_files WHERE project_id = ?",
-    )
-    .bind(project_id)
-    .fetch_all(db)
-    .await
-    .map_err(|e| e.to_string())?;
+    let files = project.source_files(db).await?;
     let Some(system_file) = files.iter().find(|f| f.file_name == "System.json") else {
         return Ok(Support::Unsupported(
             "System.json was not extracted.".into(),
@@ -127,8 +116,11 @@ pub async fn environment(
             "Text fitting is available for RPG Maker MZ games (this looks like MV).".into(),
         ));
     };
-    let system_rel =
-        originals::game_relative_path(&game_path, &system_file.file_path, &system_file.file_name);
+    let system_rel = originals::game_relative_path(
+        &project.game_path,
+        &system_file.file_path,
+        &system_file.file_name,
+    );
     let system: Value =
         serde_json::from_slice(&store.read(&system_rel).map_err(|e| e.to_string())?)
             .map_err(|e| format!("{system_rel}: {e}"))?;
@@ -179,7 +171,7 @@ pub async fn environment(
     };
     if let Some(actors_file) = files.iter().find(|f| f.file_name == "Actors.json") {
         let rel = originals::game_relative_path(
-            &game_path,
+            &project.game_path,
             &actors_file.file_path,
             &actors_file.file_name,
         );
@@ -203,10 +195,10 @@ pub async fn environment(
         font_path,
         plugins,
         inserts,
-        no_space_join: writes_without_spaces(&target_language),
+        no_space_join: writes_without_spaces(&project.target_language),
         store,
         files,
-        game_path,
+        game_path: project.game_path,
     })))
 }
 
@@ -299,13 +291,12 @@ pub enum FitEngine {
 }
 
 impl FitEngine {
-    /// The command layer's only reading of the engine stored in
-    /// `projects.engine` (plan DD, L1-D; L5 reads it as an `Engine`).
-    pub fn of(engine: &str) -> Self {
+    /// The adapter of a project's engine (plan DD, L1-D and L5).
+    pub fn of(engine: Option<Engine>) -> Self {
         match engine {
-            "mv_mz" => Self::Mz,
-            "wolf" => Self::Wolf,
-            _ => Self::Other,
+            Some(Engine::MvMz) => Self::Mz,
+            Some(Engine::Wolf) => Self::Wolf,
+            Some(Engine::VxAce) | None => Self::Other,
         }
     }
 }
@@ -315,13 +306,9 @@ async fn project_fit_engine(
     db: &SqlitePool,
     project_id: &str,
 ) -> Result<(String, FitEngine), String> {
-    let engine: String = sqlx::query_scalar("SELECT engine FROM projects WHERE id = ?")
-        .bind(project_id)
-        .fetch_one(db)
-        .await
-        .map_err(|e| e.to_string())?;
-    let fit_engine = FitEngine::of(&engine);
-    Ok((engine, fit_engine))
+    let project = ProjectContext::load(db, project_id).await?;
+    let fit_engine = FitEngine::of(project.engine);
+    Ok((project.engine_name, fit_engine))
 }
 
 /// `settings` once validated, or the project's saved settings (with the

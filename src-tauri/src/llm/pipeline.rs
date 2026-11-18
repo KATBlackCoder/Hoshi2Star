@@ -27,6 +27,7 @@
 //! Event payload types live in `progress.rs`.
 
 use crate::core::{qa, terminology::resolver, tm};
+use crate::engines::detector::Engine as GameEngine;
 use crate::llm::batch;
 use crate::llm::context::{self, PromptContextClass};
 use crate::llm::progress::{CoolingPayload, ProgressPayload, SegmentUpdatePayload};
@@ -507,9 +508,10 @@ where
         .await
         .map_err(|error| PipelineError::Database(error.to_string()))?;
 
+    let project_engine = GameEngine::from_db_str(&context.engine);
     for (unique_idx, seg) in unique_segs.iter().enumerate() {
         let original_index = seg.original_index;
-        let is_canonical = context.engine == "mv_mz"
+        let is_canonical = project_engine == Some(GameEngine::MvMz)
             && prompt_contexts
                 .get(original_index)
                 .and_then(Option::as_ref)
@@ -546,7 +548,7 @@ where
         // The current TM schema is source-hash-only. It cannot prove that an
         // MV/MZ dialogue/name came from the same semantic kind or scene, so do
         // not let a historical ambiguous entry bypass engine-owned context.
-        let allows_unscoped_tm = context.engine != "mv_mz"
+        let allows_unscoped_tm = project_engine != Some(GameEngine::MvMz)
             || prompt_contexts
                 .get(original_index)
                 .and_then(Option::as_ref)
@@ -595,7 +597,7 @@ where
                 .get(local_idx)
                 .and_then(Option::as_ref)
                 .map(|prompt_context| {
-                    if context.engine == "mv_mz" {
+                    if GameEngine::from_db_str(&context.engine) == Some(GameEngine::MvMz) {
                         context::mv_mz_context_class(&prompt_context.segment_kind)
                     } else {
                         PromptContextClass::Isolated

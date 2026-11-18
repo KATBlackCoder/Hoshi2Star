@@ -152,7 +152,7 @@ pub async fn open_project(
     // ahead of SQLite. MV/MZ JSON values are dropped immediately after each
     // file is converted to segments instead of retaining the whole game tree.
     let (file_sender, mut file_receiver) = tokio::sync::mpsc::channel(2);
-    let producer_engine = engine.clone();
+    let producer_engine = engine;
     let producer_game_dir = PathBuf::from(&path);
     let producer_data_dir = data_dir.clone();
     let extraction_worker = tokio::task::spawn_blocking(move || {
@@ -197,7 +197,7 @@ pub async fn open_project(
     // Snapshot the pristine MV/MZ files now, while extraction guarantees disk ==
     // source. A reused project id must not inherit an older snapshot. Failure is
     // not fatal: export captures (and reconstructs) lazily.
-    if engine_str == "mv_mz" {
+    if engine == Engine::MvMz {
         originals::remove_snapshot(&state.data_dir, &project_id);
         if let Err(error) =
             originals::ensure_mv_mz_snapshot(&state.db, &state.data_dir, &project_id).await

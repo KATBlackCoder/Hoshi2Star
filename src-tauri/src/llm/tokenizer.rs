@@ -106,7 +106,9 @@ impl Engine {
     /// to the placeholder pattern set to use. Only `"wolf"` gets Wolf-specific
     /// patterns; every other engine shares the RPG Maker (MV/MZ) patterns.
     pub fn from_project_engine(engine: &str) -> Self {
-        if engine == "wolf" {
+        if crate::engines::detector::Engine::from_db_str(engine)
+            == Some(crate::engines::detector::Engine::Wolf)
+        {
             Engine::Wolf
         } else {
             Engine::MvMz
