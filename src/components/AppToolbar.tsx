@@ -4,7 +4,6 @@ import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { cn, errorMessage } from "@/lib/utils";
-import { openProjectErrorKey, wolfReadErrorDetail } from "@/lib/projectError";
 import {
   Bug,
   Clock,
@@ -23,11 +22,8 @@ import {
   WrapText,
   type LucideIcon,
 } from "lucide-react";
-import {
-  getProjectLangPair,
-  openProject,
-  useProjectStore,
-} from "@/stores/project";
+import { getProjectLangPair, useProjectStore } from "@/stores/project";
+import { openGameFolder } from "@/stores/wolfUnpack";
 import { openCoverageDialog } from "@/stores/coverage";
 import { openTextFitDialog } from "@/stores/textFit";
 import {
@@ -235,11 +231,8 @@ export function AppToolbar({
 
     setIsOpening(true);
     try {
-      await openProject(selected as string);
-    } catch (err) {
-      toast.error(t(openProjectErrorKey(err)), {
-        description: wolfReadErrorDetail(err),
-      });
+      // A packed Wolf RPG game opens the decryption dialog instead of a toast.
+      await openGameFolder(selected as string);
     } finally {
       setIsOpening(false);
     }

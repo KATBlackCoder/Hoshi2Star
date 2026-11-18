@@ -1974,6 +1974,7 @@ dependencies = [
  "ttf-parser",
  "unicode-linebreak",
  "unicode-normalization",
+ "unwolf",
  "uuid",
  "zip 2.4.2",
 ]
@@ -6305,6 +6306,21 @@ name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
+
+[[package]]
+name = "unwolf"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c052501e8273a24260a7366afe171649a0aab7678e2a208c52787541b504567"
+dependencies = [
+ "encoding_rs",
+ "log",
+ "lz4_flex",
+ "memmap2",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
 
 [[package]]
 name = "ureq"

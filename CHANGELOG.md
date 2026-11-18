@@ -6,6 +6,12 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 ## [Unreleased]
 
 ### Added
+- Add Wolf RPG game decryption inside the app. Opening a Wolf RPG game still packed in `.wolf` archives (or one that keeps its text archives next to decrypted files) now offers to decrypt it, instead of asking you to run UberWolf first. The dialog says what changes in the game folder before anything is written:
+  - only the archives holding text are extracted as loose files in `Data/` (`Data/BasicData.wolf` and `Data/MapData.wolf`, or the whole `Data.wolf`); picture and sound archives stay packed, and a file already there is never replaced;
+  - a protected Wolf RPG Pro 3.5 game has its protection removed, with the original files kept in `Data/BasicData/backup/`; Pro v1 and v2 protections are refused (use UberWolf);
+  - once everything is extracted and the game is readable, the text archives are moved, never deleted, to `Hoshi2Star-archives/` in the game folder, so the game reads the translated files.
+
+  Progress is shown and the decryption can be stopped; nothing is moved then. Work on a copy of the game. Decryption uses the [unwolf](https://crates.io/crates/unwolf) library (MIT, a Rust port of UberWolf); its license ships with the app.
 - Add text fitting for Wolf RPG messages (off by default, toolbar "Text fitting"). Wolf RPG never wraps text, so long translations ran off the message window. At export, map and common-event messages are now laid out to the window. Your translations in the editor are never rewritten. How it works:
   - The window is measured on the game's own original map messages, in its own font file: line width in em and lines per window. You can set either by hand. On the Wolf 2.23 test game the measure (22 em, 4 lines) matches the window seen in game.
   - Stray line breaks are removed, such as the ones an AI translation leaves before a final "." or "!". The face prefix (`@N`), a speaker label line, blank lines and indented lines are kept. Each message is then rewrapped evenly, and codes are never split.

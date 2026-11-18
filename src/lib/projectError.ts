@@ -27,11 +27,17 @@ export function openProjectErrorKey(err: unknown): string {
 export const WOLF_ARCHIVE_PRESENT = "wolf_archive_present";
 export const WOLF_NO_DATABASE = "wolf_no_database";
 export const WOLF_UNREADABLE_FILES = "wolf_unreadable_files";
+/**
+ * A Wolf RPG game still packed in its archives (`WOLF_PACKED` in
+ * `engines/wolf/sources.rs`, plan UWF): the decryption is offered.
+ */
+export const WOLF_PACKED = "wolf_packed";
 
 const WOLF_READ_ERRORS = [
   [WOLF_ARCHIVE_PRESENT, "wolfArchivePresent"],
   [WOLF_NO_DATABASE, "wolfNoDatabase"],
   [WOLF_UNREADABLE_FILES, "wolfUnreadableFiles"],
+  [WOLF_PACKED, "wolfPacked"],
 ] as const;
 
 /** Key suffixes of the Wolf RPG read failures. */
@@ -52,4 +58,44 @@ export function wolfReadErrorDetail(err: unknown): string | undefined {
     if (at >= 0) return text.slice(at + marker.length).replace(/^:\s*/, "");
   }
   return undefined;
+}
+
+/**
+ * Kinds of `unpack_wolf_game` failure: each backend message starts with
+ * `wolf_unpack_<kind>` (`UnpackError` in `engines/wolf/unpack.rs`,
+ * `WOLF_UNPACK_BUSY` in `commands/wolf_unpack.rs`), mapped to the key suffix
+ * of `wolfUnpack.errors.*`.
+ */
+const WOLF_UNPACK_ERRORS = {
+  cancelled: "cancelled",
+  busy: "busy",
+  no_launcher: "noLauncher",
+  not_writable: "notWritable",
+  data_folder_present: "dataFolderPresent",
+  destination_exists: "destinationExists",
+  pro_unsupported: "proUnsupported",
+  extraction_failed: "extractionFailed",
+  protection_failed: "protectionFailed",
+  unprotect_failed: "unprotectFailed",
+  not_readable: "notReadable",
+  move_failed: "moveFailed",
+} as const;
+
+const WOLF_UNPACK_MARKER = /wolf_unpack_([a-z_]+?):\s*/;
+
+/** i18n key of a decryption failure, `wolfUnpack.errors.generic` if unknown. */
+export function wolfUnpackErrorKey(err: unknown): string {
+  const kind = WOLF_UNPACK_MARKER.exec(String(err))?.[1];
+  const key =
+    kind && Object.prototype.hasOwnProperty.call(WOLF_UNPACK_ERRORS, kind)
+      ? WOLF_UNPACK_ERRORS[kind as keyof typeof WOLF_UNPACK_ERRORS]
+      : "generic";
+  return `wolfUnpack.errors.${key}`;
+}
+
+/** The backend detail after the decryption marker, or the whole message. */
+export function wolfUnpackErrorDetail(err: unknown): string {
+  const text = String(err).replace(/^Error:\s*/, "");
+  const match = WOLF_UNPACK_MARKER.exec(text);
+  return match ? text.slice(match.index + match[0].length) : text;
 }

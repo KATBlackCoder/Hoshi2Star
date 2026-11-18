@@ -12,6 +12,8 @@ pub(crate) mod sites;
 #[cfg(test)]
 mod sites_characterisation;
 pub mod sources;
+// The only module importing the `unwolf` crate (plan UWF, UWF-D11).
+pub mod unpack;
 pub(crate) mod v3_format;
 
 pub use layout::fit::WolfTextBox;

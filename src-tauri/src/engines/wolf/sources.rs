@@ -17,11 +17,15 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::engines::detector::find_wolf_data_dir;
+use crate::engines::detector::{find_wolf_data_dir, is_wolf_game_dir, WOLF_LAUNCHERS};
 
 /// Stable marker at the start of [`SourcesError::ArchivePresent`], matched by
 /// the frontend.
 pub const WOLF_ARCHIVE_PRESENT: &str = "wolf_archive_present";
+
+/// Stable marker at the start of [`SourcesError::Packed`], matched by the
+/// frontend, which then offers to decrypt the game (plan UWF, UWF-D7).
+pub const WOLF_PACKED: &str = "wolf_packed";
 
 #[derive(Debug, thiserror::Error)]
 pub enum SourcesError {
@@ -32,6 +36,14 @@ pub enum SourcesError {
         marker = WOLF_ARCHIVE_PRESENT
     )]
     ArchivePresent { archives: String },
+    /// A Wolf RPG game whose text is still only in archives: no engine is
+    /// detected, but the app can decrypt it (`engines::wolf::unpack`).
+    #[error(
+        "{marker}: {archives}: this Wolf RPG game is still packed in .wolf archives; \
+         decrypt it before opening it",
+        marker = WOLF_PACKED
+    )]
+    Packed { archives: String },
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -116,6 +128,44 @@ pub(crate) fn refuse_text_archives(game_dir: &Path) -> Result<(), SourcesError> 
             archives: archives.join(", "),
         })
     }
+}
+
+/// What a game folder holds, asked when no engine was detected in it
+/// (plan UWF, UWF-D7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PackedState {
+    /// A Wolf RPG launcher and at least one text archive ([`text_archives`]),
+    /// without the loose files of a decrypted game.
+    Packed,
+    /// The loose files of a decrypted game ([`is_wolf_game_dir`]), with or
+    /// without text archives beside them.
+    Loose,
+    /// Not a Wolf RPG game.
+    NotWolf,
+}
+
+/// Whether `game_dir` is a Wolf RPG game still packed in its archives. Only
+/// file names are looked at: no archive is opened.
+pub fn packed_state(game_dir: &Path) -> PackedState {
+    if is_wolf_game_dir(game_dir) {
+        return PackedState::Loose;
+    }
+    let has_launcher = WOLF_LAUNCHERS
+        .iter()
+        .any(|name| game_dir.join(name).exists());
+    if has_launcher && !text_archives(game_dir).is_empty() {
+        PackedState::Packed
+    } else {
+        PackedState::NotWolf
+    }
+}
+
+/// The error of an open that found no engine in `game_dir`: [`SourcesError::Packed`]
+/// for a packed Wolf RPG game, `None` otherwise (the detection error stands).
+pub fn packed_error(game_dir: &Path) -> Option<SourcesError> {
+    (packed_state(game_dir) == PackedState::Packed).then(|| SourcesError::Packed {
+        archives: text_archives(game_dir).join(", "),
+    })
 }
 
 impl WolfSources {
@@ -206,6 +256,45 @@ mod tests {
         write(&basic_data.join("SysDataBaseBasic.dat"), b"dat");
         write(&basic_data.join("CommonEvent.dat"), b"events");
         game
+    }
+
+    #[test]
+    fn test_packed_state() {
+        let split = tempfile::tempdir().unwrap();
+        write(&split.path().join("Game.exe"), b"mock");
+        write(&split.path().join("Data").join("BasicData.wolf"), b"");
+        write(&split.path().join("Data").join("MapData.wolf"), b"");
+        write(&split.path().join("Data").join("Picture.wolf"), b"");
+        assert_eq!(packed_state(split.path()), PackedState::Packed);
+
+        let root = tempfile::tempdir().unwrap();
+        write(&root.path().join("GamePro.exe"), b"mock");
+        write(&root.path().join("Data.wolf"), b"");
+        assert_eq!(packed_state(root.path()), PackedState::Packed);
+        let error = packed_error(root.path()).unwrap();
+        assert!(matches!(error, SourcesError::Packed { ref archives } if archives == "Data.wolf"));
+        assert!(error.to_string().starts_with(WOLF_PACKED), "{error}");
+
+        let no_launcher = tempfile::tempdir().unwrap();
+        write(&no_launcher.path().join("Data.wolf"), b"");
+        assert_eq!(packed_state(no_launcher.path()), PackedState::NotWolf);
+        assert!(packed_error(no_launcher.path()).is_none());
+
+        let pictures_only = tempfile::tempdir().unwrap();
+        write(&pictures_only.path().join("Game.exe"), b"mock");
+        write(&pictures_only.path().join("Data").join("Picture.wolf"), b"");
+        assert_eq!(packed_state(pictures_only.path()), PackedState::NotWolf);
+
+        let decrypted = decrypted_game();
+        write(&decrypted.path().join("Game.exe"), b"mock");
+        assert_eq!(packed_state(decrypted.path()), PackedState::Loose);
+        write(&decrypted.path().join("Data.wolf"), b"");
+        assert_eq!(
+            packed_state(decrypted.path()),
+            PackedState::Loose,
+            "loose files beside an archive stay `wolf_archive_present`"
+        );
+        assert!(packed_error(decrypted.path()).is_none());
     }
 
     #[test]

@@ -841,3 +841,38 @@ export interface ResyncSummary {
   /** Enabled categories no longer offered (or now blocked): left as they are. */
   untouchedCategories: string[];
 }
+
+// ---------------------------------------------------------------------------
+// Wolf RPG decryption (plan UWF) — `engines/wolf/unpack.rs`
+// ---------------------------------------------------------------------------
+
+/** State of the Wolf RPG Pro protection after a decryption. */
+export type ProProtection = "notPro" | "alreadyUnprotected" | "removedV35";
+
+export interface ArchiveFailure {
+  archive: string;
+  error: string;
+}
+
+/** What `unpack_wolf_game` did. Paths are relative to the game folder. */
+export interface UnpackReport {
+  extracted: string[];
+  /** Output folder already there: left as it was. */
+  alreadyUnpacked: string[];
+  skipped: string[];
+  /** Archives holding no text that could not be extracted. */
+  failed: ArchiveFailure[];
+  /** `null` when there was nothing to decrypt. */
+  protection: ProProtection | null;
+  unprotectedFiles: string[];
+  /** Text archives moved to `Hoshi2Star-archives/`. */
+  moved: string[];
+  warnings: string[];
+}
+
+/** Payload of `h2s://wolf/unpack-progress`. */
+export interface UnpackProgress {
+  archive: string;
+  index: number;
+  total: number;
+}

@@ -32,6 +32,7 @@ import {
 import type { Project, ProjectStats } from "@/lib/types";
 import { engineLabel, relativeDate } from "@/lib/format";
 import { openProjectErrorKey, wolfReadErrorDetail } from "@/lib/projectError";
+import { openGameFolder } from "@/stores/wolfUnpack";
 import { STATUS_SUMMARY } from "@/lib/statusSummary";
 import { queryKeys } from "@/lib/queryClient";
 import { toast } from "sonner";
@@ -119,11 +120,8 @@ export function ProjectList() {
     if (!selected) return;
     setOpeningNew(true);
     try {
-      await openProject(selected as string);
-    } catch (err) {
-      toast.error(t(openProjectErrorKey(err)), {
-        description: wolfReadErrorDetail(err),
-      });
+      // A packed Wolf RPG game opens the decryption dialog instead of a toast.
+      await openGameFolder(selected as string);
     } finally {
       setOpeningNew(false);
     }

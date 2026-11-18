@@ -20,6 +20,7 @@ import { ExportIntegrityDialog } from "@/components/ExportIntegrityDialog";
 import { ExportFitSummary } from "@/components/ExportFitSummary";
 import { TextFitDialog } from "@/components/TextFitDialog";
 import { ResyncDialog } from "@/components/ResyncDialog";
+import { WolfUnpackDialog } from "@/components/WolfUnpackDialog";
 import { openResyncDialog } from "@/stores/resync";
 import { useProjectStore } from "@/stores/project";
 import type { useAppHandlers } from "@/hooks/useAppHandlers";
@@ -205,6 +206,8 @@ export function AppDialogs({ handlers }: AppDialogsProps) {
       <TextCoverageDialog projectId={activeProjectId} />
 
       <TextFitDialog projectId={activeProjectId} />
+
+      <WolfUnpackDialog />
     </>
   );
 }

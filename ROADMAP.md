@@ -25,7 +25,7 @@
 | Moteur | Statut | Priorité |
 |--------|--------|---------|
 | RPG Maker MV/MZ | ✅ Supporté | — |
-| Wolf RPG (2.x, 3.x, Pro, WolfX) | ✅ Supporté depuis le `Data/` déchiffré par UberWolf (ADR-008) ; archives `.wolf` de textes refusées | — |
+| Wolf RPG (2.x, 3.x, Pro, WolfX) | ✅ Supporté depuis les fichiers libres de `Data/` (ADR-008) ; jeu empaqueté déchiffré dans l'app par unwolf (ADR-010), UberWolf en recours | — |
 | RPG Maker VX Ace | ⏸ Code prêt, désactivé (détection commentée) | Post-consolidation |
 | RPG Developer Bakin | 🔜 Étude faite, pas de code | Basse |
 | Autres (Ren'Py, Kirikiri) | 🔜 Backlog | Si demande |
@@ -92,8 +92,11 @@
 - [x] Wolf lu depuis le `Data/` déchiffré par UberWolf (plan UW, ADR-008) : jeux Pro (`GamePro.exe`), encodage
       par n'importe quelle base, refus `wolf_archive_present` / `wolf_no_database` expliqués dans l'interface,
       filtre des chemins suivis de lignes numériques ; procédure `docs/engines/wolf-uberwolf.md`
+- [~] Déchiffrement d'un jeu Wolf empaqueté dans l'app (plan UWF, ADR-010) : crate `unwolf` 0.2 importée par
+      `engines/wolf/unpack.rs` seul, archives de texte extraites puis mises de côté dans `Hoshi2Star-archives/`,
+      levée de la protection Pro 3.5, dialogue `WolfUnpackDialog` ; UWF-1 à UWF-6 faits, essai réel (UWF-V) à faire
 - [ ] Essai en jeu d'un export de l'app (UW-9) : とのかじ 3.723, ポンコツ 3.714, 3.658 déchiffré
-- [ ] Retrait du code d'archive `engines/wolf/decrypt/` (lot UW-R, après UW-9)
+- [ ] Retrait du code d'archive `engines/wolf/decrypt/` (lot UWF-7, reprend UW-R, après UWF-V)
 - [ ] Instantané d'origine Wolf (UW-D5 reporté) : aujourd'hui `Data/` traduit sert de source à l'export suivant
 - [ ] Coupe de ligne après un trait d'union (« H- ⏎ scenes ») dans la recoupe des messages
 
@@ -114,7 +117,7 @@
 ### Consolidation
 
 - [ ] ADR pour l'usage personnel (fournisseur unique) et les décisions F4/F5 : terminologie, resync et orphelins,
-      export d'essai (dernier ADR : ADR-008, Wolf lu depuis le `Data/` déchiffré par UberWolf)
+      export d'essai (dernier ADR : ADR-010, jeu Wolf déchiffré dans l'app par unwolf)
 - [ ] `docs/engines.md` : aujourd'hui `docs/engines/` MV/MZ et `wolf-uberwolf.md` ; formats Wolf à documenter
 - [ ] `CONTEXT.md` à jour (terminologie, resync, mise en page, `WolfSources`)
 - [ ] `docs/architecture.md` : retirer la monétisation et le support natif WolfX annoncés

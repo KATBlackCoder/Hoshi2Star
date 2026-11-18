@@ -249,9 +249,15 @@ pub enum WolfVersionError {
 /// refused first ([`crate::engines::wolf::sources::refuse_text_archives`]).
 pub fn guess_wolf_version_from_structure(game_dir: &Path) -> Result<WolfVersion, WolfVersionError> {
     crate::engines::wolf::sources::refuse_text_archives(game_dir)?;
-    let basic_data = find_wolf_data_dir(game_dir)
-        .map(|data_dir| data_dir.join("BasicData"))
-        .ok_or(WolfVersionError::NoDatabase)?;
+    wolf_database_version(game_dir).ok_or(WolfVersionError::NoDatabase)
+}
+
+/// The version declared by the first readable database of `Data/BasicData/`
+/// ([`WOLF_DATABASES`], any case), without looking at the archives: also used
+/// by [`crate::engines::wolf::unpack`] to check a freshly extracted game
+/// before its archives are moved aside.
+pub(crate) fn wolf_database_version(game_dir: &Path) -> Option<WolfVersion> {
+    let basic_data = find_wolf_data_dir(game_dir)?.join("BasicData");
     let entries: Vec<std::path::PathBuf> = std::fs::read_dir(&basic_data)
         .map(|entries| entries.flatten().map(|entry| entry.path()).collect())
         .unwrap_or_default();
@@ -264,7 +270,6 @@ pub fn guess_wolf_version_from_structure(game_dir: &Path) -> Result<WolfVersion,
             })
         })
         .find_map(|path| wolf_version_from_database(&read_database_header(path)?))
-        .ok_or(WolfVersionError::NoDatabase)
 }
 
 /// The first 10 bytes of a database (indicator + magic): a `DataBase.dat` can
@@ -298,7 +303,7 @@ fn wolf_version_from_database(bytes: &[u8]) -> Option<WolfVersion> {
 
 /// Launchers of a Wolf RPG game: `Game.exe`, `GamePro.exe` (Wolf Pro) or
 /// `Game.ini` (plan UW, UW-D3).
-const WOLF_LAUNCHERS: [&str; 3] = ["Game.exe", "GamePro.exe", "Game.ini"];
+pub(crate) const WOLF_LAUNCHERS: [&str; 3] = ["Game.exe", "GamePro.exe", "Game.ini"];
 
 /// Returns `true` if the directory looks like a Wolf RPG game root whose data
 /// was decrypted by UberWolf (plan UW, UW-D3).

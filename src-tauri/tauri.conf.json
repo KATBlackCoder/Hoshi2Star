@@ -29,7 +29,8 @@
     "targets": "all",
     "createUpdaterArtifacts": true,
     "resources": [
-      "resources/licenses/lindera-ipadic-NOTICE.txt"
+      "resources/licenses/lindera-ipadic-NOTICE.txt",
+      "resources/licenses/unwolf-NOTICE.txt"
     ],
     "icon": [
       "icons/32x32.png",

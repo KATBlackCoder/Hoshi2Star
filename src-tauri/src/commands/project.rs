@@ -11,11 +11,12 @@ use crate::{
     core::{manifest, originals, qa, tm},
     domain::types::*,
     engines::{
-        detector::{detect_engine, guess_wolf_version_from_structure, Engine},
+        detector::{detect_engine, guess_wolf_version_from_structure, DetectionError, Engine},
         filter,
         mv_mz::extractor,
         vx_ace::extractor as vx_extractor,
         wolf::extractor as wolf_extractor,
+        wolf::sources as wolf_sources,
     },
     state::AppState,
 };
@@ -108,7 +109,13 @@ pub async fn open_project(
     let setup_path = path.clone();
     let (engine, data_dir, game_title) = tokio::task::spawn_blocking(move || {
         let game_dir = PathBuf::from(&setup_path);
-        let engine = detect_engine(&game_dir).map_err(|e| e.to_string())?;
+        // A Wolf RPG game still packed is not detected; tell the frontend so it
+        // can offer to decrypt it (plan UWF, UWF-D7).
+        let engine = detect_engine(&game_dir).map_err(|error| match error {
+            DetectionError::UnknownEngine => wolf_sources::packed_error(&game_dir)
+                .map_or_else(|| error.to_string(), |packed| packed.to_string()),
+            other => other.to_string(),
+        })?;
         let data_dir = engine.data_dir(&game_dir)?;
         let game_title = engine.game_title(&game_dir, &data_dir).unwrap_or_else(|| {
             game_dir

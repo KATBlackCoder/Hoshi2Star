@@ -75,6 +75,12 @@
       `*.project` à la création du projet (comme `core/originals.rs` pour MV/MZ). Aujourd'hui, une fois l'export
       appliqué, `Data/` contient des traductions : un segment remis à vide garderait l'ancienne traduction et une
       réextraction lirait des traductions comme source. Prérequis d'une garde « jeu mis à jour » Wolf.
+      Base possible depuis le plan UWF : les archives de texte d'un jeu déchiffré par l'app sont gardées intactes
+      dans `<jeu>/Hoshi2Star-archives/` (ADR-010).
+- [ ] **Police d'ajustement d'un jeu Wolf** (UWF-D6, hors plan UWF) : `find_game_font`
+      (`engines/wolf/layout/mod.rs`) ne cherche qu'à la racine et exige une seule police, alors que とのかじ en a
+      deux, chiffrées (`Data/Font00.otf.wolfx`, `Data/Font01.otf.wolfx`). Choisir la police d'après le nom lu
+      dans le jeu, puis déchiffrer celle-là (WolfX, par unwolf : ADR-010).
 - [ ] **Fichiers texte propres à un jeu** (UW-D8) : `Evtext/*.txt` de ポンコツ 3.714 (~9 740 lignes) lus par les
       événements du jeu ; format et chargement à étudier avant tout code (prologue non vérifié en jeu).
 

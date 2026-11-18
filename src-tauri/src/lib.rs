@@ -39,6 +39,7 @@ use commands::text_fit::{
 use commands::translate::{
     cancel_translation, get_provider_models, translate_all_segments, translate_segments,
 };
+use commands::wolf_unpack::{cancel_wolf_unpack, unpack_wolf_game};
 use state::AppState;
 use tauri::Manager;
 
@@ -122,6 +123,8 @@ pub fn run() {
             get_text_coverage_status,
             scan_text_coverage,
             set_text_categories,
+            unpack_wolf_game,
+            cancel_wolf_unpack,
         ]);
 
     #[cfg(debug_assertions)]
