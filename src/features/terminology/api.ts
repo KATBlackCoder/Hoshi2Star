@@ -8,7 +8,7 @@ import type {
   TerminologyEntry,
   TerminologyEntryStatus,
   GlobalizeTranslationsSummary,
-  TerminologyScope,
+  TerminologyTranslateScope,
   TerminologyStats,
   TerminologyTranslateDone,
   TerminologyTranslateProgress,
@@ -82,7 +82,7 @@ export const terminologyApi = {
     entryIds: string[];
     targetLanguage: string;
     projectId: string | null;
-    scope: TerminologyScope | "both";
+    scope: TerminologyTranslateScope;
     providerConfig: ProviderConfig;
   }) => invoke<{ jobId: string }>("translate_terminology_entries", { input }),
   globalize: (input: {

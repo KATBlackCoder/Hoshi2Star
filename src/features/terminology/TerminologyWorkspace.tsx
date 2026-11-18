@@ -40,6 +40,7 @@ import { TerminologyToolbar } from "./TerminologyToolbar";
 import { useTerminologyUiStore } from "./terminologyUiStore";
 import { useTranslation } from "react-i18next";
 import { WorkspaceState } from "@/components/common/WorkspaceState";
+import { errorMessage } from "@/lib/utils";
 
 const PAGE_SIZE = 100;
 
@@ -169,7 +170,7 @@ export function TerminologyWorkspace() {
       await invalidate();
       toast.success(t("terminology.saved"));
     },
-    onError: (error) => toast.error(String(error)),
+    onError: (error) => toast.error(errorMessage(error)),
   });
   const archive = useMutation({
     mutationFn: (entryId: string) => terminologyApi.archive(entryId),
@@ -178,7 +179,7 @@ export function TerminologyWorkspace() {
       await invalidate();
       toast.success(t("terminology.archivedDone"));
     },
-    onError: (error) => toast.error(String(error)),
+    onError: (error) => toast.error(errorMessage(error)),
   });
   const deleteEntries = useMutation({
     mutationFn: (entryIds: string[]) => terminologyApi.deleteEntries(entryIds),
@@ -196,7 +197,7 @@ export function TerminologyWorkspace() {
       await invalidate();
       toast.success(t("terminology.deletedDone", { count: deleted }));
     },
-    onError: (error) => toast.error(String(error)),
+    onError: (error) => toast.error(errorMessage(error)),
   });
   const globalize = useMutation({
     mutationFn: async (request: NonNullable<typeof globalizeRequest>) => {
@@ -227,7 +228,7 @@ export function TerminologyWorkspace() {
         }),
       );
     },
-    onError: (error) => toast.error(String(error)),
+    onError: (error) => toast.error(errorMessage(error)),
   });
 
   async function startScan() {
@@ -242,7 +243,7 @@ export function TerminologyWorkspace() {
         discovered: 0,
       });
     } catch (error) {
-      toast.error(String(error));
+      toast.error(errorMessage(error));
     }
   }
   const canScan = Boolean(

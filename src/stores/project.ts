@@ -12,6 +12,7 @@ import { invalidateSegmentViews } from "@/lib/queryClient";
 import { applyPostOpenCoverage, openCoverageDialog } from "@/stores/coverage";
 import { useSettingsStore } from "@/stores/settings";
 import { useUiStore } from "@/stores/ui";
+import { errorMessage } from "@/lib/utils";
 
 interface ProjectState {
   projects: Project[];
@@ -143,7 +144,7 @@ export async function openProject(
         );
       }
     } catch (err) {
-      toast.warning(t("coverage.scanFailed", { error: String(err) }));
+      toast.warning(t("coverage.scanFailed", { error: errorMessage(err) }));
     }
   }
 

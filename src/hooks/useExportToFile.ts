@@ -3,6 +3,7 @@ import { save, type SaveDialogOptions } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
+import { errorMessage } from "@/lib/utils";
 
 interface ExportToFileConfig<R> {
   /** Options passed to the native save dialog (filters, defaultPath, …). */
@@ -45,7 +46,7 @@ export function useExportToFile() {
     try {
       path = await save(dialog);
     } catch (e) {
-      toast.error(t(errorKey, { error: String(e) }));
+      toast.error(t(errorKey, { error: errorMessage(e) }));
       return false;
     }
     if (!path) return false;
@@ -55,7 +56,7 @@ export function useExportToFile() {
       toast.success(t(successKey, successParams?.(result)));
       return true;
     } catch (e) {
-      toast.error(t(errorKey, { error: String(e) }));
+      toast.error(t(errorKey, { error: errorMessage(e) }));
       return false;
     } finally {
       setIsExporting(false);

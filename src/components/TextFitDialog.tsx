@@ -24,6 +24,7 @@ import { useEditorStore } from "@/stores/editor";
 import { useShallow } from "zustand/react/shallow";
 import { rescanTextFit, saveTextFit, useTextFitStore } from "@/stores/textFit";
 import { useUiStore } from "@/stores/ui";
+import { errorMessage } from "@/lib/utils";
 
 interface TextFitDialogProps {
   projectId: string | null;
@@ -127,7 +128,7 @@ export function TextFitDialog({ projectId }: TextFitDialogProps) {
       toast.success(t("textFit.saved"));
       setOpen(false);
     } catch (err) {
-      toast.error(String(err));
+      toast.error(errorMessage(err));
     } finally {
       setSaving(false);
     }

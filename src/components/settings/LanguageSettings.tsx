@@ -39,50 +39,16 @@ export function LanguageSettings({
           {t("settings.translation.section")}
         </h4>
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium">
-              {t("settings.translation.source")}
-            </label>
-            <Select
-              value={draft.defaultSourceLang}
-              onValueChange={(defaultSourceLang) =>
-                onChange({ defaultSourceLang })
-              }
-            >
-              <SelectTrigger className="min-h-10 w-full text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {GAME_LANGUAGES.map((language) => (
-                  <SelectItem key={language.code} value={language.code}>
-                    {language.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium">
-              {t("settings.translation.target")}
-            </label>
-            <Select
-              value={draft.defaultTargetLang}
-              onValueChange={(defaultTargetLang) =>
-                onChange({ defaultTargetLang })
-              }
-            >
-              <SelectTrigger className="min-h-10 w-full text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {GAME_LANGUAGES.map((language) => (
-                  <SelectItem key={language.code} value={language.code}>
-                    {language.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <LanguageSelect
+            label={t("settings.translation.source")}
+            value={draft.defaultSourceLang}
+            onValueChange={(defaultSourceLang) => onChange({ defaultSourceLang })}
+          />
+          <LanguageSelect
+            label={t("settings.translation.target")}
+            value={draft.defaultTargetLang}
+            onValueChange={(defaultTargetLang) => onChange({ defaultTargetLang })}
+          />
         </div>
       </div>
 
@@ -110,5 +76,34 @@ export function LanguageSettings({
         </div>
       </div>
     </section>
+  );
+}
+
+/** One game-language picker with its label. */
+function LanguageSelect({
+  label,
+  value,
+  onValueChange,
+}: {
+  label: string;
+  value: string;
+  onValueChange: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-medium">{label}</label>
+      <Select value={value} onValueChange={onValueChange}>
+        <SelectTrigger className="min-h-10 w-full text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {GAME_LANGUAGES.map((language) => (
+            <SelectItem key={language.code} value={language.code}>
+              {language.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import type { ResyncSummary } from "@/lib/types";
+import { errorMessage } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Realignment after a game update (MV/MZ)
@@ -23,6 +24,19 @@ export const useResyncStore = create<ResyncState>()((set) => ({
   setOpen: (open) => set({ open }),
 }));
 
+/** Ask the backend for the realignment, applied or as a preview. */
+async function runResync(projectId: string, apply: boolean): Promise<void> {
+  try {
+    const summary = await invoke<ResyncSummary>("resync_project", {
+      projectId,
+      apply,
+    });
+    useResyncStore.setState({ summary, loading: false });
+  } catch (err) {
+    useResyncStore.setState({ loading: false, error: errorMessage(err) });
+  }
+}
+
 /** Open the dialog with a preview: nothing is written yet. */
 export async function openResyncDialog(projectId: string): Promise<void> {
   useResyncStore.setState({
@@ -31,28 +45,12 @@ export async function openResyncDialog(projectId: string): Promise<void> {
     summary: null,
     error: null,
   });
-  try {
-    const summary = await invoke<ResyncSummary>("resync_project", {
-      projectId,
-      apply: false,
-    });
-    useResyncStore.setState({ summary, loading: false });
-  } catch (err) {
-    useResyncStore.setState({ loading: false, error: String(err) });
-  }
+  await runResync(projectId, false);
 }
 
 /** Apply the realignment (recomputed by the backend, in one transaction). */
 export async function applyResync(projectId: string): Promise<void> {
   useResyncStore.setState({ loading: true, error: null });
-  try {
-    const summary = await invoke<ResyncSummary>("resync_project", {
-      projectId,
-      apply: true,
-    });
-    // The backend emits `h2s://project/resynced`: the views refresh from it.
-    useResyncStore.setState({ summary, loading: false });
-  } catch (err) {
-    useResyncStore.setState({ loading: false, error: String(err) });
-  }
+  // The backend emits `h2s://project/resynced`: the views refresh from it.
+  await runResync(projectId, true);
 }

@@ -14,6 +14,7 @@ import type {
   TextFitView,
 } from "@/lib/types";
 import { wolfReadErrorDetail, wolfReadErrorKey } from "@/lib/projectError";
+import { errorMessage } from "@/lib/utils";
 
 const INTEGRITY_ERROR_PREFIX = "Export blocked: the integrity check found";
 
@@ -78,7 +79,7 @@ export function useAppHandlers() {
       setExportFit(await loadFitSummary(activeProjectId));
       setExportDialog("confirm");
     } catch (err) {
-      toast.error(t("toasts.exportError", { error: String(err) }));
+      toast.error(t("toasts.exportError", { error: errorMessage(err) }));
     }
   }
 
@@ -154,7 +155,7 @@ export function useAppHandlers() {
         description: wolfReadErrorDetail(err),
       });
     } else {
-      toast.error(t("toasts.exportError", { error: String(err) }));
+      toast.error(t("toasts.exportError", { error: errorMessage(err) }));
     }
   }
 
@@ -217,7 +218,7 @@ export function useAppHandlers() {
       setTranslateAllStats(stats);
       setShowTranslateAll(true);
     } catch (err) {
-      toast.error(t("toasts.translateAllError", { error: String(err) }));
+      toast.error(t("toasts.translateAllError", { error: errorMessage(err) }));
     }
   }
 
