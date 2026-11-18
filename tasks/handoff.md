@@ -1,16 +1,19 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-11-18 — Claude (session cloud).
+**Mis à jour :** 2026-11-18 — Claude (session locale, UWF-V).
 **Objectif utilisateur :** objectif 2, déchiffrer un jeu Wolf dans l'app avec unwolf (plan UWF, en tête de `tasks/todo.md`).
-**Statut :** UWF-1 à UWF-6 fusionnés dans `main` (PR #41, commit de fusion `2b6151925`) ; UWF-V (essai réel) à faire.
+**Statut :** UWF-1 à UWF-6 fusionnés dans `main` (PR #41). **UWF-V fait le 2026-11-18** : déchiffrement, annulation,
+reprise, levée Pro 3.5, traduction, export et essai en jeu (UWF-D3) validés sur les deux jeux, en anglais
+(journal `docs/journal/2026-11-18-uwf-v.md`). Accents français absents en jeu sur 離れでメイド : hors UWF, à
+examiner à part. **Prochaine action : UWF-7** (retrait de `engines/wolf/decrypt/`, PR séparée). Branches `feat/wolf-unwolf` et `chore/uwf-tracking` supprimées (local et `origin`).
 
 ## Implémentation UWF (2026-11-18, Claude, session cloud) — UWF-1 à UWF-6 faits et fusionnés
 
 - Journal : `docs/journal/2026-11-18-uwf-implementation.md` (une section par étape, gate, écarts au plan, limites).
 - PR [KATBlackCoder/Hoshi2Star#41](https://github.com/KATBlackCoder/Hoshi2Star/pull/41) : 6 commits sur
   `feat/wolf-unwolf` (`2c14cfc` UWF-1 … `e7cd00f` UWF-6), **fusionnée le 2026-11-18** à la demande de
-  l'utilisateur (`main` @ `2b61519`, contenu identique à `e7cd00f`). Branche `feat/wolf-unwolf` encore présente
-  (locale et `origin`), à supprimer seulement avec l'accord de l'utilisateur.
+  l'utilisateur (`main` @ `2b61519`, contenu identique à `e7cd00f`). Branche `feat/wolf-unwolf` supprimée
+  le 2026-11-18 par l'utilisateur.
 - Gate cloud sur `e7cd00f` : fmt OK, clippy `--all-targets -D warnings` OK, `cargo test` 867 réussis / 0 échec /
   15 ignorés (850 sur `main` avant), typecheck OK, lint 0 erreur (10 avertissements inchangés), Vitest 210
   (201 avant). Aucun test existant modifié.

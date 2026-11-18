@@ -1,6 +1,6 @@
 # Tasks — Hoshi2Star
 
-## Plan — UWF : déchiffrer un jeu Wolf dans l'app avec unwolf (2026-11-18, Claude ; relu par Fable le 2026-11-18) — VALIDÉ par l'utilisateur le 2026-11-18 (UWF-D1 à UWF-D10 telles que recommandées ; UWF-D5, UWF-D8 et UWF-D11 ajustés le même jour à sa demande : unwolf reste une crate indépendante) ; UWF-1 à UWF-6 faits en session cloud, PR #41 fusionnée le 2026-11-18 (`2b61519`) ; UWF-V puis UWF-7 à faire
+## Plan — UWF : déchiffrer un jeu Wolf dans l'app avec unwolf (2026-11-18, Claude ; relu par Fable le 2026-11-18) — VALIDÉ par l'utilisateur le 2026-11-18 (UWF-D1 à UWF-D10 telles que recommandées ; UWF-D5, UWF-D8 et UWF-D11 ajustés le même jour à sa demande : unwolf reste une crate indépendante) ; UWF-1 à UWF-6 faits en session cloud, PR #41 fusionnée le 2026-11-18 (`2b61519`) ; UWF-V fait le 2026-11-18 ; UWF-7 à faire
 
 **Objectif.** Ouvrir un jeu Wolf RPG encore empaqueté (archives `.wolf`) sans passer par UberWolf : l'app
 extrait les archives de texte avec la bibliothèque `unwolf`, lève si besoin la protection Pro, met de côté ces
@@ -225,7 +225,7 @@ l'app ; reconstruction d'archive à l'export (`pack_data`, expérimental) ; `Evt
       `engines/wolf/mod.rs:2`, variante `ExtractorError::Decryptor` (`extractor.rs:19-20`), mentions dans
       `docs/`. Vérifier avant : `rg 'wolf::decrypt|decrypt::legacy_xor|H2S_WOLF_ARCHIVES'` (ne pas toucher
       `engines/mv_mz/decryptor.rs`). Gate ; solde attendu ≈ −3 577 lignes.
-- [ ] **UWF-V — Vérification réelle** (après UWF-6, utilisateur + Claude). L'utilisateur compile et lance l'app
+- [x] **UWF-V — Vérification réelle** (fait le 2026-11-18, `docs/journal/2026-11-18-uwf-v.md` : validé en jeu sur les deux jeux, en anglais ; accents français à examiner à part) (après UWF-6, utilisateur + Claude). L'utilisateur compile et lance l'app
       en dev (`CARGO_BUILD_JOBS=2 pnpm tauri:linux`) ; Claude la pilote par le MCP Tauri sur des copies encore
       empaquetées de とのかじ et 離れでメイド : déchiffrement depuis l'app, annulation puis reprise, ouverture,
       quelques segments traduits, export appliqué sur la copie. L'utilisateur vérifie en jeu que la traduction
