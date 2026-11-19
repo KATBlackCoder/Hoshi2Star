@@ -1,12 +1,15 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-11-18 — Claude (session locale, UWF-7).
+**Mis à jour :** 2026-11-19 — Claude (session locale).
 **Objectif utilisateur :** objectif 2, déchiffrer un jeu Wolf dans l'app avec unwolf (plan UWF, en tête de `tasks/todo.md`).
-**Statut :** UWF-1 à UWF-6 fusionnés dans `main` (PR #41). **UWF-V fait le 2026-11-18** : déchiffrement, annulation,
-reprise, levée Pro 3.5, traduction, export et essai en jeu (UWF-D3) validés sur les deux jeux, en anglais
-(journal `docs/journal/2026-11-18-uwf-v.md`). Accents français absents en jeu sur 離れでメイド : hors UWF, à
-examiner à part. **UWF-7 en cours** (2026-11-18, branche `refactor/uwf-7-remove-wolf-decrypt`, journal
-`docs/journal/2026-11-18-uwf-7.md`) : module retiré, docs à jour, commité (`3326b2b`) ; **gate cloud vert le 2026-11-18** (`cargo test` 827 / 0 / 12, écart = 40 tests du module retiré ; Vitest 210) ; PR ouverte, non fusionnée : prochaine action, relecture et fusion par l'utilisateur. Branches `feat/wolf-unwolf` et `chore/uwf-tracking` supprimées (local et `origin`).
+**Statut :** **plan UWF terminé le 2026-11-19.** UWF-1 à UWF-6 fusionnés (PR #41) ; UWF-V validé en jeu sur les deux
+jeux, en anglais (`docs/journal/2026-11-18-uwf-v.md`) ; UWF-7 (retrait de `engines/wolf/decrypt/`, −3 586 lignes)
+fusionné (PR #43, `a8c50fb`, gate cloud 827 / 0 / 12, Vitest 210 ; `docs/journal/2026-11-18-uwf-7.md`). Branches
+supprimées ; `origin` n'a que `main`.
+**Restes notés, non commencés (décision utilisateur) :** accents français absents en jeu sur 離れでメイド alors que
+le fichier et les polices les contiennent (export Wolf ou rendu, cause non établie) ; titre « Déchiffrement
+impossible » et message anglais brut après une annulation ; copies d'essai `../Hoshi2Star-essais/uwf-v/` et préfixe
+`~/Faugus/jp` à garder ou supprimer ; DD V2 à V6 jamais exécutés.
 
 ## Implémentation UWF (2026-11-18, Claude, session cloud) — UWF-1 à UWF-6 faits et fusionnés
 

@@ -1,6 +1,6 @@
 # Tasks — Hoshi2Star
 
-## Plan — UWF : déchiffrer un jeu Wolf dans l'app avec unwolf (2026-11-18, Claude ; relu par Fable le 2026-11-18) — VALIDÉ par l'utilisateur le 2026-11-18 (UWF-D1 à UWF-D10 telles que recommandées ; UWF-D5, UWF-D8 et UWF-D11 ajustés le même jour à sa demande : unwolf reste une crate indépendante) ; UWF-1 à UWF-6 faits en session cloud, PR #41 fusionnée le 2026-11-18 (`2b61519`) ; UWF-V fait le 2026-11-18 ; UWF-7 à faire
+## Plan — UWF : déchiffrer un jeu Wolf dans l'app avec unwolf (2026-11-18, Claude ; relu par Fable le 2026-11-18) — VALIDÉ par l'utilisateur le 2026-11-18 (UWF-D1 à UWF-D10 telles que recommandées ; UWF-D5, UWF-D8 et UWF-D11 ajustés le même jour à sa demande : unwolf reste une crate indépendante) ; UWF-1 à UWF-6 faits en session cloud, PR #41 fusionnée le 2026-11-18 (`2b61519`) ; UWF-V fait le 2026-11-18 ; UWF-7 fusionné le 2026-11-19 (PR #43, `a8c50fb`) — **plan terminé**
 
 **Objectif.** Ouvrir un jeu Wolf RPG encore empaqueté (archives `.wolf`) sans passer par UberWolf : l'app
 extrait les archives de texte avec la bibliothèque `unwolf`, lève si besoin la protection Pro, met de côté ces
@@ -221,7 +221,7 @@ l'app ; reconstruction d'archive à l'export (`pack_data`, expérimental) ; `Evt
       mises de côté) ; `CONTEXT.md` (convention UWF-D11 : unwolf importé seulement par `engines/wolf/unpack.rs`, procédure de
       mise à jour) ; ADR-010 décrit aussi cette procédure ; `CHANGELOG.md` (Added). Gate complet, PR décrite
       en français.
-- [ ] **UWF-7 — Retrait de `engines/wolf/decrypt/`** (UWF-D9, PR séparée après UWF-V) : module, déclaration
+- [x] **UWF-7 — Retrait de `engines/wolf/decrypt/`** (fait, PR #43 fusionnée le 2026-11-19, gate cloud 827 / 0 / 12, Vitest 210 ; `docs/journal/2026-11-18-uwf-7.md`) (UWF-D9, PR séparée après UWF-V) : module, déclaration
       `engines/wolf/mod.rs:2`, variante `ExtractorError::Decryptor` (`extractor.rs:19-20`), mentions dans
       `docs/`. Vérifier avant : `rg 'wolf::decrypt|decrypt::legacy_xor|H2S_WOLF_ARCHIVES'` (ne pas toucher
       `engines/mv_mz/decryptor.rs`). Gate ; solde attendu ≈ −3 577 lignes.
