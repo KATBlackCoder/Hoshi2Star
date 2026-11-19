@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Loader2 } from "lucide-react";
+import { Loader2, CirclePause } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import {
   Dialog,
@@ -61,12 +61,13 @@ export function WolfUnpackDialog() {
   );
 
   const running = phase === "running";
-  const title =
-    phase === "done"
-      ? t("wolfUnpack.doneTitle")
-      : phase === "error"
-        ? t("wolfUnpack.errorTitle")
-        : t("wolfUnpack.title");
+  const title = {
+    confirm: t("wolfUnpack.title"),
+    running: t("wolfUnpack.title"),
+    done: t("wolfUnpack.doneTitle"),
+    stopped: t("wolfUnpack.stoppedTitle"),
+    error: t("wolfUnpack.errorTitle"),
+  }[phase];
 
   return (
     <Dialog
@@ -75,6 +76,7 @@ export function WolfUnpackDialog() {
     >
       <DialogContent
         className="max-w-xl"
+        showCloseButton={!running}
         onEscapeKeyDown={(event) => running && event.preventDefault()}
         onPointerDownOutside={(event) => running && event.preventDefault()}
       >
@@ -113,12 +115,19 @@ export function WolfUnpackDialog() {
 
         {phase === "done" && report && <UnpackReportView report={report} />}
 
+        {phase === "stopped" && <UnpackStopped progress={progress} />}
+
         {phase === "error" && error && (
           <div className="space-y-2 text-sm">
             <p>{t(wolfUnpackErrorKey(error))}</p>
-            <p className="rounded-md bg-destructive/10 p-2 font-mono text-xs break-all text-destructive">
-              {wolfUnpackErrorDetail(error)}
-            </p>
+            <details className="text-xs text-muted-foreground">
+              <summary className="w-fit cursor-pointer select-none rounded-sm hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                {t("wolfUnpack.details")}
+              </summary>
+              <p className="mt-1 rounded-md bg-muted p-2 font-mono break-all select-text">
+                {wolfUnpackErrorDetail(error)}
+              </p>
+            </details>
           </div>
         )}
 
@@ -141,6 +150,16 @@ export function WolfUnpackDialog() {
             >
               {cancelling ? t("wolfUnpack.stopping") : t("wolfUnpack.stop")}
             </Button>
+          )}
+          {phase === "stopped" && (
+            <>
+              <Button variant="outline" onClick={closeWolfUnpackDialog}>
+                {t("wolfUnpack.close")}
+              </Button>
+              <Button onClick={() => void startWolfUnpack()}>
+                {t("wolfUnpack.resume")}
+              </Button>
+            </>
           )}
           {(phase === "done" || phase === "error") && (
             <Button onClick={closeWolfUnpackDialog}>
@@ -189,6 +208,31 @@ function UnpackRunning({ progress }: { progress: UnpackProgress | null }) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/** Where the user stopped the decryption, and what a resume does. */
+function UnpackStopped({ progress }: { progress: UnpackProgress | null }) {
+  const { t } = useTranslation();
+  return (
+    <div className="space-y-2 text-sm">
+      <p className="flex items-start gap-2">
+        <CirclePause
+          className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+          aria-hidden
+        />
+        <span>
+          {progress
+            ? t("wolfUnpack.stoppedAt", {
+                archive: progress.archive,
+                index: progress.index,
+                total: progress.total,
+              })
+            : t("wolfUnpack.stoppedBeforeStart")}
+        </span>
+      </p>
+      <p className="text-muted-foreground">{t("wolfUnpack.stoppedResume")}</p>
     </div>
   );
 }

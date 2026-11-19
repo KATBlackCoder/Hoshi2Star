@@ -149,7 +149,7 @@ describe("WolfUnpackDialog", () => {
     expect(useWolfUnpackStore.getState().gamePath).toBeNull();
   });
 
-  it("shows the progress, stops on request and explains the refusal", async () => {
+  it("shows the progress, stops on request, says where and resumes", async () => {
     let reject: (error: Error) => void = () => {};
     const commands: string[] = [];
     mockIPC((cmd) => {
@@ -169,6 +169,7 @@ describe("WolfUnpackDialog", () => {
       await screen.findByText("Déchiffrement en cours…"),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Fermer" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Close / Fermer" })).toBeNull();
 
     setWolfUnpackProgress({
       archive: "Data/MapData.wolf",
@@ -194,16 +195,36 @@ describe("WolfUnpackDialog", () => {
         "wolf_unpack_cancelled: the decryption was cancelled; no archive was moved",
       ),
     );
-    expect(
-      await screen.findByText("Déchiffrement impossible"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Déchiffrement arrêté")).toBeInTheDocument();
     expect(
       screen.getByText(
-        /Déchiffrement arrêté\. Aucune archive n'a été déplacée/,
+        "Arrêté à Data/MapData.wolf, fichier 3 sur 12. Aucune archive n'a été déplacée.",
       ),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/les archives déjà terminées/)).toBeInTheDocument();
+    expect(screen.queryByText(/was cancelled/)).toBeNull();
+    expect(screen.queryByText("Déchiffrement impossible")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Close / Fermer" }),
     ).toBeInTheDocument();
     expect(commands.filter((c) => c === "open_project")).toHaveLength(0);
 
+    await userEvent.click(screen.getByRole("button", { name: "Reprendre" }));
+    expect(
+      await screen.findByText("Déchiffrement en cours…"),
+    ).toBeInTheDocument();
+    expect(commands.filter((c) => c === "unpack_wolf_game")).toHaveLength(2);
+
+    reject(
+      new Error(
+        "wolf_unpack_cancelled: the decryption was cancelled; no archive was moved",
+      ),
+    );
+    expect(
+      await screen.findByText(
+        "Arrêté avant le premier fichier. Aucune archive n'a été déplacée.",
+      ),
+    ).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Fermer" }));
     expect(useWolfUnpackStore.getState().gamePath).toBeNull();
   });
@@ -224,8 +245,15 @@ describe("WolfUnpackDialog", () => {
     expect(
       await screen.findByText(/ne sait pas lever cette protection/),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(/this Wolf RPG Pro protection \(V2\) cannot be removed/),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Déchiffrement impossible")).toBeInTheDocument();
+    const detail = screen.getByText(
+      /this Wolf RPG Pro protection \(V2\) cannot be removed/,
+    );
+    const details = detail.closest("details");
+    expect(details).not.toBeNull();
+    expect(details).not.toHaveAttribute("open");
+    await userEvent.click(screen.getByText("Détails"));
+    expect(details).toHaveAttribute("open");
+    expect(screen.queryByRole("button", { name: "Reprendre" })).toBeNull();
   });
 });

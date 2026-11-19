@@ -855,6 +855,12 @@
     "failed": "Archives without text not extracted: {{list}}",
     "warnings": "Warnings: {{list}}",
     "close": "Close",
+    "stoppedTitle": "Decryption stopped",
+    "stoppedAt": "Stopped at {{archive}}, file {{index}} of {{total}}. No archive was moved.",
+    "stoppedBeforeStart": "Stopped before the first file. No archive was moved.",
+    "stoppedResume": "Resume redoes the interrupted archive and keeps the ones already finished.",
+    "resume": "Resume",
+    "details": "Details",
     "errorTitle": "Decryption not possible",
     "errors": {
       "cancelled": "Decryption stopped. No archive was moved; the files already extracted stay in Data/.",

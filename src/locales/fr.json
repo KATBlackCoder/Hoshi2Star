@@ -855,6 +855,12 @@
     "failed": "Archives sans texte non extraites : {{list}}",
     "warnings": "Avertissements : {{list}}",
     "close": "Fermer",
+    "stoppedTitle": "Déchiffrement arrêté",
+    "stoppedAt": "Arrêté à {{archive}}, fichier {{index}} sur {{total}}. Aucune archive n'a été déplacée.",
+    "stoppedBeforeStart": "Arrêté avant le premier fichier. Aucune archive n'a été déplacée.",
+    "stoppedResume": "Reprendre refait l'archive interrompue ; les archives déjà terminées sont gardées.",
+    "resume": "Reprendre",
+    "details": "Détails",
     "errorTitle": "Déchiffrement impossible",
     "errors": {
       "cancelled": "Déchiffrement arrêté. Aucune archive n'a été déplacée ; les fichiers déjà extraits restent dans Data/.",

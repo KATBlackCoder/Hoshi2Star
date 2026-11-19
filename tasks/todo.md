@@ -1,5 +1,25 @@
 # Tasks — Hoshi2Star
 
+## Plan — UWD : dialogue de déchiffrement Wolf, arrêt et erreurs (2026-11-19, Claude) — VALIDÉ par l'utilisateur le 2026-11-19
+
+**Objectif.** Rendre propre le dialogue `WolfUnpackDialog` après un arrêt et une erreur (constats de UWF-V,
+`docs/journal/2026-11-18-uwf-v.md`). Front seulement, aucun changement Rust ni de comportement du déchiffrement.
+Branche `fix/wolf-unpack-dialog-stop`.
+
+- [x] **UWD-1 — Écran « arrêté ».** Un `wolf_unpack_cancelled` met le store en phase `stopped` (et non `error`),
+      progression gardée. Titre « Déchiffrement arrêté » ; texte neutre : où l'arrêt a eu lieu (archive, fichier
+      i sur n, ou « avant le premier fichier »), aucune archive déplacée, une reprise refait l'archive interrompue
+      et garde celles déjà terminées (`Outcome::AlreadyUnpacked`, test `loose_files_already_there_are_never_
+      overwritten`). Pas de message brut. Boutons « Fermer » et « Reprendre » (relance `startWolfUnpack`).
+- [x] **UWD-2 — X caché pendant le déchiffrement.** `DialogContent` reçoit `showCloseButton` (défaut `true`, même
+      nom que le composant shadcn actuel) ; `false` pendant `running` (le X ne faisait rien : le store refuse la
+      fermeture).
+- [x] **UWD-3 — Détail des erreurs repliable.** Le message traduit reste visible ; le détail technique passe dans
+      un `<details>` « Détails » fermé par défaut, texte sélectionnable.
+- [~] **UWD-V — Vérifications.** (2026-11-19 : typecheck OK, lint 0 erreur, Vitest ciblé 10/10 ; suite complète 209/211 en local, les 2 échecs sont des dépassements de 5 s de tests de terminologie qui passent seuls ; rendu réel non vu) Tests Vitest de `WolfUnpackDialog.test.tsx` mis à jour (arrêt, reprise, X,
+      détails) ; parité fr/en ; `pnpm typecheck`, `pnpm lint`, `pnpm test` (en local : pas de Rust). Rendu réel :
+      à voir par l'utilisateur après compilation.
+
 ## Plan — UWF : déchiffrer un jeu Wolf dans l'app avec unwolf (2026-11-18, Claude ; relu par Fable le 2026-11-18) — VALIDÉ par l'utilisateur le 2026-11-18 (UWF-D1 à UWF-D10 telles que recommandées ; UWF-D5, UWF-D8 et UWF-D11 ajustés le même jour à sa demande : unwolf reste une crate indépendante) ; UWF-1 à UWF-6 faits en session cloud, PR #41 fusionnée le 2026-11-18 (`2b61519`) ; UWF-V fait le 2026-11-18 ; UWF-7 fusionné le 2026-11-19 (PR #43, `a8c50fb`) — **plan terminé**
 
 **Objectif.** Ouvrir un jeu Wolf RPG encore empaqueté (archives `.wolf`) sans passer par UberWolf : l'app

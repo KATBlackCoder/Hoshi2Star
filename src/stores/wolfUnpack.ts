@@ -6,6 +6,7 @@ import { wolfApi } from "@/lib/api/wolf";
 import {
   WOLF_ARCHIVE_PRESENT,
   WOLF_PACKED,
+  isWolfUnpackCancelled,
   openProjectErrorKey,
   wolfReadErrorDetail,
 } from "@/lib/projectError";
@@ -19,7 +20,13 @@ import { openProject } from "@/stores/project";
 /** Why the decryption is offered: no loose files yet, or text archives left. */
 export type WolfUnpackReason = "packed" | "archivePresent";
 
-export type WolfUnpackPhase = "confirm" | "running" | "done" | "error";
+/** `stopped`: the user stopped the decryption; it can be resumed. */
+export type WolfUnpackPhase =
+  | "confirm"
+  | "running"
+  | "done"
+  | "stopped"
+  | "error";
 
 interface WolfUnpackState {
   /** The game folder; `null` while the dialog is closed. */
@@ -90,7 +97,7 @@ export async function openGameFolder(gamePath: string): Promise<void> {
   }
 }
 
-/** Decrypt the game, then open it again with the same path. */
+/** Decrypt the game (or resume after a stop), then open it again. */
 export async function startWolfUnpack(): Promise<void> {
   const { gamePath, phase } = useWolfUnpackStore.getState();
   if (!gamePath || phase === "running") return;
@@ -104,11 +111,12 @@ export async function startWolfUnpack(): Promise<void> {
     const report = await wolfApi.unpackGame(gamePath);
     useWolfUnpackStore.setState({ phase: "done", report, cancelling: false });
   } catch (err) {
-    useWolfUnpackStore.setState({
-      phase: "error",
-      error: errorMessage(err),
-      cancelling: false,
-    });
+    // A stop keeps the last progress, to say where it stopped.
+    useWolfUnpackStore.setState(
+      isWolfUnpackCancelled(err)
+        ? { phase: "stopped", error: null, cancelling: false }
+        : { phase: "error", error: errorMessage(err), cancelling: false },
+    );
     return;
   }
   await openGameFolder(gamePath);
