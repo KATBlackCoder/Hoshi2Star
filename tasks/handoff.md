@@ -1,15 +1,17 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-11-19 — Claude (session locale).
+**Mis à jour :** 2026-11-19 — Claude (session locale, UWD).
 **Objectif utilisateur :** objectif 2, déchiffrer un jeu Wolf dans l'app avec unwolf (plan UWF, en tête de `tasks/todo.md`).
 **Statut :** **plan UWF terminé le 2026-11-19.** UWF-1 à UWF-6 fusionnés (PR #41) ; UWF-V validé en jeu sur les deux
 jeux, en anglais (`docs/journal/2026-11-18-uwf-v.md`) ; UWF-7 (retrait de `engines/wolf/decrypt/`, −3 586 lignes)
 fusionné (PR #43, `a8c50fb`, gate cloud 827 / 0 / 12, Vitest 210 ; `docs/journal/2026-11-18-uwf-7.md`). Branches
 supprimées ; `origin` n'a que `main`.
-**Restes notés, non commencés (décision utilisateur) :** accents français absents en jeu sur 離れでメイド alors que
-le fichier et les polices les contiennent (export Wolf ou rendu, cause non établie) ; titre « Déchiffrement
-impossible » et message anglais brut après une annulation ; copies d'essai `../Hoshi2Star-essais/uwf-v/` et préfixe
-`~/Faugus/jp` à garder ou supprimer ; DD V2 à V6 jamais exécutés.
+**En cours (2026-11-19) :** plan UWD, dialogue de déchiffrement (écran « arrêté » avec « Reprendre », X caché
+pendant le déchiffrement, détail des erreurs repliable) sur `fix/wolf-unpack-dialog-stop`, journal
+`docs/journal/2026-11-19-uwd-dialogue.md` ; code et tests faits, rendu réel à voir par l'utilisateur.
+**Restes notés :** accents français en jeu, au `BACKLOG.md` (priorité basse, décision utilisateur 2026-11-19) ; DD V2 à V6 jamais exécutés ; deux projets d'essai
+(`離れでメイド`, `とのかじ`) restent dans la bibliothèque de l'app et pointent vers des dossiers supprimés. Copies
+d'essai `../Hoshi2Star-essais/` et préfixe `~/Faugus/jp` supprimés le 2026-11-19 (demande utilisateur).
 
 ## Implémentation UWF (2026-11-18, Claude, session cloud) — UWF-1 à UWF-6 faits et fusionnés
 

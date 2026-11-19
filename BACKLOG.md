@@ -108,6 +108,21 @@
 
 ---
 
+## Engine Wolf RPG — traduction française en jeu (vu en UWF-V, 2026-11-18)
+
+> Priorité basse (utilisateur, 2026-11-19) : l'anglais s'affiche correctement en jeu ; le français attendra un plan
+> à part. Faits : `docs/journal/2026-11-18-uwf-v.md`, section « Essai en jeu ».
+
+- [ ] **Accents absents en jeu** : sur 離れでメイド (Wolf 3.x, UTF-8), `é` et `è` s'affichent comme un blanc
+      d'environ trois caractères (« h   ros »). Vérifié : `preflight_export` le signalait (`accentedTexts: 3`) ;
+      le fichier exporté contient `é` en UTF-8 (`c3 a9`) ; les deux polices du dossier du jeu ont U+00E9, U+00E8,
+      U+00E0, U+00E7, U+00AB (`fc-query`). Cause non établie. Pistes à départager : police réellement utilisée par
+      le jeu (définie dans la base système, pas forcément celle du dossier), rendu des polices sous Wine/Proton,
+      moteur de texte Wolf. Premier essai : même export lancé sous Windows, ou un texte de test avec `\f[n]` et une
+      police système connue.
+
+---
+
 ## Features différenciantes
 
 - [ ] Overlay playtest "click-to-segment" : plugin injecté dans le jeu (NW.js) qui, via un serveur local exposé par Tauri, sélectionne le segment dans SegmentGrid pendant le playtest
