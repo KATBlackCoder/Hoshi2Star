@@ -66,7 +66,7 @@
 | RPG Developer Bakin | 🔜 Prévu (F5) | `.rbpack` |
 
 > [!NOTE]
-> Les archives Wolf RPG **v3.5+ / WolfX (Pro, chiffrées)** doivent d'abord être déchiffrées avec UberWolf, puis on ouvre le dossier `Data/` en clair.
+> Un jeu Wolf RPG encore empaqueté dans ses archives `.wolf` (2.x, 3.x, Pro 3.5) est déchiffré par l'app à l'ouverture (travailler sur une copie). Les protections Pro v1/v2 sont refusées : les déchiffrer d'abord avec UberWolf, puis ouvrir le dossier `Data/` en clair.
 
 ---
 

@@ -66,7 +66,7 @@ CAT editor + LLM orchestrator for fan-translating Japanese **RPG Maker** & **Wol
 | RPG Developer Bakin | 🔜 Planned (F5) | `.rbpack` |
 
 > [!NOTE]
-> Wolf RPG **v3.5+ / WolfX (Pro, encrypted)** archives must be decrypted with UberWolf first, then open the plain `Data/` folder.
+> A Wolf RPG game still packed in `.wolf` archives (2.x, 3.x, Pro 3.5) is decrypted by the app when you open it (work on a copy). Pro v1/v2 protections are refused: decrypt those with UberWolf first, then open the plain `Data/` folder.
 
 ---
 
