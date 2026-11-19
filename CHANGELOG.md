@@ -5,6 +5,8 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-11-19
+
 ### Added
 - Add Wolf RPG game decryption inside the app. Opening a Wolf RPG game still packed in `.wolf` archives (or one that keeps its text archives next to decrypted files) now offers to decrypt it, instead of asking you to run UberWolf first. The dialog says what changes in the game folder before anything is written:
   - only the archives holding text are extracted as loose files in `Data/` (`Data/BasicData.wolf` and `Data/MapData.wolf`, or the whole `Data.wolf`); picture and sound archives stay packed, and a file already there is never replaced;
@@ -455,6 +457,7 @@ Format: [Keep a Changelog](https://keepachangelog.com) — [Semantic Versioning]
 - TanStack Query for async Tauri invoke() calls
 - GitHub Actions CI/CD for Linux + Windows builds
 
+[0.5.0]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.5.0
 [0.4.10]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.10
 [0.4.9]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.9
 [0.4.8]: https://github.com/KATBlackCoder/Hoshi2Star/releases/tag/v0.4.8

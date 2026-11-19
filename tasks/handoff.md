@@ -1,6 +1,9 @@
 # Point de reprise — Hoshi2Star
 
-**Mis à jour :** 2026-11-19 — Claude (session locale, UWD).
+**Mis à jour :** 2026-11-19 — Claude (session locale, publication v0.5.0).
+**Publication :** v0.5.0 demandée par l'utilisateur le 2026-11-19 (tag `v0.5.0`, workflow `release.yml`, brouillon
+GitHub à publier). Faite **avant** DD V2/V4 (exports avant/après DD non comparés), à sa demande ; extraction Wolf
+vérifiée sur 2 jeux sur 4 de `Beta-Games/`.
 **Objectif utilisateur :** objectif 2, déchiffrer un jeu Wolf dans l'app avec unwolf (plan UWF, en tête de `tasks/todo.md`).
 **Statut :** **plan UWF terminé le 2026-11-19.** UWF-1 à UWF-6 fusionnés (PR #41) ; UWF-V validé en jeu sur les deux
 jeux, en anglais (`docs/journal/2026-11-18-uwf-v.md`) ; UWF-7 (retrait de `engines/wolf/decrypt/`, −3 586 lignes)
