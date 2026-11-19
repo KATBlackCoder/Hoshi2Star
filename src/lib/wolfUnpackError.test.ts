@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   WOLF_PACKED,
+  isWolfUnpackCancelled,
   openProjectErrorKey,
   wolfReadErrorKey,
   wolfUnpackErrorDetail,
@@ -20,6 +21,20 @@ function strings(tree: unknown, prefix = ""): [string, string][] {
 }
 
 describe("Wolf RPG decryption errors (plan UWF)", () => {
+  it("tells a stop from a failure", () => {
+    expect(
+      isWolfUnpackCancelled(
+        "Error: wolf_unpack_cancelled: the decryption was cancelled; no archive was moved",
+      ),
+    ).toBe(true);
+    expect(
+      isWolfUnpackCancelled(
+        "wolf_unpack_extraction_failed: Data.wolf: no matching mode",
+      ),
+    ).toBe(false);
+    expect(isWolfUnpackCancelled("cancelled")).toBe(false);
+  });
+
   it("recognises a packed game at open", () => {
     expect(wolfReadErrorKey(PACKED_ERROR)).toBe("wolfPacked");
     expect(openProjectErrorKey(PACKED_ERROR)).toBe("projectList.wolfPacked");

@@ -93,6 +93,11 @@ export function wolfUnpackErrorKey(err: unknown): string {
   return `wolfUnpack.errors.${key}`;
 }
 
+/** True when the decryption failed because the user stopped it. */
+export function isWolfUnpackCancelled(err: unknown): boolean {
+  return WOLF_UNPACK_MARKER.exec(String(err))?.[1] === "cancelled";
+}
+
 /** The backend detail after the decryption marker, or the whole message. */
 export function wolfUnpackErrorDetail(err: unknown): string {
   const text = String(err).replace(/^Error:\s*/, "");
