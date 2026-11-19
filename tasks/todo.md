@@ -509,11 +509,11 @@ API appelée par des tests existants, donc gardée (ancien chemin, au besoin par
 - [ ] V2. Exports de référence **avant**, depuis `main` : un jeu MZ de `test/` et un jeu Wolf déchiffré, mise en page
       active, archives hors Git. Le binaire compilé par l'utilisateur sur `914d871` convient (code inchangé jusqu'à
       `1f2b841`), après vérification (leçons des 2026-10-29 et 2026-10-30).
-- [ ] V3. Avec l'accord de l'utilisateur, une branche locale de test qui réunit les deux bouts de chaîne.
+- [x] V3. Sans objet depuis la fusion du 2026-11-18. ~~Avec l'accord de l'utilisateur, une branche locale de test qui réunit les deux bouts de chaîne.~~
       L'utilisateur compile quand il le décide (leçon du 2026-10-30) ; Claude ne lance l'app qu'ensuite.
 - [ ] V4. Exports **après**, mêmes jeux et réglages : fichiers identiques octet pour octet ; scan : mêmes compteurs.
-- [ ] V5. Grille : 12 423 segments, environ 19 ms par frame, aucune zone blanche, comme le 2026-10-30 (F4).
-- [ ] V6. Toast d'erreur de la terminologie sans « Error: » (F1) ; relire au diff de L6 les 23 autres sites.
+- [~] V5. Grille : 12 423 segments, environ 19 ms par frame, aucune zone blanche, comme le 2026-10-30 (F4). 2026-11-19 : 0 zone blanche ; 61-98 ms p50 sur une autre machine (plancher 33 ms) : non concluant sans mesure d'avant DD sur la même machine (avec V2/V4). `docs/journal/2026-11-17-dd-verification.md`.
+- [x] V6. Toast d'erreur de la terminologie sans « Error: » (F1) ; relire au diff de L6 les 23 autres sites. 2026-11-19 : relecture des 29 sites `errorMessage` faite, test vert ; non provoqué dans l'app réelle (voir journal).
 - [x] V7. Suivi : cocher ce plan, `tasks/handoff.md`, journal de la vérification. Fusion par l'utilisateur dans l'ordre
       des chaînes, chaque PR repointée vers `main` avant sa fusion. **Fait le 2026-11-18** à la demande de
       l'utilisateur (« fusionne les PR DD dans l'ordre »), par Claude : back #34 (`524fb46`), #36 (`a450f83`), #37

@@ -102,6 +102,36 @@
   ADR-006 et ADR-007 ajoutés. `CLAUDE.md` et `AGENTS.md` pointent vers la carte ; `AGENTS.md` porte la règle de
   mise à jour. Documentation seulement, aucun test applicatif concerné.
 
+## V5 et V6 dans l'app réelle (2026-11-19, Claude)
+
+App de dev (`main` @ `63a1186`, lancée par l'utilisateur, pilotée par le MCP Tauri). **Autre machine que la
+référence** du 2026-10-30 : portable i5-10210U, Intel UHD + NVIDIA MX130 (la référence : GTX 1660 SUPER).
+
+- **V5 — grille.** Copie déchiffrée de とのかじ (supprimée ensuite avec son projet), plus gros fichier
+  `DataBase.dat` (6 206 segments ; le fichier de 12 423 segments de la référence n'est pas disponible). Fenêtre
+  1410×683, zone de défilement de 345 px. Méthode du banc `docs/benchmarks/2026-10-29-grid-app-reelle.md` :
+  `scrollTop` +120 px par `requestAnimationFrame`, chauffe de 150 images puis deux passages de 300.
+
+  | Mesure | p50 | p95 | Zones blanches |
+  |---|---|---|---|
+  | Grille, passage A / B | 98 / 61 ms | 162 / 108 ms | 0 / 300, 0 / 300 |
+  | Sauts de 600 px / 3 000 px | 171 / 213 ms | 311 / 514 ms | 0 / 150, 0 / 100 |
+  | Bloc de 3 000 `<p>` sans React, même taille | 33 ms | 34 ms | — |
+  | Fenêtre au repos | 33 ms | 34 ms | — |
+
+  Sur cette machine, l'affichage est plafonné à 30 images/s (33 ms au repos). **Aucune zone blanche.** La grille
+  tourne entre 10 et 16 images/s, deux à trois fois le plancher, alors que la référence était au plancher
+  (19-22 ms contre 17 ms). **Non concluant pour DD** : machine, fichier et taille de fenêtre différents ; seule une
+  mesure de la version d'avant DD (`00b9269`) sur cette même machine dirait si DD a changé quelque chose (à faire
+  avec V2/V4).
+- **V6 — toast de la terminologie.** Relecture : les 29 appels de `errorMessage` (`src/lib/utils.ts`, message
+  d'une `Error`, sinon `String`) couvrent tous les affichages d'erreur ; les `String(err)` restants
+  (`projectError.ts`, `wolfUnpack.ts:69`, `useAppHandlers.ts:143`) servent à reconnaître un marqueur, jamais à
+  afficher. Test `TerminologyWorkspace.errorToast.test.tsx` vert. Dans l'app réelle, non provoqué : les erreurs
+  Rust arrivent en chaînes (sans préfixe « Error: ») et aucune action de terminologie ne lève une `Error` JS sans
+  injecter de panne.
+- **V3** : sans objet (les deux chaînes sont fusionnées dans `main` depuis le 2026-11-18).
+
 ## Prochaine session
 
 - Décisions utilisateur : nettoyage des constats de qualité (avant ou après fusion) ; compléter ou non le corpus ;
