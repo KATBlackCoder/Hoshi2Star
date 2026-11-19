@@ -8,9 +8,9 @@ fusionné (PR #43, `a8c50fb`, gate cloud 827 / 0 / 12, Vitest 210 ; `docs/journa
 supprimées ; `origin` n'a que `main`.
 **En cours (2026-11-19) :** plan UWD, dialogue de déchiffrement (écran « arrêté » avec « Reprendre », X caché
 pendant le déchiffrement, détail des erreurs repliable) sur `fix/wolf-unpack-dialog-stop`, journal
-`docs/journal/2026-11-19-uwd-dialogue.md` ; code et tests faits, rendu réel à voir par l'utilisateur.
-**Restes notés :** accents français en jeu, au `BACKLOG.md` (priorité basse, décision utilisateur 2026-11-19) ; DD V2 à V6 jamais exécutés ; deux projets d'essai
-(`離れでメイド`, `とのかじ`) restent dans la bibliothèque de l'app et pointent vers des dossiers supprimés. Copies
+`docs/journal/2026-11-19-uwd-dialogue.md` ; code, tests et essai dans l'app faits ; PR #44 ouverte, à fusionner.
+**Restes notés :** accents français en jeu, au `BACKLOG.md` (priorité basse, décision utilisateur 2026-11-19) ; DD V2 à V6 jamais exécutés ; projets d'essai morts retirés de la
+bibliothèque le 2026-11-19. Copies
 d'essai `../Hoshi2Star-essais/` et préfixe `~/Faugus/jp` supprimés le 2026-11-19 (demande utilisateur).
 
 ## Implémentation UWF (2026-11-18, Claude, session cloud) — UWF-1 à UWF-6 faits et fusionnés

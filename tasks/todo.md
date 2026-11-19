@@ -16,7 +16,7 @@ Branche `fix/wolf-unpack-dialog-stop`.
       fermeture).
 - [x] **UWD-3 — Détail des erreurs repliable.** Le message traduit reste visible ; le détail technique passe dans
       un `<details>` « Détails » fermé par défaut, texte sélectionnable.
-- [~] **UWD-V — Vérifications.** (2026-11-19 : typecheck OK, lint 0 erreur, Vitest ciblé 10/10 ; suite complète 209/211 en local, les 2 échecs sont des dépassements de 5 s de tests de terminologie qui passent seuls ; rendu réel non vu) Tests Vitest de `WolfUnpackDialog.test.tsx` mis à jour (arrêt, reprise, X,
+- [x] **UWD-V — Vérifications.** (2026-11-19 : typecheck OK, lint 0 erreur, Vitest ciblé 10/10 ; suite complète 209/211 en local, les 2 échecs sont des dépassements de 5 s de tests de terminologie qui passent seuls ; essai dans l'app OK : arrêt, reprise, erreur avec « Détails ») Tests Vitest de `WolfUnpackDialog.test.tsx` mis à jour (arrêt, reprise, X,
       détails) ; parité fr/en ; `pnpm typecheck`, `pnpm lint`, `pnpm test` (en local : pas de Rust). Rendu réel :
       à voir par l'utilisateur après compilation.
 

@@ -2,7 +2,7 @@
 
 **Phase** : F5 (suite du plan UWF)
 **Durée estimée** : 1h
-**Statut** : 🔄 En cours (code et tests faits ; rendu réel dans l'app non vu)
+**Statut** : ✅ Complété (code, tests et essai dans l'app ; PR #44)
 **Outil** : Claude (session locale ; front seulement, aucune compilation Rust)
 **Branche et commit de départ** : `fix/wolf-unpack-dialog-stop` depuis `main` @ `cfdb392`
 **Objectif / plan / story** : « Plan — UWD » (`tasks/todo.md`), validé par l'utilisateur le 2026-11-19 ; constats
@@ -37,7 +37,19 @@ de `docs/journal/2026-11-18-uwf-v.md`.
 - Suite complète en local : 209/211 ; les 2 échecs sont des dépassements du délai de 5 s
   (`TermEditorDialog.test.tsx`, `TerminologyWorkspace.errorToast.test.tsx`), qui passent seuls (2/2) : charge de la
   machine, pas ce lot.
-- **Non vu** : rendu réel dans l'app (compilation par l'utilisateur).
+- **Essai dans l'app** (lancée par l'utilisateur, pilotée par le MCP Tauri, lecture du DOM ; la capture d'écran
+  native reste blanche sous Wayland) sur deux copies de 離れでメイド (`../Hoshi2Star-essais/uwd/`) :
+  - pendant le déchiffrement, seul « Arrêter » est présent (plus de X) ;
+  - arrêt au fichier 45 : « Déchiffrement arrêté », « Arrêté à Data.wolf, fichier 45 sur 1591. Aucune archive
+    n'a été déplacée. », la phrase de reprise, « Fermer » et « Reprendre », X revenu ; sur disque, `Data.wolf` en
+    place et aucun `Data/` partiel ;
+  - « Reprendre » : déchiffrement complet, `Data.wolf` dans `Hoshi2Star-archives/`, projet ouvert (6 fichiers,
+    922 segments) ;
+  - copie avec un faux `Data/` à côté de `Data.wolf` : « Déchiffrement impossible », message traduit
+    `dataFolderPresent`, détail anglais replié sous « Détails » (fermé, puis ouvert au clic), seul « Fermer ».
+- Au premier démarrage, la page est restée vide (Vite bloqué après 141 modules, sans erreur) ; un rechargement
+  a suffi. Sans lien avec ce lot.
+- Les deux projets d'essai morts de UWF-V ont été retirés de la bibliothèque (`delete_project`).
 
 ---
 *Journal partagé Codex / Claude — Hoshi2Star*
