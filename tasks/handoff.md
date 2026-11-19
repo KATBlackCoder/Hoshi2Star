@@ -6,9 +6,9 @@
 jeux, en anglais (`docs/journal/2026-11-18-uwf-v.md`) ; UWF-7 (retrait de `engines/wolf/decrypt/`, −3 586 lignes)
 fusionné (PR #43, `a8c50fb`, gate cloud 827 / 0 / 12, Vitest 210 ; `docs/journal/2026-11-18-uwf-7.md`). Branches
 supprimées ; `origin` n'a que `main`.
-**En cours (2026-11-19) :** plan UWD, dialogue de déchiffrement (écran « arrêté » avec « Reprendre », X caché
+**Fait (2026-11-19) :** plan UWD, dialogue de déchiffrement (écran « arrêté » avec « Reprendre », X caché
 pendant le déchiffrement, détail des erreurs repliable) sur `fix/wolf-unpack-dialog-stop`, journal
-`docs/journal/2026-11-19-uwd-dialogue.md` ; code, tests et essai dans l'app faits ; PR #44 ouverte, à fusionner.
+`docs/journal/2026-11-19-uwd-dialogue.md` ; code, tests et essai dans l'app faits ; **PR #44 fusionnée le 2026-11-19** (`8135ac9`), branche supprimée.
 **Restes notés :** accents français en jeu, au `BACKLOG.md` (priorité basse, décision utilisateur 2026-11-19) ; DD V2 à V6 jamais exécutés ; projets d'essai morts retirés de la
 bibliothèque le 2026-11-19. Copies
 d'essai `../Hoshi2Star-essais/` et préfixe `~/Faugus/jp` supprimés le 2026-11-19 (demande utilisateur).

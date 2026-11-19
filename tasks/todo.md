@@ -1,6 +1,6 @@
 # Tasks — Hoshi2Star
 
-## Plan — UWD : dialogue de déchiffrement Wolf, arrêt et erreurs (2026-11-19, Claude) — VALIDÉ par l'utilisateur le 2026-11-19
+## Plan — UWD : dialogue de déchiffrement Wolf, arrêt et erreurs (2026-11-19, Claude) — VALIDÉ par l'utilisateur le 2026-11-19 ; fait, PR #44 fusionnée le 2026-11-19 (`8135ac9`)
 
 **Objectif.** Rendre propre le dialogue `WolfUnpackDialog` après un arrêt et une erreur (constats de UWF-V,
 `docs/journal/2026-11-18-uwf-v.md`). Front seulement, aucun changement Rust ni de comportement du déchiffrement.

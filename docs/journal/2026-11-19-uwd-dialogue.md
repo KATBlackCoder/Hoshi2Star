@@ -2,7 +2,7 @@
 
 **Phase** : F5 (suite du plan UWF)
 **Durée estimée** : 1h
-**Statut** : ✅ Complété (code, tests et essai dans l'app ; PR #44)
+**Statut** : ✅ Complété (PR #44 fusionnée le 2026-11-19, `8135ac9`)
 **Outil** : Claude (session locale ; front seulement, aucune compilation Rust)
 **Branche et commit de départ** : `fix/wolf-unpack-dialog-stop` depuis `main` @ `cfdb392`
 **Objectif / plan / story** : « Plan — UWD » (`tasks/todo.md`), validé par l'utilisateur le 2026-11-19 ; constats
@@ -38,7 +38,7 @@ de `docs/journal/2026-11-18-uwf-v.md`.
   (`TermEditorDialog.test.tsx`, `TerminologyWorkspace.errorToast.test.tsx`), qui passent seuls (2/2) : charge de la
   machine, pas ce lot.
 - **Essai dans l'app** (lancée par l'utilisateur, pilotée par le MCP Tauri, lecture du DOM ; la capture d'écran
-  native reste blanche sous Wayland) sur deux copies de 離れでメイド (`../Hoshi2Star-essais/uwd/`) :
+  native reste blanche sous Wayland) sur deux copies de 離れでメイド (`../Hoshi2Star-essais/uwd/`, supprimées après l'essai avec le projet créé) :
   - pendant le déchiffrement, seul « Arrêter » est présent (plus de X) ;
   - arrêt au fichier 45 : « Déchiffrement arrêté », « Arrêté à Data.wolf, fichier 45 sur 1591. Aucune archive
     n'a été déplacée. », la phrase de reprise, « Fermer » et « Reprendre », X revenu ; sur disque, `Data.wolf` en
